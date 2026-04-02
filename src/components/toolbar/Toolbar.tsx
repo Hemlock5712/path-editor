@@ -59,6 +59,7 @@ export function Toolbar({
       } catch {
         // User cancelled or API unavailable
       }
+      return;
     }
 
     // Fallback: download

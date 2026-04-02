@@ -354,7 +354,7 @@ export function drawScrubberGhost(
   ctx.strokeStyle = 'rgba(0, 255, 170, 0.35)';
   ctx.lineWidth = 2;
   ctx.shadowColor = '#00FFaa';
-  ctx.shadowBlur = 8;
+  ctx.shadowBlur = 4;
   ctx.strokeRect(-rw / 2, -rh / 2, rw, rh);
 
   // Heading triangle at the front
