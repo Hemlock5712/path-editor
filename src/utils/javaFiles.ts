@@ -53,25 +53,17 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'RotationSuppliers.java',
     relativePath: 'utils/path/RotationSuppliers.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Factory methods for heading strategies: face forward, face point, hold, interpolate',
+    description: 'Factory methods for heading strategies: face forward, face point, hold, interpolate, zone-based',
     category: 'core',
-    lineCount: 200,
+    lineCount: 260,
   },
   {
     filename: 'PathData.java',
     relativePath: 'utils/path/PathData.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Data model record for control points, heading waypoints, and constraints',
+    description: 'Data model record with red alliance mirroring for control points, headings, constraints, and rotation zones',
     category: 'core',
-    lineCount: 29,
-  },
-  {
-    filename: 'PathJsonLoader.java',
-    relativePath: 'utils/path/PathJsonLoader.java',
-    packagePath: 'frc/robot/utils/path/',
-    description: 'Loads and saves path JSON files from the deploy directory',
-    category: 'core',
-    lineCount: 130,
+    lineCount: 104,
   },
   {
     filename: 'ProjectionResult.java',
@@ -89,7 +81,7 @@ export const JAVA_FILES: JavaFileInfo[] = [
     packagePath: 'frc/robot/commands/',
     description: 'Main path-following command with adaptive lookahead and cross-track correction',
     category: 'command',
-    lineCount: 397,
+    lineCount: 535,
   },
 
   // Dependencies

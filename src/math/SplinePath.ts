@@ -15,7 +15,7 @@ const MIN_SAMPLES = 100;
 
 /**
  * Arc-length parameterized Catmull-Rom spline path.
- * Direct port of SplinePath.java (without getClosestPoint — not needed in editor).
+ * Direct port of SplinePath.java.
  */
 export class SplinePath {
   private readonly segments: CubicSegment[];
@@ -103,6 +103,18 @@ export class SplinePath {
     return this.totalLength;
   }
 
+  getNumSegments(): number {
+    return this.segments.length;
+  }
+
+  getArcLengthAtWaypointIndex(waypointIndex: number): number {
+    if (waypointIndex <= 0) return 0;
+    if (waypointIndex >= this.segments.length) return this.totalLength;
+    const numSamples = this.sTable.length - 1;
+    const tableIndex = Math.round((waypointIndex * numSamples) / this.segments.length);
+    return this.sTable[Math.min(tableIndex, numSamples)];
+  }
+
   private buildArcLengthTable(numSamples: number): void {
     const totalT = this.segments.length;
     const dtPerSample = totalT / numSamples;
@@ -166,6 +178,39 @@ export class SplinePath {
         return { segIndex: segHi, t: Math.max(t, 0.0) };
       }
     }
+  }
+
+  /** Find the arc-length of the closest point on the path to the given field point. */
+  getClosestPointS(point: Point): number {
+    // Coarse pass: sample at intervals of ~2cm (balances precision vs performance)
+    const COARSE_SEARCH_STEP = 0.02;
+    const step = Math.max(COARSE_SEARCH_STEP, this.totalLength / 500);
+    let bestS = 0;
+    let bestDist = Infinity;
+
+    for (let s = 0; s <= this.totalLength; s += step) {
+      const p = this.getPoint(s);
+      const d = (p.x - point.x) ** 2 + (p.y - point.y) ** 2;
+      if (d < bestDist) {
+        bestDist = d;
+        bestS = s;
+      }
+    }
+
+    // Refine with bisection around the best sample
+    let lo = Math.max(0, bestS - step);
+    let hi = Math.min(this.totalLength, bestS + step);
+    for (let i = 0; i < 16; i++) {
+      const m1 = lo + (hi - lo) / 3;
+      const m2 = hi - (hi - lo) / 3;
+      const p1 = this.getPoint(m1);
+      const p2 = this.getPoint(m2);
+      const d1 = (p1.x - point.x) ** 2 + (p1.y - point.y) ** 2;
+      const d2 = (p2.x - point.x) ** 2 + (p2.y - point.y) ** 2;
+      if (d1 < d2) hi = m2;
+      else lo = m1;
+    }
+    return (lo + hi) / 2;
   }
 
   private clampS(s: number): number {

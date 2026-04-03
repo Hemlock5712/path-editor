@@ -15,6 +15,7 @@ export function usePathComputation() {
   const controlPoints = usePathStore((s) => s.controlPoints);
   const headingWaypoints = usePathStore((s) => s.headingWaypoints);
   const constraints = usePathStore((s) => s.constraints);
+  const constraintZones = usePathStore((s) => s.constraintZones);
 
   // Robot settings that affect velocity profiling
   const stallTorque = useSettingsStore((s) => s.stallTorque);
@@ -39,14 +40,14 @@ export function usePathComputation() {
   const velocityProfile = useMemo(() => {
     if (!splinePath) return null;
     try {
-      return new VelocityProfile(splinePath, constraints);
+      return new VelocityProfile(splinePath, constraints, headingWaypoints, controlPoints.length, undefined, constraintZones);
     } catch {
       return null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splinePath, constraints, stallTorque, freeSpeedRpm, stallCurrent,
-    statorCurrentLimit, gearRatio, wheelRadius, robotMass, numDriveMotors,
-    frictionCoefficient, minVelocity]);
+  }, [splinePath, constraints, headingWaypoints, controlPoints.length, constraintZones, stallTorque,
+    freeSpeedRpm, stallCurrent, statorCurrentLimit, gearRatio, wheelRadius, robotMass,
+    numDriveMotors, frictionCoefficient, minVelocity]);
 
   const timeEstimator = useMemo(() => {
     if (!velocityProfile) return null;
@@ -70,6 +71,7 @@ export function usePathComputation() {
       splinePath,
       velocityProfile,
       timeEstimator,
+      headingWaypoints,
       controlPoints.length,
       headingWaypoints.length,
     );
@@ -77,6 +79,7 @@ export function usePathComputation() {
     splinePath,
     velocityProfile,
     timeEstimator,
+    headingWaypoints,
     controlPoints.length,
     headingWaypoints.length,
   ]);

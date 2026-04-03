@@ -102,11 +102,16 @@ export function DownloadsPage() {
             </h3>
             <div className="text-xs text-zinc-400 space-y-2 font-mono">
               <p className="text-zinc-500">1. Copy files to your robot project maintaining the package structure</p>
-              <p className="text-zinc-500">2. Place path JSON files in <span className="text-accent-green">src/main/deploy/paths/</span></p>
+              <p className="text-zinc-500">2. Save <span className="text-accent-green">Paths.java</span> from the editor and add it to your project</p>
               <p className="text-zinc-500">3. Use in autonomous:</p>
               <pre className="bg-surface-900 rounded p-3 text-[11px] overflow-x-auto text-zinc-300">
-{`var path = PathJsonLoader.fromFile("myPath.json");
-new FollowPath(drivetrain, path)
+{`// Auto-mirrors path when on red alliance
+var pathData = Paths.forAlliance(Paths.MY_PATH);
+var spline = new SplinePath(pathData.controlPoints());
+new FollowPath(drivetrain, spline, pathData.globalConstraints())
+    .withRotationSupplier(RotationSuppliers.fromZones(
+        spline, pathData.headingWaypoints(),
+        pathData.rotationZones()))
     .withLookahead(0.15, 0.15, 1.0)
     .withCrossTrackGains(3.0, 0.5);`}
               </pre>

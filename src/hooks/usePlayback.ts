@@ -15,6 +15,20 @@ export function usePlayback(
   const playbackSRef = useRef(0);
   const lastFrameTimeRef = useRef(0);
   const rafRef = useRef(0);
+  const prevTotalLengthRef = useRef(0);
+
+  // Rescale scrubber proportionally when path length changes
+  useEffect(() => {
+    const newLen = splinePath?.totalLength ?? 0;
+    const prevLen = prevTotalLengthRef.current;
+    if (prevLen > 0 && newLen > 0 && newLen !== prevLen && playbackSRef.current > 0) {
+      const ratio = playbackSRef.current / prevLen;
+      const newDistance = Math.max(0, Math.min(ratio * newLen, newLen));
+      playbackSRef.current = newDistance;
+      setScrubberDistance(newDistance);
+    }
+    prevTotalLengthRef.current = newLen;
+  }, [splinePath, setScrubberDistance]);
 
   // Playback animation loop
   useEffect(() => {

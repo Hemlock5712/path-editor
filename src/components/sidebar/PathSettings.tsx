@@ -1,14 +1,17 @@
+import { memo } from 'react';
 import { usePathStore } from '../../stores/pathStore';
-import { Gauge, Zap, Play, Square } from 'lucide-react';
+import { Gauge, Zap, Play, Square, RotateCcw } from 'lucide-react';
 
 const fields = [
   { key: 'maxVelocity' as const, label: 'Max Velocity', unit: 'm/s', icon: Gauge },
   { key: 'maxAcceleration' as const, label: 'Max Acceleration', unit: 'm/s\u00B2', icon: Zap },
+  { key: 'maxAngularVelocity' as const, label: 'Max Angular Vel', unit: 'rad/s', icon: RotateCcw },
+  { key: 'maxAngularAcceleration' as const, label: 'Max Angular Accel', unit: 'rad/s\u00B2', icon: RotateCcw },
   { key: 'startVelocity' as const, label: 'Start Velocity', unit: 'm/s', icon: Play },
   { key: 'endVelocity' as const, label: 'End Velocity', unit: 'm/s', icon: Square },
 ];
 
-export function PathSettings() {
+export const PathSettings = memo(function PathSettings() {
   const constraints = usePathStore((s) => s.constraints);
   const setConstraints = usePathStore((s) => s.setConstraints);
 
@@ -40,4 +43,4 @@ export function PathSettings() {
       ))}
     </div>
   );
-}
+});

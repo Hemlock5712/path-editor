@@ -171,6 +171,23 @@ public final class SplinePath {
   }
 
   /**
+   * Returns the arc length at the given waypoint index.
+   *
+   * <p>Waypoint index i corresponds to control point i. The globalT for waypoint i is just i
+   * (segment i spans globalT i to i+1).
+   *
+   * @param waypointIndex The waypoint index (0-based)
+   * @return Arc length in meters at that waypoint
+   */
+  public double getArcLengthAtWaypointIndex(int waypointIndex) {
+    if (waypointIndex <= 0) return 0;
+    if (waypointIndex >= segments.length) return totalLength;
+    int numSamples = sTable.length - 1;
+    int tableIndex = (int) Math.round((double) waypointIndex * numSamples / segments.length);
+    return sTable[Math.min(tableIndex, numSamples)];
+  }
+
+  /**
    * Projects a point onto the path, finding the closest point.
    *
    * <p>Uses a coarse-then-fine approach with caching for amortized O(1) performance when the robot

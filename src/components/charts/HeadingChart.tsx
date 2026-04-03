@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '../../stores/editorStore';
 import { usePathStore } from '../../stores/pathStore';
 import { HEADING_COLOR } from '../../utils/colors';
+import { lerpAngle } from '../../math/angleUtils';
 import type { AnalyticsArrays } from '../../math/ProfileAnalytics';
 import type { SplinePath } from '../../math/SplinePath';
 
@@ -120,10 +121,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
       const hLo = headings[lo];
       const hHi = headings[hi];
       if (isNaN(hLo) || isNaN(hHi)) return NaN;
-      // Shortest-arc interpolation
-      let diff = ((hHi - hLo + Math.PI) % (2 * Math.PI)) - Math.PI;
-      if (diff < -Math.PI) diff += 2 * Math.PI;
-      return hLo + diff * frac;
+      return lerpAngle(hLo, hHi, frac);
     },
     [analytics],
   );

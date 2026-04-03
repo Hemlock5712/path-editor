@@ -1,13 +1,14 @@
+import { memo } from 'react';
 import type { PathStats as PathStatsType } from '../../math/ProfileAnalytics';
 
 interface PathStatsProps {
   stats: PathStatsType | null;
 }
 
-export function PathStats({ stats }: PathStatsProps) {
+export const PathStats = memo(function PathStats({ stats }: PathStatsProps) {
   if (!stats) {
     return (
-      <p className="text-xs text-zinc-600 italic">Add at least 2 points to view stats</p>
+      <p className="text-xs text-zinc-600 italic">Load a Paths.java file to view stats</p>
     );
   }
 
@@ -35,9 +36,14 @@ export function PathStats({ stats }: PathStatsProps) {
         label="Avg velocity"
         value={`${stats.averageVelocity.toFixed(2)} m/s`}
       />
+      <StatRow
+        label="Peak angular vel"
+        value={`${stats.peakAngularVelocity.toFixed(2)} rad/s`}
+        sub={stats.peakAngularVelocity > 0 ? `@ ${stats.peakAngularVelocityDistance.toFixed(2)} m` : undefined}
+      />
     </div>
   );
-}
+});
 
 function StatRow({
   label,

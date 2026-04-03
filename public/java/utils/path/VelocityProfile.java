@@ -3,6 +3,7 @@ package frc.robot.utils.path;
 import frc.robot.commands.AccelerationLimiter;
 import frc.robot.generated.TunerConstants;
 import frc.robot.utils.Motor;
+import java.util.List;
 
 /**
  * Distance-based velocity profile along a spline path.
@@ -31,12 +32,26 @@ public final class VelocityProfile {
   private final double totalLength;
 
   /**
-   * Builds a velocity profile for the given path and constraints.
+   * Builds a velocity profile for the given path and constraints (no constraint zones).
    *
    * @param path The spline path
    * @param constraints Velocity and acceleration limits
    */
   public VelocityProfile(SplinePath path, VelocityConstraints constraints) {
+    this(path, constraints, List.of());
+  }
+
+  /**
+   * Builds a velocity profile for the given path, constraints, and constraint zones.
+   *
+   * @param path The spline path
+   * @param constraints Velocity and acceleration limits
+   * @param constraintZones Per-zone overrides for velocity and acceleration
+   */
+  public VelocityProfile(
+      SplinePath path,
+      VelocityConstraints constraints,
+      List<PathData.ConstraintZone> constraintZones) {
     totalLength = path.getTotalLength();
 
     // Determine number of samples (~1000 per meter, minimum 100)
@@ -45,6 +60,25 @@ public final class VelocityProfile {
     velocities = new double[numSamples + 1];
 
     double ds = totalLength / numSamples;
+
+    // Precompute effective per-sample velocity and acceleration limits from constraint zones
+    double[] effectiveMaxVel = new double[numSamples + 1];
+    double[] effectiveMaxAccel = new double[numSamples + 1];
+    for (int i = 0; i <= numSamples; i++) {
+      effectiveMaxVel[i] = constraints.getMaxVelocity();
+      effectiveMaxAccel[i] = constraints.getMaxAcceleration();
+    }
+    for (PathData.ConstraintZone zone : constraintZones) {
+      double zoneStartS = path.getArcLengthAtWaypointIndex(zone.startWaypointIndex());
+      double zoneEndS = path.getArcLengthAtWaypointIndex(zone.endWaypointIndex());
+      for (int i = 0; i <= numSamples; i++) {
+        double s = i * ds;
+        if (s >= zoneStartS && s <= zoneEndS) {
+          effectiveMaxVel[i] = Math.min(effectiveMaxVel[i], zone.maxVelocity());
+          effectiveMaxAccel[i] = Math.min(effectiveMaxAccel[i], zone.maxAcceleration());
+        }
+      }
+    }
 
     // Step 1: Curvature limit at each point (also store raw curvature for friction circle)
     double[] curvatureLimit = new double[numSamples + 1];
@@ -60,9 +94,9 @@ public final class VelocityProfile {
         // v_max = sqrt(friction * g / kappa) — centripetal acceleration constraint
         curvatureLimit[i] = Math.sqrt(maxFriction / kappa);
       } else {
-        curvatureLimit[i] = constraints.getMaxVelocity();
+        curvatureLimit[i] = effectiveMaxVel[i];
       }
-      curvatureLimit[i] = Math.min(curvatureLimit[i], constraints.getMaxVelocity());
+      curvatureLimit[i] = Math.min(curvatureLimit[i], effectiveMaxVel[i]);
       curvatureLimit[i] = Math.max(curvatureLimit[i], MIN_VELOCITY);
     }
 
@@ -94,17 +128,17 @@ public final class VelocityProfile {
     for (int i = 1; i <= numSamples; i++) {
       // 1. Tentative speed using full budget (upper bound for centripetal estimate)
       double motorAccelTentative = getMotorMaxAcceleration(forward[i - 1]);
-      double fullAccel = Math.min(motorAccelTentative, constraints.getMaxAcceleration());
+      double fullAccel = Math.min(motorAccelTentative, effectiveMaxAccel[i]);
       double vTentative = Math.sqrt(forward[i - 1] * forward[i - 1] + 2 * fullAccel * ds);
       vTentative = Math.min(vTentative, curvatureLimit[i]);
-      vTentative = Math.min(vTentative, constraints.getMaxVelocity());
+      vTentative = Math.min(vTentative, effectiveMaxVel[i]);
 
       // 2. Use smoothed curvature for friction circle (accounts for C1 discontinuities)
       double segmentKappa = Math.max(smoothedKappas[i - 1], smoothedKappas[i]);
       double centripetal = vTentative * vTentative * segmentKappa;
 
       // 3. Friction circle: recompute available tangential after centripetal
-      double frictionBudget = constraints.getMaxAcceleration();
+      double frictionBudget = effectiveMaxAccel[i];
       double frictionAvail;
       if (centripetal < frictionBudget) {
         frictionAvail = Math.sqrt(frictionBudget * frictionBudget - centripetal * centripetal);
@@ -119,19 +153,19 @@ public final class VelocityProfile {
       // v = sqrt(v_prev^2 + 2 * a * ds) — kinematic equation, distance-based
       double vFromAccel = Math.sqrt(forward[i - 1] * forward[i - 1] + 2 * maxAccel * ds);
       forward[i] = Math.min(vFromAccel, curvatureLimit[i]);
-      forward[i] = Math.min(forward[i], constraints.getMaxVelocity());
+      forward[i] = Math.min(forward[i], effectiveMaxVel[i]);
     }
 
     // Step 3: Backward pass — deceleration-limited from end
     double[] backward = new double[numSamples + 1];
     backward[numSamples] = Math.min(constraints.getEndVelocity(), curvatureLimit[numSamples]);
     for (int i = numSamples - 1; i >= 0; i--) {
-      double fullDecel = constraints.getMaxDeceleration();
+      double fullDecel = effectiveMaxAccel[i];
 
       // 1. Tentative speed using full decel budget (upper bound for centripetal estimate)
       double vTentative = Math.sqrt(backward[i + 1] * backward[i + 1] + 2 * fullDecel * ds);
       vTentative = Math.min(vTentative, curvatureLimit[i]);
-      vTentative = Math.min(vTentative, constraints.getMaxVelocity());
+      vTentative = Math.min(vTentative, effectiveMaxVel[i]);
 
       // 2. Use smoothed curvature for friction circle (accounts for C1 discontinuities)
       double segmentKappa = Math.max(smoothedKappas[i], smoothedKappas[i + 1]);
@@ -148,7 +182,7 @@ public final class VelocityProfile {
       // v = sqrt(v_next^2 + 2 * a * ds) — same equation, backward
       double vFromDecel = Math.sqrt(backward[i + 1] * backward[i + 1] + 2 * availDecel * ds);
       backward[i] = Math.min(vFromDecel, curvatureLimit[i]);
-      backward[i] = Math.min(backward[i], constraints.getMaxVelocity());
+      backward[i] = Math.min(backward[i], effectiveMaxVel[i]);
     }
 
     // Step 4: Final profile is the minimum of forward and backward at each point

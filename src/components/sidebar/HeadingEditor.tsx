@@ -6,11 +6,7 @@ export function HeadingEditor() {
   const headingWaypoints = usePathStore((s) => s.headingWaypoints);
   const setHeading = usePathStore((s) => s.setHeading);
 
-  if (selectedPointIndex === null) {
-    return (
-      <p className="text-xs text-zinc-600 italic">Select a point to set heading</p>
-    );
-  }
+  if (selectedPointIndex === null) return null;
 
   const existing = headingWaypoints.find(
     (hw) => Math.round(hw.waypointIndex) === selectedPointIndex,

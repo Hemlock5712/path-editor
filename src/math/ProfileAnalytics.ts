@@ -2,6 +2,7 @@ import { SplinePath } from './SplinePath';
 import { VelocityProfile } from './VelocityProfile';
 import { TimeEstimator } from './TimeEstimator';
 import { HeadingWaypoint } from '../types';
+import { shortestArcDiff, lerpAngle } from './angleUtils';
 
 export interface PathStats {
   totalLength: number;
@@ -11,6 +12,8 @@ export interface PathStats {
   maxCurvature: number;
   maxCurvatureDistance: number;
   averageVelocity: number;
+  peakAngularVelocity: number;
+  peakAngularVelocityDistance: number;
 }
 
 export interface AnalyticsArrays {
@@ -20,6 +23,7 @@ export interface AnalyticsArrays {
   curvatures: number[];
   accelerations: number[];
   headings: number[];
+  angularVelocities: number[];
 }
 
 /**
@@ -82,12 +86,7 @@ export function computeAnalytics(
   if (headingWaypoints.length === 0 || numControlPoints < 2) {
     headings.fill(NaN);
   } else {
-    const sorted = headingWaypoints
-      .map((hw) => ({
-        frac: hw.waypointIndex / (numControlPoints - 1),
-        rad: (hw.degrees * Math.PI) / 180,
-      }))
-      .sort((a, b) => a.frac - b.frac);
+    const sorted = buildSortedHeadings(headingWaypoints, numControlPoints);
 
     for (let i = 0; i < n; i++) {
       const progress = totalLength > 1e-12 ? distances[i] / totalLength : 0;
@@ -95,7 +94,14 @@ export function computeAnalytics(
     }
   }
 
-  return { distances, times, velocities, curvatures, accelerations, headings };
+  // Angular velocities: omega = v * dtheta/ds
+  const angularVelocities: number[] = new Array(n);
+  const dthetaDs = computeHeadingRate(headingWaypoints, numControlPoints, distances, totalLength);
+  for (let i = 0; i < n; i++) {
+    angularVelocities[i] = velocities[i] * dthetaDs[i];
+  }
+
+  return { distances, times, velocities, curvatures, accelerations, headings, angularVelocities };
 }
 
 /**
@@ -105,6 +111,7 @@ export function computeStats(
   path: SplinePath,
   profile: VelocityProfile,
   timeEst: TimeEstimator,
+  headingWaypoints: HeadingWaypoint[],
   numControlPoints: number,
   numHeadingWaypoints: number,
 ): PathStats {
@@ -126,6 +133,18 @@ export function computeStats(
     ? profile.totalLength / timeEst.totalTime
     : 0;
 
+  // Peak angular velocity
+  const dthetaDs = computeHeadingRate(headingWaypoints, numControlPoints, profile.samples, profile.totalLength);
+  let peakAngularVelocity = 0;
+  let peakAngularVelocityDistance = 0;
+  for (let i = 0; i < n; i++) {
+    const omega = Math.abs(profile.velocities[i] * dthetaDs[i]);
+    if (omega > peakAngularVelocity) {
+      peakAngularVelocity = omega;
+      peakAngularVelocityDistance = profile.samples[i];
+    }
+  }
+
   return {
     totalLength: profile.totalLength,
     estimatedTime: timeEst.totalTime,
@@ -134,14 +153,74 @@ export function computeStats(
     maxCurvature,
     maxCurvatureDistance,
     averageVelocity,
+    peakAngularVelocity,
+    peakAngularVelocityDistance,
   };
 }
 
-// ---- Internal heading interpolation ----
+// ---- Heading interpolation & rate helpers ----
 
-interface SortedHeadingEntry {
+export interface SortedHeadingEntry {
   frac: number;
   rad: number;
+}
+
+/**
+ * Sort and convert heading waypoints to fraction/radian entries.
+ */
+export function buildSortedHeadings(
+  headingWaypoints: HeadingWaypoint[],
+  numControlPoints: number,
+): SortedHeadingEntry[] {
+  return headingWaypoints
+    .map((hw) => ({
+      frac: hw.waypointIndex / (numControlPoints - 1),
+      rad: (hw.degrees * Math.PI) / 180,
+    }))
+    .sort((a, b) => a.frac - b.frac);
+}
+
+/**
+ * Compute dtheta/ds (radians per meter) at each sample distance.
+ * Used by VelocityProfile to enforce angular velocity/acceleration limits.
+ */
+export function computeHeadingRate(
+  headingWaypoints: HeadingWaypoint[],
+  numControlPoints: number,
+  sampleDistances: number[],
+  totalLength: number,
+): number[] {
+  const n = sampleDistances.length;
+  const dthetaDs = new Array<number>(n).fill(0);
+
+  if (headingWaypoints.length < 2 || numControlPoints < 2 || totalLength < 1e-12) {
+    return dthetaDs;
+  }
+
+  const sorted = buildSortedHeadings(headingWaypoints, numControlPoints);
+  if (sorted.length < 2) return dthetaDs;
+
+  // Compute heading at each sample, then finite-difference for dtheta/ds
+  const headings = new Array<number>(n);
+  for (let i = 0; i < n; i++) {
+    const progress = sampleDistances[i] / totalLength;
+    headings[i] = interpolateHeadingSorted(sorted, progress);
+  }
+
+  for (let i = 0; i < n; i++) {
+    let dTheta: number;
+    let ds: number;
+    if (i < n - 1) {
+      ds = sampleDistances[i + 1] - sampleDistances[i];
+      dTheta = shortestArcDiff(headings[i], headings[i + 1]);
+    } else {
+      ds = sampleDistances[i] - sampleDistances[i - 1];
+      dTheta = shortestArcDiff(headings[i - 1], headings[i]);
+    }
+    dthetaDs[i] = ds > 1e-12 ? dTheta / ds : 0;
+  }
+
+  return dthetaDs;
 }
 
 /**
@@ -150,7 +229,7 @@ interface SortedHeadingEntry {
  * After last waypoint: hold last heading.
  * Between: linear interpolation with shortest-arc angle lerp.
  */
-function interpolateHeadingSorted(sorted: SortedHeadingEntry[], progress: number): number {
+export function interpolateHeadingSorted(sorted: SortedHeadingEntry[], progress: number): number {
   if (sorted.length === 0) return NaN;
 
   // Before first or at first waypoint: hold constant
@@ -169,13 +248,4 @@ function interpolateHeadingSorted(sorted: SortedHeadingEntry[], progress: number
   }
 
   return sorted[sorted.length - 1].rad;
-}
-
-/**
- * Shortest-arc angle interpolation.
- */
-function lerpAngle(a: number, b: number, t: number): number {
-  let diff = ((b - a + Math.PI) % (2 * Math.PI)) - Math.PI;
-  if (diff < -Math.PI) diff += 2 * Math.PI;
-  return a + diff * t;
 }

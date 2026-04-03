@@ -1,7 +1,8 @@
-import { Save, FolderOpen, Undo2, Redo2, Trash2, Box } from 'lucide-react';
+import { FolderOpen, Undo2, Redo2, Trash2, Box, FileCode, Save, FlipVertical2, Copy } from 'lucide-react';
 import { usePathStore } from '../../stores/pathStore';
 import { useEditorStore } from '../../stores/editorStore';
-import { serialize, deserialize } from '../../utils/pathJson';
+import { parsePathsJava } from '../../utils/javaParser';
+import { generatePathsJava } from '../../utils/javaExport';
 import { PlaybackControls } from './PlaybackControls';
 
 interface ToolbarProps {
@@ -23,75 +24,38 @@ export function Toolbar({
   onStepBackward,
   fieldCanvasRef,
 }: ToolbarProps) {
-  const controlPoints = usePathStore((s) => s.controlPoints);
-  const headingWaypoints = usePathStore((s) => s.headingWaypoints);
-  const constraints = usePathStore((s) => s.constraints);
-  const loadPath = usePathStore((s) => s.loadPath);
-  const clear = usePathStore((s) => s.clear);
+  const activePathName = usePathStore((s) => s.activePathName);
+  const loadAllPaths = usePathStore((s) => s.loadAllPaths);
+  const deletePath = usePathStore((s) => s.deletePath);
   const undo = usePathStore((s) => s.undo);
   const redo = usePathStore((s) => s.redo);
   const undoStack = usePathStore((s) => s.undoStack);
   const redoStack = usePathStore((s) => s.redoStack);
+  const flipPathY = usePathStore((s) => s.flipPathY);
+  const duplicatePath = usePathStore((s) => s.duplicatePath);
+  const controlPoints = usePathStore((s) => s.controlPoints);
+  const pathCount = Object.keys(usePathStore((s) => s.paths)).length;
 
   const playbackState = useEditorStore((s) => s.playbackState);
   const showWaypointGhosts = useEditorStore((s) => s.showWaypointGhosts);
   const toggleWaypointGhosts = useEditorStore((s) => s.toggleWaypointGhosts);
 
-  // Save handler with File System Access API + fallback
-  const handleSave = async () => {
-    const json = serialize(controlPoints, headingWaypoints, constraints);
-
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: 'path.json',
-          types: [
-            {
-              description: 'Path JSON',
-              accept: { 'application/json': ['.json'] },
-            },
-          ],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(json);
-        await writable.close();
-        return;
-      } catch {
-        // User cancelled or API unavailable
-      }
-      return;
-    }
-
-    // Fallback: download
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'path.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Load handler with File System Access API + fallback
-  const handleLoad = async () => {
+  // Load Java file
+  const handleLoadJava = async () => {
     if ('showOpenFilePicker' in window) {
       try {
         const [handle] = await (window as any).showOpenFilePicker({
           types: [
             {
-              description: 'Path JSON',
-              accept: { 'application/json': ['.json'] },
+              description: 'Java Source',
+              accept: { 'text/x-java-source': ['.java'] },
             },
           ],
         });
         const file = await handle.getFile();
         const text = await file.text();
-        const data = deserialize(text);
-        loadPath(
-          data.controlPoints,
-          data.headingWaypoints,
-          data.constraints,
-        );
+        const parsed = parsePathsJava(text);
+        loadAllPaths(parsed);
         return;
       } catch {
         // User cancelled
@@ -102,44 +66,70 @@ export function Toolbar({
     // Fallback: file input
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
+    input.accept = '.java';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
-      const text = await file.text();
-      const data = deserialize(text);
-      loadPath(
-        data.controlPoints,
-        data.headingWaypoints,
-        data.constraints,
-      );
+      try {
+        const text = await file.text();
+        const parsed = parsePathsJava(text);
+        loadAllPaths(parsed);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : 'Failed to parse Java file');
+      }
     };
     input.click();
   };
 
-  // Clear with confirmation
-  const handleClear = () => {
-    if (controlPoints.length === 0) return;
-    clear();
+  // Save as Java file
+  const handleSaveJava = async () => {
+    const allPaths = usePathStore.getState().getAllPaths();
+    if (allPaths.length === 0) return;
+    const java = generatePathsJava(allPaths, usePathStore.getState().namedPoints);
+
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: 'Paths.java',
+          types: [
+            {
+              description: 'Java Source',
+              accept: { 'text/x-java-source': ['.java'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(java);
+        await writable.close();
+      } catch {
+        // User cancelled
+      }
+    }
+  };
+
+  // Delete active path
+  const handleDeletePath = () => {
+    if (!activePathName) return;
+    deletePath(activePathName);
   };
 
   return (
     <div className="flex items-center gap-1.5 px-4 py-2 bg-transparent">
       {/* File group */}
-      <button onClick={handleSave} className="btn-default flex items-center gap-1.5 text-xs" title="Save (Ctrl+S)">
-        <Save size={13} />
-        <span>Save</span>
+      <button onClick={handleLoadJava} className="btn-default flex items-center gap-1.5 text-xs" title="Load Paths.java (Ctrl+O)">
+        <FolderOpen size={13} />
+        <span>Load Java</span>
       </button>
 
-      <button onClick={handleLoad} className="btn-default flex items-center gap-1.5 text-xs" title="Load (Ctrl+O)">
-        <FolderOpen size={13} />
-        <span>Load</span>
+      <button onClick={handleSaveJava} className="btn-default flex items-center gap-1.5 text-xs" title="Save Paths.java (Ctrl+S)">
+        <Save size={13} />
+        <span>Save Java</span>
       </button>
 
       {/* Separator */}
       <div className="w-px h-4 bg-accent-green/[0.08] mx-1" />
 
-      {/* Undo/Redo group — icon only */}
+      {/* Undo/Redo group */}
       <button
         onClick={undo}
         disabled={undoStack.length === 0}
@@ -161,14 +151,34 @@ export function Toolbar({
       {/* Separator */}
       <div className="w-px h-4 bg-accent-green/[0.08] mx-1" />
 
-      {/* Clear */}
+      {/* Delete active path */}
       <button
-        onClick={handleClear}
-        className="btn-danger flex items-center gap-1 text-xs"
-        title="Clear all points"
+        onClick={handleDeletePath}
+        disabled={!activePathName || pathCount <= 1}
+        className="btn-danger flex items-center gap-1 text-xs disabled:opacity-20 disabled:cursor-not-allowed"
+        title="Delete active path"
       >
         <Trash2 size={13} />
-        <span>Clear</span>
+        <span>Delete Path</span>
+      </button>
+
+      {/* Flip & Duplicate */}
+      <button
+        onClick={flipPathY}
+        disabled={controlPoints.length < 2}
+        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        title="Flip path left/right (mirror Y)"
+      >
+        <FlipVertical2 size={14} />
+      </button>
+
+      <button
+        onClick={duplicatePath}
+        disabled={controlPoints.length === 0}
+        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        title="Duplicate active path"
+      >
+        <Copy size={14} />
       </button>
 
       {/* Separator */}
@@ -177,7 +187,11 @@ export function Toolbar({
       {/* Waypoint ghosts toggle */}
       <button
         onClick={toggleWaypointGhosts}
-        className={`btn-ghost p-1.5 ${showWaypointGhosts ? 'text-accent-green' : 'text-zinc-600'}`}
+        className="p-1.5 rounded transition-colors"
+        style={{
+          color: showWaypointGhosts ? '#00FFaa' : '#6b6b7a',
+          background: showWaypointGhosts ? 'rgba(0, 255, 170, 0.08)' : 'transparent',
+        }}
         title="Toggle robot outlines at waypoints"
       >
         <Box size={14} />

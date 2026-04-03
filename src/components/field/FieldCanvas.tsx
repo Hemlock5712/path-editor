@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { usePathStore } from '../../stores/pathStore';
 import { useEditorStore } from '../../stores/editorStore';
 import { useCanvasTransform } from '../../hooks/useCanvasTransform';
@@ -12,6 +12,7 @@ import {
 } from '../../utils/canvasTransform';
 import { snapToGrid } from '../../utils/snapping';
 import { FIELD_WIDTH, FIELD_HEIGHT } from '../../types';
+import { Maximize } from 'lucide-react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { SplinePath } from '../../math/SplinePath';
 import * as Painters from './FieldPainters';
@@ -39,11 +40,32 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
 
   // Stores
   const controlPoints = usePathStore((s) => s.controlPoints);
+  const controlPointRefs = usePathStore((s) => s.controlPointRefs);
+  const namedPoints = usePathStore((s) => s.namedPoints);
   const headingWaypoints = usePathStore((s) => s.headingWaypoints);
+  const constraintZones = usePathStore((s) => s.constraintZones);
+  const rotationZones = usePathStore((s) => s.rotationZones);
   const selectedPointIndex = usePathStore((s) => s.selectedPointIndex);
+  const selectedZoneId = usePathStore((s) => s.selectedZoneId);
+  const paths = usePathStore((s) => s.paths);
+  const activePathName = usePathStore((s) => s.activePathName);
+  const setActivePath = usePathStore((s) => s.setActivePath);
   const addPoint = usePathStore((s) => s.addPoint);
   const movePoint = usePathStore((s) => s.movePoint);
   const selectPoint = usePathStore((s) => s.selectPoint);
+  const selectZone = usePathStore((s) => s.selectZone);
+  const updateRotationZone = usePathStore((s) => s.updateRotationZone);
+
+  // Compute splines for inactive paths
+  const inactivePaths = useMemo(() => {
+    return Object.entries(paths)
+      .filter(([name]) => name !== activePathName)
+      .map(([name, path]) => ({
+        name,
+        controlPoints: path.controlPoints,
+        spline: path.controlPoints.length >= 2 ? new SplinePath(path.controlPoints) : null,
+      }));
+  }, [paths, activePathName]);
 
   const showGrid = useEditorStore((s) => s.showGrid);
   const showMinimap = useEditorStore((s) => s.showMinimap);
@@ -54,6 +76,8 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
   const scrubberDistance = useEditorStore((s) => s.scrubberDistance);
   const playbackState = useEditorStore((s) => s.playbackState);
   const showWaypointGhosts = useEditorStore((s) => s.showWaypointGhosts);
+  const zoom = useEditorStore((s) => s.zoom);
+  const panOffset = useEditorStore((s) => s.panOffset);
 
   // Robot dimensions from settings
   const robotLength = useSettingsStore((s) => s.robotLength);
@@ -67,11 +91,9 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
 
   // Drag state
   const [dragging, setDragging] = useState<number | null>(null);
+  const [zoneDrag, setZoneDrag] = useState<{ zoneId: string; handle: 'start' | 'end' | 'target' } | null>(null);
   const [middleDragging, setMiddleDragging] = useState(false);
   const lastMiddlePos = useRef({ x: 0, y: 0 });
-
-  // Ghost preview point (where click would add a new point)
-  const [ghostPoint, setGhostPoint] = useState<{ x: number; y: number } | null>(null);
 
   // Coordinate tooltip
   const [tooltip, setTooltip] = useState<{
@@ -150,6 +172,37 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
     [controlPoints, cw, ch, transform],
   );
 
+  // Hit test rotation zone handles/targets
+  const hitTestZone = useCallback(
+    (canvasX: number, canvasY: number): { zoneId: string; handle: 'start' | 'end' | 'target' } | null => {
+      if (!splinePath || splinePath.totalLength <= 0) return null;
+      const hitRadius = Math.max(12, Math.min(20, 16 / Math.sqrt(transform.zoom)));
+      const numCPs = controlPoints.length;
+
+      for (const zone of rotationZones) {
+        // Check target point first (highest priority)
+        const tc = fieldToCanvas(zone.targetPoint, cw, ch, transform);
+        if ((canvasX - tc.cx) ** 2 + (canvasY - tc.cy) ** 2 <= hitRadius * hitRadius) {
+          return { zoneId: zone.id, handle: 'target' };
+        }
+
+        // Check boundary handles
+        for (const handle of ['start', 'end'] as const) {
+          const idx = handle === 'start' ? zone.startWaypointIndex : zone.endWaypointIndex;
+          const frac = idx / (numCPs - 1);
+          const s = frac * splinePath.totalLength;
+          const pt = splinePath.getPoint(s);
+          const pc = fieldToCanvas(pt, cw, ch, transform);
+          if ((canvasX - pc.cx) ** 2 + (canvasY - pc.cy) ** 2 <= hitRadius * hitRadius) {
+            return { zoneId: zone.id, handle };
+          }
+        }
+      }
+      return null;
+    },
+    [rotationZones, splinePath, controlPoints.length, cw, ch, transform],
+  );
+
   // Convert mouse event to canvas coordinates (accounting for CSS vs canvas resolution)
   const getCanvasPos = useCallback(
     (e: React.MouseEvent): { cx: number; cy: number } => {
@@ -187,7 +240,7 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
     ctx.fillStyle = '#0a0a0f';
     ctx.fillRect(0, 0, cw, ch);
 
-    // Layer 0: Field background
+    // Layer 0: Field background (rotated 180° to match correct orientation)
     if (fieldImageRef.current) {
       // Compute where the full field maps to on the canvas with the current transform
       const topLeft = fieldToCanvas({ x: 0, y: FIELD_HEIGHT }, cw, ch, transform);
@@ -195,17 +248,23 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
       const drawW = bottomRight.cx - topLeft.cx;
       const drawH = bottomRight.cy - topLeft.cy;
 
+      const centerX = topLeft.cx + drawW / 2;
+      const centerY = topLeft.cy + drawH / 2;
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(Math.PI);
       ctx.drawImage(
         fieldImageRef.current,
         IMG_TOP_LEFT_X,
         IMG_TOP_LEFT_Y,
         IMG_FIELD_W,
         IMG_FIELD_H,
-        topLeft.cx,
-        topLeft.cy,
+        -drawW / 2,
+        -drawH / 2,
         drawW,
         drawH,
       );
+      ctx.restore();
     } else {
       ctx.fillStyle = '#2a2a2a';
       ctx.fillRect(0, 0, cw, ch);
@@ -214,12 +273,32 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
     // Layer 1: Grid
     Painters.drawGrid(ctx, cw, ch, transform, showGrid);
 
+    // Layer 1.5: Named point markers
+    Painters.drawNamedPoints(ctx, cw, ch, transform, namedPoints, controlPointRefs);
+
+    // Layer 1.6: Inactive paths
+    inactivePaths.forEach((ip, idx) => {
+      if (ip.spline) {
+        Painters.drawInactivePath(ctx, cw, ch, transform, ip.spline, ip.controlPoints, ip.name, idx);
+      }
+    });
+
     // Layer 2: Connection lines
     Painters.drawConnectionLines(ctx, cw, ch, transform, controlPoints);
+
+    // Layer 2.5: Constraint zones (behind the path line)
+    if (splinePath && constraintZones.length > 0) {
+      Painters.drawConstraintZones(ctx, cw, ch, transform, splinePath, constraintZones);
+    }
 
     // Layer 3: Spline path
     if (splinePath) {
       Painters.drawPath(ctx, cw, ch, transform, splinePath);
+    }
+
+    // Layer 3.5: Rotation zones
+    if (splinePath && rotationZones.length > 0) {
+      Painters.drawRotationZones(ctx, cw, ch, transform, splinePath, rotationZones, selectedZoneId);
     }
 
     // Layer 4: Scrubber ghost (visible whenever scrubber is active, not just during playback)
@@ -248,29 +327,14 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
     // Layer 5: Heading arrows
     Painters.drawHeadingArrows(ctx, cw, ch, transform, controlPoints, headingWaypoints);
 
-    // Layer 6: Ghost preview point — neon green glow
-    if (ghostPoint && dragging === null) {
-      const { cx: gx, cy: gy } = fieldToCanvas(ghostPoint, cw, ch, transform);
-      ctx.save();
-      ctx.shadowColor = '#00FFaa';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(gx, gy, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = 'rgba(0, 255, 170, 0.2)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0, 255, 170, 0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // Layer 7: Control points (drawn last so they're on top)
+    // Layer 6: Control points (drawn last so they're on top)
     Painters.drawControlPoints(
       ctx,
       cw,
       ch,
       transform,
       controlPoints,
+      controlPointRefs,
       selectedPointIndex,
       hoveredPointIndex,
     );
@@ -287,14 +351,19 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
     showMinimap,
     showWaypointGhosts,
     controlPoints,
+    controlPointRefs,
+    namedPoints,
     headingWaypoints,
+    constraintZones,
+    rotationZones,
+    selectedZoneId,
     selectedPointIndex,
     hoveredPointIndex,
     splinePath,
     scrubberDistance,
     scrubberHeading,
     playbackState,
-    ghostPoint,
+    inactivePaths,
     dragging,
     imageLoaded,
     robotLength,
@@ -329,17 +398,46 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
 
       // Left click
       const { cx, cy } = getCanvasPos(e);
+
+      // Check zone handles/targets first
+      const zoneHit = hitTestZone(cx, cy);
+      if (zoneHit) {
+        setZoneDrag(zoneHit);
+        selectZone(zoneHit.zoneId);
+        selectPoint(null);
+        return;
+      }
+
       const hit = hitTest(cx, cy);
 
       if (hit !== null) {
         setDragging(hit);
         selectPoint(hit);
+        selectZone(null);
       } else {
+        // Check if clicking near an inactive path to switch to it
         let fieldPt = canvasToField(cx, cy, cw, ch, transform);
-        fieldPt = clampToField(fieldPt);
-        fieldPt = maybeSnap(fieldPt);
-        addPoint(fieldPt);
-        selectPoint(controlPoints.length); // Select newly added point
+        let switched = false;
+        for (const ip of inactivePaths) {
+          if (ip.spline) {
+            const s = ip.spline.getClosestPointS(fieldPt);
+            const closest = ip.spline.getPoint(s);
+            const dist = Math.sqrt((fieldPt.x - closest.x) ** 2 + (fieldPt.y - closest.y) ** 2);
+            if (dist < 0.3) {
+              setActivePath(ip.name);
+              switched = true;
+              break;
+            }
+          }
+        }
+        if (!switched) {
+          let fieldPt = canvasToField(cx, cy, cw, ch, transform);
+          fieldPt = clampToField(fieldPt);
+          fieldPt = maybeSnap(fieldPt);
+          addPoint(fieldPt);
+          selectPoint(controlPoints.length);
+          selectZone(null);
+        }
       }
     },
     [
@@ -347,13 +445,17 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
       hideContextMenu,
       getCanvasPos,
       hitTest,
+      hitTestZone,
+      addPoint,
+      controlPoints.length,
       selectPoint,
+      selectZone,
+      maybeSnap,
       cw,
       ch,
       transform,
-      maybeSnap,
-      addPoint,
-      controlPoints.length,
+      inactivePaths,
+      setActivePath,
     ],
   );
 
@@ -376,13 +478,44 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
 
       const { cx, cy } = getCanvasPos(e);
 
+      // Dragging a zone handle/target
+      if (zoneDrag !== null && splinePath) {
+        let fieldPt = canvasToField(cx, cy, cw, ch, transform);
+        fieldPt = clampToField(fieldPt);
+        const numCPs = controlPoints.length;
+
+        if (zoneDrag.handle === 'target') {
+          updateRotationZone(zoneDrag.zoneId, { targetPoint: fieldPt });
+        } else {
+          // Snap to path and convert to waypoint index
+          const s = splinePath.getClosestPointS(fieldPt);
+          const waypointIndex = Math.max(0, Math.min(numCPs - 1, (s / splinePath.totalLength) * (numCPs - 1)));
+          if (zoneDrag.handle === 'start') {
+            updateRotationZone(zoneDrag.zoneId, { startWaypointIndex: waypointIndex });
+          } else {
+            updateRotationZone(zoneDrag.zoneId, { endWaypointIndex: waypointIndex });
+          }
+        }
+        return;
+      }
+
       // Dragging a point
       if (dragging !== null) {
         let fieldPt = canvasToField(cx, cy, cw, ch, transform);
         fieldPt = clampToField(fieldPt);
         fieldPt = maybeSnap(fieldPt);
         movePoint(dragging, fieldPt);
-        setGhostPoint(null);
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          setTooltip({
+            visible: true,
+            x: e.clientX - rect.left + 16,
+            y: e.clientY - rect.top - 28,
+            fieldX: fieldPt.x,
+            fieldY: fieldPt.y,
+          });
+        }
         return;
       }
 
@@ -390,25 +523,17 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
       const hit = hitTest(cx, cy);
       setHoveredPointIndex(hit);
 
-      // Update ghost preview and tooltip
+      // Coordinate tooltip
       let fieldPt = canvasToField(cx, cy, cw, ch, transform);
       fieldPt = clampToField(fieldPt);
       const snapped = maybeSnap(fieldPt);
-
-      if (hit === null) {
-        setGhostPoint(snapped);
-      } else {
-        setGhostPoint(null);
-      }
-
-      // Coordinate tooltip
       const canvas = canvasRef.current;
       if (canvas) {
         const rect = canvas.getBoundingClientRect();
         setTooltip({
           visible: true,
           x: e.clientX - rect.left + 16,
-          y: e.clientY - rect.top - 8,
+          y: e.clientY - rect.top - 28,
           fieldX: snapped.x,
           fieldY: snapped.y,
         });
@@ -421,6 +546,10 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
       ch,
       getCanvasPos,
       dragging,
+      zoneDrag,
+      splinePath,
+      controlPoints.length,
+      updateRotationZone,
       transform,
       maybeSnap,
       movePoint,
@@ -436,14 +565,15 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
         return;
       }
       setDragging(null);
+      setZoneDrag(null);
     },
     [],
   );
 
   const handleMouseLeave = useCallback(() => {
     setDragging(null);
+    setZoneDrag(null);
     setMiddleDragging(false);
-    setGhostPoint(null);
     setTooltip((prev) => ({ ...prev, visible: false }));
     setHoveredPointIndex(null);
   }, [setHoveredPointIndex]);
@@ -500,9 +630,11 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
 
   // Cursor style
   let cursor = 'crosshair';
-  if (dragging !== null) cursor = 'grabbing';
+  if (dragging !== null || zoneDrag !== null) cursor = 'grabbing';
   else if (middleDragging) cursor = 'grabbing';
   else if (hoveredPointIndex !== null) cursor = 'grab';
+
+  const viewMoved = zoom !== 1.0 || panOffset.x !== 0 || panOffset.y !== 0;
 
   return (
     <div
@@ -545,6 +677,25 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
         >
           ({tooltip.fieldX.toFixed(2)}, {tooltip.fieldY.toFixed(2)})
         </div>
+      )}
+
+      {/* Reset view button — only visible when zoomed/panned */}
+      {viewMoved && (
+        <button
+          onClick={resetView}
+          className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded text-xs font-mono transition-opacity"
+          style={{
+            background: 'rgba(5, 5, 5, 0.85)',
+            color: '#00FFaa',
+            border: '1px solid rgba(0, 255, 170, 0.2)',
+            boxShadow: '0 0 12px rgba(0, 255, 170, 0.08)',
+            zIndex: 10,
+          }}
+          title="Reset view (0)"
+        >
+          <Maximize size={12} />
+          Reset View
+        </button>
       )}
 
       {/* Context menu */}

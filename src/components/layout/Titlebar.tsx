@@ -1,4 +1,5 @@
-import { Timer, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Timer, PanelRightClose, PanelRightOpen, ChevronDown } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useEditorStore } from '../../stores/editorStore';
 import type { PathStats } from '../../math/ProfileAnalytics';
@@ -14,12 +15,34 @@ const navLinks = [
   { to: '/downloads', label: 'Downloads' },
 ];
 
+const docsLinks = [
+  { to: '/docs/getting-started', label: 'Getting Started' },
+  { to: '/docs/robot-integration', label: 'Robot Integration' },
+  { to: '/docs/editor-guide', label: 'Editor Guide' },
+];
+
 export function Titlebar({ stats, showSidebar = false }: TitlebarProps) {
   const sidebarCollapsed = useEditorStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useEditorStore((s) => s.toggleSidebar);
   const scrubberDistance = useEditorStore((s) => s.scrubberDistance);
   const location = useLocation();
   const isEditor = location.pathname === '/';
+  const isDocsActive = location.pathname.startsWith('/docs');
+
+  const [docsOpen, setDocsOpen] = useState(false);
+  const docsRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!docsOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (docsRef.current && !docsRef.current.contains(e.target as Node)) {
+        setDocsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [docsOpen]);
 
   return (
     <div className="h-10 flex-shrink-0 flex items-center justify-between px-5 bg-[#050505] border-b border-white/[0.04]">
@@ -44,6 +67,44 @@ export function Titlebar({ stats, showSidebar = false }: TitlebarProps) {
               {link.label}
             </NavLink>
           ))}
+
+          {/* Docs dropdown */}
+          <div ref={docsRef} className="relative">
+            <button
+              onClick={() => setDocsOpen((prev) => !prev)}
+              className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium tracking-wide rounded transition-all ${
+                isDocsActive
+                  ? 'text-accent-green bg-accent-green/[0.06]'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              Docs
+              <ChevronDown
+                size={10}
+                className={`transition-transform ${docsOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {docsOpen && (
+              <div className="absolute top-full left-0 mt-1 z-50 min-w-[160px] rounded-lg border border-accent-green/10 bg-zinc-950/95 backdrop-blur-sm shadow-lg shadow-accent-green/5 py-1 animate-fadeIn">
+                {docsLinks.map((link) => (
+                  <NavLink
+                    key={link.to}
+                    to={link.to}
+                    onClick={() => setDocsOpen(false)}
+                    className={({ isActive }) =>
+                      `block px-3 py-1.5 text-[11px] transition-colors ${
+                        isActive
+                          ? 'text-accent-green bg-accent-green/[0.06]'
+                          : 'text-zinc-400 hover:text-accent-green hover:bg-accent-green/[0.04]'
+                      }`
+                    }
+                  >
+                    {link.label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
         </nav>
 
         {/* Stats (editor only) */}

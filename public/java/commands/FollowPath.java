@@ -11,11 +11,13 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj2.command.Command;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
+import frc.robot.utils.path.PathData;
 import frc.robot.utils.path.ProjectionResult;
 import frc.robot.utils.path.RotationSupplier;
 import frc.robot.utils.path.SplinePath;
 import frc.robot.utils.path.VelocityConstraints;
 import frc.robot.utils.path.VelocityProfile;
+import java.util.List;
 import java.util.function.DoubleSupplier;
 import org.littletonrobotics.junction.Logger;
 
@@ -59,6 +61,14 @@ public class FollowPath extends Command {
   /** Number of poses to sample for the logged path trajectory. */
   private static final int PATH_LOG_SAMPLES = 50;
 
+  // Per-axis speed overrides (null = use path-computed value)
+  private DoubleSupplier overrideVx = null;
+  private DoubleSupplier overrideVy = null;
+  private DoubleSupplier overrideOmega = null;
+  private boolean limitOverrideVx = true;
+  private boolean limitOverrideVy = true;
+  private boolean limitOverrideOmega = true;
+
   // State tracking between execute cycles (same pattern as DriveToPoint/OrbitDrive)
   private ChassisSpeeds lastCommandedVelocity = new ChassisSpeeds();
   private double lastTime;
@@ -89,9 +99,25 @@ public class FollowPath extends Command {
    */
   public FollowPath(
       CommandSwerveDrivetrain swerve, SplinePath path, VelocityConstraints constraints) {
+    this(swerve, path, constraints, List.of());
+  }
+
+  /**
+   * Creates a FollowPath command with specified constraints and constraint zones.
+   *
+   * @param swerve The swerve drivetrain
+   * @param path The spline path to follow
+   * @param constraints Velocity and acceleration limits
+   * @param constraintZones Per-zone overrides for velocity and acceleration
+   */
+  public FollowPath(
+      CommandSwerveDrivetrain swerve,
+      SplinePath path,
+      VelocityConstraints constraints,
+      List<PathData.ConstraintZone> constraintZones) {
     this.swerve = swerve;
     this.path = path;
-    this.velocityProfile = new VelocityProfile(path, constraints);
+    this.velocityProfile = new VelocityProfile(path, constraints, constraintZones);
     this.endVelocity = constraints.getEndVelocity();
     addRequirements(swerve);
   }
@@ -201,6 +227,88 @@ public class FollowPath extends Command {
     return this;
   }
 
+  /**
+   * Overrides the field-relative X velocity with a custom supplier. The output still passes
+   * through AccelerationLimiter (friction, motor, jerk limits apply).
+   *
+   * @param supplier Supplies desired field-relative X velocity in m/s
+   * @return This command for chaining
+   */
+  public FollowPath overrideXSpeedWithLimits(DoubleSupplier supplier) {
+    this.overrideVx = supplier;
+    this.limitOverrideVx = true;
+    return this;
+  }
+
+  /**
+   * Overrides the field-relative Y velocity with a custom supplier. The output still passes
+   * through AccelerationLimiter (friction, motor, jerk limits apply).
+   *
+   * @param supplier Supplies desired field-relative Y velocity in m/s
+   * @return This command for chaining
+   */
+  public FollowPath overrideYSpeedWithLimits(DoubleSupplier supplier) {
+    this.overrideVy = supplier;
+    this.limitOverrideVy = true;
+    return this;
+  }
+
+  /**
+   * Overrides angular velocity with a custom supplier. The output still passes through
+   * AccelerationLimiter (friction, motor, jerk limits apply). If a RotationSupplier is also set via
+   * {@link #withRotationSupplier}, this override takes precedence.
+   *
+   * @param supplier Supplies desired angular velocity in rad/s
+   * @return This command for chaining
+   */
+  public FollowPath overrideRotSpeedWithLimits(DoubleSupplier supplier) {
+    this.overrideOmega = supplier;
+    this.limitOverrideOmega = true;
+    return this;
+  }
+
+  /**
+   * Overrides the field-relative X velocity with a custom supplier. Bypasses all acceleration
+   * limits on this axis — the caller is responsible for not exceeding hardware limits. The
+   * unlimited axis does not consume friction budget from the remaining limited axes.
+   *
+   * @param supplier Supplies desired field-relative X velocity in m/s
+   * @return This command for chaining
+   */
+  public FollowPath overrideXSpeed(DoubleSupplier supplier) {
+    this.overrideVx = supplier;
+    this.limitOverrideVx = false;
+    return this;
+  }
+
+  /**
+   * Overrides the field-relative Y velocity with a custom supplier. Bypasses all acceleration
+   * limits on this axis — the caller is responsible for not exceeding hardware limits. The
+   * unlimited axis does not consume friction budget from the remaining limited axes.
+   *
+   * @param supplier Supplies desired field-relative Y velocity in m/s
+   * @return This command for chaining
+   */
+  public FollowPath overrideYSpeed(DoubleSupplier supplier) {
+    this.overrideVy = supplier;
+    this.limitOverrideVy = false;
+    return this;
+  }
+
+  /**
+   * Overrides angular velocity with a custom supplier. Bypasses all acceleration limits on this
+   * axis — the caller is responsible for not exceeding hardware limits. Rotation budget allocation
+   * is skipped entirely (rotation does not reduce translation budget).
+   *
+   * @param supplier Supplies desired angular velocity in rad/s
+   * @return This command for chaining
+   */
+  public FollowPath overrideRotSpeed(DoubleSupplier supplier) {
+    this.overrideOmega = supplier;
+    this.limitOverrideOmega = false;
+    return this;
+  }
+
   // ---- Command lifecycle ----
 
   @Override
@@ -285,13 +393,25 @@ public class FollowPath extends Command {
     // Step 6: Combine path velocity + correction
     Translation2d desiredVel = direction.times(profiledSpeed).plus(correctionVec);
 
-    // Step 7: Get rotation with friction budget allocation
-    // Same pattern as DriveToPointUtils.calculateAvailableLinearAccel():
-    // reserve angular budget first, give remainder to translation via Pythagorean split.
-    double omega = 0.0;
-    if (rotationSupplier != null) {
-      omega = rotationSupplier.getOmega(robotPose, sRobot, tangent);
+    // Step 6.5: Apply per-axis overrides
+    double vx = (overrideVx != null) ? overrideVx.getAsDouble() : desiredVel.getX();
+    double vy = (overrideVy != null) ? overrideVy.getAsDouble() : desiredVel.getY();
+    boolean vxUnlimited = (overrideVx != null && !limitOverrideVx);
+    boolean vyUnlimited = (overrideVy != null && !limitOverrideVy);
+    boolean omegaUnlimited = (overrideOmega != null && !limitOverrideOmega);
 
+    // Step 7: Determine omega (override > rotationSupplier > 0) and rotation budget allocation
+    double omega;
+    if (overrideOmega != null) {
+      omega = overrideOmega.getAsDouble();
+    } else if (rotationSupplier != null) {
+      omega = rotationSupplier.getOmega(robotPose, sRobot, tangent);
+    } else {
+      omega = 0.0;
+    }
+
+    // Rotation budget allocation: only when omega goes through limits
+    if (!omegaUnlimited && omega != 0.0) {
       // Cap angular contribution to configured fraction of friction budget
       double maxAngularContrib = maxRotationBudgetFraction * AccelerationLimiter.MAX_FRICTION_ACCEL;
       double angularContrib = Math.abs(omega) * AccelerationLimiter.DRIVE_BASE_RADIUS;
@@ -300,21 +420,39 @@ public class FollowPath extends Command {
         angularContrib = maxAngularContrib;
       }
 
-      // Scale translation speed to leave room for rotation in friction budget
-      // Pythagorean: available = sqrt(max^2 - angular^2) / max
+      // Scale limited translation axes to leave room for rotation in friction budget
       double maxFriction = AccelerationLimiter.MAX_FRICTION_ACCEL;
       double availableFraction =
           Math.sqrt(
               Math.max(0, 1.0 - (angularContrib * angularContrib) / (maxFriction * maxFriction)));
-      desiredVel = desiredVel.times(availableFraction);
+      if (!vxUnlimited) vx *= availableFraction;
+      if (!vyUnlimited) vy *= availableFraction;
     }
 
-    // Step 8: Normalize and apply AccelerationLimiter (NEVER bypassed)
+    // Step 8: Build limiter inputs — zero out unlimited axes so they don't steal friction budget
+    double limitedVx = vxUnlimited ? 0 : vx;
+    double limitedVy = vyUnlimited ? 0 : vy;
+    double limitedOmega = omegaUnlimited ? 0 : omega;
+    double currentVxForLimiter = vxUnlimited ? 0 : lastCommandedVelocity.vxMetersPerSecond;
+    double currentVyForLimiter = vyUnlimited ? 0 : lastCommandedVelocity.vyMetersPerSecond;
+    double currentOmegaForLimiter =
+        omegaUnlimited ? 0 : lastCommandedVelocity.omegaRadiansPerSecond;
+
     ChassisSpeeds targetSpeeds =
         AccelerationLimiter.normalizeSpeeds(
-            new ChassisSpeeds(desiredVel.getX(), desiredVel.getY(), omega));
+            new ChassisSpeeds(limitedVx, limitedVy, limitedOmega));
+    ChassisSpeeds limitedOutput =
+        AccelerationLimiter.integrateVelocity(
+            new ChassisSpeeds(currentVxForLimiter, currentVyForLimiter, currentOmegaForLimiter),
+            targetSpeeds,
+            dt);
+
+    // Inject raw unlimited values back into the output
     ChassisSpeeds output =
-        AccelerationLimiter.integrateVelocity(lastCommandedVelocity, targetSpeeds, dt);
+        new ChassisSpeeds(
+            vxUnlimited ? vx : limitedOutput.vxMetersPerSecond,
+            vyUnlimited ? vy : limitedOutput.vyMetersPerSecond,
+            omegaUnlimited ? omega : limitedOutput.omegaRadiansPerSecond);
     swerve.setControl(request.withSpeeds(output));
 
     // Update state for next cycle

@@ -3,6 +3,8 @@ import { MapPin } from 'lucide-react';
 import type { SplinePath } from '../../math/SplinePath';
 import type { VelocityProfile } from '../../math/VelocityProfile';
 import type { TimeEstimator } from '../../math/TimeEstimator';
+import { NamedPointsPanel } from './NamedPointsPanel';
+import { HeadingEditor } from './HeadingEditor';
 
 interface PointInfoProps {
   splinePath: SplinePath | null;
@@ -32,13 +34,9 @@ export function PointInfo({ splinePath, velocityProfile, timeEstimator }: PointI
   const selectedPointIndex = usePathStore((s) => s.selectedPointIndex);
   const movePoint = usePathStore((s) => s.movePoint);
 
-  if (selectedPointIndex === null || selectedPointIndex >= controlPoints.length) {
-    return (
-      <p className="text-xs text-zinc-600 italic">Select a point to view info</p>
-    );
-  }
+  const hasSelection = selectedPointIndex !== null && selectedPointIndex < controlPoints.length;
 
-  const point = controlPoints[selectedPointIndex];
+  const point = hasSelection ? controlPoints[selectedPointIndex] : null;
   const totalPoints = controlPoints.length;
 
   // Compute derived values if we have a built spline
@@ -47,7 +45,7 @@ export function PointInfo({ splinePath, velocityProfile, timeEstimator }: PointI
   let velocity: number | null = null;
   let curvature: number | null = null;
 
-  if (splinePath && totalPoints >= 2) {
+  if (hasSelection && splinePath && totalPoints >= 2) {
     distance = getDistanceAtControlPoint(splinePath, selectedPointIndex, totalPoints);
     curvature = splinePath.getCurvature(distance);
 
@@ -61,60 +59,78 @@ export function PointInfo({ splinePath, velocityProfile, timeEstimator }: PointI
 
   const handleXChange = (value: string) => {
     const num = parseFloat(value);
-    if (!isNaN(num)) {
+    if (!isNaN(num) && hasSelection && point) {
       movePoint(selectedPointIndex, { x: num, y: point.y });
     }
   };
 
   const handleYChange = (value: string) => {
     const num = parseFloat(value);
-    if (!isNaN(num)) {
+    if (!isNaN(num) && hasSelection && point) {
       movePoint(selectedPointIndex, { x: point.x, y: num });
     }
   };
 
   return (
     <div>
-      <div className="text-xs text-zinc-400 mb-3 flex items-center gap-1.5">
-        <MapPin size={12} className="text-accent-green/60" />
-        Point {selectedPointIndex + 1} of {totalPoints}
-      </div>
+      {hasSelection && point ? (
+        <>
+          <div className="text-xs text-zinc-400 mb-3 flex items-center gap-1.5">
+            <MapPin size={12} className="text-accent-green/60" />
+            Point {selectedPointIndex + 1} of {totalPoints}
+          </div>
 
-      {/* Editable coordinates */}
-      <div className="space-y-2 mb-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-accent-green/40 w-4 font-mono">X</span>
-          <input
-            type="number"
-            step={0.01}
-            value={parseFloat(point.x.toFixed(3))}
-            onChange={(e) => handleXChange(e.target.value)}
-            className="flex-1"
-          />
-          <span className="text-[10px] text-zinc-600">m</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-accent-green/40 w-4 font-mono">Y</span>
-          <input
-            type="number"
-            step={0.01}
-            value={parseFloat(point.y.toFixed(3))}
-            onChange={(e) => handleYChange(e.target.value)}
-            className="flex-1"
-          />
-          <span className="text-[10px] text-zinc-600">m</span>
-        </div>
-      </div>
+          {/* Editable coordinates */}
+          <div className="space-y-2 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-accent-green/40 w-4 font-mono">X</span>
+              <input
+                type="number"
+                step={0.01}
+                value={parseFloat(point.x.toFixed(3))}
+                onChange={(e) => handleXChange(e.target.value)}
+                className="flex-1"
+              />
+              <span className="text-[10px] text-zinc-600">m</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-accent-green/40 w-4 font-mono">Y</span>
+              <input
+                type="number"
+                step={0.01}
+                value={parseFloat(point.y.toFixed(3))}
+                onChange={(e) => handleYChange(e.target.value)}
+                className="flex-1"
+              />
+              <span className="text-[10px] text-zinc-600">m</span>
+            </div>
+          </div>
 
-      {/* Derived info */}
-      {splinePath && (
-        <div className="border-t border-white/[0.04] pt-2 space-y-1">
-          <InfoRow label="Distance" value={distance} unit="m" decimals={3} />
-          <InfoRow label="Time" value={time} unit="s" decimals={3} />
-          <InfoRow label="Velocity" value={velocity} unit="m/s" decimals={2} />
-          <InfoRow label="Curvature" value={curvature} unit="1/m" decimals={3} />
-        </div>
+          {/* Derived info */}
+          {splinePath && (
+            <div className="border-t border-white/[0.04] pt-2 space-y-1">
+              <InfoRow label="Distance" value={distance} unit="m" decimals={3} />
+              <InfoRow label="Time" value={time} unit="s" decimals={3} />
+              <InfoRow label="Velocity" value={velocity} unit="m/s" decimals={2} />
+              <InfoRow label="Curvature" value={curvature} unit="1/m" decimals={3} />
+            </div>
+          )}
+
+          {/* Heading */}
+          <div className="border-t border-white/[0.04] pt-3 mt-3">
+            <h4 className="text-[10px] font-light tracking-wide text-accent-green/40 mb-2">HEADING</h4>
+            <HeadingEditor />
+          </div>
+        </>
+      ) : (
+        <p className="text-xs text-zinc-600 italic">Select a point to view info</p>
       )}
+
+      {/* Named points */}
+      <div className="border-t border-white/[0.04] pt-3 mt-3">
+        <h4 className="text-[10px] font-light tracking-wide text-amber-400/40 mb-2">NAMED POINTS</h4>
+        <NamedPointsPanel />
+      </div>
     </div>
   );
 }

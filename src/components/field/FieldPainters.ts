@@ -1,6 +1,9 @@
 import {
   Point,
+  NamedPoint,
   HeadingWaypoint,
+  ConstraintZone,
+  RotationZone,
   FIELD_WIDTH,
   FIELD_HEIGHT,
 } from '../../types';
@@ -10,8 +13,75 @@ import {
   getScale,
   type CanvasTransform,
 } from '../../utils/canvasTransform';
-import { curvatureToColor } from '../../utils/colors';
+import { curvatureToColor, drawOutlinedText } from '../../utils/colors';
 import { SplinePath } from '../../math/SplinePath';
+
+// ─── Inactive Path ──────────────────────────────────────────────────────────
+
+const INACTIVE_COLORS = [
+  'rgba(100, 140, 255, 0.25)',
+  'rgba(180, 100, 255, 0.25)',
+  'rgba(255, 140, 60, 0.25)',
+  'rgba(255, 80, 120, 0.25)',
+  'rgba(80, 220, 200, 0.25)',
+];
+
+export function drawInactivePath(
+  ctx: CanvasRenderingContext2D,
+  cw: number,
+  ch: number,
+  transform: CanvasTransform,
+  splinePath: SplinePath,
+  controlPoints: Point[],
+  label: string,
+  colorIndex: number,
+): void {
+  if (splinePath.totalLength <= 0) return;
+
+  const color = INACTIVE_COLORS[colorIndex % INACTIVE_COLORS.length];
+  const numSamples = Math.max(150, Math.floor(transform.zoom * 150));
+  const ds = splinePath.totalLength / numSamples;
+  const lineWidth = Math.max(1.5, Math.min(3, 2.5 / Math.sqrt(transform.zoom)));
+
+  // Draw spline
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  const start = fieldToCanvas(splinePath.getPoint(0), cw, ch, transform);
+  ctx.moveTo(start.cx, start.cy);
+  for (let i = 1; i <= numSamples; i++) {
+    const pt = fieldToCanvas(splinePath.getPoint(i * ds), cw, ch, transform);
+    ctx.lineTo(pt.cx, pt.cy);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Draw small dots for control points
+  const dotRadius = Math.max(3, Math.min(5, 4 / Math.sqrt(transform.zoom)));
+  for (const pt of controlPoints) {
+    const { cx, cy } = fieldToCanvas(pt, cw, ch, transform);
+    ctx.beginPath();
+    ctx.arc(cx, cy, dotRadius, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  // Label near start point
+  if (controlPoints.length > 0) {
+    const { cx, cy } = fieldToCanvas(controlPoints[0], cw, ch, transform);
+    const fontSize = Math.max(9, Math.min(13, 11 / Math.sqrt(transform.zoom)));
+    ctx.save();
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.fillStyle = color.replace(/[\d.]+\)$/, '0.6)');
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(label, cx + dotRadius + 4, cy - dotRadius - 2);
+    ctx.restore();
+  }
+}
 
 // ─── Grid ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +133,189 @@ export function drawGrid(
   ctx.stroke();
 }
 
+// ─── Constraint Zones ────────────────────────────────────────────────────────
+
+export function drawConstraintZones(
+  ctx: CanvasRenderingContext2D,
+  cw: number,
+  ch: number,
+  transform: CanvasTransform,
+  splinePath: SplinePath,
+  constraintZones: ConstraintZone[],
+): void {
+  if (constraintZones.length === 0 || splinePath.totalLength <= 0) return;
+
+  const lineWidth = Math.max(6, Math.min(16, 12 / Math.sqrt(transform.zoom)));
+  const numSamples = Math.max(200, Math.floor(transform.zoom * 200));
+  const ds = splinePath.totalLength / numSamples;
+
+  for (const zone of constraintZones) {
+    const startS = splinePath.getArcLengthAtWaypointIndex(zone.startWaypointIndex);
+    const endS = splinePath.getArcLengthAtWaypointIndex(zone.endWaypointIndex);
+
+    // Draw wider amber overlay along the zone
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 180, 0, 0.2)';
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = 'rgba(255, 180, 0, 0.15)';
+    ctx.shadowBlur = 8;
+
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i <= numSamples; i++) {
+      const s = i * ds;
+      if (s < startS || s > endS) {
+        if (started) break;
+        continue;
+      }
+      const pt = splinePath.getPoint(s);
+      const { cx, cy } = fieldToCanvas(pt, cw, ch, transform);
+      if (!started) {
+        ctx.moveTo(cx, cy);
+        started = true;
+      } else {
+        ctx.lineTo(cx, cy);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ─── Rotation Zones ─────────────────────────────────────────────────────────
+
+export function drawRotationZones(
+  ctx: CanvasRenderingContext2D,
+  cw: number,
+  ch: number,
+  transform: CanvasTransform,
+  splinePath: SplinePath,
+  rotationZones: RotationZone[],
+  selectedZoneId: string | null,
+): void {
+  if (rotationZones.length === 0 || splinePath.totalLength <= 0) return;
+
+  const numCPs = splinePath.controlPoints.length;
+  const lineWidth = Math.max(6, Math.min(16, 12 / Math.sqrt(transform.zoom)));
+  const numSamples = Math.max(200, Math.floor(transform.zoom * 200));
+  const ds = splinePath.totalLength / numSamples;
+  const handleSize = Math.max(5, Math.min(10, 8 / Math.sqrt(transform.zoom)));
+
+  for (const zone of rotationZones) {
+    const isSelected = zone.id === selectedZoneId;
+    const startFrac = zone.startWaypointIndex / (numCPs - 1);
+    const endFrac = zone.endWaypointIndex / (numCPs - 1);
+    const startS = startFrac * splinePath.totalLength;
+    const endS = endFrac * splinePath.totalLength;
+
+    const color = isSelected ? 'rgba(255, 153, 51, 0.4)' : 'rgba(255, 153, 51, 0.2)';
+    const glowAlpha = isSelected ? 0.3 : 0.15;
+
+    // Draw orange overlay along the zone segment
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = `rgba(255, 153, 51, ${glowAlpha})`;
+    ctx.shadowBlur = isSelected ? 12 : 8;
+
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i <= numSamples; i++) {
+      const s = i * ds;
+      if (s < startS || s > endS) {
+        if (started) break;
+        continue;
+      }
+      const pt = splinePath.getPoint(s);
+      const { cx, cy } = fieldToCanvas(pt, cw, ch, transform);
+      if (!started) {
+        ctx.moveTo(cx, cy);
+        started = true;
+      } else {
+        ctx.lineTo(cx, cy);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Boundary tick marks (drag handles)
+    for (const boundaryS of [startS, endS]) {
+      const pt = splinePath.getPoint(boundaryS);
+      const tan = splinePath.getTangent(boundaryS);
+      const { cx, cy } = fieldToCanvas(pt, cw, ch, transform);
+      // Perpendicular to path tangent (canvas Y is inverted)
+      const nx = tan.y;
+      const ny = tan.x;
+
+      ctx.save();
+      ctx.strokeStyle = isSelected ? '#FF9933' : 'rgba(255, 153, 51, 0.6)';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#FF9933';
+      ctx.shadowBlur = isSelected ? 8 : 4;
+      ctx.beginPath();
+      ctx.moveTo(cx - nx * handleSize * 1.5, cy - ny * handleSize * 1.5);
+      ctx.lineTo(cx + nx * handleSize * 1.5, cy + ny * handleSize * 1.5);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Aim line: dashed line from zone midpoint on path to target
+    const midS = (startS + endS) / 2;
+    const midPt = splinePath.getPoint(midS);
+    const midC = fieldToCanvas(midPt, cw, ch, transform);
+    const targetC = fieldToCanvas(zone.targetPoint, cw, ch, transform);
+
+    ctx.save();
+    ctx.strokeStyle = isSelected ? 'rgba(255, 153, 51, 0.5)' : 'rgba(255, 153, 51, 0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(midC.cx, midC.cy);
+    ctx.lineTo(targetC.cx, targetC.cy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Target point: bullseye
+    const targetAlpha = isSelected ? 1.0 : 0.6;
+    ctx.save();
+    ctx.strokeStyle = `rgba(255, 153, 51, ${targetAlpha})`;
+    ctx.fillStyle = `rgba(255, 153, 51, ${targetAlpha * 0.3})`;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#FF9933';
+    ctx.shadowBlur = isSelected ? 10 : 4;
+
+    // Outer ring
+    ctx.beginPath();
+    ctx.arc(targetC.cx, targetC.cy, handleSize * 1.2, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+
+    // Inner dot
+    ctx.beginPath();
+    ctx.arc(targetC.cx, targetC.cy, handleSize * 0.4, 0, 2 * Math.PI);
+    ctx.fillStyle = `rgba(255, 153, 51, ${targetAlpha})`;
+    ctx.fill();
+
+    // Crosshair lines
+    ctx.beginPath();
+    ctx.moveTo(targetC.cx - handleSize * 1.8, targetC.cy);
+    ctx.lineTo(targetC.cx - handleSize * 0.6, targetC.cy);
+    ctx.moveTo(targetC.cx + handleSize * 0.6, targetC.cy);
+    ctx.lineTo(targetC.cx + handleSize * 1.8, targetC.cy);
+    ctx.moveTo(targetC.cx, targetC.cy - handleSize * 1.8);
+    ctx.lineTo(targetC.cx, targetC.cy - handleSize * 0.6);
+    ctx.moveTo(targetC.cx, targetC.cy + handleSize * 0.6);
+    ctx.lineTo(targetC.cx, targetC.cy + handleSize * 1.8);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 // ─── Path ───────────────────────────────────────────────────────────────────
 
 export function drawPath(
@@ -81,6 +334,26 @@ export function drawPath(
   // Scale line width inversely so it doesn't get too thick when zoomed or too thin when zoomed out
   const lineWidth = Math.max(1.5, Math.min(4, 3 / Math.sqrt(transform.zoom)));
 
+  // Build a shared Path2D for shadow + bloom (avoids duplicating polyline loop)
+  const pathLine = new Path2D();
+  const start = fieldToCanvas(splinePath.getPoint(0), cw, ch, transform);
+  pathLine.moveTo(start.cx, start.cy);
+  for (let i = 1; i <= numSamples; i++) {
+    const pt = fieldToCanvas(splinePath.getPoint(i * ds), cw, ch, transform);
+    pathLine.lineTo(pt.cx, pt.cy);
+  }
+
+  // ── SHADOW PASS: soft dark aura for contrast on light backgrounds ──
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.01)';
+  ctx.lineWidth = lineWidth * 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+  ctx.shadowBlur = 10;
+  ctx.stroke(pathLine);
+  ctx.restore();
+
   // ── BLOOM PASS: wider, dimmer neon green glow behind the path ──
   ctx.save();
   ctx.globalAlpha = 0.15;
@@ -88,14 +361,7 @@ export function drawPath(
   ctx.lineWidth = lineWidth * 4;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.beginPath();
-  const bloomStart = fieldToCanvas(splinePath.getPoint(0), cw, ch, transform);
-  ctx.moveTo(bloomStart.cx, bloomStart.cy);
-  for (let i = 1; i <= numSamples; i++) {
-    const pt = fieldToCanvas(splinePath.getPoint(i * ds), cw, ch, transform);
-    ctx.lineTo(pt.cx, pt.cy);
-  }
-  ctx.stroke();
+  ctx.stroke(pathLine);
   ctx.restore();
 
   // ── MAIN PASS: curvature-colored segments ──
@@ -148,6 +414,61 @@ export function drawPath(
   }
 }
 
+// ─── Named Point Markers ─────────────────────────────────────────────────────
+
+export function drawNamedPoints(
+  ctx: CanvasRenderingContext2D,
+  cw: number,
+  ch: number,
+  transform: CanvasTransform,
+  namedPoints: Record<string, NamedPoint>,
+  controlPointRefs: (string | null)[],
+): void {
+  const points = Object.values(namedPoints);
+  if (points.length === 0) return;
+
+  // Names already shown by drawControlPoints — skip to avoid duplicates
+  const linkedNames = new Set(controlPointRefs.filter((r): r is string => r !== null));
+
+  const size = Math.max(4, Math.min(7, 6 / Math.sqrt(transform.zoom)));
+  const fontSize = Math.max(14, Math.min(20, 18 / Math.sqrt(transform.zoom)));
+
+  for (const np of points) {
+    const { cx, cy } = fieldToCanvas(np, cw, ch, transform);
+    const isMirror = np.name.endsWith(' (Mirror)');
+    const alpha = isMirror ? 0.25 : 0.5;
+
+    // Diamond marker with soft dark shadow
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 179, 0, ${alpha * 0.4})`;
+    ctx.strokeStyle = `rgba(255, 179, 0, ${alpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - size);
+    ctx.lineTo(cx + size, cy);
+    ctx.lineTo(cx, cy + size);
+    ctx.lineTo(cx - size, cy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // Name label (only for primary points that aren't currently linked
+    // on the active path — linked points already show the name via
+    // drawControlPoints, so skip to avoid duplicate text)
+    if (!isMirror && !linkedNames.has(np.name)) {
+      ctx.save();
+      ctx.font = `${fontSize}px monospace`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      drawOutlinedText(ctx, np.name, cx + size + 3, cy - size, `rgba(255, 179, 0, ${alpha * 0.8})`);
+      ctx.restore();
+    }
+  }
+}
+
 // ─── Control Points ─────────────────────────────────────────────────────────
 
 export function drawControlPoints(
@@ -156,6 +477,7 @@ export function drawControlPoints(
   ch: number,
   transform: CanvasTransform,
   controlPoints: Point[],
+  controlPointRefs: (string | null)[],
   selectedIndex: number | null,
   hoveredIndex: number | null,
 ): void {
@@ -174,6 +496,7 @@ export function drawControlPoints(
     const isHovered = i === hoveredIndex;
     const isFirst = i === 0;
     const isLast = i === controlPoints.length - 1;
+    const ref = controlPointRefs[i] || null;
 
     let radius = baseRadius;
     if (isSelected) radius = selectedRadius;
@@ -194,10 +517,26 @@ export function drawControlPoints(
       ctx.restore();
     }
 
+    // Amber ring for linked points
+    if (ref) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius + 3, 0, 2 * Math.PI);
+      ctx.strokeStyle = 'rgba(255, 179, 0, 0.6)';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#FFB300';
+      ctx.shadowBlur = 6;
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.save();
+    // Soft dark shadow for contrast on light backgrounds
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 8;
     if (isFirst) {
       // Neon green diamond for first point
-      ctx.fillStyle = '#00FFaa';
+      ctx.fillStyle = ref ? '#FFB300' : '#00FFaa';
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -209,17 +548,21 @@ export function drawControlPoints(
       ctx.fill();
       ctx.stroke();
     } else if (isLast) {
-      // Neon pink-red square for last point
-      ctx.fillStyle = '#FF3366';
+      // Neon pink-red square for last point (amber if linked)
+      ctx.fillStyle = ref ? '#FFB300' : '#FF3366';
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
       ctx.lineWidth = 1.5;
       ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
       ctx.strokeRect(cx - radius, cy - radius, radius * 2, radius * 2);
     } else {
-      // Subtle white circle for interior points
+      // Circle for interior points (amber-tinted if linked)
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
-      ctx.fillStyle = isHovered ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.7)';
+      if (ref) {
+        ctx.fillStyle = isHovered ? 'rgba(255, 199, 50, 0.95)' : 'rgba(255, 179, 0, 0.8)';
+      } else {
+        ctx.fillStyle = isHovered ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.7)';
+      }
       ctx.fill();
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
       ctx.lineWidth = 1.5;
@@ -227,12 +570,23 @@ export function drawControlPoints(
     }
     ctx.restore();
 
-    // Index label
-    ctx.fillStyle = isFirst || isLast ? '#000' : '#000';
+    // Label: show name for linked points, index for regular
+    ctx.fillStyle = '#000';
     ctx.font = `bold ${fontSize}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(i), cx, cy);
+
+    // Show named point name above the point if linked
+    if (ref) {
+      const nameFontSize = Math.max(14, Math.min(20, 18 / Math.sqrt(transform.zoom)));
+      ctx.save();
+      ctx.font = `${nameFontSize}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      drawOutlinedText(ctx, ref, cx, cy - radius - 4, 'rgba(255, 179, 0, 0.8)');
+      ctx.restore();
+    }
   });
 }
 
@@ -264,18 +618,21 @@ export function drawHeadingArrows(
     // Canvas Y is flipped relative to field Y
     const tipY = cy - Math.sin(rad) * arrowLen;
 
+    // Arrow line — neon cyan with dark shadow + glow
+    const angle = Math.atan2(tipY - cy, tipX - cx);
+
     ctx.save();
     ctx.strokeStyle = '#00DDFF';
     ctx.lineWidth = 2.5;
-    ctx.shadowColor = '#00DDFF';
-    ctx.shadowBlur = 6;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(tipX, tipY);
     ctx.stroke();
 
     // Arrowhead
-    const angle = Math.atan2(tipY - cy, tipX - cx);
     ctx.beginPath();
     ctx.moveTo(tipX, tipY);
     ctx.lineTo(tipX - headLen * Math.cos(angle - 0.4), tipY - headLen * Math.sin(angle - 0.4));
@@ -284,12 +641,11 @@ export function drawHeadingArrows(
     ctx.stroke();
     ctx.restore();
 
-    // Degree label
-    ctx.fillStyle = '#00DDFF';
+    // Degree label with outline
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(`${hw.degrees.toFixed(0)}`, tipX, tipY - 4);
+    drawOutlinedText(ctx, `${hw.degrees.toFixed(0)}`, tipX, tipY - 4, '#00DDFF');
   });
 }
 
@@ -347,14 +703,14 @@ export function drawScrubberGhost(
   ctx.translate(cx, cy);
   ctx.rotate(-rot); // Canvas rotation is CW, field rotation is CCW
 
-  // Neon green robot outline
+  // Neon green robot outline with dark shadow for contrast
   ctx.fillStyle = 'rgba(0, 255, 170, 0.08)';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+  ctx.shadowBlur = 8;
   ctx.fillRect(-rw / 2, -rh / 2, rw, rh);
 
   ctx.strokeStyle = 'rgba(0, 255, 170, 0.35)';
   ctx.lineWidth = 2;
-  ctx.shadowColor = '#00FFaa';
-  ctx.shadowBlur = 4;
   ctx.strokeRect(-rw / 2, -rh / 2, rw, rh);
 
   // Heading triangle at the front

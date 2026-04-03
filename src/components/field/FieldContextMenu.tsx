@@ -1,7 +1,8 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { usePathStore } from '../../stores/pathStore';
 import type { ContextMenuState } from '../../hooks/useContextMenu';
-import { Trash2, Plus, Navigation, Flag } from 'lucide-react';
+import { MenuItem, MenuSeparator, SubMenu } from '../ui/ContextMenuPrimitives';
+import { Trash2, Plus, Navigation, Crosshair, FlipVertical2, Copy, MapPin, Link, Unlink } from 'lucide-react';
 
 interface FieldContextMenuProps {
   menu: ContextMenuState;
@@ -11,22 +12,41 @@ interface FieldContextMenuProps {
 export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
+  const addPoint = usePathStore((s) => s.addPoint);
   const deletePoint = usePathStore((s) => s.deletePoint);
   const insertPointAfter = usePathStore((s) => s.insertPointAfter);
-  const addPoint = usePathStore((s) => s.addPoint);
   const setHeading = usePathStore((s) => s.setHeading);
+  const addRotationZone = usePathStore((s) => s.addRotationZone);
+  const flipPathY = usePathStore((s) => s.flipPathY);
+  const duplicatePath = usePathStore((s) => s.duplicatePath);
   const controlPoints = usePathStore((s) => s.controlPoints);
+  const controlPointRefs = usePathStore((s) => s.controlPointRefs);
   const headingWaypoints = usePathStore((s) => s.headingWaypoints);
   const selectPoint = usePathStore((s) => s.selectPoint);
+  const namedPoints = usePathStore((s) => s.namedPoints);
+  const savePointAsNamed = usePathStore((s) => s.savePointAsNamed);
+  const linkPointToNamed = usePathStore((s) => s.linkPointToNamed);
+  const unlinkPoint = usePathStore((s) => s.unlinkPoint);
+  const placeNamedPoint = usePathStore((s) => s.placeNamedPoint);
+
+  const [namingPoint, setNamingPoint] = useState(false);
+  const [nameValue, setNameValue] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (namingPoint) {
+          setNamingPoint(false);
+        } else {
+          onClose();
+        }
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, namingPoint]);
 
   // Close on click outside
   useEffect(() => {
@@ -44,6 +64,11 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [onClose]);
+
+  // Focus name input when naming mode opens
+  useEffect(() => {
+    if (namingPoint && nameInputRef.current) nameInputRef.current.focus();
+  }, [namingPoint]);
 
   const handleDelete = useCallback(() => {
     if (menu.pointIndex !== null) {
@@ -100,11 +125,62 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
     onClose();
   }, [menu.pointIndex, headingWaypoints, setHeading, onClose]);
 
-  const handleAddPointHere = useCallback(() => {
+  const handleAddPoint = useCallback(() => {
     addPoint({ x: menu.fieldX, y: menu.fieldY });
     selectPoint(controlPoints.length);
     onClose();
   }, [menu.fieldX, menu.fieldY, addPoint, selectPoint, controlPoints.length, onClose]);
+
+  const handleFlipPathY = useCallback(() => {
+    flipPathY();
+    onClose();
+  }, [flipPathY, onClose]);
+
+  const handleDuplicatePath = useCallback(() => {
+    duplicatePath();
+    onClose();
+  }, [duplicatePath, onClose]);
+
+  const handleAddFacePointZone = useCallback(() => {
+    if (controlPoints.length < 2) return;
+    const numCPs = controlPoints.length;
+    // Estimate a waypoint index near the click point
+    // Simple heuristic: use the clicked field coordinate's position along the path
+    const midIdx = (numCPs - 1) / 2;
+    const halfSpan = Math.max(0.5, (numCPs - 1) * 0.15);
+    const startIdx = Math.max(0, midIdx - halfSpan);
+    const endIdx = Math.min(numCPs - 1, midIdx + halfSpan);
+    // Target: offset from the click point
+    const target = { x: menu.fieldX, y: menu.fieldY + 2 };
+
+    addRotationZone({
+      id: crypto.randomUUID(),
+      startWaypointIndex: Math.round(startIdx * 10) / 10,
+      endWaypointIndex: Math.round(endIdx * 10) / 10,
+      targetPoint: target,
+    });
+    onClose();
+  }, [controlPoints.length, menu.fieldX, menu.fieldY, addRotationZone, onClose]);
+
+  const handleSaveAsNamed = useCallback(() => {
+    setNamingPoint(true);
+    setNameValue('');
+  }, []);
+
+  const handleConfirmName = useCallback(() => {
+    if (menu.pointIndex !== null && nameValue.trim() && !namedPoints[nameValue.trim()]) {
+      savePointAsNamed(menu.pointIndex, nameValue.trim());
+    }
+    setNamingPoint(false);
+    onClose();
+  }, [menu.pointIndex, nameValue, namedPoints, savePointAsNamed, onClose]);
+
+  const handleUnlink = useCallback(() => {
+    if (menu.pointIndex !== null) {
+      unlinkPoint(menu.pointIndex);
+    }
+    onClose();
+  }, [menu.pointIndex, unlinkPoint, onClose]);
 
   if (!menu.visible) return null;
 
@@ -115,6 +191,14 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
 
   // Check if we can insert before (not first point)
   const canInsertBefore = menu.pointIndex !== null && menu.pointIndex > 0;
+
+  // Check if this point is linked to a named point
+  const pointRef = menu.pointIndex !== null ? controlPointRefs[menu.pointIndex] : null;
+
+  // Named points list (exclude mirrors for cleaner submenu)
+  const namedPointList = Object.values(namedPoints).filter(
+    (np) => !np.name.endsWith(' (Mirror)'),
+  );
 
   return (
     <div
@@ -143,7 +227,14 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
                 borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
               }}
             >
-              Point {menu.pointIndex}
+              {pointRef ? (
+                <span style={{ color: 'rgba(255, 179, 0, 0.7)' }}>
+                  <MapPin size={10} style={{ display: 'inline', marginRight: 4 }} />
+                  {pointRef}
+                </span>
+              ) : (
+                <>Point {menu.pointIndex}</>
+              )}
             </div>
 
             {/* Delete */}
@@ -171,13 +262,7 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
             />
 
             {/* Separator */}
-            <div
-              style={{
-                height: '1px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                margin: '2px 0',
-              }}
-            />
+            <MenuSeparator />
 
             {/* Set/Remove Heading */}
             <MenuItem
@@ -185,14 +270,128 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
               label={hasHeading ? 'Remove Heading' : 'Set Heading'}
               onClick={handleSetHeading}
             />
+
+            {/* Separator */}
+            <MenuSeparator />
+
+            {/* Named point actions */}
+            {namingPoint ? (
+              <div className="px-3 py-1.5">
+                <input
+                  ref={nameInputRef}
+                  className="w-full text-xs font-mono bg-transparent border-b outline-none px-0.5 py-0.5"
+                  style={{
+                    borderColor: 'rgba(255, 179, 0, 0.4)',
+                    color: 'rgba(255, 179, 0, 0.9)',
+                  }}
+                  placeholder="Point name..."
+                  value={nameValue}
+                  onChange={(e) => setNameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleConfirmName();
+                    if (e.key === 'Escape') {
+                      setNamingPoint(false);
+                      e.stopPropagation();
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <>
+                {!pointRef && (
+                  <MenuItem
+                    icon={<MapPin size={14} />}
+                    label="Save as Named Point"
+                    onClick={handleSaveAsNamed}
+                  />
+                )}
+
+                {pointRef && (
+                  <MenuItem
+                    icon={<Unlink size={14} />}
+                    label="Unlink Point"
+                    onClick={handleUnlink}
+                  />
+                )}
+
+                {namedPointList.length > 0 && (
+                  <SubMenu
+                    icon={<Link size={14} />}
+                    label="Link to Named Point"
+                  >
+                    {namedPointList.map((np) => (
+                      <MenuItem
+                        key={np.name}
+                        icon={<MapPin size={12} />}
+                        label={np.name}
+                        onClick={() => {
+                          if (menu.pointIndex !== null) {
+                            linkPointToNamed(menu.pointIndex, np.name);
+                          }
+                          onClose();
+                        }}
+                      />
+                    ))}
+                  </SubMenu>
+                )}
+              </>
+            )}
           </>
         ) : (
           <>
-            {/* Add point at click location */}
+            {/* Add point here */}
             <MenuItem
               icon={<Plus size={14} />}
-              label={`Add Point (${menu.fieldX.toFixed(2)}, ${menu.fieldY.toFixed(2)})`}
-              onClick={handleAddPointHere}
+              label="Add Point Here"
+              onClick={handleAddPoint}
+            />
+
+            {/* Place named point submenu */}
+            {namedPointList.length > 0 && (
+              <SubMenu
+                icon={<MapPin size={14} />}
+                label="Place Named Point"
+              >
+                {namedPointList.map((np) => (
+                  <MenuItem
+                    key={np.name}
+                    icon={<MapPin size={12} />}
+                    label={np.name}
+                    onClick={() => {
+                      placeNamedPoint(np.name);
+                      selectPoint(controlPoints.length);
+                      onClose();
+                    }}
+                  />
+                ))}
+              </SubMenu>
+            )}
+
+            {/* Add face-point zone */}
+            <MenuItem
+              icon={<Crosshair size={14} />}
+              label="Add Face-Point Zone"
+              onClick={handleAddFacePointZone}
+              disabled={controlPoints.length < 2}
+            />
+
+            {/* Separator */}
+            <MenuSeparator />
+
+            {/* Flip path */}
+            <MenuItem
+              icon={<FlipVertical2 size={14} />}
+              label="Flip Path (Left/Right)"
+              onClick={handleFlipPathY}
+              disabled={controlPoints.length < 2}
+            />
+
+            {/* Duplicate path */}
+            <MenuItem
+              icon={<Copy size={14} />}
+              label="Duplicate Path"
+              onClick={handleDuplicatePath}
+              disabled={controlPoints.length === 0}
             />
           </>
         )}
@@ -201,43 +400,3 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
   );
 }
 
-// ─── Menu Item Component ──────────────────────────────────────────────────
-
-interface MenuItemProps {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  destructive?: boolean;
-}
-
-function MenuItem({ icon, label, onClick, disabled = false, destructive = false }: MenuItemProps) {
-  const baseColor = destructive ? 'rgba(255, 51, 102, 0.9)' : 'rgba(228, 228, 231, 0.85)';
-  const disabledColor = 'rgba(255, 255, 255, 0.25)';
-
-  return (
-    <button
-      className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm font-mono transition-colors"
-      style={{
-        color: disabled ? disabledColor : baseColor,
-        cursor: disabled ? 'default' : 'pointer',
-        background: 'transparent',
-        border: 'none',
-        outline: 'none',
-      }}
-      onClick={disabled ? undefined : onClick}
-      onMouseEnter={(e) => {
-        if (!disabled) {
-          (e.currentTarget as HTMLElement).style.background = 'rgba(0, 255, 170, 0.05)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.background = 'transparent';
-      }}
-      disabled={disabled}
-    >
-      <span className="flex-shrink-0 opacity-70">{icon}</span>
-      <span>{label}</span>
-    </button>
-  );
-}
