@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 // ─── Menu Separator ────────────────────────────────────────────────────────
 
@@ -24,6 +24,8 @@ interface SubMenuProps {
 
 export function SubMenu({ icon, label, children }: SubMenuProps) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const baseColor = 'rgba(228, 228, 231, 0.85)';
 
   return (
@@ -33,7 +35,11 @@ export function SubMenu({ icon, label, children }: SubMenuProps) {
       onMouseLeave={() => setOpen(false)}
     >
       <button
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm font-mono transition-colors"
+        ref={triggerRef}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-sm transition-colors"
+        role="menuitem"
+        aria-haspopup="true"
+        aria-expanded={open}
         style={{
           color: baseColor,
           cursor: 'pointer',
@@ -42,24 +48,43 @@ export function SubMenu({ icon, label, children }: SubMenuProps) {
           outline: 'none',
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.background = 'rgba(0, 255, 170, 0.05)';
+          (e.currentTarget as HTMLElement).style.background =
+            'rgba(0, 255, 170, 0.05)';
         }}
         onMouseLeave={(e) => {
           (e.currentTarget as HTMLElement).style.background = 'transparent';
         }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setOpen(true);
+            requestAnimationFrame(() => {
+              submenuRef.current
+                ?.querySelector<HTMLElement>('[role="menuitem"]')
+                ?.focus();
+            });
+          } else if (e.key === 'ArrowLeft' || e.key === 'Escape') {
+            e.preventDefault();
+            setOpen(false);
+            triggerRef.current?.focus();
+          }
+        }}
       >
         <span className="flex-shrink-0 opacity-70">{icon}</span>
         <span className="flex-1">{label}</span>
-        <span className="opacity-40 text-xs">&#9656;</span>
+        <span className="text-xs opacity-40">&#9656;</span>
       </button>
 
       {open && (
         <div
-          className="absolute left-full top-0 ml-0.5 min-w-[160px] rounded-lg overflow-hidden shadow-xl border"
+          ref={submenuRef}
+          className="absolute top-0 left-full ml-0.5 min-w-[160px] overflow-hidden rounded-lg border shadow-xl"
+          role="menu"
           style={{
             background: 'rgba(5, 5, 5, 0.95)',
             borderColor: 'rgba(0, 255, 170, 0.1)',
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(0, 255, 170, 0.05)',
+            boxShadow:
+              '0 4px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(0, 255, 170, 0.05)',
           }}
         >
           {children}
@@ -79,13 +104,22 @@ interface MenuItemProps {
   destructive?: boolean;
 }
 
-export function MenuItem({ icon, label, onClick, disabled = false, destructive = false }: MenuItemProps) {
-  const baseColor = destructive ? 'rgba(255, 51, 102, 0.9)' : 'rgba(228, 228, 231, 0.85)';
+export function MenuItem({
+  icon,
+  label,
+  onClick,
+  disabled = false,
+  destructive = false,
+}: MenuItemProps) {
+  const baseColor = destructive
+    ? 'rgba(255, 51, 102, 0.9)'
+    : 'rgba(228, 228, 231, 0.85)';
   const disabledColor = 'rgba(255, 255, 255, 0.25)';
 
   return (
     <button
-      className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm font-mono transition-colors"
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-sm transition-colors"
+      role="menuitem"
       style={{
         color: disabled ? disabledColor : baseColor,
         cursor: disabled ? 'default' : 'pointer',
@@ -96,7 +130,8 @@ export function MenuItem({ icon, label, onClick, disabled = false, destructive =
       onClick={disabled ? undefined : onClick}
       onMouseEnter={(e) => {
         if (!disabled) {
-          (e.currentTarget as HTMLElement).style.background = 'rgba(0, 255, 170, 0.05)';
+          (e.currentTarget as HTMLElement).style.background =
+            'rgba(0, 255, 170, 0.05)';
         }
       }}
       onMouseLeave={(e) => {

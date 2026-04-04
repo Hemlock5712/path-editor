@@ -59,9 +59,11 @@ export const useEditorStore = create<EditorState>()((set) => ({
   toggleMinimap: () => set((state) => ({ showMinimap: !state.showMinimap })),
   toggleSnapToGrid: () => set((state) => ({ snapToGrid: !state.snapToGrid })),
   setGridSize: (gridSize) => set({ gridSize }),
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  toggleSidebar: () =>
+    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setBottomPanelHeight: (bottomPanelHeight) => set({ bottomPanelHeight }),
   setHoveredPointIndex: (hoveredPointIndex) => set({ hoveredPointIndex }),
-  toggleWaypointGhosts: () => set((state) => ({ showWaypointGhosts: !state.showWaypointGhosts })),
+  toggleWaypointGhosts: () =>
+    set((state) => ({ showWaypointGhosts: !state.showWaypointGhosts })),
   resetView: () => set({ zoom: 1.0, panOffset: { x: 0, y: 0 } }),
 }));

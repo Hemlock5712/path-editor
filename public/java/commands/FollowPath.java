@@ -58,6 +58,14 @@ public class FollowPath extends Command {
   private double completionTolerance = 0.05; // meters from path end
   private final double endVelocity;
 
+  /**
+   * Maximum arc-length the projection can move per cycle (meters). Derived from physics: at max FRC
+   * speed (5 m/s) with a 20ms loop, the robot moves 0.1m per cycle. 0.5m gives 5x safety margin,
+   * handling loop overruns up to 100ms at max speed. This window (1.0m total) is too small to span
+   * both segments at a path crossing (minimum separation ~1.6m for a 0.5m-radius turn).
+   */
+  private static final double PROJECTION_MAX_DELTA = 0.5;
+
   /** Number of poses to sample for the logged path trajectory. */
   private static final int PATH_LOG_SAMPLES = 50;
 
@@ -342,8 +350,13 @@ public class FollowPath extends Command {
     Pose2d robotPose = swerve.getPose();
     Translation2d robotPos = robotPose.getTranslation();
 
-    // Step 1: Project robot onto path — find current arc length
-    ProjectionResult proj = path.getClosestPoint(robotPos);
+    // Step 1: Project robot onto path — bounded search around last known position.
+    // The bounded window prevents jumping to distant segments when hit or at crossings.
+    ProjectionResult proj =
+        path.getClosestPointInRange(
+            robotPos,
+            lastProjectedS - PROJECTION_MAX_DELTA,
+            lastProjectedS + PROJECTION_MAX_DELTA);
     double sRobot = proj.s();
     double crossTrackError = proj.crossTrackError();
     Translation2d tangent = proj.tangent();

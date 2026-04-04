@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   --color-surface-950: #050505;
@@ -9,11 +9,11 @@
   --color-surface-500: #3a3a3a;
   --color-surface-400: #555555;
 
-  --color-accent-green: #00FFaa;
-  --color-accent-amber: #FFaa00;
-  --color-accent-red: #FF3366;
-  --color-accent-blue: #0088FF;
-  --color-accent-cyan: #00DDFF;
+  --color-accent-green: #00ffaa;
+  --color-accent-amber: #ffaa00;
+  --color-accent-red: #ff3366;
+  --color-accent-blue: #0088ff;
+  --color-accent-cyan: #00ddff;
 
   --font-body: 'Outfit', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
@@ -69,7 +69,8 @@ body {
 }
 
 /* Input styling — borderless bottom-line */
-input[type="number"], input[type="text"] {
+input[type='number'],
+input[type='text'] {
   background-color: transparent;
   border: none;
   border-bottom: 1px solid rgba(0, 255, 170, 0.1);
@@ -79,11 +80,16 @@ input[type="number"], input[type="text"] {
   color: #e4e4e7;
   font-family: var(--font-mono);
   outline: none;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition:
+    border-color 0.3s,
+    box-shadow 0.3s;
 }
-input[type="number"]:focus, input[type="text"]:focus {
+input[type='number']:focus,
+input[type='text']:focus {
   border-bottom-color: var(--color-accent-green);
-  box-shadow: 0 1px 0 0 var(--color-accent-green), 0 4px 12px -4px rgba(0, 255, 170, 0.15);
+  box-shadow:
+    0 1px 0 0 var(--color-accent-green),
+    0 4px 12px -4px rgba(0, 255, 170, 0.15);
 }
 
 /* Select styling */
@@ -176,18 +182,34 @@ select:focus {
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes neonPulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(0, 255, 170, 0.2); }
-  50% { box-shadow: 0 0 20px rgba(0, 255, 170, 0.4); }
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(0, 255, 170, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 255, 170, 0.4);
+  }
 }
 
 @keyframes neonPulseAmber {
-  0%, 100% { box-shadow: 0 0 8px rgba(255, 170, 0, 0.2); }
-  50% { box-shadow: 0 0 20px rgba(255, 170, 0, 0.4); }
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(255, 170, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 170, 0, 0.4);
+  }
 }
 
 .animate-fadeIn {
@@ -204,7 +226,8 @@ select:focus {
 
 /* Connection indicator */
 @keyframes ping {
-  75%, 100% {
+  75%,
+  100% {
     transform: scale(2);
     opacity: 0;
   }

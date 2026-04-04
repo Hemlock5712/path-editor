@@ -1,10 +1,6 @@
 import { RotateCcw, Zap, Cog, Scale, Ruler, Activity } from 'lucide-react';
 import { Titlebar } from '../layout/Titlebar';
-import {
-  useSettingsStore,
-  DEFAULT_SETTINGS,
-  computeDerived,
-} from '../../stores/settingsStore';
+import { useSettingsStore, computeDerived } from '../../stores/settingsStore';
 import { MOTOR_PRESETS } from '../../utils/motorPresets';
 
 export function SettingsPage() {
@@ -13,15 +9,15 @@ export function SettingsPage() {
   const isCustomMotor = settings.motorPreset === 'custom';
 
   return (
-    <div className="h-screen flex flex-col bg-surface-950">
+    <div className="bg-surface-950 flex h-screen flex-col">
       <Titlebar />
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-6 py-8 space-y-5 animate-fadeIn">
+        <div className="animate-fadeIn mx-auto max-w-2xl space-y-5 px-6 py-8">
           <div className="mb-6">
-            <h2 className="text-sm font-light tracking-[0.15em] uppercase text-accent-green/60">
+            <h2 className="text-accent-green/60 text-sm font-light tracking-[0.15em] uppercase">
               Robot Configuration
             </h2>
-            <p className="text-xs text-zinc-500 mt-1">
+            <p className="mt-1 text-xs text-zinc-500">
               These settings affect velocity profiling and robot visualization.
               Changes are saved automatically.
             </p>
@@ -31,12 +27,13 @@ export function SettingsPage() {
           <Section icon={<Zap size={13} />} title="Motor">
             <div className="space-y-3">
               <div className="flex items-center gap-3">
-                <label className="text-xs text-zinc-400 w-32 shrink-0">Preset</label>
+                <label className="w-32 shrink-0 text-xs text-zinc-400">
+                  Preset
+                </label>
                 <select
                   value={settings.motorPreset}
                   onChange={(e) => settings.applyMotorPreset(e.target.value)}
-                  className="flex-1 bg-transparent border-b border-white/10 text-sm text-zinc-200
-                    px-1 py-1 focus:border-accent-green/40 focus:outline-none transition-colors"
+                  className="focus:border-accent-green/40 flex-1 border-b border-white/10 bg-transparent px-1 py-1 text-sm text-zinc-200 transition-colors focus:outline-none"
                 >
                   {MOTOR_PRESETS.map((p) => (
                     <option key={p.id} value={p.id} className="bg-surface-800">
@@ -162,12 +159,27 @@ export function SettingsPage() {
 
           {/* Computed Preview */}
           <Section icon={<Scale size={13} />} title="Computed Values">
-            <div className="space-y-2 text-xs font-mono">
-              <ComputedRow label="Kt (torque constant)" value={`${derived.kt.toFixed(5)} N*m/A`} />
-              <ComputedRow label="Max theoretical velocity" value={`${derived.maxTheoreticalVelocity.toFixed(2)} m/s`} />
-              <ComputedRow label="Max friction accel" value={`${derived.maxFrictionAccel.toFixed(2)} m/s\u00B2`} />
-              <ComputedRow label="Motor accel @ 0 m/s" value={`${derived.motorAccelAtZero.toFixed(2)} m/s\u00B2`} />
-              <ComputedRow label="Motor accel @ max v" value={`${derived.motorAccelAtMax.toFixed(2)} m/s\u00B2`} />
+            <div className="space-y-2 font-mono text-xs">
+              <ComputedRow
+                label="Kt (torque constant)"
+                value={`${derived.kt.toFixed(5)} N*m/A`}
+              />
+              <ComputedRow
+                label="Max theoretical velocity"
+                value={`${derived.maxTheoreticalVelocity.toFixed(2)} m/s`}
+              />
+              <ComputedRow
+                label="Max friction accel"
+                value={`${derived.maxFrictionAccel.toFixed(2)} m/s\u00B2`}
+              />
+              <ComputedRow
+                label="Motor accel @ 0 m/s"
+                value={`${derived.motorAccelAtZero.toFixed(2)} m/s\u00B2`}
+              />
+              <ComputedRow
+                label="Motor accel @ max v"
+                value={`${derived.motorAccelAtMax.toFixed(2)} m/s\u00B2`}
+              />
             </div>
           </Section>
 
@@ -198,7 +210,7 @@ function Section({
 }) {
   return (
     <div className="neon-panel p-4">
-      <h3 className="flex items-center gap-2 text-[11px] font-light tracking-wide text-accent-green/40 mb-3">
+      <h3 className="text-accent-green/40 mb-3 flex items-center gap-2 text-[11px] font-light tracking-wide">
         {icon}
         {title}
       </h3>
@@ -224,7 +236,7 @@ function NumberField({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <label className="text-xs text-zinc-400 w-32 shrink-0">{label}</label>
+      <label className="w-32 shrink-0 text-xs text-zinc-400">{label}</label>
       <input
         type="number"
         value={value}
@@ -234,14 +246,15 @@ function NumberField({
         }}
         step={step}
         disabled={disabled}
-        className={`flex-1 bg-transparent border-b text-sm text-right font-mono
-          px-1 py-1 focus:outline-none transition-colors
-          ${disabled
-            ? 'border-white/5 text-zinc-600 cursor-not-allowed'
-            : 'border-white/10 text-zinc-200 focus:border-accent-green/40'
-          }`}
+        className={`flex-1 border-b bg-transparent px-1 py-1 text-right font-mono text-sm transition-colors focus:outline-none ${
+          disabled
+            ? 'cursor-not-allowed border-white/5 text-zinc-600'
+            : 'focus:border-accent-green/40 border-white/10 text-zinc-200'
+        }`}
       />
-      {unit && <span className="text-[10px] text-zinc-500 w-10 shrink-0">{unit}</span>}
+      {unit && (
+        <span className="w-10 shrink-0 text-[10px] text-zinc-500">{unit}</span>
+      )}
     </div>
   );
 }

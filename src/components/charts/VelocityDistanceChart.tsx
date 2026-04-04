@@ -24,7 +24,11 @@ export function VelocityDistanceChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    x: number;
+    y: number;
+    text: string;
+  } | null>(null);
 
   const scrubberDistance = useEditorStore((s) => s.scrubberDistance);
   const setScrubberDistance = useEditorStore((s) => s.setScrubberDistance);
@@ -54,7 +58,7 @@ export function VelocityDistanceChart({
       const plotW = size.width - PADDING.left - PADDING.right;
       return PADDING.left + (d / maxDist) * plotW;
     },
-    [analytics, size.width],
+    [analytics, size.width]
   );
 
   // Convert velocity to canvas Y
@@ -64,7 +68,7 @@ export function VelocityDistanceChart({
       const yMax = maxVelocity * 1.1;
       return PADDING.top + plotH * (1 - v / yMax);
     },
-    [maxVelocity, size.height],
+    [maxVelocity, size.height]
   );
 
   // Convert canvas X to distance
@@ -76,7 +80,7 @@ export function VelocityDistanceChart({
       const d = ((x - PADDING.left) / plotW) * maxDist;
       return Math.max(0, Math.min(d, maxDist));
     },
-    [analytics, size.width],
+    [analytics, size.width]
   );
 
   // Draw chart
@@ -98,7 +102,12 @@ export function VelocityDistanceChart({
     const plotH = size.height - PADDING.top - PADDING.bottom;
     const yMax = maxVelocity * 1.1;
 
-    if (!analytics || analytics.distances.length < 2 || plotW <= 0 || plotH <= 0) {
+    if (
+      !analytics ||
+      analytics.distances.length < 2 ||
+      plotW <= 0 ||
+      plotH <= 0
+    ) {
       ctx.fillStyle = '#6b6b7a';
       ctx.font = '12px monospace';
       ctx.textAlign = 'center';
@@ -262,7 +271,7 @@ export function VelocityDistanceChart({
         setIsDragging(true);
       }
     },
-    [analytics, size, xToDist, setScrubberDistance],
+    [analytics, size, xToDist, setScrubberDistance]
   );
 
   const handleMouseMove = useCallback(
@@ -297,7 +306,15 @@ export function VelocityDistanceChart({
         setTooltip(null);
       }
     },
-    [analytics, isDragging, size, xToDist, profile, timeEstimator, setScrubberDistance],
+    [
+      analytics,
+      isDragging,
+      size,
+      xToDist,
+      profile,
+      timeEstimator,
+      setScrubberDistance,
+    ]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -310,7 +327,7 @@ export function VelocityDistanceChart({
   }, []);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full">
+    <div ref={containerRef} className="relative h-full w-full">
       <canvas
         ref={canvasRef}
         style={{ width: size.width, height: size.height }}
@@ -335,7 +352,11 @@ export function VelocityDistanceChart({
   );
 }
 
-function computeNiceStep(range: number, pixels: number, minPixelGap: number): number {
+function computeNiceStep(
+  range: number,
+  pixels: number,
+  minPixelGap: number
+): number {
   if (range <= 0 || pixels <= 0) return 1;
   const rawStep = (range * minPixelGap) / pixels;
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));

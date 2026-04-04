@@ -1,6 +1,11 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '../../stores/editorStore';
-import { ACCEL_GREEN, ACCEL_GREEN_FILL, ACCEL_RED, ACCEL_RED_FILL } from '../../utils/colors';
+import {
+  ACCEL_GREEN,
+  ACCEL_GREEN_FILL,
+  ACCEL_RED,
+  ACCEL_RED_FILL,
+} from '../../utils/colors';
 import type { AnalyticsArrays } from '../../math/ProfileAnalytics';
 
 interface AccelerationChartProps {
@@ -14,7 +19,11 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    x: number;
+    y: number;
+    text: string;
+  } | null>(null);
 
   const scrubberDistance = useEditorStore((s) => s.scrubberDistance);
   const setScrubberDistance = useEditorStore((s) => s.setScrubberDistance);
@@ -36,8 +45,12 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
   }, []);
 
   // Compute max |acceleration| for Y axis
-  const getAccelRange = useCallback((): { maxAccel: number; minAccel: number } => {
-    if (!analytics || analytics.accelerations.length < 2) return { maxAccel: 5, minAccel: -5 };
+  const getAccelRange = useCallback((): {
+    maxAccel: number;
+    minAccel: number;
+  } => {
+    if (!analytics || analytics.accelerations.length < 2)
+      return { maxAccel: 5, minAccel: -5 };
     let maxA = 0;
     let minA = 0;
     for (const a of analytics.accelerations) {
@@ -56,7 +69,7 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
       const plotW = size.width - PADDING.left - PADDING.right;
       return PADDING.left + (d / maxDist) * plotW;
     },
-    [analytics, size.width],
+    [analytics, size.width]
   );
 
   const accelToY = useCallback(
@@ -67,7 +80,7 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
       if (range <= 0) return PADDING.top + plotH / 2;
       return PADDING.top + plotH * (1 - (a - minAccel) / range);
     },
-    [getAccelRange, size.height],
+    [getAccelRange, size.height]
   );
 
   const xToDist = useCallback(
@@ -78,7 +91,7 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
       const d = ((x - PADDING.left) / plotW) * maxDist;
       return Math.max(0, Math.min(d, maxDist));
     },
-    [analytics, size.width],
+    [analytics, size.width]
   );
 
   // Interpolate acceleration at a given distance
@@ -101,7 +114,7 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
       const frac = (d - dists[lo]) / (dists[hi] - dists[lo]);
       return accels[lo] + frac * (accels[hi] - accels[lo]);
     },
-    [analytics],
+    [analytics]
   );
 
   // Draw chart
@@ -122,7 +135,12 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
     const plotH = size.height - PADDING.top - PADDING.bottom;
     const { maxAccel, minAccel } = getAccelRange();
 
-    if (!analytics || analytics.distances.length < 2 || plotW <= 0 || plotH <= 0) {
+    if (
+      !analytics ||
+      analytics.distances.length < 2 ||
+      plotW <= 0 ||
+      plotH <= 0
+    ) {
       ctx.fillStyle = '#6b6b7a';
       ctx.font = '12px monospace';
       ctx.textAlign = 'center';
@@ -172,7 +190,8 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
       const x2 = distToX(analytics.distances[i + 1]);
       const y1 = accelToY(analytics.accelerations[i]);
       const y2 = accelToY(analytics.accelerations[i + 1]);
-      const avgA = (analytics.accelerations[i] + analytics.accelerations[i + 1]) / 2;
+      const avgA =
+        (analytics.accelerations[i] + analytics.accelerations[i + 1]) / 2;
 
       // Green fill for positive (accelerating), red for negative (braking)
       ctx.fillStyle = avgA >= 0 ? ACCEL_GREEN_FILL : ACCEL_RED_FILL;
@@ -285,7 +304,7 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
         setIsDragging(true);
       }
     },
-    [analytics, size, xToDist, setScrubberDistance],
+    [analytics, size, xToDist, setScrubberDistance]
   );
 
   const handleMouseMove = useCallback(
@@ -318,7 +337,14 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
         setTooltip(null);
       }
     },
-    [analytics, isDragging, size, xToDist, getAccelAtDistance, setScrubberDistance],
+    [
+      analytics,
+      isDragging,
+      size,
+      xToDist,
+      getAccelAtDistance,
+      setScrubberDistance,
+    ]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -331,7 +357,7 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
   }, []);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full">
+    <div ref={containerRef} className="relative h-full w-full">
       <canvas
         ref={canvasRef}
         style={{ width: size.width, height: size.height }}
@@ -356,7 +382,11 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
   );
 }
 
-function computeNiceStep(range: number, pixels: number, minPixelGap: number): number {
+function computeNiceStep(
+  range: number,
+  pixels: number,
+  minPixelGap: number
+): number {
   if (range <= 0 || pixels <= 0) return 1;
   const rawStep = (range * minPixelGap) / pixels;
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));

@@ -17,9 +17,12 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/downloads" element={<DownloadsPage />} />
         <Route path="/docs/getting-started" element={<GettingStartedPage />} />
-        <Route path="/docs/robot-integration" element={<RobotIntegrationPage />} />
+        <Route
+          path="/docs/robot-integration"
+          element={<RobotIntegrationPage />}
+        />
         <Route path="/docs/editor-guide" element={<EditorGuidePage />} />
       </Routes>
     </BrowserRouter>
-  </StrictMode>,
+  </StrictMode>
 );

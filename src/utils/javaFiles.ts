@@ -14,15 +14,17 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'SplinePath.java',
     relativePath: 'utils/path/SplinePath.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Arc-length parameterized Catmull-Rom spline with closest-point projection',
+    description:
+      'Arc-length parameterized Catmull-Rom spline with closest-point projection',
     category: 'core',
-    lineCount: 432,
+    lineCount: 437,
   },
   {
     filename: 'CubicSegment.java',
     relativePath: 'utils/path/CubicSegment.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Individual cubic Hermite spline segment with curvature computation',
+    description:
+      'Individual cubic Hermite spline segment with curvature computation',
     category: 'core',
     lineCount: 122,
   },
@@ -30,7 +32,8 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'VelocityProfile.java',
     relativePath: 'utils/path/VelocityProfile.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Forward-backward pass velocity profiling with motor torque and friction limits',
+    description:
+      'Forward-backward pass velocity profiling with motor torque and friction limits',
     category: 'core',
     lineCount: 208,
   },
@@ -38,7 +41,8 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'VelocityConstraints.java',
     relativePath: 'utils/path/VelocityConstraints.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Builder-pattern configuration for path velocity and acceleration limits',
+    description:
+      'Builder-pattern configuration for path velocity and acceleration limits',
     category: 'core',
     lineCount: 129,
   },
@@ -54,7 +58,8 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'RotationSuppliers.java',
     relativePath: 'utils/path/RotationSuppliers.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Factory methods for heading strategies: face forward, face point, hold, interpolate, zone-based',
+    description:
+      'Factory methods for heading strategies: face forward, face point, hold, interpolate, zone-based',
     category: 'core',
     lineCount: 260,
   },
@@ -62,7 +67,8 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'PathData.java',
     relativePath: 'utils/path/PathData.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Data model record with red alliance mirroring for control points, headings, constraints, and rotation zones',
+    description:
+      'Data model record with red alliance mirroring for control points, headings, constraints, and rotation zones',
     category: 'core',
     lineCount: 104,
   },
@@ -80,9 +86,10 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'FollowPath.java',
     relativePath: 'commands/FollowPath.java',
     packagePath: 'frc/robot/commands/',
-    description: 'Main path-following command with adaptive lookahead and cross-track correction',
+    description:
+      'Main path-following command with adaptive lookahead and cross-track correction',
     category: 'command',
-    lineCount: 535,
+    lineCount: 548,
   },
 
   // Dependencies
@@ -90,7 +97,8 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'AccelerationLimiter.java',
     relativePath: 'commands/AccelerationLimiter.java',
     packagePath: 'frc/robot/commands/',
-    description: 'Physics-based friction circle, motor torque, and jerk limiting',
+    description:
+      'Physics-based friction circle, motor torque, and jerk limiting',
     category: 'dependency',
     lineCount: 250,
     private: true,
@@ -99,7 +107,8 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'Motor.java',
     relativePath: 'utils/Motor.java',
     packagePath: 'frc/robot/utils/',
-    description: 'Motor torque-speed curves from dyno data (Kraken X60, Falcon 500, etc.)',
+    description:
+      'Motor torque-speed curves from dyno data (Kraken X60, Falcon 500, etc.)',
     category: 'dependency',
     lineCount: 100,
     private: true,

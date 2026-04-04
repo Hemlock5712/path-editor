@@ -1,15 +1,16 @@
 import { memo } from 'react';
 import { usePathStore } from '../../stores/pathStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { Plus, X, Crosshair } from 'lucide-react';
 
 export const RotationZoneEditor = memo(function RotationZoneEditor() {
   const rotationZones = usePathStore((s) => s.rotationZones);
   const numPoints = usePathStore((s) => s.controlPoints.length);
-  const selectedZoneId = usePathStore((s) => s.selectedZoneId);
+  const selectedZoneId = useSelectionStore((s) => s.selectedZoneId);
   const addRotationZone = usePathStore((s) => s.addRotationZone);
   const updateRotationZone = usePathStore((s) => s.updateRotationZone);
   const deleteRotationZone = usePathStore((s) => s.deleteRotationZone);
-  const selectZone = usePathStore((s) => s.selectZone);
+  const selectZone = useSelectionStore((s) => s.selectZone);
 
   const maxIndex = Math.max(0, numPoints - 1);
 
@@ -19,7 +20,8 @@ export const RotationZoneEditor = memo(function RotationZoneEditor() {
     addRotationZone({
       id: crypto.randomUUID(),
       startWaypointIndex: Math.round(Math.max(0, midIdx - halfSpan) * 10) / 10,
-      endWaypointIndex: Math.round(Math.min(maxIndex, midIdx + halfSpan) * 10) / 10,
+      endWaypointIndex:
+        Math.round(Math.min(maxIndex, midIdx + halfSpan) * 10) / 10,
       targetPoint: { x: 8, y: 4 },
     });
   };
@@ -34,15 +36,23 @@ export const RotationZoneEditor = memo(function RotationZoneEditor() {
     } else if (field === 'targetX' || field === 'targetY') {
       const zone = rotationZones.find((z) => z.id === id);
       if (!zone) return;
-      const clampedX = field === 'targetX' ? Math.max(0, Math.min(num, 16.54)) : zone.targetPoint.x;
-      const clampedY = field === 'targetY' ? Math.max(0, Math.min(num, 8.21)) : zone.targetPoint.y;
+      const clampedX =
+        field === 'targetX'
+          ? Math.max(0, Math.min(num, 16.54))
+          : zone.targetPoint.x;
+      const clampedY =
+        field === 'targetY'
+          ? Math.max(0, Math.min(num, 8.21))
+          : zone.targetPoint.y;
       updateRotationZone(id, { targetPoint: { x: clampedX, y: clampedY } });
     }
   };
 
   if (numPoints < 2) {
     return (
-      <p className="text-xs text-zinc-600 italic">Load a Paths.java file to begin</p>
+      <p className="text-xs text-zinc-600 italic">
+        Load a Paths.java file to begin
+      </p>
     );
   }
 
@@ -53,7 +63,7 @@ export const RotationZoneEditor = memo(function RotationZoneEditor() {
         return (
           <div
             key={zone.id}
-            className={`rounded border p-2.5 space-y-2 cursor-pointer ${
+            className={`cursor-pointer space-y-2 rounded border p-2.5 ${
               isSelected
                 ? 'border-orange-400/30 bg-orange-500/[0.06]'
                 : 'border-orange-500/10 bg-orange-500/[0.03]'
@@ -61,7 +71,7 @@ export const RotationZoneEditor = memo(function RotationZoneEditor() {
             onClick={() => selectZone(zone.id)}
           >
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono text-orange-400/60 flex items-center gap-1">
+              <span className="flex items-center gap-1 font-mono text-[10px] text-orange-400/60">
                 <Crosshair size={10} />
                 Face Point
               </span>
@@ -78,14 +88,22 @@ export const RotationZoneEditor = memo(function RotationZoneEditor() {
 
             {/* Waypoint range */}
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-500 w-12 shrink-0">Range</span>
+              <span className="w-12 shrink-0 text-[10px] text-zinc-500">
+                Range
+              </span>
               <input
                 type="number"
                 min={0}
                 max={maxIndex}
                 step={0.1}
                 value={zone.startWaypointIndex}
-                onChange={(e) => handleUpdateField(zone.id, 'startWaypointIndex', e.target.value)}
+                onChange={(e) =>
+                  handleUpdateField(
+                    zone.id,
+                    'startWaypointIndex',
+                    e.target.value
+                  )
+                }
                 className="w-14 text-center"
               />
               <span className="text-[10px] text-zinc-600">to</span>
@@ -95,35 +113,45 @@ export const RotationZoneEditor = memo(function RotationZoneEditor() {
                 max={maxIndex}
                 step={0.1}
                 value={zone.endWaypointIndex}
-                onChange={(e) => handleUpdateField(zone.id, 'endWaypointIndex', e.target.value)}
+                onChange={(e) =>
+                  handleUpdateField(zone.id, 'endWaypointIndex', e.target.value)
+                }
                 className="w-14 text-center"
               />
             </div>
 
             {/* Target X */}
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-500 w-12 shrink-0">Target X</span>
+              <span className="w-12 shrink-0 text-[10px] text-zinc-500">
+                Target X
+              </span>
               <input
                 type="number"
                 step={0.1}
                 value={zone.targetPoint.x}
-                onChange={(e) => handleUpdateField(zone.id, 'targetX', e.target.value)}
+                onChange={(e) =>
+                  handleUpdateField(zone.id, 'targetX', e.target.value)
+                }
                 className="w-full text-right"
               />
-              <span className="text-[10px] text-zinc-600 w-4 shrink-0">m</span>
+              <span className="w-4 shrink-0 text-[10px] text-zinc-600">m</span>
             </div>
 
             {/* Target Y */}
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-500 w-12 shrink-0">Target Y</span>
+              <span className="w-12 shrink-0 text-[10px] text-zinc-500">
+                Target Y
+              </span>
               <input
                 type="number"
                 step={0.1}
                 value={zone.targetPoint.y}
-                onChange={(e) => handleUpdateField(zone.id, 'targetY', e.target.value)}
+                onChange={(e) =>
+                  handleUpdateField(zone.id, 'targetY', e.target.value)
+                }
                 className="w-full text-right"
               />
-              <span className="text-[10px] text-zinc-600 w-4 shrink-0">m</span>
+              <span className="w-4 shrink-0 text-[10px] text-zinc-600">m</span>
             </div>
           </div>
         );
@@ -131,7 +159,7 @@ export const RotationZoneEditor = memo(function RotationZoneEditor() {
 
       <button
         onClick={handleAdd}
-        className="btn-ghost flex items-center gap-1.5 text-xs w-full justify-center py-1.5"
+        className="btn-ghost flex w-full items-center justify-center gap-1.5 py-1.5 text-xs"
       >
         <Plus size={13} />
         Add Face-Point Zone

@@ -34,7 +34,7 @@ export function drawInactivePath(
   splinePath: SplinePath,
   controlPoints: Point[],
   label: string,
-  colorIndex: number,
+  colorIndex: number
 ): void {
   if (splinePath.totalLength <= 0) return;
 
@@ -90,7 +90,7 @@ export function drawGrid(
   cw: number,
   ch: number,
   transform: CanvasTransform,
-  showGrid: boolean,
+  showGrid: boolean
 ): void {
   if (!showGrid) return;
 
@@ -117,7 +117,12 @@ export function drawGrid(
   for (let x = minX; x <= maxX; x += step) {
     if (x < 0 || x > FIELD_WIDTH) continue;
     const { cx: cx0 } = fieldToCanvas({ x, y: 0 }, cw, ch, transform);
-    const { cy: cy0 } = fieldToCanvas({ x, y: FIELD_HEIGHT }, cw, ch, transform);
+    const { cy: cy0 } = fieldToCanvas(
+      { x, y: FIELD_HEIGHT },
+      cw,
+      ch,
+      transform
+    );
     const { cy: cy1 } = fieldToCanvas({ x, y: 0 }, cw, ch, transform);
     ctx.moveTo(cx0, cy0);
     ctx.lineTo(cx0, cy1);
@@ -141,7 +146,7 @@ export function drawConstraintZones(
   ch: number,
   transform: CanvasTransform,
   splinePath: SplinePath,
-  constraintZones: ConstraintZone[],
+  constraintZones: ConstraintZone[]
 ): void {
   if (constraintZones.length === 0 || splinePath.totalLength <= 0) return;
 
@@ -150,7 +155,9 @@ export function drawConstraintZones(
   const ds = splinePath.totalLength / numSamples;
 
   for (const zone of constraintZones) {
-    const startS = splinePath.getArcLengthAtWaypointIndex(zone.startWaypointIndex);
+    const startS = splinePath.getArcLengthAtWaypointIndex(
+      zone.startWaypointIndex
+    );
     const endS = splinePath.getArcLengthAtWaypointIndex(zone.endWaypointIndex);
 
     // Draw wider amber overlay along the zone
@@ -193,7 +200,7 @@ export function drawRotationZones(
   transform: CanvasTransform,
   splinePath: SplinePath,
   rotationZones: RotationZone[],
-  selectedZoneId: string | null,
+  selectedZoneId: string | null
 ): void {
   if (rotationZones.length === 0 || splinePath.totalLength <= 0) return;
 
@@ -210,7 +217,9 @@ export function drawRotationZones(
     const startS = startFrac * splinePath.totalLength;
     const endS = endFrac * splinePath.totalLength;
 
-    const color = isSelected ? 'rgba(255, 153, 51, 0.4)' : 'rgba(255, 153, 51, 0.2)';
+    const color = isSelected
+      ? 'rgba(255, 153, 51, 0.4)'
+      : 'rgba(255, 153, 51, 0.2)';
     const glowAlpha = isSelected ? 0.3 : 0.15;
 
     // Draw orange overlay along the zone segment
@@ -270,7 +279,9 @@ export function drawRotationZones(
     const targetC = fieldToCanvas(zone.targetPoint, cw, ch, transform);
 
     ctx.save();
-    ctx.strokeStyle = isSelected ? 'rgba(255, 153, 51, 0.5)' : 'rgba(255, 153, 51, 0.25)';
+    ctx.strokeStyle = isSelected
+      ? 'rgba(255, 153, 51, 0.5)'
+      : 'rgba(255, 153, 51, 0.25)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
@@ -323,11 +334,10 @@ export function drawPath(
   cw: number,
   ch: number,
   transform: CanvasTransform,
-  splinePath: SplinePath,
+  splinePath: SplinePath
 ): void {
   if (splinePath.totalLength <= 0) return;
 
-  const scale = getScale(cw, transform);
   // More samples at higher zoom for smoother curves
   const numSamples = Math.max(300, Math.floor(transform.zoom * 300));
   const ds = splinePath.totalLength / numSamples;
@@ -400,14 +410,17 @@ export function drawPath(
     const angle = Math.atan2(-tan.y, tan.x);
 
     ctx.beginPath();
-    ctx.moveTo(cx + Math.cos(angle) * arrowSize, cy + Math.sin(angle) * arrowSize);
+    ctx.moveTo(
+      cx + Math.cos(angle) * arrowSize,
+      cy + Math.sin(angle) * arrowSize
+    );
     ctx.lineTo(
       cx + Math.cos(angle + 2.5) * arrowSize * 0.7,
-      cy + Math.sin(angle + 2.5) * arrowSize * 0.7,
+      cy + Math.sin(angle + 2.5) * arrowSize * 0.7
     );
     ctx.lineTo(
       cx + Math.cos(angle - 2.5) * arrowSize * 0.7,
-      cy + Math.sin(angle - 2.5) * arrowSize * 0.7,
+      cy + Math.sin(angle - 2.5) * arrowSize * 0.7
     );
     ctx.closePath();
     ctx.fill();
@@ -422,13 +435,15 @@ export function drawNamedPoints(
   ch: number,
   transform: CanvasTransform,
   namedPoints: Record<string, NamedPoint>,
-  controlPointRefs: (string | null)[],
+  controlPointRefs: (string | null)[]
 ): void {
   const points = Object.values(namedPoints);
   if (points.length === 0) return;
 
   // Names already shown by drawControlPoints — skip to avoid duplicates
-  const linkedNames = new Set(controlPointRefs.filter((r): r is string => r !== null));
+  const linkedNames = new Set(
+    controlPointRefs.filter((r): r is string => r !== null)
+  );
 
   const size = Math.max(4, Math.min(7, 6 / Math.sqrt(transform.zoom)));
   const fontSize = Math.max(14, Math.min(20, 18 / Math.sqrt(transform.zoom)));
@@ -463,7 +478,13 @@ export function drawNamedPoints(
       ctx.font = `${fontSize}px monospace`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
-      drawOutlinedText(ctx, np.name, cx + size + 3, cy - size, `rgba(255, 179, 0, ${alpha * 0.8})`);
+      drawOutlinedText(
+        ctx,
+        np.name,
+        cx + size + 3,
+        cy - size,
+        `rgba(255, 179, 0, ${alpha * 0.8})`
+      );
       ctx.restore();
     }
   }
@@ -479,11 +500,10 @@ export function drawControlPoints(
   controlPoints: Point[],
   controlPointRefs: (string | null)[],
   selectedIndex: number | null,
-  hoveredIndex: number | null,
+  hoveredIndex: number | null
 ): void {
   if (controlPoints.length === 0) return;
 
-  const scale = getScale(cw, transform);
   // Base radius in pixels, scaled inversely with zoom so points stay manageable
   const baseRadius = Math.max(5, Math.min(10, 8 / Math.sqrt(transform.zoom)));
   const selectedRadius = baseRadius * 1.35;
@@ -559,9 +579,13 @@ export function drawControlPoints(
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
       if (ref) {
-        ctx.fillStyle = isHovered ? 'rgba(255, 199, 50, 0.95)' : 'rgba(255, 179, 0, 0.8)';
+        ctx.fillStyle = isHovered
+          ? 'rgba(255, 199, 50, 0.95)'
+          : 'rgba(255, 179, 0, 0.8)';
       } else {
-        ctx.fillStyle = isHovered ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.7)';
+        ctx.fillStyle = isHovered
+          ? 'rgba(255, 255, 255, 0.9)'
+          : 'rgba(255, 255, 255, 0.7)';
       }
       ctx.fill();
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
@@ -579,7 +603,10 @@ export function drawControlPoints(
 
     // Show named point name above the point if linked
     if (ref) {
-      const nameFontSize = Math.max(14, Math.min(20, 18 / Math.sqrt(transform.zoom)));
+      const nameFontSize = Math.max(
+        14,
+        Math.min(20, 18 / Math.sqrt(transform.zoom))
+      );
       ctx.save();
       ctx.font = `${nameFontSize}px monospace`;
       ctx.textAlign = 'center';
@@ -598,7 +625,7 @@ export function drawHeadingArrows(
   ch: number,
   transform: CanvasTransform,
   controlPoints: Point[],
-  headingWaypoints: HeadingWaypoint[],
+  headingWaypoints: HeadingWaypoint[]
 ): void {
   if (headingWaypoints.length === 0 || controlPoints.length === 0) return;
 
@@ -635,9 +662,15 @@ export function drawHeadingArrows(
     // Arrowhead
     ctx.beginPath();
     ctx.moveTo(tipX, tipY);
-    ctx.lineTo(tipX - headLen * Math.cos(angle - 0.4), tipY - headLen * Math.sin(angle - 0.4));
+    ctx.lineTo(
+      tipX - headLen * Math.cos(angle - 0.4),
+      tipY - headLen * Math.sin(angle - 0.4)
+    );
     ctx.moveTo(tipX, tipY);
-    ctx.lineTo(tipX - headLen * Math.cos(angle + 0.4), tipY - headLen * Math.sin(angle + 0.4));
+    ctx.lineTo(
+      tipX - headLen * Math.cos(angle + 0.4),
+      tipY - headLen * Math.sin(angle + 0.4)
+    );
     ctx.stroke();
     ctx.restore();
 
@@ -645,7 +678,13 @@ export function drawHeadingArrows(
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    drawOutlinedText(ctx, `${hw.degrees.toFixed(0)}`, tipX, tipY - 4, '#00DDFF');
+    drawOutlinedText(
+      ctx,
+      `${hw.degrees.toFixed(0)}`,
+      tipX,
+      tipY - 4,
+      '#00DDFF'
+    );
   });
 }
 
@@ -656,7 +695,7 @@ export function drawConnectionLines(
   cw: number,
   ch: number,
   transform: CanvasTransform,
-  controlPoints: Point[],
+  controlPoints: Point[]
 ): void {
   if (controlPoints.length < 2) return;
 
@@ -685,7 +724,7 @@ export function drawScrubberGhost(
   scrubberDistance: number,
   heading: number | null,
   robotLength: number,
-  robotWidth: number,
+  robotWidth: number
 ): void {
   if (splinePath.totalLength <= 0 || scrubberDistance <= 0) return;
 
@@ -736,7 +775,7 @@ export function drawWaypointGhosts(
   controlPoints: Point[],
   headingWaypoints: HeadingWaypoint[],
   robotLength: number,
-  robotWidth: number,
+  robotWidth: number
 ): void {
   if (splinePath.totalLength <= 0 || controlPoints.length < 2) return;
 
@@ -801,7 +840,7 @@ export function drawMinimap(
   ch: number,
   transform: CanvasTransform,
   splinePath: SplinePath | null,
-  controlPoints: Point[],
+  controlPoints: Point[]
 ): void {
   if (transform.zoom <= 1.5) return;
 
@@ -860,14 +899,22 @@ export function drawMinimap(
     const { mx, my } = toMini(pt);
     ctx.beginPath();
     ctx.arc(mx, my, 2, 0, 2 * Math.PI);
-    ctx.fillStyle = i === 0 ? '#00FFaa' : i === controlPoints.length - 1 ? '#FF3366' : 'rgba(255, 255, 255, 0.6)';
+    ctx.fillStyle =
+      i === 0
+        ? '#00FFaa'
+        : i === controlPoints.length - 1
+          ? '#FF3366'
+          : 'rgba(255, 255, 255, 0.6)';
     ctx.fill();
   });
 
   // Viewport rectangle
   const viewTopLeft = canvasToField(0, 0, cw, ch, transform);
   const viewBottomRight = canvasToField(cw, ch, cw, ch, transform);
-  const vtl = toMini({ x: Math.max(0, viewTopLeft.x), y: Math.min(FIELD_HEIGHT, viewTopLeft.y) });
+  const vtl = toMini({
+    x: Math.max(0, viewTopLeft.x),
+    y: Math.min(FIELD_HEIGHT, viewTopLeft.y),
+  });
   const vbr = toMini({
     x: Math.min(FIELD_WIDTH, viewBottomRight.x),
     y: Math.max(0, viewBottomRight.y),

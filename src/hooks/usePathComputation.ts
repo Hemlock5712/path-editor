@@ -1,15 +1,10 @@
 import { useMemo } from 'react';
 import { usePathStore } from '../stores/pathStore';
-import { useSettingsStore, type RobotSettings } from '../stores/settingsStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { SplinePath } from '../math/SplinePath';
 import { VelocityProfile } from '../math/VelocityProfile';
 import { TimeEstimator } from '../math/TimeEstimator';
-import {
-  computeAnalytics,
-  computeStats,
-  type AnalyticsArrays,
-  type PathStats,
-} from '../math/ProfileAnalytics';
+import { computeAnalytics, computeStats } from '../math/ProfileAnalytics';
 
 export function usePathComputation() {
   const controlPoints = usePathStore((s) => s.controlPoints);
@@ -28,6 +23,37 @@ export function usePathComputation() {
   const numDriveMotors = useSettingsStore((s) => s.numDriveMotors);
   const frictionCoefficient = useSettingsStore((s) => s.frictionCoefficient);
   const minVelocity = useSettingsStore((s) => s.minVelocity);
+
+  // Single key that changes when any setting changes, used as a dep
+  // so the VelocityProfile (which reads settings internally) recomputes.
+  const settingsKey = useMemo(
+    () =>
+      [
+        stallTorque,
+        freeSpeedRpm,
+        stallCurrent,
+        statorCurrentLimit,
+        gearRatio,
+        wheelRadius,
+        robotMass,
+        numDriveMotors,
+        frictionCoefficient,
+        minVelocity,
+      ].join(','),
+    [
+      stallTorque,
+      freeSpeedRpm,
+      stallCurrent,
+      statorCurrentLimit,
+      gearRatio,
+      wheelRadius,
+      robotMass,
+      numDriveMotors,
+      frictionCoefficient,
+      minVelocity,
+    ]
+  );
+
   const splinePath = useMemo(() => {
     if (controlPoints.length < 2) return null;
     try {
@@ -40,14 +66,25 @@ export function usePathComputation() {
   const velocityProfile = useMemo(() => {
     if (!splinePath) return null;
     try {
-      return new VelocityProfile(splinePath, constraints, headingWaypoints, controlPoints.length, undefined, constraintZones);
+      return new VelocityProfile(
+        splinePath,
+        constraints,
+        headingWaypoints,
+        controlPoints.length,
+        undefined,
+        constraintZones
+      );
     } catch {
       return null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splinePath, constraints, headingWaypoints, controlPoints.length, constraintZones, stallTorque,
-    freeSpeedRpm, stallCurrent, statorCurrentLimit, gearRatio, wheelRadius, robotMass,
-    numDriveMotors, frictionCoefficient, minVelocity]);
+  }, [
+    splinePath,
+    constraints,
+    headingWaypoints,
+    controlPoints.length,
+    constraintZones,
+    settingsKey,
+  ]);
 
   const timeEstimator = useMemo(() => {
     if (!velocityProfile) return null;
@@ -61,9 +98,15 @@ export function usePathComputation() {
       velocityProfile,
       timeEstimator,
       headingWaypoints,
-      controlPoints.length,
+      controlPoints.length
     );
-  }, [splinePath, velocityProfile, timeEstimator, headingWaypoints, controlPoints.length]);
+  }, [
+    splinePath,
+    velocityProfile,
+    timeEstimator,
+    headingWaypoints,
+    controlPoints.length,
+  ]);
 
   const stats = useMemo(() => {
     if (!splinePath || !velocityProfile || !timeEstimator) return null;
@@ -73,7 +116,7 @@ export function usePathComputation() {
       timeEstimator,
       headingWaypoints,
       controlPoints.length,
-      headingWaypoints.length,
+      headingWaypoints.length
     );
   }, [
     splinePath,

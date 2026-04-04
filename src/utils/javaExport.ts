@@ -1,4 +1,12 @@
-import { NamedPath, NamedPoint, Point, HeadingWaypoint, VelocityConstraints, ConstraintZone, RotationZone } from '../types';
+import {
+  NamedPath,
+  NamedPoint,
+  Point,
+  HeadingWaypoint,
+  VelocityConstraints,
+  ConstraintZone,
+  RotationZone,
+} from '../types';
 
 const INDENT = '    '; // 4 spaces per level
 
@@ -24,7 +32,7 @@ function generateSinglePath(
   headingWaypoints: HeadingWaypoint[],
   constraints: VelocityConstraints,
   constraintZones: ConstraintZone[],
-  rotationZones: RotationZone[],
+  rotationZones: RotationZone[]
 ): string {
   const name = toJavaConstantName(constantName);
   const indent = INDENT.repeat(3); // 12 spaces for list entries
@@ -40,7 +48,7 @@ function generateSinglePath(
     const entries = headingWaypoints
       .map(
         (hw) =>
-          `${indent}new PathData.HeadingWaypoint(${hw.waypointIndex}, Rotation2d.fromDegrees(${hw.degrees}))`,
+          `${indent}new PathData.HeadingWaypoint(${hw.waypointIndex}, Rotation2d.fromDegrees(${hw.degrees}))`
       )
       .join(',\n');
     headings = `List.of(\n${entries}\n${INDENT.repeat(2)})`;
@@ -62,7 +70,7 @@ function generateSinglePath(
     const entries = constraintZones
       .map(
         (z) =>
-          `${indent}new PathData.ConstraintZone(${z.startWaypointIndex}, ${z.endWaypointIndex}, ${z.maxVelocity}, ${z.maxAcceleration})`,
+          `${indent}new PathData.ConstraintZone(${z.startWaypointIndex}, ${z.endWaypointIndex}, ${z.maxVelocity}, ${z.maxAcceleration})`
       )
       .join(',\n');
     zones = `List.of(\n${entries}\n${INDENT.repeat(2)})`;
@@ -75,7 +83,7 @@ function generateSinglePath(
     const entries = rotationZones
       .map(
         (rz) =>
-          `${indent}new PathData.RotationZone("${rz.id}", ${rz.startWaypointIndex}, ${rz.endWaypointIndex}, new Translation2d(${rz.targetPoint.x}, ${rz.targetPoint.y}))`,
+          `${indent}new PathData.RotationZone("${rz.id}", ${rz.startWaypointIndex}, ${rz.endWaypointIndex}, new Translation2d(${rz.targetPoint.x}, ${rz.targetPoint.y}))`
       )
       .join(',\n');
     rotZones = `List.of(\n${entries}\n${INDENT.repeat(2)})`;
@@ -92,7 +100,9 @@ ${points}
     );`;
 }
 
-function generateNamedPointConstants(namedPoints: Record<string, NamedPoint>): string {
+function generateNamedPointConstants(
+  namedPoints: Record<string, NamedPoint>
+): string {
   const points = Object.values(namedPoints);
   if (points.length === 0) return '';
 
@@ -112,7 +122,10 @@ function generateNamedPointConstants(namedPoints: Record<string, NamedPoint>): s
 /**
  * Generates a compilable Paths.java file with all path constants.
  */
-export function generatePathsJava(paths: NamedPath[], namedPoints?: Record<string, NamedPoint>): string {
+export function generatePathsJava(
+  paths: NamedPath[],
+  namedPoints?: Record<string, NamedPoint>
+): string {
   const constants = paths
     .map((p) =>
       generateSinglePath(
@@ -121,12 +134,14 @@ export function generatePathsJava(paths: NamedPath[], namedPoints?: Record<strin
         p.headingWaypoints,
         p.constraints,
         p.constraintZones,
-        p.rotationZones,
-      ),
+        p.rotationZones
+      )
     )
     .join('\n\n');
 
-  const namedPointConstants = namedPoints ? generateNamedPointConstants(namedPoints) : '';
+  const namedPointConstants = namedPoints
+    ? generateNamedPointConstants(namedPoints)
+    : '';
   const hasPosePoints = namedPoints
     ? Object.values(namedPoints).some((np) => np.headingDegrees !== null)
     : false;

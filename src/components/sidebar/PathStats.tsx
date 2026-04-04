@@ -8,23 +8,34 @@ interface PathStatsProps {
 export const PathStats = memo(function PathStats({ stats }: PathStatsProps) {
   if (!stats) {
     return (
-      <p className="text-xs text-zinc-600 italic">Load a Paths.java file to view stats</p>
+      <p className="text-xs text-zinc-600 italic">
+        Load a Paths.java file to view stats
+      </p>
     );
   }
 
   return (
     <div className="space-y-1">
       {/* Primary stats */}
-      <StatRow label="Total length" value={`${stats.totalLength.toFixed(3)} m`} />
-      <StatRow label="Estimated time" value={`${stats.estimatedTime.toFixed(3)} s`} />
+      <StatRow
+        label="Total length"
+        value={`${stats.totalLength.toFixed(3)} m`}
+      />
+      <StatRow
+        label="Estimated time"
+        value={`${stats.estimatedTime.toFixed(3)} s`}
+      />
 
-      <div className="border-t border-white/[0.04] my-1.5" />
+      <div className="my-1.5 border-t border-white/[0.04]" />
 
       {/* Counts */}
       <StatRow label="Control points" value={String(stats.numControlPoints)} />
-      <StatRow label="Heading waypoints" value={String(stats.numHeadingWaypoints)} />
+      <StatRow
+        label="Heading waypoints"
+        value={String(stats.numHeadingWaypoints)}
+      />
 
-      <div className="border-t border-white/[0.04] my-1.5" />
+      <div className="my-1.5 border-t border-white/[0.04]" />
 
       {/* Extrema */}
       <StatRow
@@ -39,7 +50,11 @@ export const PathStats = memo(function PathStats({ stats }: PathStatsProps) {
       <StatRow
         label="Peak angular vel"
         value={`${stats.peakAngularVelocity.toFixed(2)} rad/s`}
-        sub={stats.peakAngularVelocity > 0 ? `@ ${stats.peakAngularVelocityDistance.toFixed(2)} m` : undefined}
+        sub={
+          stats.peakAngularVelocity > 0
+            ? `@ ${stats.peakAngularVelocityDistance.toFixed(2)} m`
+            : undefined
+        }
       />
     </div>
   );
@@ -55,11 +70,11 @@ function StatRow({
   sub?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between text-xs gap-2">
-      <span className="text-zinc-500 shrink-0">{label}</span>
+    <div className="flex items-baseline justify-between gap-2 text-xs">
+      <span className="shrink-0 text-zinc-500">{label}</span>
       <div className="text-right">
-        <span className="text-zinc-300 font-mono">{value}</span>
-        {sub && <span className="text-zinc-600 ml-1.5 text-[10px]">{sub}</span>}
+        <span className="font-mono text-zinc-300">{value}</span>
+        {sub && <span className="ml-1.5 text-[10px] text-zinc-600">{sub}</span>}
       </div>
     </div>
   );

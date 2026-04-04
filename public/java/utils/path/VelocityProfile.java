@@ -160,7 +160,7 @@ public final class VelocityProfile {
     double[] backward = new double[numSamples + 1];
     backward[numSamples] = Math.min(constraints.getEndVelocity(), curvatureLimit[numSamples]);
     for (int i = numSamples - 1; i >= 0; i--) {
-      double fullDecel = effectiveMaxAccel[i];
+      double fullDecel = Math.min(constraints.getMaxDeceleration(), effectiveMaxAccel[i]);
 
       // 1. Tentative speed using full decel budget (upper bound for centripetal estimate)
       double vTentative = Math.sqrt(backward[i + 1] * backward[i + 1] + 2 * fullDecel * ds);

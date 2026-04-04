@@ -1,15 +1,17 @@
+import { memo } from 'react';
 import { usePathStore } from '../../stores/pathStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { Compass, X } from 'lucide-react';
 
-export function HeadingEditor() {
-  const selectedPointIndex = usePathStore((s) => s.selectedPointIndex);
+export const HeadingEditor = memo(function HeadingEditor() {
+  const selectedPointIndex = useSelectionStore((s) => s.selectedPointIndex);
   const headingWaypoints = usePathStore((s) => s.headingWaypoints);
   const setHeading = usePathStore((s) => s.setHeading);
 
   if (selectedPointIndex === null) return null;
 
   const existing = headingWaypoints.find(
-    (hw) => Math.round(hw.waypointIndex) === selectedPointIndex,
+    (hw) => Math.round(hw.waypointIndex) === selectedPointIndex
   );
   const headingDeg = existing?.degrees ?? null;
   const headingRad = headingDeg !== null ? (headingDeg * Math.PI) / 180 : null;
@@ -17,7 +19,7 @@ export function HeadingEditor() {
   return (
     <div className="flex items-start gap-3">
       {/* Compass preview — neon styled */}
-      <div className="shrink-0 w-12 h-12 rounded-full border border-accent-green/10 bg-transparent relative flex items-center justify-center">
+      <div className="border-accent-green/10 relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-transparent">
         {/* Tick marks — neon dots */}
         {[0, 90, 180, 270].map((deg) => {
           const rad = (deg * Math.PI) / 180;
@@ -26,7 +28,7 @@ export function HeadingEditor() {
           return (
             <div
               key={deg}
-              className="absolute w-1 h-1 rounded-full bg-accent-green/20"
+              className="bg-accent-green/20 absolute h-1 w-1 rounded-full"
               style={{
                 left: `calc(50% + ${x}px - 2px)`,
                 top: `calc(50% + ${y}px - 2px)`,
@@ -37,7 +39,7 @@ export function HeadingEditor() {
         {/* Heading needle — neon green with glow */}
         {headingRad !== null && (
           <div
-            className="absolute w-0.5 h-5 bg-accent-green rounded-full origin-bottom"
+            className="bg-accent-green absolute h-5 w-0.5 origin-bottom rounded-full"
             style={{
               bottom: '50%',
               left: 'calc(50% - 1px)',
@@ -46,9 +48,7 @@ export function HeadingEditor() {
             }}
           />
         )}
-        {headingRad === null && (
-          <Compass size={14} className="text-zinc-600" />
-        )}
+        {headingRad === null && <Compass size={14} className="text-zinc-600" />}
       </div>
 
       {/* Controls */}
@@ -80,7 +80,7 @@ export function HeadingEditor() {
         {existing && (
           <button
             onClick={() => setHeading(selectedPointIndex, null)}
-            className="btn-ghost flex items-center gap-1 text-xs py-0.5 px-2"
+            className="btn-ghost flex items-center gap-1 px-2 py-0.5 text-xs"
           >
             <X size={12} />
             Clear
@@ -89,4 +89,4 @@ export function HeadingEditor() {
       </div>
     </div>
   );
-}
+});

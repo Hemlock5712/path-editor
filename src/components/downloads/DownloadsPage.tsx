@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { Download, FileCode, Package, Puzzle, Loader2, Lock } from 'lucide-react';
+import {
+  Download,
+  FileCode,
+  Package,
+  Puzzle,
+  Loader2,
+  Lock,
+} from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Titlebar } from '../layout/Titlebar';
@@ -28,7 +35,7 @@ export function DownloadsPage() {
           const res = await fetch(`/java/${file.relativePath}`);
           const text = await res.text();
           zip.file(`${file.packagePath}${file.filename}`, text);
-        }),
+        })
       );
       const blob = await zip.generateAsync({ type: 'blob' });
       saveAs(blob, 'frc-path-following.zip');
@@ -38,17 +45,17 @@ export function DownloadsPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-surface-950">
+    <div className="bg-surface-950 flex h-screen flex-col">
       <Titlebar />
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-6 py-8 space-y-5 animate-fadeIn">
+        <div className="animate-fadeIn mx-auto max-w-2xl space-y-5 px-6 py-8">
           <div className="mb-6">
-            <h2 className="text-sm font-light tracking-[0.15em] uppercase text-accent-green/60">
+            <h2 className="text-accent-green/60 text-sm font-light tracking-[0.15em] uppercase">
               Java Path Following Files
             </h2>
-            <p className="text-xs text-zinc-500 mt-1">
-              Download the Java source files needed to integrate the distance-based
-              path following system into your FRC robot project.
+            <p className="mt-1 text-xs text-zinc-500">
+              Download the Java source files needed to integrate the
+              distance-based path following system into your FRC robot project.
             </p>
           </div>
 
@@ -56,7 +63,7 @@ export function DownloadsPage() {
           <button
             onClick={downloadZip}
             disabled={downloading}
-            className="btn-primary flex items-center gap-2 text-sm w-full justify-center py-2.5"
+            className="btn-primary flex w-full items-center justify-center gap-2 py-2.5 text-sm"
           >
             {downloading ? (
               <Loader2 size={14} className="animate-spin" />
@@ -97,15 +104,21 @@ export function DownloadsPage() {
 
           {/* Usage instructions */}
           <div className="neon-panel p-4">
-            <h3 className="flex items-center gap-2 text-[11px] font-light tracking-wide text-accent-green/40 mb-3">
+            <h3 className="text-accent-green/40 mb-3 flex items-center gap-2 text-[11px] font-light tracking-wide">
               Quick Start
             </h3>
-            <div className="text-xs text-zinc-400 space-y-2 font-mono">
-              <p className="text-zinc-500">1. Copy files to your robot project maintaining the package structure</p>
-              <p className="text-zinc-500">2. Save <span className="text-accent-green">Paths.java</span> from the editor and add it to your project</p>
+            <div className="space-y-2 font-mono text-xs text-zinc-400">
+              <p className="text-zinc-500">
+                1. Copy files to your robot project maintaining the package
+                structure
+              </p>
+              <p className="text-zinc-500">
+                2. Save <span className="text-accent-green">Paths.java</span>{' '}
+                from the editor and add it to your project
+              </p>
               <p className="text-zinc-500">3. Use in autonomous:</p>
-              <pre className="bg-surface-900 rounded p-3 text-[11px] overflow-x-auto text-zinc-300">
-{`// Auto-mirrors path when on red alliance
+              <pre className="bg-surface-900 overflow-x-auto rounded p-3 text-[11px] text-zinc-300">
+                {`// Auto-mirrors path when on red alliance
 var pathData = Paths.forAlliance(Paths.MY_PATH);
 var spline = new SplinePath(pathData.controlPoints());
 new FollowPath(drivetrain, spline, pathData.globalConstraints())
@@ -140,14 +153,18 @@ function FileSection({
 }) {
   return (
     <div className="neon-panel p-4">
-      <h3 className="flex items-center gap-2 text-[11px] font-light tracking-wide text-accent-green/40 mb-1">
+      <h3 className="text-accent-green/40 mb-1 flex items-center gap-2 text-[11px] font-light tracking-wide">
         {icon}
         {title}
       </h3>
-      <p className="text-[10px] text-zinc-600 mb-3">{description}</p>
+      <p className="mb-3 text-[10px] text-zinc-600">{description}</p>
       <div className="space-y-1.5">
         {files.map((file) => (
-          <FileCard key={file.filename} file={file} onDownload={() => onDownload(file)} />
+          <FileCard
+            key={file.filename}
+            file={file}
+            onDownload={() => onDownload(file)}
+          />
         ))}
       </div>
     </div>
@@ -162,13 +179,19 @@ function FileCard({
   onDownload: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-white/[0.02] transition-colors group">
-      <FileCode size={14} className="text-zinc-600 shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="text-xs font-mono text-accent-green truncate">{file.filename}</div>
-        <div className="text-[10px] text-zinc-600 truncate">{file.description}</div>
+    <div className="group flex items-center gap-3 rounded px-2 py-1.5 transition-colors hover:bg-white/[0.02]">
+      <FileCode size={14} className="shrink-0 text-zinc-600" />
+      <div className="min-w-0 flex-1">
+        <div className="text-accent-green truncate font-mono text-xs">
+          {file.filename}
+        </div>
+        <div className="truncate text-[10px] text-zinc-600">
+          {file.description}
+        </div>
       </div>
-      <span className="text-[10px] text-zinc-600 font-mono shrink-0">{file.lineCount}L</span>
+      <span className="shrink-0 font-mono text-[10px] text-zinc-600">
+        {file.lineCount}L
+      </span>
       {file.private ? (
         <span className="flex items-center gap-1 text-[10px] text-amber-500/70">
           <Lock size={10} />
@@ -177,7 +200,7 @@ function FileCard({
       ) : (
         <button
           onClick={onDownload}
-          className="btn-ghost p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="btn-ghost p-1 opacity-0 transition-opacity group-hover:opacity-100"
           title={`Download ${file.filename}`}
         >
           <Download size={12} />

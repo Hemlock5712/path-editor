@@ -54,7 +54,10 @@ export class TimeEstimator {
     const sRange = sHi - sLo;
     const frac = sRange > 1e-12 ? (s - sLo) / sRange : 0;
 
-    return this.cumulativeTime[lo] + frac * (this.cumulativeTime[hi] - this.cumulativeTime[lo]);
+    return (
+      this.cumulativeTime[lo] +
+      frac * (this.cumulativeTime[hi] - this.cumulativeTime[lo])
+    );
   }
 
   /**

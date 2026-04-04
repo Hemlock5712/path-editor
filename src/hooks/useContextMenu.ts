@@ -22,10 +22,16 @@ export function useContextMenu() {
   const [menu, setMenu] = useState<ContextMenuState>(INITIAL_STATE);
 
   const show = useCallback(
-    (x: number, y: number, pointIndex: number | null, fieldX: number, fieldY: number) => {
+    (
+      x: number,
+      y: number,
+      pointIndex: number | null,
+      fieldX: number,
+      fieldY: number
+    ) => {
       setMenu({ visible: true, x, y, pointIndex, fieldX, fieldY });
     },
-    [],
+    []
   );
 
   const hide = useCallback(() => {

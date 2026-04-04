@@ -1,4 +1,13 @@
-import { FolderOpen, Undo2, Redo2, Trash2, Box, FileCode, Save, FlipVertical2, Copy } from 'lucide-react';
+import {
+  FolderOpen,
+  Undo2,
+  Redo2,
+  Trash2,
+  Box,
+  Save,
+  FlipVertical2,
+  Copy,
+} from 'lucide-react';
 import { usePathStore } from '../../stores/pathStore';
 import { useEditorStore } from '../../stores/editorStore';
 import { parsePathsJava } from '../../utils/javaParser';
@@ -44,7 +53,7 @@ export function Toolbar({
   const handleLoadJava = async () => {
     if ('showOpenFilePicker' in window) {
       try {
-        const [handle] = await (window as any).showOpenFilePicker({
+        const [handle] = await window.showOpenFilePicker({
           types: [
             {
               description: 'Java Source',
@@ -85,11 +94,14 @@ export function Toolbar({
   const handleSaveJava = async () => {
     const allPaths = usePathStore.getState().getAllPaths();
     if (allPaths.length === 0) return;
-    const java = generatePathsJava(allPaths, usePathStore.getState().namedPoints);
+    const java = generatePathsJava(
+      allPaths,
+      usePathStore.getState().namedPoints
+    );
 
     if ('showSaveFilePicker' in window) {
       try {
-        const handle = await (window as any).showSaveFilePicker({
+        const handle = await window.showSaveFilePicker({
           suggestedName: 'Paths.java',
           types: [
             {
@@ -114,26 +126,34 @@ export function Toolbar({
   };
 
   return (
-    <div className="flex items-center gap-1.5 px-4 py-2 bg-transparent">
+    <div className="flex items-center gap-1.5 bg-transparent px-4 py-2">
       {/* File group */}
-      <button onClick={handleLoadJava} className="btn-default flex items-center gap-1.5 text-xs" title="Load Paths.java (Ctrl+O)">
+      <button
+        onClick={handleLoadJava}
+        className="btn-default flex items-center gap-1.5 text-xs"
+        title="Load Paths.java (Ctrl+O)"
+      >
         <FolderOpen size={13} />
         <span>Load Java</span>
       </button>
 
-      <button onClick={handleSaveJava} className="btn-default flex items-center gap-1.5 text-xs" title="Save Paths.java (Ctrl+S)">
+      <button
+        onClick={handleSaveJava}
+        className="btn-default flex items-center gap-1.5 text-xs"
+        title="Save Paths.java (Ctrl+S)"
+      >
         <Save size={13} />
         <span>Save Java</span>
       </button>
 
       {/* Separator */}
-      <div className="w-px h-4 bg-accent-green/[0.08] mx-1" />
+      <div className="bg-accent-green/[0.08] mx-1 h-4 w-px" />
 
       {/* Undo/Redo group */}
       <button
         onClick={undo}
         disabled={undoStack.length === 0}
-        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
         title="Undo (Ctrl+Z)"
       >
         <Undo2 size={14} />
@@ -142,20 +162,20 @@ export function Toolbar({
       <button
         onClick={redo}
         disabled={redoStack.length === 0}
-        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
         title="Redo (Ctrl+Y)"
       >
         <Redo2 size={14} />
       </button>
 
       {/* Separator */}
-      <div className="w-px h-4 bg-accent-green/[0.08] mx-1" />
+      <div className="bg-accent-green/[0.08] mx-1 h-4 w-px" />
 
       {/* Delete active path */}
       <button
         onClick={handleDeletePath}
         disabled={!activePathName || pathCount <= 1}
-        className="btn-danger flex items-center gap-1 text-xs disabled:opacity-20 disabled:cursor-not-allowed"
+        className="btn-danger flex items-center gap-1 text-xs disabled:cursor-not-allowed disabled:opacity-20"
         title="Delete active path"
       >
         <Trash2 size={13} />
@@ -166,7 +186,7 @@ export function Toolbar({
       <button
         onClick={flipPathY}
         disabled={controlPoints.length < 2}
-        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
         title="Flip path left/right (mirror Y)"
       >
         <FlipVertical2 size={14} />
@@ -175,22 +195,24 @@ export function Toolbar({
       <button
         onClick={duplicatePath}
         disabled={controlPoints.length === 0}
-        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
         title="Duplicate active path"
       >
         <Copy size={14} />
       </button>
 
       {/* Separator */}
-      <div className="w-px h-4 bg-accent-green/[0.08] mx-1" />
+      <div className="bg-accent-green/[0.08] mx-1 h-4 w-px" />
 
       {/* Waypoint ghosts toggle */}
       <button
         onClick={toggleWaypointGhosts}
-        className="p-1.5 rounded transition-colors"
+        className="rounded p-1.5 transition-colors"
         style={{
           color: showWaypointGhosts ? '#00FFaa' : '#6b6b7a',
-          background: showWaypointGhosts ? 'rgba(0, 255, 170, 0.08)' : 'transparent',
+          background: showWaypointGhosts
+            ? 'rgba(0, 255, 170, 0.08)'
+            : 'transparent',
         }}
         title="Toggle robot outlines at waypoints"
       >
@@ -198,7 +220,7 @@ export function Toolbar({
       </button>
 
       {/* Separator */}
-      <div className="w-px h-4 bg-accent-green/[0.08] mx-1" />
+      <div className="bg-accent-green/[0.08] mx-1 h-4 w-px" />
 
       {/* Playback controls inline */}
       <PlaybackControls

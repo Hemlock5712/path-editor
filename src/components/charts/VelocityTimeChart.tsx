@@ -24,7 +24,11 @@ export function VelocityTimeChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    x: number;
+    y: number;
+    text: string;
+  } | null>(null);
 
   const scrubberDistance = useEditorStore((s) => s.scrubberDistance);
   const setScrubberDistance = useEditorStore((s) => s.setScrubberDistance);
@@ -58,7 +62,7 @@ export function VelocityTimeChart({
       const plotW = size.width - PADDING.left - PADDING.right;
       return PADDING.left + (t / maxTime) * plotW;
     },
-    [getMaxTime, size.width],
+    [getMaxTime, size.width]
   );
 
   // Convert velocity to canvas Y
@@ -68,7 +72,7 @@ export function VelocityTimeChart({
       const yMax = maxVelocity * 1.1;
       return PADDING.top + plotH * (1 - v / yMax);
     },
-    [maxVelocity, size.height],
+    [maxVelocity, size.height]
   );
 
   // Convert canvas X to time
@@ -79,7 +83,7 @@ export function VelocityTimeChart({
       const t = ((x - PADDING.left) / plotW) * maxTime;
       return Math.max(0, Math.min(t, maxTime));
     },
-    [getMaxTime, size.width],
+    [getMaxTime, size.width]
   );
 
   // Draw chart
@@ -265,7 +269,7 @@ export function VelocityTimeChart({
         setIsDragging(true);
       }
     },
-    [analytics, timeEstimator, size, xToTime, setScrubberDistance],
+    [analytics, timeEstimator, size, xToTime, setScrubberDistance]
   );
 
   const handleMouseMove = useCallback(
@@ -300,7 +304,15 @@ export function VelocityTimeChart({
         setTooltip(null);
       }
     },
-    [analytics, isDragging, timeEstimator, size, xToTime, profile, setScrubberDistance],
+    [
+      analytics,
+      isDragging,
+      timeEstimator,
+      size,
+      xToTime,
+      profile,
+      setScrubberDistance,
+    ]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -313,7 +325,7 @@ export function VelocityTimeChart({
   }, []);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full">
+    <div ref={containerRef} className="relative h-full w-full">
       <canvas
         ref={canvasRef}
         style={{ width: size.width, height: size.height }}
@@ -338,7 +350,11 @@ export function VelocityTimeChart({
   );
 }
 
-function computeNiceStep(range: number, pixels: number, minPixelGap: number): number {
+function computeNiceStep(
+  range: number,
+  pixels: number,
+  minPixelGap: number
+): number {
   if (range <= 0 || pixels <= 0) return 1;
   const rawStep = (range * minPixelGap) / pixels;
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));

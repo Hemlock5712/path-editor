@@ -21,8 +21,8 @@ export interface VelocityConstraints {
   maxAcceleration: number;
   startVelocity: number;
   endVelocity: number;
-  maxAngularVelocity: number;       // rad/s
-  maxAngularAcceleration: number;   // rad/s²
+  maxAngularVelocity: number; // rad/s
+  maxAngularAcceleration: number; // rad/s²
 }
 
 export interface ConstraintZone {
@@ -55,8 +55,8 @@ export const DEFAULT_CONSTRAINTS: VelocityConstraints = {
   maxAcceleration: 10.791,
   startVelocity: 0,
   endVelocity: 0,
-  maxAngularVelocity: 10.0,       // ~573 deg/s, typical for swerve base radius ~0.42m
-  maxAngularAcceleration: 20.0,   // rad/s²
+  maxAngularVelocity: 10.0, // ~573 deg/s, typical for swerve base radius ~0.42m
+  maxAngularAcceleration: 20.0, // rad/s²
 };
 
 // Field dimensions (2026 Reefscape) — defaults, overridden by settingsStore

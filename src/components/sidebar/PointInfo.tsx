@@ -1,4 +1,5 @@
 import { usePathStore } from '../../stores/pathStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { MapPin } from 'lucide-react';
 import type { SplinePath } from '../../math/SplinePath';
 import type { VelocityProfile } from '../../math/VelocityProfile';
@@ -20,7 +21,7 @@ interface PointInfoProps {
 function getDistanceAtControlPoint(
   splinePath: SplinePath,
   pointIndex: number,
-  totalPoints: number,
+  totalPoints: number
 ): number {
   if (totalPoints < 2) return 0;
   // Each control point corresponds roughly to a segment boundary.
@@ -29,12 +30,17 @@ function getDistanceAtControlPoint(
   return frac * splinePath.totalLength;
 }
 
-export function PointInfo({ splinePath, velocityProfile, timeEstimator }: PointInfoProps) {
+export function PointInfo({
+  splinePath,
+  velocityProfile,
+  timeEstimator,
+}: PointInfoProps) {
   const controlPoints = usePathStore((s) => s.controlPoints);
-  const selectedPointIndex = usePathStore((s) => s.selectedPointIndex);
+  const selectedPointIndex = useSelectionStore((s) => s.selectedPointIndex);
   const movePoint = usePathStore((s) => s.movePoint);
 
-  const hasSelection = selectedPointIndex !== null && selectedPointIndex < controlPoints.length;
+  const hasSelection =
+    selectedPointIndex !== null && selectedPointIndex < controlPoints.length;
 
   const point = hasSelection ? controlPoints[selectedPointIndex] : null;
   const totalPoints = controlPoints.length;
@@ -46,7 +52,11 @@ export function PointInfo({ splinePath, velocityProfile, timeEstimator }: PointI
   let curvature: number | null = null;
 
   if (hasSelection && splinePath && totalPoints >= 2) {
-    distance = getDistanceAtControlPoint(splinePath, selectedPointIndex, totalPoints);
+    distance = getDistanceAtControlPoint(
+      splinePath,
+      selectedPointIndex,
+      totalPoints
+    );
     curvature = splinePath.getCurvature(distance);
 
     if (velocityProfile) {
@@ -75,16 +85,22 @@ export function PointInfo({ splinePath, velocityProfile, timeEstimator }: PointI
     <div>
       {hasSelection && point ? (
         <>
-          <div className="text-xs text-zinc-400 mb-3 flex items-center gap-1.5">
+          <div className="mb-3 flex items-center gap-1.5 text-xs text-zinc-400">
             <MapPin size={12} className="text-accent-green/60" />
             Point {selectedPointIndex + 1} of {totalPoints}
           </div>
 
           {/* Editable coordinates */}
-          <div className="space-y-2 mb-3">
+          <div className="mb-3 space-y-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-accent-green/40 w-4 font-mono">X</span>
+              <label
+                htmlFor="point-x"
+                className="text-accent-green/40 w-4 font-mono text-xs"
+              >
+                X
+              </label>
               <input
+                id="point-x"
                 type="number"
                 step={0.01}
                 value={parseFloat(point.x.toFixed(3))}
@@ -94,8 +110,14 @@ export function PointInfo({ splinePath, velocityProfile, timeEstimator }: PointI
               <span className="text-[10px] text-zinc-600">m</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-accent-green/40 w-4 font-mono">Y</span>
+              <label
+                htmlFor="point-y"
+                className="text-accent-green/40 w-4 font-mono text-xs"
+              >
+                Y
+              </label>
               <input
+                id="point-y"
                 type="number"
                 step={0.01}
                 value={parseFloat(point.y.toFixed(3))}
@@ -108,27 +130,48 @@ export function PointInfo({ splinePath, velocityProfile, timeEstimator }: PointI
 
           {/* Derived info */}
           {splinePath && (
-            <div className="border-t border-white/[0.04] pt-2 space-y-1">
-              <InfoRow label="Distance" value={distance} unit="m" decimals={3} />
+            <div className="space-y-1 border-t border-white/[0.04] pt-2">
+              <InfoRow
+                label="Distance"
+                value={distance}
+                unit="m"
+                decimals={3}
+              />
               <InfoRow label="Time" value={time} unit="s" decimals={3} />
-              <InfoRow label="Velocity" value={velocity} unit="m/s" decimals={2} />
-              <InfoRow label="Curvature" value={curvature} unit="1/m" decimals={3} />
+              <InfoRow
+                label="Velocity"
+                value={velocity}
+                unit="m/s"
+                decimals={2}
+              />
+              <InfoRow
+                label="Curvature"
+                value={curvature}
+                unit="1/m"
+                decimals={3}
+              />
             </div>
           )}
 
           {/* Heading */}
-          <div className="border-t border-white/[0.04] pt-3 mt-3">
-            <h4 className="text-[10px] font-light tracking-wide text-accent-green/40 mb-2">HEADING</h4>
+          <div className="mt-3 border-t border-white/[0.04] pt-3">
+            <h4 className="text-accent-green/40 mb-2 text-[10px] font-light tracking-wide">
+              HEADING
+            </h4>
             <HeadingEditor />
           </div>
         </>
       ) : (
-        <p className="text-xs text-zinc-600 italic">Select a point to view info</p>
+        <p className="text-xs text-zinc-600 italic">
+          Select a point to view info
+        </p>
       )}
 
       {/* Named points */}
-      <div className="border-t border-white/[0.04] pt-3 mt-3">
-        <h4 className="text-[10px] font-light tracking-wide text-amber-400/40 mb-2">NAMED POINTS</h4>
+      <div className="mt-3 border-t border-white/[0.04] pt-3">
+        <h4 className="mb-2 text-[10px] font-light tracking-wide text-amber-400/40">
+          NAMED POINTS
+        </h4>
         <NamedPointsPanel />
       </div>
     </div>
@@ -149,7 +192,7 @@ function InfoRow({
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-zinc-500">{label}</span>
-      <span className="text-zinc-300 font-mono">
+      <span className="font-mono text-zinc-300">
         {value !== null ? value.toFixed(decimals) : '--'}{' '}
         <span className="text-zinc-600">{unit}</span>
       </span>

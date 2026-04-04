@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus } from 'lucide-react';
 import { usePathStore } from '../../stores/pathStore';
 
@@ -14,7 +14,11 @@ export function PathTabs() {
 
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    name: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -41,21 +45,21 @@ export function PathTabs() {
     };
   }, [contextMenu]);
 
-  const startRename = (name: string) => {
+  const startRename = useCallback((name: string) => {
     setEditingName(name);
     setEditValue(name);
     setContextMenu(null);
-  };
+  }, []);
 
-  const commitRename = () => {
+  const commitRename = useCallback(() => {
     if (editingName && editValue.trim() && editValue.trim() !== editingName) {
       renamePath(editingName, editValue.trim());
     }
     setEditingName(null);
-  };
+  }, [editingName, editValue, renamePath]);
 
-  const handleAdd = () => {
-    let base = 'Path';
+  const handleAdd = useCallback(() => {
+    const base = 'Path';
     let n = pathOrder.length + 1;
     let name = `${base} ${n}`;
     while (paths[name]) {
@@ -63,46 +67,54 @@ export function PathTabs() {
       name = `${base} ${n}`;
     }
     addPath(name);
-  };
+  }, [pathOrder.length, paths, addPath]);
 
-  const handleDragStart = (e: React.DragEvent, index: number) => {
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
     setDragIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(index));
-  };
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (dragIndex !== null && index !== dragIndex) {
-      setDropIndex(index);
-    }
-  };
+  const handleDragOver = useCallback(
+    (e: React.DragEvent, index: number) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (dragIndex !== null && index !== dragIndex) {
+        setDropIndex(index);
+      }
+    },
+    [dragIndex]
+  );
 
-  const handleDrop = (e: React.DragEvent, toIndex: number) => {
-    e.preventDefault();
-    if (dragIndex !== null && dragIndex !== toIndex) {
-      reorderPath(dragIndex, toIndex);
-    }
+  const handleDrop = useCallback(
+    (e: React.DragEvent, toIndex: number) => {
+      e.preventDefault();
+      setDragIndex((current) => {
+        if (current !== null && current !== toIndex) {
+          reorderPath(current, toIndex);
+        }
+        return null;
+      });
+      setDropIndex(null);
+    },
+    [reorderPath]
+  );
+
+  const handleDragEnd = useCallback(() => {
     setDragIndex(null);
     setDropIndex(null);
-  };
-
-  const handleDragEnd = () => {
-    setDragIndex(null);
-    setDropIndex(null);
-  };
+  }, []);
 
   return (
-    <div className="flex items-center gap-0.5 px-3 pt-1.5 pb-0 flex-shrink-0 overflow-x-auto">
+    <div className="flex flex-shrink-0 items-center gap-0.5 overflow-x-auto px-3 pt-1.5 pb-0">
       {pathOrder.map((name, index) => (
         <div
           key={name}
-          className={`flex-shrink-0 relative ${
+          className={`relative flex-shrink-0 ${
             dropIndex === index && dragIndex !== null && dragIndex !== index
               ? dragIndex > index
-                ? 'before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-accent-green before:rounded-full'
-                : 'after:absolute after:right-0 after:top-1 after:bottom-1 after:w-0.5 after:bg-accent-green after:rounded-full'
+                ? 'before:bg-accent-green before:absolute before:top-1 before:bottom-1 before:left-0 before:w-0.5 before:rounded-full'
+                : 'after:bg-accent-green after:absolute after:top-1 after:right-0 after:bottom-1 after:w-0.5 after:rounded-full'
               : ''
           }`}
           draggable={editingName !== name}
@@ -121,7 +133,7 @@ export function PathTabs() {
                 if (e.key === 'Enter') commitRename();
                 if (e.key === 'Escape') setEditingName(null);
               }}
-              className="px-2.5 py-1 text-xs font-medium bg-zinc-900 text-accent-green border border-accent-green/40 rounded outline-none w-28"
+              className="text-accent-green border-accent-green/40 w-28 rounded border bg-zinc-900 px-2.5 py-1 text-xs font-medium outline-none"
             />
           ) : (
             <button
@@ -131,10 +143,10 @@ export function PathTabs() {
                 e.preventDefault();
                 setContextMenu({ name, x: e.clientX, y: e.clientY });
               }}
-              className={`px-2.5 py-1 text-xs font-medium transition-all duration-200 border-b cursor-grab active:cursor-grabbing ${
+              className={`cursor-grab border-b px-2.5 py-1 text-xs font-medium transition-all duration-200 active:cursor-grabbing ${
                 activePathName === name
                   ? 'text-accent-green border-accent-green shadow-[0_1px_6px_rgba(0,255,170,0.3)]'
-                  : 'text-zinc-600 border-transparent hover:text-zinc-400'
+                  : 'border-transparent text-zinc-600 hover:text-zinc-400'
               } ${dragIndex === index ? 'opacity-40' : ''}`}
             >
               {name}
@@ -146,7 +158,7 @@ export function PathTabs() {
       {/* Add path button */}
       <button
         onClick={handleAdd}
-        className="btn-ghost p-1 ml-1 text-zinc-600 hover:text-accent-green transition-colors"
+        className="btn-ghost hover:text-accent-green ml-1 p-1 text-zinc-600 transition-colors"
         title="New path"
       >
         <Plus size={14} />
@@ -155,18 +167,18 @@ export function PathTabs() {
       {/* Context menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-[120px] rounded-lg border border-accent-green/20 bg-zinc-950/95 backdrop-blur-sm shadow-lg shadow-accent-green/5 py-1"
+          className="border-accent-green/20 shadow-accent-green/5 fixed z-50 min-w-[120px] rounded-lg border bg-zinc-950/95 py-1 shadow-lg backdrop-blur-sm"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-accent-green/10 hover:text-accent-green transition-colors"
+            className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors"
             onClick={() => startRename(contextMenu.name)}
           >
             Rename
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="w-full px-3 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30"
             disabled={pathOrder.length <= 1}
             onClick={() => {
               deletePath(contextMenu.name);

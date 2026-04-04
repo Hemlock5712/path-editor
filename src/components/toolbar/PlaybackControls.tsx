@@ -1,4 +1,11 @@
-import { Play, Pause, Square, SkipForward, SkipBack, Gauge } from 'lucide-react';
+import {
+  Play,
+  Pause,
+  Square,
+  SkipForward,
+  SkipBack,
+  Gauge,
+} from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 
 interface PlaybackControlsProps {
@@ -43,7 +50,7 @@ export function PlaybackControls({
       <button
         onClick={onStepBackward}
         disabled={playbackState === 'playing'}
-        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
         title="Step backward (0.05m)"
       >
         <SkipBack size={14} />
@@ -52,7 +59,7 @@ export function PlaybackControls({
       {/* Play/Pause toggle — neon pulsing */}
       <button
         onClick={handlePlayPause}
-        className={`btn p-1.5 rounded-full transition-all duration-300 ${
+        className={`btn rounded-full p-1.5 transition-all duration-300 ${
           isPlaying
             ? 'text-accent-amber border-accent-amber/30 animate-neonPulseAmber'
             : 'text-accent-green border-accent-green/30 hover:shadow-[0_0_12px_rgba(0,255,170,0.3)]'
@@ -66,7 +73,7 @@ export function PlaybackControls({
       <button
         onClick={onStop}
         disabled={playbackState === 'stopped'}
-        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
         title="Stop"
       >
         <Square size={14} />
@@ -76,19 +83,19 @@ export function PlaybackControls({
       <button
         onClick={onStepForward}
         disabled={playbackState === 'playing'}
-        className="btn-ghost p-1.5 disabled:opacity-20 disabled:cursor-not-allowed"
+        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
         title="Step forward (0.05m)"
       >
         <SkipForward size={14} />
       </button>
 
       {/* Speed selector */}
-      <div className="flex items-center gap-1 ml-1">
+      <div className="ml-1 flex items-center gap-1">
         <Gauge size={11} className="text-zinc-600" />
         <select
           value={playbackSpeed}
           onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
-          className="bg-transparent border-none text-xs text-zinc-400 px-1 py-0.5 cursor-pointer focus:outline-none focus:text-accent-green"
+          className="focus:text-accent-green cursor-pointer border-none bg-transparent px-1 py-0.5 text-xs text-zinc-400 focus:outline-none"
           title="Playback speed"
         >
           {SPEED_OPTIONS.map((speed) => (

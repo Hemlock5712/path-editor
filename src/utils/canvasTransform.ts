@@ -2,7 +2,7 @@ import { Point, FIELD_WIDTH, FIELD_HEIGHT } from '../types';
 
 export interface CanvasTransform {
   zoom: number;
-  panX: number;  // in field-space meters
+  panX: number; // in field-space meters
   panY: number;
 }
 
@@ -49,7 +49,10 @@ export function canvasToField(
 }
 
 // Get the scale factor (pixels per meter)
-export function getScale(canvasWidth: number, transform: CanvasTransform): number {
+export function getScale(
+  canvasWidth: number,
+  transform: CanvasTransform
+): number {
   const pad = effectivePadding(canvasWidth);
   return ((canvasWidth - 2 * pad) / FIELD_WIDTH) * transform.zoom;
 }

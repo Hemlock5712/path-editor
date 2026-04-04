@@ -15,9 +15,7 @@ const NUM = '[-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?';
  * Strips single-line (//) and multi-line block comments from Java source.
  */
 function stripComments(source: string): string {
-  return source
-    .replace(/\/\/.*$/gm, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
+  return source.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
 /**
@@ -61,7 +59,10 @@ function splitTopLevelArgs(content: string): string[] {
 
 function parseControlPoints(arg: string): Point[] {
   const points: Point[] = [];
-  const re = new RegExp(`new\\s+Translation2d\\(\\s*(${NUM})\\s*,\\s*(${NUM})\\s*\\)`, 'g');
+  const re = new RegExp(
+    `new\\s+Translation2d\\(\\s*(${NUM})\\s*,\\s*(${NUM})\\s*\\)`,
+    'g'
+  );
   let m: RegExpExecArray | null;
   while ((m = re.exec(arg)) !== null) {
     points.push({ x: parseFloat(m[1]), y: parseFloat(m[2]) });
@@ -71,7 +72,10 @@ function parseControlPoints(arg: string): Point[] {
 
 function parseHeadingWaypoints(arg: string): HeadingWaypoint[] {
   const waypoints: HeadingWaypoint[] = [];
-  const re = new RegExp(`new\\s+PathData\\.HeadingWaypoint\\(\\s*(${NUM})\\s*,\\s*Rotation2d\\.fromDegrees\\(\\s*(${NUM})\\s*\\)\\s*\\)`, 'g');
+  const re = new RegExp(
+    `new\\s+PathData\\.HeadingWaypoint\\(\\s*(${NUM})\\s*,\\s*Rotation2d\\.fromDegrees\\(\\s*(${NUM})\\s*\\)\\s*\\)`,
+    'g'
+  );
   let m: RegExpExecArray | null;
   while ((m = re.exec(arg)) !== null) {
     waypoints.push({
@@ -102,7 +106,10 @@ function parseConstraints(arg: string): VelocityConstraints {
 
 function parseConstraintZones(arg: string): ConstraintZone[] {
   const zones: ConstraintZone[] = [];
-  const re = new RegExp(`new\\s+PathData\\.ConstraintZone\\(\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*(${NUM})\\s*\\)`, 'g');
+  const re = new RegExp(
+    `new\\s+PathData\\.ConstraintZone\\(\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*(${NUM})\\s*\\)`,
+    'g'
+  );
   let m: RegExpExecArray | null;
   while ((m = re.exec(arg)) !== null) {
     zones.push({
@@ -118,7 +125,10 @@ function parseConstraintZones(arg: string): ConstraintZone[] {
 
 function parseRotationZones(arg: string): RotationZone[] {
   const zones: RotationZone[] = [];
-  const re = new RegExp(`new\\s+PathData\\.RotationZone\\(\\s*"([^"]*)"\\s*,\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*new\\s+Translation2d\\(\\s*(${NUM})\\s*,\\s*(${NUM})\\s*\\)\\s*\\)`, 'g');
+  const re = new RegExp(
+    `new\\s+PathData\\.RotationZone\\(\\s*"([^"]*)"\\s*,\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*new\\s+Translation2d\\(\\s*(${NUM})\\s*,\\s*(${NUM})\\s*\\)\\s*\\)`,
+    'g'
+  );
   let m: RegExpExecArray | null;
   while ((m = re.exec(arg)) !== null) {
     zones.push({
@@ -139,7 +149,8 @@ export function parsePathsJava(source: string): NamedPath[] {
   const paths: NamedPath[] = [];
 
   // Match each: public static final PathData NAME = new PathData(
-  const declRe = /public\s+static\s+final\s+PathData\s+(\w+)\s*=\s*new\s+PathData\s*\(/g;
+  const declRe =
+    /public\s+static\s+final\s+PathData\s+(\w+)\s*=\s*new\s+PathData\s*\(/g;
   let declMatch: RegExpExecArray | null;
 
   while ((declMatch = declRe.exec(cleaned)) !== null) {
@@ -147,19 +158,25 @@ export function parsePathsJava(source: string): NamedPath[] {
     const parenStart = declMatch.index + declMatch[0].length - 1; // index of '('
     const inner = extractBalancedParens(cleaned, parenStart);
     if (!inner) {
-      console.warn(`javaParser: could not find matching paren for ${name}, skipping`);
+      console.warn(
+        `javaParser: could not find matching paren for ${name}, skipping`
+      );
       continue;
     }
 
     const args = splitTopLevelArgs(inner);
     if (args.length < 3) {
-      console.warn(`javaParser: expected at least 3 args for ${name}, got ${args.length}, skipping`);
+      console.warn(
+        `javaParser: expected at least 3 args for ${name}, got ${args.length}, skipping`
+      );
       continue;
     }
 
     const controlPoints = parseControlPoints(args[0]);
     if (controlPoints.length < 2) {
-      console.warn(`javaParser: ${name} has fewer than 2 control points, skipping`);
+      console.warn(
+        `javaParser: ${name} has fewer than 2 control points, skipping`
+      );
       continue;
     }
 
@@ -168,7 +185,10 @@ export function parsePathsJava(source: string): NamedPath[] {
       controlPoints,
       controlPointRefs: Array(controlPoints.length).fill(null),
       headingWaypoints: args.length > 1 ? parseHeadingWaypoints(args[1]) : [],
-      constraints: args.length > 2 ? parseConstraints(args[2]) : { ...DEFAULT_CONSTRAINTS },
+      constraints:
+        args.length > 2
+          ? parseConstraints(args[2])
+          : { ...DEFAULT_CONSTRAINTS },
       constraintZones: args.length > 3 ? parseConstraintZones(args[3]) : [],
       rotationZones: args.length > 4 ? parseRotationZones(args[4]) : [],
     });

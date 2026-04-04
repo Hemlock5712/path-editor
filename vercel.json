@@ -1,5 +1,3 @@
 {
-  "rewrites": [
-    { "source": "/((?!java/).*)", "destination": "/index.html" }
-  ]
+  "rewrites": [{ "source": "/((?!java/).*)", "destination": "/index.html" }]
 }

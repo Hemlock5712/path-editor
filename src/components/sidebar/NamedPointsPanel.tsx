@@ -1,13 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { usePathStore } from '../../stores/pathStore';
-import { MapPin, X, Plus, Link, Unlink } from 'lucide-react';
+import { useSelectionStore } from '../../stores/selectionStore';
+import { MapPin, X, Plus, Link } from 'lucide-react';
 
-export function NamedPointsPanel() {
+export const NamedPointsPanel = memo(function NamedPointsPanel() {
   const namedPoints = usePathStore((s) => s.namedPoints);
-  const selectedPointIndex = usePathStore((s) => s.selectedPointIndex);
+  const selectedPointIndex = useSelectionStore((s) => s.selectedPointIndex);
   const controlPoints = usePathStore((s) => s.controlPoints);
   const controlPointRefs = usePathStore((s) => s.controlPointRefs);
-  const addNamedPoint = usePathStore((s) => s.addNamedPoint);
   const deleteNamedPoint = usePathStore((s) => s.deleteNamedPoint);
   const renameNamedPoint = usePathStore((s) => s.renameNamedPoint);
   const placeNamedPoint = usePathStore((s) => s.placeNamedPoint);
@@ -41,7 +41,11 @@ export function NamedPointsPanel() {
   };
 
   const handleConfirmRename = () => {
-    if (renamingKey && renameValue.trim() && renameValue.trim() !== renamingKey) {
+    if (
+      renamingKey &&
+      renameValue.trim() &&
+      renameValue.trim() !== renamingKey
+    ) {
       renameNamedPoint(renamingKey, renameValue.trim());
     }
     setRenamingKey(null);
@@ -63,7 +67,8 @@ export function NamedPointsPanel() {
   };
 
   const canSave = selectedPointIndex !== null && controlPoints.length > 0;
-  const selectedRef = selectedPointIndex !== null ? controlPointRefs[selectedPointIndex] : null;
+  const selectedRef =
+    selectedPointIndex !== null ? controlPointRefs[selectedPointIndex] : null;
 
   return (
     <div className="space-y-2.5">
@@ -74,13 +79,13 @@ export function NamedPointsPanel() {
         return (
           <div
             key={np.name}
-            className="rounded border border-amber-500/15 bg-amber-500/[0.04] p-2.5 space-y-1.5"
+            className="space-y-1.5 rounded border border-amber-500/15 bg-amber-500/[0.04] p-2.5"
           >
             <div className="flex items-center justify-between">
               {isRenaming ? (
                 <input
                   ref={renameInputRef}
-                  className="text-[11px] font-mono bg-transparent border-b border-amber-400/40 text-amber-300 outline-none w-full mr-2"
+                  className="mr-2 w-full border-b border-amber-400/40 bg-transparent font-mono text-[11px] text-amber-300 outline-none"
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
                   onBlur={handleConfirmRename}
@@ -91,7 +96,7 @@ export function NamedPointsPanel() {
                 />
               ) : (
                 <span
-                  className="text-[11px] font-mono text-amber-400/80 flex items-center gap-1.5 cursor-pointer"
+                  className="flex cursor-pointer items-center gap-1.5 font-mono text-[11px] text-amber-400/80"
                   onDoubleClick={() => handleStartRename(np.name)}
                   title="Double-click to rename"
                 >
@@ -102,7 +107,7 @@ export function NamedPointsPanel() {
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => placeNamedPoint(np.name)}
-                  className="btn-ghost p-0.5 text-zinc-500 hover:text-accent-green"
+                  className="btn-ghost hover:text-accent-green p-0.5 text-zinc-500"
                   title="Place on active path"
                 >
                   <Plus size={12} />
@@ -117,7 +122,7 @@ export function NamedPointsPanel() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-mono">
+            <div className="flex items-center gap-3 font-mono text-[10px] text-zinc-500">
               <span>x: {np.x.toFixed(2)}</span>
               <span>y: {np.y.toFixed(2)}</span>
               {np.headingDegrees !== null && (
@@ -126,7 +131,7 @@ export function NamedPointsPanel() {
             </div>
 
             {mirror && (
-              <div className="flex items-center gap-3 text-[10px] text-zinc-600 font-mono">
+              <div className="flex items-center gap-3 font-mono text-[10px] text-zinc-600">
                 <span className="text-amber-500/40">mirror</span>
                 <span>x: {mirror.x.toFixed(2)}</span>
                 <span>y: {mirror.y.toFixed(2)}</span>
@@ -144,7 +149,7 @@ export function NamedPointsPanel() {
         <div className="flex items-center gap-1.5">
           <input
             ref={saveInputRef}
-            className="flex-1 text-xs bg-transparent border-b border-accent-green/30 text-zinc-300 outline-none px-1 py-0.5"
+            className="border-accent-green/30 flex-1 border-b bg-transparent px-1 py-0.5 text-xs text-zinc-300 outline-none"
             placeholder="Point name..."
             value={saveNameValue}
             onChange={(e) => setSaveNameValue(e.target.value)}
@@ -160,7 +165,7 @@ export function NamedPointsPanel() {
           <button
             onClick={handleStartSave}
             disabled={!canSave}
-            className="btn-ghost flex items-center gap-1.5 text-xs w-full justify-center py-1.5 disabled:opacity-30"
+            className="btn-ghost flex w-full items-center justify-center gap-1.5 py-1.5 text-xs disabled:opacity-30"
           >
             <MapPin size={13} />
             Save Selected Point
@@ -170,11 +175,11 @@ export function NamedPointsPanel() {
 
       {/* Link/unlink indicator for selected point */}
       {selectedPointIndex !== null && selectedRef && (
-        <div className="flex items-center gap-1.5 text-[10px] text-amber-400/60 font-mono">
+        <div className="flex items-center gap-1.5 font-mono text-[10px] text-amber-400/60">
           <Link size={10} />
           Linked to: {selectedRef}
         </div>
       )}
     </div>
   );
-}
+});

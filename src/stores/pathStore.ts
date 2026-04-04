@@ -10,6 +10,7 @@ import {
   DEFAULT_CONSTRAINTS,
   FIELD_HEIGHT,
 } from '../types';
+import { useSelectionStore } from './selectionStore';
 
 interface Snapshot {
   controlPoints: Point[];
@@ -39,9 +40,6 @@ interface PathState {
   constraints: VelocityConstraints;
   constraintZones: ConstraintZone[];
   rotationZones: RotationZone[];
-  selectedPointIndex: number | null;
-  selectedZoneId: string | null;
-
   undoStack: Snapshot[];
   redoStack: Snapshot[];
 
@@ -59,10 +57,12 @@ interface PathState {
   movePoint: (index: number, point: Point) => void;
   deletePoint: (index: number) => void;
   insertPointAfter: (index: number, point: Point) => void;
-  selectPoint: (index: number | null) => void;
-
   // Named point actions
-  addNamedPoint: (name: string, point: Point, headingDegrees?: number | null) => void;
+  addNamedPoint: (
+    name: string,
+    point: Point,
+    headingDegrees?: number | null
+  ) => void;
   deleteNamedPoint: (name: string) => void;
   renameNamedPoint: (oldName: string, newName: string) => void;
   updateNamedPointPosition: (name: string, point: Point) => void;
@@ -86,14 +86,14 @@ interface PathState {
   // Rotation zone mutations
   addRotationZone: (zone: RotationZone) => void;
   updateRotationZone: (id: string, updates: Partial<RotationZone>) => void;
+  moveRotationZoneHandle: (id: string, updates: Partial<RotationZone>) => void;
   deleteRotationZone: (id: string) => void;
-  selectZone: (id: string | null) => void;
-
   // Path transforms
   flipPathY: () => void;
   duplicatePath: () => void;
 
   // Undo / redo
+  pushUndoSnapshot: () => void;
   undo: () => void;
   redo: () => void;
 
@@ -108,14 +108,20 @@ function takeSnapshot(state: PathState): Snapshot {
     headingWaypoints: state.headingWaypoints.map((h) => ({ ...h })),
     constraints: { ...state.constraints },
     constraintZones: state.constraintZones.map((z) => ({ ...z })),
-    rotationZones: state.rotationZones.map((z) => ({ ...z, targetPoint: { ...z.targetPoint } })),
+    rotationZones: state.rotationZones.map((z) => ({
+      ...z,
+      targetPoint: { ...z.targetPoint },
+    })),
     namedPoints: Object.fromEntries(
-      Object.entries(state.namedPoints).map(([k, v]) => [k, { ...v }]),
+      Object.entries(state.namedPoints).map(([k, v]) => [k, { ...v }])
     ),
   };
 }
 
-function pushUndo(state: PathState): { undoStack: Snapshot[]; redoStack: Snapshot[] } {
+function pushUndo(state: PathState): {
+  undoStack: Snapshot[];
+  redoStack: Snapshot[];
+} {
   const snap = takeSnapshot(state);
   const stack = [...state.undoStack, snap];
   if (stack.length > MAX_UNDO) stack.shift();
@@ -124,7 +130,8 @@ function pushUndo(state: PathState): { undoStack: Snapshot[]; redoStack: Snapsho
 
 /** Save the current flat fields back into the paths map for the active path. */
 function syncActiveToMap(state: PathState): Record<string, NamedPath> {
-  if (!state.activePathName || !state.paths[state.activePathName]) return state.paths;
+  if (!state.activePathName || !state.paths[state.activePathName])
+    return state.paths;
   return {
     ...state.paths,
     [state.activePathName]: {
@@ -134,7 +141,10 @@ function syncActiveToMap(state: PathState): Record<string, NamedPath> {
       headingWaypoints: state.headingWaypoints.map((h) => ({ ...h })),
       constraints: { ...state.constraints },
       constraintZones: state.constraintZones.map((z) => ({ ...z })),
-      rotationZones: state.rotationZones.map((z) => ({ ...z, targetPoint: { ...z.targetPoint } })),
+      rotationZones: state.rotationZones.map((z) => ({
+        ...z,
+        targetPoint: { ...z.targetPoint },
+      })),
     },
   };
 }
@@ -146,7 +156,7 @@ function syncActiveToMap(state: PathState): Record<string, NamedPath> {
 function propagateNamedPoints(
   namedPoints: Record<string, NamedPoint>,
   paths: Record<string, NamedPath>,
-  activePathName: string | null,
+  activePathName: string | null
 ): { paths: Record<string, NamedPath>; controlPoints?: Point[] } {
   // Early out: check if any path references any named point at all
   const namedPointNames = new Set(Object.keys(namedPoints));
@@ -205,7 +215,9 @@ function loadNamedPointsFromStorage(): Record<string, NamedPoint> {
       }
       return parsed;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return {};
 }
 
@@ -213,7 +225,9 @@ function loadNamedPointsFromStorage(): Record<string, NamedPoint> {
 function saveNamedPointsToStorage(namedPoints: Record<string, NamedPoint>) {
   try {
     localStorage.setItem('pathEditor_namedPoints', JSON.stringify(namedPoints));
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 export const usePathStore = create<PathState>()((set, get) => ({
@@ -239,8 +253,6 @@ export const usePathStore = create<PathState>()((set, get) => ({
   constraints: { ...DEFAULT_CONSTRAINTS },
   constraintZones: [],
   rotationZones: [],
-  selectedPointIndex: null,
-  selectedZoneId: null,
 
   undoStack: [],
   redoStack: [],
@@ -249,11 +261,13 @@ export const usePathStore = create<PathState>()((set, get) => ({
 
   loadAllPaths: (namedPaths) =>
     set(() => {
+      useSelectionStore.getState().clearSelection();
       const paths: Record<string, NamedPath> = {};
       for (const p of namedPaths) {
         paths[p.name] = {
           ...p,
-          controlPointRefs: p.controlPointRefs || Array(p.controlPoints.length).fill(null),
+          controlPointRefs:
+            p.controlPointRefs || Array(p.controlPoints.length).fill(null),
         };
       }
       const pathOrder = namedPaths.map((p) => p.name);
@@ -263,16 +277,25 @@ export const usePathStore = create<PathState>()((set, get) => ({
         paths,
         pathOrder,
         activePathName: firstName,
-        controlPoints: active ? active.controlPoints.map((p) => ({ ...p })) : [],
-        controlPointRefs: active ? [...active.controlPointRefs] : [],
-        headingWaypoints: active ? active.headingWaypoints.map((h) => ({ ...h })) : [],
-        constraints: active ? { ...active.constraints } : { ...DEFAULT_CONSTRAINTS },
-        constraintZones: active ? active.constraintZones.map((z) => ({ ...z })) : [],
-        rotationZones: active
-          ? active.rotationZones.map((z) => ({ ...z, targetPoint: { ...z.targetPoint } }))
+        controlPoints: active
+          ? active.controlPoints.map((p) => ({ ...p }))
           : [],
-        selectedPointIndex: null,
-        selectedZoneId: null,
+        controlPointRefs: active ? [...active.controlPointRefs] : [],
+        headingWaypoints: active
+          ? active.headingWaypoints.map((h) => ({ ...h }))
+          : [],
+        constraints: active
+          ? { ...active.constraints }
+          : { ...DEFAULT_CONSTRAINTS },
+        constraintZones: active
+          ? active.constraintZones.map((z) => ({ ...z }))
+          : [],
+        rotationZones: active
+          ? active.rotationZones.map((z) => ({
+              ...z,
+              targetPoint: { ...z.targetPoint },
+            }))
+          : [],
         undoStack: [],
         redoStack: [],
       };
@@ -281,6 +304,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
   setActivePath: (name) =>
     set((state) => {
       if (name === state.activePathName) return state;
+      useSelectionStore.getState().clearSelection();
       const updatedPaths = syncActiveToMap(state);
       const target = updatedPaths[name];
       if (!target) return state;
@@ -292,9 +316,10 @@ export const usePathStore = create<PathState>()((set, get) => ({
         headingWaypoints: target.headingWaypoints.map((h) => ({ ...h })),
         constraints: { ...target.constraints },
         constraintZones: target.constraintZones.map((z) => ({ ...z })),
-        rotationZones: target.rotationZones.map((z) => ({ ...z, targetPoint: { ...z.targetPoint } })),
-        selectedPointIndex: null,
-        selectedZoneId: null,
+        rotationZones: target.rotationZones.map((z) => ({
+          ...z,
+          targetPoint: { ...z.targetPoint },
+        })),
         undoStack: [],
         redoStack: [],
       };
@@ -302,6 +327,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
 
   deletePath: (name) =>
     set((state) => {
+      useSelectionStore.getState().clearSelection();
       const updatedPaths = syncActiveToMap(state);
       const { [name]: _, ...remaining } = updatedPaths;
       const newOrder = state.pathOrder.filter((n) => n !== name);
@@ -311,16 +337,25 @@ export const usePathStore = create<PathState>()((set, get) => ({
         paths: remaining,
         pathOrder: newOrder,
         activePathName: newActive,
-        controlPoints: target ? target.controlPoints.map((p) => ({ ...p })) : [],
-        controlPointRefs: target ? [...(target.controlPointRefs || [])] : [],
-        headingWaypoints: target ? target.headingWaypoints.map((h) => ({ ...h })) : [],
-        constraints: target ? { ...target.constraints } : { ...DEFAULT_CONSTRAINTS },
-        constraintZones: target ? target.constraintZones.map((z) => ({ ...z })) : [],
-        rotationZones: target
-          ? target.rotationZones.map((z) => ({ ...z, targetPoint: { ...z.targetPoint } }))
+        controlPoints: target
+          ? target.controlPoints.map((p) => ({ ...p }))
           : [],
-        selectedPointIndex: null,
-        selectedZoneId: null,
+        controlPointRefs: target ? [...(target.controlPointRefs || [])] : [],
+        headingWaypoints: target
+          ? target.headingWaypoints.map((h) => ({ ...h }))
+          : [],
+        constraints: target
+          ? { ...target.constraints }
+          : { ...DEFAULT_CONSTRAINTS },
+        constraintZones: target
+          ? target.constraintZones.map((z) => ({ ...z }))
+          : [],
+        rotationZones: target
+          ? target.rotationZones.map((z) => ({
+              ...z,
+              targetPoint: { ...z.targetPoint },
+            }))
+          : [],
         undoStack: [],
         redoStack: [],
       };
@@ -342,6 +377,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
 
   addPath: (name) =>
     set((state) => {
+      useSelectionStore.getState().clearSelection();
       const updatedPaths = syncActiveToMap(state);
       // Auto-increment name if collision
       let finalName = name;
@@ -369,8 +405,6 @@ export const usePathStore = create<PathState>()((set, get) => ({
         constraints: { ...DEFAULT_CONSTRAINTS },
         constraintZones: [],
         rotationZones: [],
-        selectedPointIndex: null,
-        selectedZoneId: null,
         undoStack: [],
         redoStack: [],
       };
@@ -387,7 +421,8 @@ export const usePathStore = create<PathState>()((set, get) => ({
       return {
         paths: { ...rest, [trimmed]: { ...pathData, name: trimmed } },
         pathOrder: state.pathOrder.map((n) => (n === oldName ? trimmed : n)),
-        activePathName: state.activePathName === oldName ? trimmed : state.activePathName,
+        activePathName:
+          state.activePathName === oldName ? trimmed : state.activePathName,
       };
     }),
 
@@ -411,7 +446,11 @@ export const usePathStore = create<PathState>()((set, get) => ({
         };
         const mirror = state.namedPoints[ref].mirrorName;
         if (mirror && newNamedPoints[mirror]) {
-          newNamedPoints[mirror] = { ...newNamedPoints[mirror], x: point.x, y: FIELD_HEIGHT - point.y };
+          newNamedPoints[mirror] = {
+            ...newNamedPoints[mirror],
+            x: point.x,
+            y: FIELD_HEIGHT - point.y,
+          };
         }
         saveNamedPointsToStorage(newNamedPoints);
 
@@ -420,57 +459,88 @@ export const usePathStore = create<PathState>()((set, get) => ({
         // Update the active path's point in the synced map
         const activePath = synced[state.activePathName!];
         const updatedActivePoints = activePath.controlPoints.map((p, i) =>
-          i === index ? { ...point } : p,
+          i === index ? { ...point } : p
         );
         const syncedWithMove = {
           ...synced,
-          [state.activePathName!]: { ...activePath, controlPoints: updatedActivePoints },
+          [state.activePathName!]: {
+            ...activePath,
+            controlPoints: updatedActivePoints,
+          },
         };
 
-        const propagated = propagateNamedPoints(newNamedPoints, syncedWithMove, state.activePathName);
+        const propagated = propagateNamedPoints(
+          newNamedPoints,
+          syncedWithMove,
+          state.activePathName
+        );
 
         // Extract the active path's control points from propagated result
         const activeFromPropagated = propagated.paths[state.activePathName!];
         return {
           namedPoints: newNamedPoints,
           paths: propagated.paths,
-          controlPoints: activeFromPropagated.controlPoints.map((p) => ({ ...p })),
+          controlPoints: activeFromPropagated.controlPoints.map((p) => ({
+            ...p,
+          })),
         };
       }
 
       // Normal unlinked point
       return {
         controlPoints: state.controlPoints.map((p, i) =>
-          i === index ? { ...point } : p,
+          i === index ? { ...point } : p
         ),
       };
     }),
 
   deletePoint: (index) =>
-    set((state) => ({
-      ...pushUndo(state),
-      controlPoints: state.controlPoints.filter((_, i) => i !== index),
-      controlPointRefs: state.controlPointRefs.filter((_, i) => i !== index),
-      headingWaypoints: state.headingWaypoints.filter(
-        (hw) => Math.round(hw.waypointIndex) !== index,
-      ),
-      constraintZones: state.constraintZones
-        .filter((z) => z.startWaypointIndex !== index && z.endWaypointIndex !== index)
-        .map((z) => ({
-          ...z,
-          startWaypointIndex: z.startWaypointIndex > index ? z.startWaypointIndex - 1 : z.startWaypointIndex,
-          endWaypointIndex: z.endWaypointIndex > index ? z.endWaypointIndex - 1 : z.endWaypointIndex,
-        })),
-      rotationZones: state.rotationZones
-        .filter((z) => !(Math.ceil(z.startWaypointIndex) === index && Math.floor(z.endWaypointIndex) === index))
-        .map((z) => ({
-          ...z,
-          startWaypointIndex: z.startWaypointIndex > index ? z.startWaypointIndex - 1 : z.startWaypointIndex,
-          endWaypointIndex: z.endWaypointIndex > index ? z.endWaypointIndex - 1 : z.endWaypointIndex,
-        })),
-      selectedPointIndex: null,
-      selectedZoneId: null,
-    })),
+    set((state) => {
+      useSelectionStore.getState().clearSelection();
+      return {
+        ...pushUndo(state),
+        controlPoints: state.controlPoints.filter((_, i) => i !== index),
+        controlPointRefs: state.controlPointRefs.filter((_, i) => i !== index),
+        headingWaypoints: state.headingWaypoints.filter(
+          (hw) => Math.round(hw.waypointIndex) !== index
+        ),
+        constraintZones: state.constraintZones
+          .filter(
+            (z) =>
+              z.startWaypointIndex !== index && z.endWaypointIndex !== index
+          )
+          .map((z) => ({
+            ...z,
+            startWaypointIndex:
+              z.startWaypointIndex > index
+                ? z.startWaypointIndex - 1
+                : z.startWaypointIndex,
+            endWaypointIndex:
+              z.endWaypointIndex > index
+                ? z.endWaypointIndex - 1
+                : z.endWaypointIndex,
+          })),
+        rotationZones: state.rotationZones
+          .filter(
+            (z) =>
+              !(
+                Math.ceil(z.startWaypointIndex) === index &&
+                Math.floor(z.endWaypointIndex) === index
+              )
+          )
+          .map((z) => ({
+            ...z,
+            startWaypointIndex:
+              z.startWaypointIndex > index
+                ? z.startWaypointIndex - 1
+                : z.startWaypointIndex,
+            endWaypointIndex:
+              z.endWaypointIndex > index
+                ? z.endWaypointIndex - 1
+                : z.endWaypointIndex,
+          })),
+      };
+    }),
 
   insertPointAfter: (index, point) =>
     set((state) => {
@@ -488,14 +558,26 @@ export const usePathStore = create<PathState>()((set, get) => ({
 
       const constraintZones = state.constraintZones.map((z) => ({
         ...z,
-        startWaypointIndex: z.startWaypointIndex > index ? z.startWaypointIndex + 1 : z.startWaypointIndex,
-        endWaypointIndex: z.endWaypointIndex > index ? z.endWaypointIndex + 1 : z.endWaypointIndex,
+        startWaypointIndex:
+          z.startWaypointIndex > index
+            ? z.startWaypointIndex + 1
+            : z.startWaypointIndex,
+        endWaypointIndex:
+          z.endWaypointIndex > index
+            ? z.endWaypointIndex + 1
+            : z.endWaypointIndex,
       }));
 
       const rotationZones = state.rotationZones.map((z) => ({
         ...z,
-        startWaypointIndex: z.startWaypointIndex > index ? z.startWaypointIndex + 1 : z.startWaypointIndex,
-        endWaypointIndex: z.endWaypointIndex > index ? z.endWaypointIndex + 1 : z.endWaypointIndex,
+        startWaypointIndex:
+          z.startWaypointIndex > index
+            ? z.startWaypointIndex + 1
+            : z.startWaypointIndex,
+        endWaypointIndex:
+          z.endWaypointIndex > index
+            ? z.endWaypointIndex + 1
+            : z.endWaypointIndex,
       }));
 
       return {
@@ -508,8 +590,6 @@ export const usePathStore = create<PathState>()((set, get) => ({
       };
     }),
 
-  selectPoint: (index) => set({ selectedPointIndex: index }),
-
   // ---- Named point actions ----
 
   addNamedPoint: (name, point, headingDegrees) =>
@@ -518,7 +598,13 @@ export const usePathStore = create<PathState>()((set, get) => ({
       const mirrorName = `${name} (Mirror)`;
       const newNamedPoints: Record<string, NamedPoint> = {
         ...state.namedPoints,
-        [name]: { name, x: point.x, y: point.y, headingDegrees: heading, mirrorName },
+        [name]: {
+          name,
+          x: point.x,
+          y: point.y,
+          headingDegrees: heading,
+          mirrorName,
+        },
         [mirrorName]: {
           name: mirrorName,
           x: point.x,
@@ -549,13 +635,13 @@ export const usePathStore = create<PathState>()((set, get) => ({
       const updatedPaths: Record<string, NamedPath> = {};
       for (const [pName, path] of Object.entries(synced)) {
         const refs = (path.controlPointRefs || []).map((r) =>
-          r === name || r === np.mirrorName ? null : r,
+          r === name || r === np.mirrorName ? null : r
         );
         updatedPaths[pName] = { ...path, controlPointRefs: refs };
       }
 
       const activeRefs = state.controlPointRefs.map((r) =>
-        r === name || r === np.mirrorName ? null : r,
+        r === name || r === np.mirrorName ? null : r
       );
 
       saveNamedPointsToStorage(newNamedPoints);
@@ -569,7 +655,8 @@ export const usePathStore = create<PathState>()((set, get) => ({
   renameNamedPoint: (oldName, newName) =>
     set((state) => {
       const trimmed = newName.trim();
-      if (!trimmed || trimmed === oldName || state.namedPoints[trimmed]) return state;
+      if (!trimmed || trimmed === oldName || state.namedPoints[trimmed])
+        return state;
       const np = state.namedPoints[oldName];
       if (!np) return state;
 
@@ -592,13 +679,13 @@ export const usePathStore = create<PathState>()((set, get) => ({
       const updatedPaths: Record<string, NamedPath> = {};
       for (const [pName, path] of Object.entries(synced)) {
         const refs = (path.controlPointRefs || []).map((r) =>
-          r === oldName ? trimmed : r,
+          r === oldName ? trimmed : r
         );
         updatedPaths[pName] = { ...path, controlPointRefs: refs };
       }
 
       const activeRefs = state.controlPointRefs.map((r) =>
-        r === oldName ? trimmed : r,
+        r === oldName ? trimmed : r
       );
 
       saveNamedPointsToStorage(newNamedPoints);
@@ -619,17 +706,27 @@ export const usePathStore = create<PathState>()((set, get) => ({
         [name]: { ...np, x: point.x, y: point.y },
       };
       if (np.mirrorName && newNamedPoints[np.mirrorName]) {
-        newNamedPoints[np.mirrorName] = { ...newNamedPoints[np.mirrorName], x: point.x, y: FIELD_HEIGHT - point.y };
+        newNamedPoints[np.mirrorName] = {
+          ...newNamedPoints[np.mirrorName],
+          x: point.x,
+          y: FIELD_HEIGHT - point.y,
+        };
       }
       saveNamedPointsToStorage(newNamedPoints);
 
       const synced = syncActiveToMap(state);
-      const propagated = propagateNamedPoints(newNamedPoints, synced, state.activePathName);
+      const propagated = propagateNamedPoints(
+        newNamedPoints,
+        synced,
+        state.activePathName
+      );
       return {
         ...pushUndo(state),
         namedPoints: newNamedPoints,
         paths: propagated.paths,
-        ...(propagated.controlPoints ? { controlPoints: propagated.controlPoints } : {}),
+        ...(propagated.controlPoints
+          ? { controlPoints: propagated.controlPoints }
+          : {}),
       };
     }),
 
@@ -638,9 +735,13 @@ export const usePathStore = create<PathState>()((set, get) => ({
       const np = state.namedPoints[name];
       if (!np) return state;
       const newIndex = state.controlPoints.length;
-      const headingWaypoints = np.headingDegrees !== null
-        ? [...state.headingWaypoints, { waypointIndex: newIndex, degrees: np.headingDegrees }]
-        : state.headingWaypoints;
+      const headingWaypoints =
+        np.headingDegrees !== null
+          ? [
+              ...state.headingWaypoints,
+              { waypointIndex: newIndex, degrees: np.headingDegrees },
+            ]
+          : state.headingWaypoints;
       return {
         ...pushUndo(state),
         controlPoints: [...state.controlPoints, { x: np.x, y: np.y }],
@@ -663,22 +764,39 @@ export const usePathStore = create<PathState>()((set, get) => ({
       const headingWaypoints = state.headingWaypoints.map((hw) => ({
         ...hw,
         waypointIndex:
-          hw.waypointIndex > afterIndex ? hw.waypointIndex + 1 : hw.waypointIndex,
+          hw.waypointIndex > afterIndex
+            ? hw.waypointIndex + 1
+            : hw.waypointIndex,
       }));
       if (np.headingDegrees !== null) {
-        headingWaypoints.push({ waypointIndex: afterIndex + 1, degrees: np.headingDegrees });
+        headingWaypoints.push({
+          waypointIndex: afterIndex + 1,
+          degrees: np.headingDegrees,
+        });
       }
 
       const constraintZones = state.constraintZones.map((z) => ({
         ...z,
-        startWaypointIndex: z.startWaypointIndex > afterIndex ? z.startWaypointIndex + 1 : z.startWaypointIndex,
-        endWaypointIndex: z.endWaypointIndex > afterIndex ? z.endWaypointIndex + 1 : z.endWaypointIndex,
+        startWaypointIndex:
+          z.startWaypointIndex > afterIndex
+            ? z.startWaypointIndex + 1
+            : z.startWaypointIndex,
+        endWaypointIndex:
+          z.endWaypointIndex > afterIndex
+            ? z.endWaypointIndex + 1
+            : z.endWaypointIndex,
       }));
 
       const rotationZones = state.rotationZones.map((z) => ({
         ...z,
-        startWaypointIndex: z.startWaypointIndex > afterIndex ? z.startWaypointIndex + 1 : z.startWaypointIndex,
-        endWaypointIndex: z.endWaypointIndex > afterIndex ? z.endWaypointIndex + 1 : z.endWaypointIndex,
+        startWaypointIndex:
+          z.startWaypointIndex > afterIndex
+            ? z.startWaypointIndex + 1
+            : z.startWaypointIndex,
+        endWaypointIndex:
+          z.endWaypointIndex > afterIndex
+            ? z.endWaypointIndex + 1
+            : z.endWaypointIndex,
       }));
 
       return {
@@ -697,7 +815,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
       if (!pt) return state;
 
       const headingWp = state.headingWaypoints.find(
-        (hw) => Math.round(hw.waypointIndex) === index,
+        (hw) => Math.round(hw.waypointIndex) === index
       );
       const heading = headingWp ? headingWp.degrees : null;
 
@@ -727,7 +845,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
       if (!np) return state;
 
       const controlPoints = state.controlPoints.map((p, i) =>
-        i === index ? { x: np.x, y: np.y } : p,
+        i === index ? { x: np.x, y: np.y } : p
       );
       const controlPointRefs = [...state.controlPointRefs];
       controlPointRefs[index] = name;
@@ -735,14 +853,19 @@ export const usePathStore = create<PathState>()((set, get) => ({
       let headingWaypoints = state.headingWaypoints;
       if (np.headingDegrees !== null) {
         const existingIdx = headingWaypoints.findIndex(
-          (hw) => Math.round(hw.waypointIndex) === index,
+          (hw) => Math.round(hw.waypointIndex) === index
         );
         if (existingIdx >= 0) {
           headingWaypoints = headingWaypoints.map((hw, i) =>
-            i === existingIdx ? { waypointIndex: index, degrees: np.headingDegrees! } : hw,
+            i === existingIdx
+              ? { waypointIndex: index, degrees: np.headingDegrees! }
+              : hw
           );
         } else {
-          headingWaypoints = [...headingWaypoints, { waypointIndex: index, degrees: np.headingDegrees }];
+          headingWaypoints = [
+            ...headingWaypoints,
+            { waypointIndex: index, degrees: np.headingDegrees },
+          ];
         }
       }
 
@@ -768,18 +891,21 @@ export const usePathStore = create<PathState>()((set, get) => ({
       let headingWaypoints: HeadingWaypoint[];
       if (degrees === null) {
         headingWaypoints = state.headingWaypoints.filter(
-          (hw) => Math.round(hw.waypointIndex) !== waypointIndex,
+          (hw) => Math.round(hw.waypointIndex) !== waypointIndex
         );
       } else {
         const existing = state.headingWaypoints.findIndex(
-          (hw) => Math.round(hw.waypointIndex) === waypointIndex,
+          (hw) => Math.round(hw.waypointIndex) === waypointIndex
         );
         if (existing >= 0) {
           headingWaypoints = state.headingWaypoints.map((hw, i) =>
-            i === existing ? { waypointIndex, degrees } : hw,
+            i === existing ? { waypointIndex, degrees } : hw
           );
         } else {
-          headingWaypoints = [...state.headingWaypoints, { waypointIndex, degrees }];
+          headingWaypoints = [
+            ...state.headingWaypoints,
+            { waypointIndex, degrees },
+          ];
         }
       }
       return { ...pushUndo(state), headingWaypoints };
@@ -795,14 +921,17 @@ export const usePathStore = create<PathState>()((set, get) => ({
   addConstraintZone: (zone) =>
     set((state) => ({
       ...pushUndo(state),
-      constraintZones: [...state.constraintZones, { ...zone, id: zone.id || crypto.randomUUID() }],
+      constraintZones: [
+        ...state.constraintZones,
+        { ...zone, id: zone.id || crypto.randomUUID() },
+      ],
     })),
 
   updateConstraintZone: (index, zone) =>
     set((state) => ({
       ...pushUndo(state),
       constraintZones: state.constraintZones.map((z, i) =>
-        i === index ? { ...zone } : z,
+        i === index ? { ...zone } : z
       ),
     })),
 
@@ -815,28 +944,58 @@ export const usePathStore = create<PathState>()((set, get) => ({
   // ---- Rotation zone mutations ----
 
   addRotationZone: (zone) =>
-    set((state) => ({
-      ...pushUndo(state),
-      rotationZones: [...state.rotationZones, { ...zone, targetPoint: { ...zone.targetPoint } }],
-      selectedZoneId: zone.id,
-    })),
+    set((state) => {
+      useSelectionStore.getState().selectZone(zone.id);
+      return {
+        ...pushUndo(state),
+        rotationZones: [
+          ...state.rotationZones,
+          { ...zone, targetPoint: { ...zone.targetPoint } },
+        ],
+      };
+    }),
 
   updateRotationZone: (id, updates) =>
     set((state) => ({
       ...pushUndo(state),
       rotationZones: state.rotationZones.map((z) =>
-        z.id === id ? { ...z, ...updates, targetPoint: updates.targetPoint ? { ...updates.targetPoint } : z.targetPoint } : z,
+        z.id === id
+          ? {
+              ...z,
+              ...updates,
+              targetPoint: updates.targetPoint
+                ? { ...updates.targetPoint }
+                : z.targetPoint,
+            }
+          : z
+      ),
+    })),
+
+  moveRotationZoneHandle: (id, updates) =>
+    set((state) => ({
+      rotationZones: state.rotationZones.map((z) =>
+        z.id === id
+          ? {
+              ...z,
+              ...updates,
+              targetPoint: updates.targetPoint
+                ? { ...updates.targetPoint }
+                : z.targetPoint,
+            }
+          : z
       ),
     })),
 
   deleteRotationZone: (id) =>
-    set((state) => ({
-      ...pushUndo(state),
-      rotationZones: state.rotationZones.filter((z) => z.id !== id),
-      selectedZoneId: state.selectedZoneId === id ? null : state.selectedZoneId,
-    })),
-
-  selectZone: (id) => set({ selectedZoneId: id }),
+    set((state) => {
+      if (useSelectionStore.getState().selectedZoneId === id) {
+        useSelectionStore.getState().selectZone(null);
+      }
+      return {
+        ...pushUndo(state),
+        rotationZones: state.rotationZones.filter((z) => z.id !== id),
+      };
+    }),
 
   // ---- Path transforms ----
 
@@ -872,7 +1031,10 @@ export const usePathStore = create<PathState>()((set, get) => ({
         })),
         rotationZones: state.rotationZones.map((z) => ({
           ...z,
-          targetPoint: { x: z.targetPoint.x, y: FIELD_HEIGHT - z.targetPoint.y },
+          targetPoint: {
+            x: z.targetPoint.x,
+            y: FIELD_HEIGHT - z.targetPoint.y,
+          },
         })),
       };
     }),
@@ -880,6 +1042,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
   duplicatePath: () =>
     set((state) => {
       if (!state.activePathName) return state;
+      useSelectionStore.getState().clearSelection();
       const updatedPaths = syncActiveToMap(state);
       const baseName = state.activePathName + ' (Copy)';
       let finalName = baseName;
@@ -896,7 +1059,10 @@ export const usePathStore = create<PathState>()((set, get) => ({
         headingWaypoints: src.headingWaypoints.map((h) => ({ ...h })),
         constraints: { ...src.constraints },
         constraintZones: src.constraintZones.map((z) => ({ ...z })),
-        rotationZones: src.rotationZones.map((z) => ({ ...z, targetPoint: { ...z.targetPoint } })),
+        rotationZones: src.rotationZones.map((z) => ({
+          ...z,
+          targetPoint: { ...z.targetPoint },
+        })),
       };
       return {
         paths: { ...updatedPaths, [finalName]: copy },
@@ -907,9 +1073,10 @@ export const usePathStore = create<PathState>()((set, get) => ({
         headingWaypoints: copy.headingWaypoints.map((h) => ({ ...h })),
         constraints: { ...copy.constraints },
         constraintZones: copy.constraintZones.map((z) => ({ ...z })),
-        rotationZones: copy.rotationZones.map((z) => ({ ...z, targetPoint: { ...z.targetPoint } })),
-        selectedPointIndex: null,
-        selectedZoneId: null,
+        rotationZones: copy.rotationZones.map((z) => ({
+          ...z,
+          targetPoint: { ...z.targetPoint },
+        })),
         undoStack: [],
         redoStack: [],
       };
@@ -917,9 +1084,12 @@ export const usePathStore = create<PathState>()((set, get) => ({
 
   // ---- Undo / redo ----
 
+  pushUndoSnapshot: () => set((state) => pushUndo(state)),
+
   undo: () =>
     set((state) => {
       if (state.undoStack.length === 0) return state;
+      useSelectionStore.getState().clearSelection();
       const snap = state.undoStack[state.undoStack.length - 1];
       const currentSnap = takeSnapshot(state);
       const redoStack = [...state.redoStack, currentSnap];
@@ -927,7 +1097,11 @@ export const usePathStore = create<PathState>()((set, get) => ({
 
       // Propagate restored named points to all paths
       const synced = syncActiveToMap(state);
-      const propagated = propagateNamedPoints(snap.namedPoints, synced, state.activePathName);
+      const propagated = propagateNamedPoints(
+        snap.namedPoints,
+        synced,
+        state.activePathName
+      );
 
       saveNamedPointsToStorage(snap.namedPoints);
       return {
@@ -941,14 +1115,13 @@ export const usePathStore = create<PathState>()((set, get) => ({
         rotationZones: snap.rotationZones,
         namedPoints: snap.namedPoints,
         paths: propagated.paths,
-        selectedPointIndex: null,
-        selectedZoneId: null,
       };
     }),
 
   redo: () =>
     set((state) => {
       if (state.redoStack.length === 0) return state;
+      useSelectionStore.getState().clearSelection();
       const snap = state.redoStack[state.redoStack.length - 1];
       const currentSnap = takeSnapshot(state);
       const undoStack = [...state.undoStack, currentSnap];
@@ -956,7 +1129,11 @@ export const usePathStore = create<PathState>()((set, get) => ({
 
       // Propagate restored named points to all paths
       const synced = syncActiveToMap(state);
-      const propagated = propagateNamedPoints(snap.namedPoints, synced, state.activePathName);
+      const propagated = propagateNamedPoints(
+        snap.namedPoints,
+        synced,
+        state.activePathName
+      );
 
       saveNamedPointsToStorage(snap.namedPoints);
       return {
@@ -970,24 +1147,22 @@ export const usePathStore = create<PathState>()((set, get) => ({
         rotationZones: snap.rotationZones,
         namedPoints: snap.namedPoints,
         paths: propagated.paths,
-        selectedPointIndex: null,
-        selectedZoneId: null,
       };
     }),
 
   // ---- Lifecycle ----
 
   clear: () =>
-    set((state) => ({
-      ...pushUndo(state),
-      controlPoints: [] as Point[],
-      controlPointRefs: [] as (string | null)[],
-      headingWaypoints: [] as HeadingWaypoint[],
-      constraints: { ...DEFAULT_CONSTRAINTS },
-      constraintZones: [] as ConstraintZone[],
-      rotationZones: [] as RotationZone[],
-      selectedPointIndex: null,
-      selectedZoneId: null,
-    })),
-
+    set((state) => {
+      useSelectionStore.getState().clearSelection();
+      return {
+        ...pushUndo(state),
+        controlPoints: [] as Point[],
+        controlPointRefs: [] as (string | null)[],
+        headingWaypoints: [] as HeadingWaypoint[],
+        constraints: { ...DEFAULT_CONSTRAINTS },
+        constraintZones: [] as ConstraintZone[],
+        rotationZones: [] as RotationZone[],
+      };
+    }),
 }));

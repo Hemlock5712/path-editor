@@ -57,7 +57,7 @@ export function drawOutlinedText(
   x: number,
   y: number,
   fillColor: string,
-  outlineWidth = 2.5,
+  outlineWidth = 2.5
 ): void {
   ctx.save();
   ctx.lineJoin = 'round';

@@ -3,12 +3,42 @@ import { usePathStore } from '../../stores/pathStore';
 import { Gauge, Zap, Play, Square, RotateCcw } from 'lucide-react';
 
 const fields = [
-  { key: 'maxVelocity' as const, label: 'Max Velocity', unit: 'm/s', icon: Gauge },
-  { key: 'maxAcceleration' as const, label: 'Max Acceleration', unit: 'm/s\u00B2', icon: Zap },
-  { key: 'maxAngularVelocity' as const, label: 'Max Angular Vel', unit: 'rad/s', icon: RotateCcw },
-  { key: 'maxAngularAcceleration' as const, label: 'Max Angular Accel', unit: 'rad/s\u00B2', icon: RotateCcw },
-  { key: 'startVelocity' as const, label: 'Start Velocity', unit: 'm/s', icon: Play },
-  { key: 'endVelocity' as const, label: 'End Velocity', unit: 'm/s', icon: Square },
+  {
+    key: 'maxVelocity' as const,
+    label: 'Max Velocity',
+    unit: 'm/s',
+    icon: Gauge,
+  },
+  {
+    key: 'maxAcceleration' as const,
+    label: 'Max Acceleration',
+    unit: 'm/s\u00B2',
+    icon: Zap,
+  },
+  {
+    key: 'maxAngularVelocity' as const,
+    label: 'Max Angular Vel',
+    unit: 'rad/s',
+    icon: RotateCcw,
+  },
+  {
+    key: 'maxAngularAcceleration' as const,
+    label: 'Max Angular Accel',
+    unit: 'rad/s\u00B2',
+    icon: RotateCcw,
+  },
+  {
+    key: 'startVelocity' as const,
+    label: 'Start Velocity',
+    unit: 'm/s',
+    icon: Play,
+  },
+  {
+    key: 'endVelocity' as const,
+    label: 'End Velocity',
+    unit: 'm/s',
+    icon: Square,
+  },
 ];
 
 export const PathSettings = memo(function PathSettings() {
@@ -27,9 +57,15 @@ export const PathSettings = memo(function PathSettings() {
       {fields.map(({ key, label, unit, icon: Icon }) => (
         <div key={key} className="flex items-center gap-2.5">
           <Icon size={13} className="text-accent-green/60 shrink-0" />
-          <label className="text-xs text-zinc-400 w-28 shrink-0">{label}</label>
-          <div className="flex items-center gap-1.5 flex-1">
+          <label
+            htmlFor={`constraint-${key}`}
+            className="w-28 shrink-0 text-xs text-zinc-400"
+          >
+            {label}
+          </label>
+          <div className="flex flex-1 items-center gap-1.5">
             <input
+              id={`constraint-${key}`}
               type="number"
               step={0.1}
               min={0}
@@ -37,7 +73,9 @@ export const PathSettings = memo(function PathSettings() {
               onChange={(e) => update(key, e.target.value)}
               className="w-full text-right"
             />
-            <span className="text-[10px] text-zinc-600 w-8 shrink-0">{unit}</span>
+            <span className="w-8 shrink-0 text-[10px] text-zinc-600">
+              {unit}
+            </span>
           </div>
         </div>
       ))}

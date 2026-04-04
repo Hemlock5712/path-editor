@@ -35,17 +35,17 @@ export function ChartPanel({
   const maxVelocity = 5.0;
 
   return (
-    <div className="flex flex-col h-full bg-[#050505]">
+    <div className="flex h-full flex-col bg-[#050505]">
       {/* Tab bar — neon underline tabs */}
-      <div className="flex items-center gap-1 px-3 pt-1.5 pb-0 flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center gap-1 px-3 pt-1.5 pb-0">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveChart(tab.key)}
-            className={`px-2.5 py-1 text-xs font-medium transition-all duration-200 border-b ${
+            className={`border-b px-2.5 py-1 text-xs font-medium transition-all duration-200 ${
               activeChart === tab.key
                 ? 'text-accent-green border-accent-green shadow-[0_1px_6px_rgba(0,255,170,0.3)]'
-                : 'text-zinc-600 border-transparent hover:text-zinc-400'
+                : 'border-transparent text-zinc-600 hover:text-zinc-400'
             }`}
           >
             {tab.label}
@@ -54,7 +54,7 @@ export function ChartPanel({
       </div>
 
       {/* Chart container */}
-      <div className="flex-1 min-h-0">
+      <div className="min-h-0 flex-1">
         {activeChart === 'velocity-distance' && (
           <VelocityDistanceChart
             analytics={analytics}
@@ -72,19 +72,13 @@ export function ChartPanel({
           />
         )}
         {activeChart === 'curvature' && (
-          <CurvatureChart
-            analytics={analytics}
-            splinePath={splinePath}
-          />
+          <CurvatureChart analytics={analytics} splinePath={splinePath} />
         )}
         {activeChart === 'acceleration' && (
           <AccelerationChart analytics={analytics} />
         )}
         {activeChart === 'heading' && (
-          <HeadingChart
-            analytics={analytics}
-            splinePath={splinePath}
-          />
+          <HeadingChart analytics={analytics} splinePath={splinePath} />
         )}
       </div>
     </div>

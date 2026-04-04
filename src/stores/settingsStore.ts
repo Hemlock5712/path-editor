@@ -60,7 +60,8 @@ export function computeDerived(s: RobotSettings): RobotComputed {
   const kt = s.stallTorque / s.stallCurrent;
   const maxFrictionAccel = s.frictionCoefficient * GRAVITY;
   const freeSpeedRadPerSec = (s.freeSpeedRpm * 2 * Math.PI) / 60;
-  const maxTheoreticalVelocity = (freeSpeedRadPerSec / s.gearRatio) * s.wheelRadius;
+  const maxTheoreticalVelocity =
+    (freeSpeedRadPerSec / s.gearRatio) * s.wheelRadius;
 
   const getMotorAccel = (speed: number) => {
     const wheelAngVel = speed / s.wheelRadius;
@@ -84,7 +85,10 @@ export function computeDerived(s: RobotSettings): RobotComputed {
 }
 
 interface SettingsStore extends RobotSettings {
-  setField: <K extends keyof RobotSettings>(key: K, value: RobotSettings[K]) => void;
+  setField: <K extends keyof RobotSettings>(
+    key: K,
+    value: RobotSettings[K]
+  ) => void;
   applyMotorPreset: (presetId: string) => void;
   resetToDefaults: () => void;
 }
@@ -110,8 +114,8 @@ export const useSettingsStore = create<SettingsStore>()(
 
       resetToDefaults: () => set(DEFAULT_SETTINGS),
     }),
-    { name: 'frc-path-editor-settings' },
-  ),
+    { name: 'frc-path-editor-settings' }
+  )
 );
 
 /** Read current settings without subscribing (for use in non-React code). */

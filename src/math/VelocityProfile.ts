@@ -41,7 +41,7 @@ export class VelocityProfile {
     headingWaypoints: HeadingWaypoint[],
     numControlPoints: number,
     config?: RobotSettings,
-    constraintZones?: ConstraintZone[],
+    constraintZones?: ConstraintZone[]
   ) {
     const c = config ?? getRobotConfig();
     const kt = c.stallTorque / c.stallCurrent;
@@ -49,15 +49,25 @@ export class VelocityProfile {
 
     this.totalLength = path.getTotalLength();
 
-    const numSamples = Math.max(50, Math.min(MAX_EDITOR_SAMPLES, Math.floor(this.totalLength * SAMPLES_PER_METER)));
+    const numSamples = Math.max(
+      50,
+      Math.min(
+        MAX_EDITOR_SAMPLES,
+        Math.floor(this.totalLength * SAMPLES_PER_METER)
+      )
+    );
     this.samples = [];
     this.velocities = [];
 
     const ds = this.totalLength / numSamples;
 
     // Precompute effective constraints per sample (zones are restrictive-only)
-    const effectiveMaxVel: number[] = new Array(numSamples + 1).fill(constraints.maxVelocity);
-    const effectiveMaxAccel: number[] = new Array(numSamples + 1).fill(constraints.maxAcceleration);
+    const effectiveMaxVel: number[] = new Array(numSamples + 1).fill(
+      constraints.maxVelocity
+    );
+    const effectiveMaxAccel: number[] = new Array(numSamples + 1).fill(
+      constraints.maxAcceleration
+    );
 
     if (constraintZones && constraintZones.length > 0) {
       const zoneBounds = constraintZones.map((z) => ({
@@ -72,7 +82,10 @@ export class VelocityProfile {
         for (const zb of zoneBounds) {
           if (s >= zb.startS && s <= zb.endS) {
             effectiveMaxVel[i] = Math.min(effectiveMaxVel[i], zb.maxVelocity);
-            effectiveMaxAccel[i] = Math.min(effectiveMaxAccel[i], zb.maxAcceleration);
+            effectiveMaxAccel[i] = Math.min(
+              effectiveMaxAccel[i],
+              zb.maxAcceleration
+            );
           }
         }
       }
@@ -132,22 +145,34 @@ export class VelocityProfile {
     }
 
     // Step 1c: Angular velocity limit — slow translation where rotation demand is high
-    const dthetaDs = computeHeadingRate(headingWaypoints, numControlPoints, this.samples, this.totalLength);
+    const dthetaDs = computeHeadingRate(
+      headingWaypoints,
+      numControlPoints,
+      this.samples,
+      this.totalLength
+    );
     for (let i = 0; i <= numSamples; i++) {
       const absDthetaDs = Math.abs(dthetaDs[i]);
       if (absDthetaDs > 1e-9) {
         const angularLimit = constraints.maxAngularVelocity / absDthetaDs;
-        curvatureLimit[i] = Math.min(curvatureLimit[i], Math.max(angularLimit, c.minVelocity));
+        curvatureLimit[i] = Math.min(
+          curvatureLimit[i],
+          Math.max(angularLimit, c.minVelocity)
+        );
       }
     }
 
     // Step 2: Forward pass — acceleration-limited from start (with friction circle)
-    const forward: number[] = [Math.min(constraints.startVelocity, curvatureLimit[0])];
+    const forward: number[] = [
+      Math.min(constraints.startVelocity, curvatureLimit[0]),
+    ];
     for (let i = 1; i <= numSamples; i++) {
       // 1. Tentative speed using full budget (upper bound for centripetal estimate)
       const motorAccelTentative = motorMaxAccel(forward[i - 1]);
       const fullAccel = Math.min(motorAccelTentative, effectiveMaxAccel[i]);
-      let vTentative = Math.sqrt(forward[i - 1] * forward[i - 1] + 2 * fullAccel * ds);
+      let vTentative = Math.sqrt(
+        forward[i - 1] * forward[i - 1] + 2 * fullAccel * ds
+      );
       vTentative = Math.min(vTentative, curvatureLimit[i], effectiveMaxVel[i]);
 
       // 2. Use smoothed curvature for friction circle (accounts for C1 discontinuities)
@@ -158,7 +183,9 @@ export class VelocityProfile {
       const frictionBudget = effectiveMaxAccel[i];
       let frictionAvail: number;
       if (centripetal < frictionBudget) {
-        frictionAvail = Math.sqrt(frictionBudget * frictionBudget - centripetal * centripetal);
+        frictionAvail = Math.sqrt(
+          frictionBudget * frictionBudget - centripetal * centripetal
+        );
       } else {
         frictionAvail = c.minVelocity;
       }
@@ -170,10 +197,15 @@ export class VelocityProfile {
       // 5. Angular acceleration limit
       const absDthetaDsFwd = Math.abs(dthetaDs[i]);
       if (absDthetaDsFwd > 1e-9) {
-        maxAccel = Math.min(maxAccel, constraints.maxAngularAcceleration / absDthetaDsFwd);
+        maxAccel = Math.min(
+          maxAccel,
+          constraints.maxAngularAcceleration / absDthetaDsFwd
+        );
       }
 
-      const vFromAccel = Math.sqrt(forward[i - 1] * forward[i - 1] + 2 * maxAccel * ds);
+      const vFromAccel = Math.sqrt(
+        forward[i - 1] * forward[i - 1] + 2 * maxAccel * ds
+      );
       let v = Math.min(vFromAccel, curvatureLimit[i]);
       v = Math.min(v, effectiveMaxVel[i]);
       forward.push(v);
@@ -181,12 +213,17 @@ export class VelocityProfile {
 
     // Step 3: Backward pass — deceleration-limited from end (with friction circle)
     const backward: number[] = new Array(numSamples + 1);
-    backward[numSamples] = Math.min(constraints.endVelocity, curvatureLimit[numSamples]);
+    backward[numSamples] = Math.min(
+      constraints.endVelocity,
+      curvatureLimit[numSamples]
+    );
     for (let i = numSamples - 1; i >= 0; i--) {
       const fullDecel = effectiveMaxAccel[i];
 
       // 1. Tentative speed using full decel budget
-      let vTentative = Math.sqrt(backward[i + 1] * backward[i + 1] + 2 * fullDecel * ds);
+      let vTentative = Math.sqrt(
+        backward[i + 1] * backward[i + 1] + 2 * fullDecel * ds
+      );
       vTentative = Math.min(vTentative, curvatureLimit[i], effectiveMaxVel[i]);
 
       // 2. Use smoothed curvature for friction circle
@@ -196,7 +233,9 @@ export class VelocityProfile {
       // 3. Friction circle: recompute available tangential deceleration after centripetal
       let availDecel: number;
       if (centripetal < fullDecel) {
-        availDecel = Math.sqrt(fullDecel * fullDecel - centripetal * centripetal);
+        availDecel = Math.sqrt(
+          fullDecel * fullDecel - centripetal * centripetal
+        );
       } else {
         availDecel = c.minVelocity;
       }
@@ -204,10 +243,15 @@ export class VelocityProfile {
       // 4. Angular deceleration limit
       const absDthetaDsBack = Math.abs(dthetaDs[i]);
       if (absDthetaDsBack > 1e-9) {
-        availDecel = Math.min(availDecel, constraints.maxAngularAcceleration / absDthetaDsBack);
+        availDecel = Math.min(
+          availDecel,
+          constraints.maxAngularAcceleration / absDthetaDsBack
+        );
       }
 
-      const vFromDecel = Math.sqrt(backward[i + 1] * backward[i + 1] + 2 * availDecel * ds);
+      const vFromDecel = Math.sqrt(
+        backward[i + 1] * backward[i + 1] + 2 * availDecel * ds
+      );
       let v = Math.min(vFromDecel, curvatureLimit[i]);
       v = Math.min(v, effectiveMaxVel[i]);
       backward[i] = v;
@@ -215,19 +259,25 @@ export class VelocityProfile {
 
     // Step 4: Final profile = min of forward and backward
     for (let i = 0; i <= numSamples; i++) {
-      this.velocities.push(Math.max(c.minVelocity, Math.min(forward[i], backward[i])));
+      this.velocities.push(
+        Math.max(c.minVelocity, Math.min(forward[i], backward[i]))
+      );
     }
   }
 
   getVelocity(s: number): number {
     if (s <= 0) return this.velocities[0];
-    if (s >= this.totalLength) return this.velocities[this.velocities.length - 1];
+    if (s >= this.totalLength)
+      return this.velocities[this.velocities.length - 1];
 
     const ds = this.totalLength / (this.velocities.length - 1);
     const indexF = s / ds;
     const lo = Math.min(Math.floor(indexF), this.velocities.length - 2);
     const frac = indexF - lo;
 
-    return this.velocities[lo] + frac * (this.velocities[lo + 1] - this.velocities[lo]);
+    return (
+      this.velocities[lo] +
+      frac * (this.velocities[lo + 1] - this.velocities[lo])
+    );
   }
 }

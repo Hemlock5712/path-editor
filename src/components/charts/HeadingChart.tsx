@@ -18,7 +18,11 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    x: number;
+    y: number;
+    text: string;
+  } | null>(null);
 
   const scrubberDistance = useEditorStore((s) => s.scrubberDistance);
   const setScrubberDistance = useEditorStore((s) => s.setScrubberDistance);
@@ -42,8 +46,12 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
   }, []);
 
   // Compute heading range for Y axis
-  const getHeadingRange = useCallback((): { minDeg: number; maxDeg: number } => {
-    if (!analytics || analytics.headings.length < 2) return { minDeg: -180, maxDeg: 180 };
+  const getHeadingRange = useCallback((): {
+    minDeg: number;
+    maxDeg: number;
+  } => {
+    if (!analytics || analytics.headings.length < 2)
+      return { minDeg: -180, maxDeg: 180 };
     let minH = Infinity;
     let maxH = -Infinity;
     let anyValid = false;
@@ -67,7 +75,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
       const plotW = size.width - PADDING.left - PADDING.right;
       return PADDING.left + (d / maxDist) * plotW;
     },
-    [analytics, size.width],
+    [analytics, size.width]
   );
 
   const degToY = useCallback(
@@ -78,7 +86,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
       if (range <= 0) return PADDING.top + plotH / 2;
       return PADDING.top + plotH * (1 - (deg - minDeg) / range);
     },
-    [getHeadingRange, size.height],
+    [getHeadingRange, size.height]
   );
 
   const xToDist = useCallback(
@@ -89,7 +97,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
       const d = ((x - PADDING.left) / plotW) * maxDist;
       return Math.max(0, Math.min(d, maxDist));
     },
-    [analytics, size.width],
+    [analytics, size.width]
   );
 
   const waypointIndexToDistance = useCallback(
@@ -98,7 +106,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
       const frac = wpIndex / (controlPoints.length - 1);
       return frac * splinePath.totalLength;
     },
-    [splinePath, controlPoints.length],
+    [splinePath, controlPoints.length]
   );
 
   // Interpolate heading at distance from analytics arrays (linear between samples)
@@ -123,7 +131,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
       if (isNaN(hLo) || isNaN(hHi)) return NaN;
       return lerpAngle(hLo, hHi, frac);
     },
-    [analytics],
+    [analytics]
   );
 
   // Draw chart
@@ -144,7 +152,12 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
     const plotH = size.height - PADDING.top - PADDING.bottom;
     const { minDeg, maxDeg } = getHeadingRange();
 
-    if (!analytics || analytics.distances.length < 2 || plotW <= 0 || plotH <= 0) {
+    if (
+      !analytics ||
+      analytics.distances.length < 2 ||
+      plotW <= 0 ||
+      plotH <= 0
+    ) {
       ctx.fillStyle = '#6b6b7a';
       ctx.font = '12px monospace';
       ctx.textAlign = 'center';
@@ -336,7 +349,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
         setIsDragging(true);
       }
     },
-    [analytics, size, xToDist, setScrubberDistance],
+    [analytics, size, xToDist, setScrubberDistance]
   );
 
   const handleMouseMove = useCallback(
@@ -360,7 +373,9 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
       ) {
         const d = xToDist(x);
         const hRad = getHeadingAtDistance(d);
-        const hDeg = isNaN(hRad) ? 'N/A' : `${((hRad * 180) / Math.PI).toFixed(1)} deg`;
+        const hDeg = isNaN(hRad)
+          ? 'N/A'
+          : `${((hRad * 180) / Math.PI).toFixed(1)} deg`;
         setTooltip({
           x: e.clientX - rect.left,
           y: e.clientY - rect.top,
@@ -370,7 +385,14 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
         setTooltip(null);
       }
     },
-    [analytics, isDragging, size, xToDist, getHeadingAtDistance, setScrubberDistance],
+    [
+      analytics,
+      isDragging,
+      size,
+      xToDist,
+      getHeadingAtDistance,
+      setScrubberDistance,
+    ]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -383,7 +405,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
   }, []);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full">
+    <div ref={containerRef} className="relative h-full w-full">
       <canvas
         ref={canvasRef}
         style={{ width: size.width, height: size.height }}
@@ -408,7 +430,11 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
   );
 }
 
-function computeNiceStep(range: number, pixels: number, minPixelGap: number): number {
+function computeNiceStep(
+  range: number,
+  pixels: number,
+  minPixelGap: number
+): number {
   if (range <= 0 || pixels <= 0) return 1;
   const rawStep = (range * minPixelGap) / pixels;
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));

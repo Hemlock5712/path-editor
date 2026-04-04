@@ -19,10 +19,14 @@ import { PathStats } from './components/sidebar/PathStats';
 import { SidebarSection } from './components/sidebar/SidebarSection';
 import { parsePathsJava } from './utils/javaParser';
 import { generatePathsJava } from './utils/javaExport';
-import { buildSortedHeadings, interpolateHeadingSorted } from './math/ProfileAnalytics';
+import {
+  buildSortedHeadings,
+  interpolateHeadingSorted,
+} from './math/ProfileAnalytics';
 
 export default function App() {
-  const { splinePath, velocityProfile, timeEstimator, analytics, stats } = usePathComputation();
+  const { splinePath, velocityProfile, timeEstimator, analytics, stats } =
+    usePathComputation();
 
   const playback = usePlayback(splinePath, velocityProfile);
 
@@ -40,7 +44,10 @@ export default function App() {
     // Check if scrubber is inside a rotation zone
     const waypointIndex = progress * (numControlPoints - 1);
     for (const zone of rotationZones) {
-      if (waypointIndex >= zone.startWaypointIndex && waypointIndex <= zone.endWaypointIndex) {
+      if (
+        waypointIndex >= zone.startWaypointIndex &&
+        waypointIndex <= zone.endWaypointIndex
+      ) {
         // Face the target point
         const pathPoint = splinePath.getPoint(scrubberDistance);
         const dx = zone.targetPoint.x - pathPoint.x;
@@ -52,17 +59,26 @@ export default function App() {
     const sorted = buildSortedHeadings(headingWaypoints, numControlPoints);
     const heading = interpolateHeadingSorted(sorted, progress);
     return isNaN(heading) ? null : heading;
-  }, [splinePath, headingWaypoints, numControlPoints, rotationZones, scrubberDistance]);
+  }, [
+    splinePath,
+    headingWaypoints,
+    numControlPoints,
+    rotationZones,
+    scrubberDistance,
+  ]);
 
   // Save/Load callbacks for keyboard shortcuts
   const handleSave = useCallback(async () => {
     const allPaths = usePathStore.getState().getAllPaths();
     if (allPaths.length === 0) return;
-    const java = generatePathsJava(allPaths, usePathStore.getState().namedPoints);
+    const java = generatePathsJava(
+      allPaths,
+      usePathStore.getState().namedPoints
+    );
 
     if ('showSaveFilePicker' in window) {
       try {
-        const handle = await (window as any).showSaveFilePicker({
+        const handle = await window.showSaveFilePicker({
           suggestedName: 'Paths.java',
           types: [
             {
@@ -82,11 +98,16 @@ export default function App() {
 
   const handleLoad = useCallback(() => {
     if ('showOpenFilePicker' in window) {
-      (window as any)
+      window
         .showOpenFilePicker({
-          types: [{ description: 'Java Source', accept: { 'text/x-java-source': ['.java'] } }],
+          types: [
+            {
+              description: 'Java Source',
+              accept: { 'text/x-java-source': ['.java'] },
+            },
+          ],
         })
-        .then(async ([handle]: any[]) => {
+        .then(async ([handle]) => {
           const file = await handle.getFile();
           const text = await file.text();
           const parsed = parsePathsJava(text);
@@ -114,7 +135,8 @@ export default function App() {
 
   // Register keyboard shortcuts
   useKeyboardShortcuts({
-    onPlay: playback.playbackState === 'paused' ? playback.resume : playback.play,
+    onPlay:
+      playback.playbackState === 'paused' ? playback.resume : playback.play,
     onStop: playback.stop,
     onStepForward: playback.stepForward,
     onStepBackward: playback.stepBackward,
@@ -126,7 +148,7 @@ export default function App() {
     <AppShell
       titlebar={<Titlebar stats={stats} showSidebar />}
       field={
-        <div className="flex flex-col h-full">
+        <div className="flex h-full flex-col">
           <PathTabs />
           <Toolbar
             onPlay={playback.play}
@@ -137,8 +159,11 @@ export default function App() {
             onStepBackward={playback.stepBackward}
           />
           <ErrorBoundary>
-            <div className="flex-1 min-h-0">
-              <FieldCanvas splinePath={splinePath} scrubberHeading={scrubberHeading} />
+            <div className="min-h-0 flex-1">
+              <FieldCanvas
+                splinePath={splinePath}
+                scrubberHeading={scrubberHeading}
+              />
             </div>
           </ErrorBoundary>
         </div>
@@ -179,4 +204,3 @@ export default function App() {
     />
   );
 }
-

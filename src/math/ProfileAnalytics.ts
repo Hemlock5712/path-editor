@@ -34,7 +34,7 @@ export function computeAnalytics(
   profile: VelocityProfile,
   timeEst: TimeEstimator,
   headingWaypoints: HeadingWaypoint[],
-  numControlPoints: number,
+  numControlPoints: number
 ): AnalyticsArrays {
   const n = profile.velocities.length;
   const distances: number[] = new Array(n);
@@ -96,12 +96,25 @@ export function computeAnalytics(
 
   // Angular velocities: omega = v * dtheta/ds
   const angularVelocities: number[] = new Array(n);
-  const dthetaDs = computeHeadingRate(headingWaypoints, numControlPoints, distances, totalLength);
+  const dthetaDs = computeHeadingRate(
+    headingWaypoints,
+    numControlPoints,
+    distances,
+    totalLength
+  );
   for (let i = 0; i < n; i++) {
     angularVelocities[i] = velocities[i] * dthetaDs[i];
   }
 
-  return { distances, times, velocities, curvatures, accelerations, headings, angularVelocities };
+  return {
+    distances,
+    times,
+    velocities,
+    curvatures,
+    accelerations,
+    headings,
+    angularVelocities,
+  };
 }
 
 /**
@@ -113,7 +126,7 @@ export function computeStats(
   timeEst: TimeEstimator,
   headingWaypoints: HeadingWaypoint[],
   numControlPoints: number,
-  numHeadingWaypoints: number,
+  numHeadingWaypoints: number
 ): PathStats {
   const n = profile.velocities.length;
 
@@ -129,12 +142,16 @@ export function computeStats(
     }
   }
 
-  const averageVelocity = timeEst.totalTime > 1e-12
-    ? profile.totalLength / timeEst.totalTime
-    : 0;
+  const averageVelocity =
+    timeEst.totalTime > 1e-12 ? profile.totalLength / timeEst.totalTime : 0;
 
   // Peak angular velocity
-  const dthetaDs = computeHeadingRate(headingWaypoints, numControlPoints, profile.samples, profile.totalLength);
+  const dthetaDs = computeHeadingRate(
+    headingWaypoints,
+    numControlPoints,
+    profile.samples,
+    profile.totalLength
+  );
   let peakAngularVelocity = 0;
   let peakAngularVelocityDistance = 0;
   for (let i = 0; i < n; i++) {
@@ -170,7 +187,7 @@ export interface SortedHeadingEntry {
  */
 export function buildSortedHeadings(
   headingWaypoints: HeadingWaypoint[],
-  numControlPoints: number,
+  numControlPoints: number
 ): SortedHeadingEntry[] {
   return headingWaypoints
     .map((hw) => ({
@@ -188,12 +205,16 @@ export function computeHeadingRate(
   headingWaypoints: HeadingWaypoint[],
   numControlPoints: number,
   sampleDistances: number[],
-  totalLength: number,
+  totalLength: number
 ): number[] {
   const n = sampleDistances.length;
   const dthetaDs = new Array<number>(n).fill(0);
 
-  if (headingWaypoints.length < 2 || numControlPoints < 2 || totalLength < 1e-12) {
+  if (
+    headingWaypoints.length < 2 ||
+    numControlPoints < 2 ||
+    totalLength < 1e-12
+  ) {
     return dthetaDs;
   }
 
@@ -229,14 +250,18 @@ export function computeHeadingRate(
  * After last waypoint: hold last heading.
  * Between: linear interpolation with shortest-arc angle lerp.
  */
-export function interpolateHeadingSorted(sorted: SortedHeadingEntry[], progress: number): number {
+export function interpolateHeadingSorted(
+  sorted: SortedHeadingEntry[],
+  progress: number
+): number {
   if (sorted.length === 0) return NaN;
 
   // Before first or at first waypoint: hold constant
   if (progress <= sorted[0].frac) return sorted[0].rad;
 
   // After last or at last waypoint: hold constant
-  if (progress >= sorted[sorted.length - 1].frac) return sorted[sorted.length - 1].rad;
+  if (progress >= sorted[sorted.length - 1].frac)
+    return sorted[sorted.length - 1].rad;
 
   // Find surrounding pair and lerp
   for (let i = 0; i < sorted.length - 1; i++) {

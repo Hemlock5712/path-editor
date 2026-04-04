@@ -5,7 +5,7 @@ import { VelocityProfile } from '../math/VelocityProfile';
 
 export function usePlayback(
   splinePath: SplinePath | null,
-  velocityProfile: VelocityProfile | null,
+  velocityProfile: VelocityProfile | null
 ) {
   const playbackState = useEditorStore((s) => s.playbackState);
   const playbackSpeed = useEditorStore((s) => s.playbackSpeed);
@@ -16,18 +16,25 @@ export function usePlayback(
   const lastFrameTimeRef = useRef(0);
   const rafRef = useRef(0);
   const prevTotalLengthRef = useRef(0);
+  const totalLengthRef = useRef(0);
 
   // Rescale scrubber proportionally when path length changes
   useEffect(() => {
     const newLen = splinePath?.totalLength ?? 0;
     const prevLen = prevTotalLengthRef.current;
-    if (prevLen > 0 && newLen > 0 && newLen !== prevLen && playbackSRef.current > 0) {
+    if (
+      prevLen > 0 &&
+      newLen > 0 &&
+      newLen !== prevLen &&
+      playbackSRef.current > 0
+    ) {
       const ratio = playbackSRef.current / prevLen;
       const newDistance = Math.max(0, Math.min(ratio * newLen, newLen));
       playbackSRef.current = newDistance;
       setScrubberDistance(newDistance);
     }
     prevTotalLengthRef.current = newLen;
+    totalLengthRef.current = newLen;
   }, [splinePath, setScrubberDistance]);
 
   // Playback animation loop
@@ -37,9 +44,11 @@ export function usePlayback(
       return;
     }
 
-    const totalLen = splinePath.totalLength;
-
     const animate = (timestamp: number) => {
+      // Read from ref to avoid stale closure when path length changes mid-playback
+      const totalLen = totalLengthRef.current;
+      if (totalLen <= 0) return;
+
       if (lastFrameTimeRef.current === 0) {
         lastFrameTimeRef.current = timestamp;
       }
@@ -115,12 +124,7 @@ export function usePlayback(
     playbackSRef.current = newS;
     setScrubberDistance(newS);
     if (playbackState === 'stopped') setPlaybackState('paused');
-  }, [
-    splinePath,
-    playbackState,
-    setScrubberDistance,
-    setPlaybackState,
-  ]);
+  }, [splinePath, playbackState, setScrubberDistance, setPlaybackState]);
 
   const scrubTo = useCallback(
     (s: number) => {
@@ -130,13 +134,17 @@ export function usePlayback(
       setScrubberDistance(clampedS);
       if (playbackState === 'stopped') setPlaybackState('paused');
     },
-    [
-      splinePath,
-      playbackState,
-      setScrubberDistance,
-      setPlaybackState,
-    ],
+    [splinePath, playbackState, setScrubberDistance, setPlaybackState]
   );
 
-  return { play, pause, resume, stop, stepForward, stepBackward, scrubTo, playbackState };
+  return {
+    play,
+    pause,
+    resume,
+    stop,
+    stepForward,
+    stepBackward,
+    scrubTo,
+    playbackState,
+  };
 }

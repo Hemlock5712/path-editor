@@ -3,11 +3,12 @@ import { CubicSegment } from './CubicSegment';
 
 // Exact Gauss-Legendre constants from SplinePath.java
 const GL_NODES = [
-  -0.906179845938664, -0.5384693101056831, 0.0, 0.5384693101056831, 0.906179845938664,
+  -0.906179845938664, -0.5384693101056831, 0.0, 0.5384693101056831,
+  0.906179845938664,
 ];
 const GL_WEIGHTS = [
-  0.2369268850561891, 0.4786286704993665, 0.5688888888888889, 0.4786286704993665,
-  0.2369268850561891,
+  0.2369268850561891, 0.4786286704993665, 0.5688888888888889,
+  0.4786286704993665, 0.2369268850561891,
 ];
 
 const SAMPLES_PER_METER = 1000;
@@ -69,7 +70,10 @@ export class SplinePath {
       roughLength += integrateSegmentLength(seg, 0, 1);
     }
 
-    const numSamples = Math.max(MIN_SAMPLES, Math.floor(roughLength * SAMPLES_PER_METER));
+    const numSamples = Math.max(
+      MIN_SAMPLES,
+      Math.floor(roughLength * SAMPLES_PER_METER)
+    );
     this.sTable = new Float64Array(numSamples + 1);
     this.segIndexTable = new Int32Array(numSamples + 1);
     this.tTable = new Float64Array(numSamples + 1);
@@ -111,7 +115,9 @@ export class SplinePath {
     if (waypointIndex <= 0) return 0;
     if (waypointIndex >= this.segments.length) return this.totalLength;
     const numSamples = this.sTable.length - 1;
-    const tableIndex = Math.round((waypointIndex * numSamples) / this.segments.length);
+    const tableIndex = Math.round(
+      (waypointIndex * numSamples) / this.segments.length
+    );
     return this.sTable[Math.min(tableIndex, numSamples)];
   }
 
@@ -131,14 +137,29 @@ export class SplinePath {
       const localT = globalT - segIdx;
 
       const prevGlobalT = (i - 1) * dtPerSample;
-      const prevSegIdx = Math.min(Math.floor(prevGlobalT), this.segments.length - 1);
+      const prevSegIdx = Math.min(
+        Math.floor(prevGlobalT),
+        this.segments.length - 1
+      );
       const prevLocalT = prevGlobalT - prevSegIdx;
 
       if (prevSegIdx === segIdx) {
-        cumulativeS += integrateSegmentLength(this.segments[segIdx], prevLocalT, localT);
+        cumulativeS += integrateSegmentLength(
+          this.segments[segIdx],
+          prevLocalT,
+          localT
+        );
       } else {
-        cumulativeS += integrateSegmentLength(this.segments[prevSegIdx], prevLocalT, 1.0);
-        cumulativeS += integrateSegmentLength(this.segments[segIdx], 0.0, localT);
+        cumulativeS += integrateSegmentLength(
+          this.segments[prevSegIdx],
+          prevLocalT,
+          1.0
+        );
+        cumulativeS += integrateSegmentLength(
+          this.segments[segIdx],
+          0.0,
+          localT
+        );
       }
 
       this.sTable[i] = cumulativeS;
@@ -149,7 +170,8 @@ export class SplinePath {
 
   private lookupS(s: number): { segIndex: number; t: number } {
     if (s <= 0) return { segIndex: 0, t: 0 };
-    if (s >= this.totalLength) return { segIndex: this.segments.length - 1, t: 1.0 };
+    if (s >= this.totalLength)
+      return { segIndex: this.segments.length - 1, t: 1.0 };
 
     let lo = 0;
     let hi = this.sTable.length - 1;
@@ -218,7 +240,11 @@ export class SplinePath {
   }
 }
 
-function integrateSegmentLength(segment: CubicSegment, t0: number, t1: number): number {
+function integrateSegmentLength(
+  segment: CubicSegment,
+  t0: number,
+  t1: number
+): number {
   if (Math.abs(t1 - t0) < 1e-12) return 0;
 
   const halfRange = (t1 - t0) / 2.0;
