@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, FileCode, Package, Puzzle, Loader2 } from 'lucide-react';
+import { Download, FileCode, Package, Puzzle, Loader2, Lock } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Titlebar } from '../layout/Titlebar';
@@ -24,7 +24,7 @@ export function DownloadsPage() {
     try {
       const zip = new JSZip();
       await Promise.all(
-        JAVA_FILES.map(async (file) => {
+        JAVA_FILES.filter((f) => !f.private).map(async (file) => {
           const res = await fetch(`/java/${file.relativePath}`);
           const text = await res.text();
           zip.file(`${file.packagePath}${file.filename}`, text);
@@ -89,7 +89,7 @@ export function DownloadsPage() {
             <FileSection
               icon={<Puzzle size={13} />}
               title="Dependencies"
-              description="Required by the path system. You may already have equivalents in your project."
+              description="Required by the path system. Private files require permission to access."
               files={depFiles}
               onDownload={downloadFile}
             />
@@ -169,13 +169,20 @@ function FileCard({
         <div className="text-[10px] text-zinc-600 truncate">{file.description}</div>
       </div>
       <span className="text-[10px] text-zinc-600 font-mono shrink-0">{file.lineCount}L</span>
-      <button
-        onClick={onDownload}
-        className="btn-ghost p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-        title={`Download ${file.filename}`}
-      >
-        <Download size={12} />
-      </button>
+      {file.private ? (
+        <span className="flex items-center gap-1 text-[10px] text-amber-500/70">
+          <Lock size={10} />
+          Private
+        </span>
+      ) : (
+        <button
+          onClick={onDownload}
+          className="btn-ghost p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          title={`Download ${file.filename}`}
+        >
+          <Download size={12} />
+        </button>
+      )}
     </div>
   );
 }

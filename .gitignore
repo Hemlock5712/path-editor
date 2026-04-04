@@ -3,3 +3,7 @@ dist/
 .env
 .DS_Store
 tsconfig.tsbuildinfo
+
+# Private files - require permission to use
+public/java/commands/AccelerationLimiter.java
+public/java/utils/Motor.java

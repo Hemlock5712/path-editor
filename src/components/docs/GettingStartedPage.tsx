@@ -53,9 +53,9 @@ export function GettingStartedPage() {
 {`src/main/java/frc/robot/
   commands/
     FollowPath.java
-    AccelerationLimiter.java
+    AccelerationLimiter.java  (private — contact for access)
   utils/
-    Motor.java
+    Motor.java                (private — contact for access)
     path/
       SplinePath.java
       VelocityProfile.java
@@ -68,7 +68,8 @@ export function GettingStartedPage() {
       CubicSegment.java`}
               </CodeBlock>
               <Callout color="amber">
-                Update the constants in <InlineCode>AccelerationLimiter</InlineCode> (robot mass, current limit, drive base radius) and <InlineCode>VelocityProfile</InlineCode> to match your robot.
+
+                <InlineCode>AccelerationLimiter</InlineCode> and <InlineCode>Motor</InlineCode> are private files that require permission to use. Contact our team for access. Update the constants in <InlineCode>VelocityProfile</InlineCode> to match your robot.
               </Callout>
             </Prose>
           </DocsSection>

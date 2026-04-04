@@ -5,6 +5,7 @@ export interface JavaFileInfo {
   description: string;
   category: 'core' | 'command' | 'dependency';
   lineCount: number;
+  private?: boolean;
 }
 
 export const JAVA_FILES: JavaFileInfo[] = [
@@ -92,6 +93,7 @@ export const JAVA_FILES: JavaFileInfo[] = [
     description: 'Physics-based friction circle, motor torque, and jerk limiting',
     category: 'dependency',
     lineCount: 250,
+    private: true,
   },
   {
     filename: 'Motor.java',
@@ -100,5 +102,6 @@ export const JAVA_FILES: JavaFileInfo[] = [
     description: 'Motor torque-speed curves from dyno data (Kraken X60, Falcon 500, etc.)',
     category: 'dependency',
     lineCount: 100,
+    private: true,
   },
 ];
