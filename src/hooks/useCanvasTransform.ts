@@ -49,7 +49,7 @@ export function useCanvasTransform() {
       const scale = ((canvasWidth - 2 * pad) / FIELD_WIDTH) * zoom;
       setPanOffset({
         x: panOffset.x - dx / scale,
-        y: panOffset.y + dy / scale, // Y is inverted on canvas
+        y: panOffset.y - dy / scale,
       });
     },
     [zoom, panOffset, setPanOffset]
