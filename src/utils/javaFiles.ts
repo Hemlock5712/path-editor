@@ -61,7 +61,7 @@ export const JAVA_FILES: JavaFileInfo[] = [
     description:
       'Factory methods for heading strategies: face forward, face point, hold, interpolate, zone-based',
     category: 'core',
-    lineCount: 260,
+    lineCount: 273,
   },
   {
     filename: 'PathData.java',

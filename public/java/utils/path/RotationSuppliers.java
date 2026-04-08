@@ -25,6 +25,16 @@ public final class RotationSuppliers {
   private static final double HARDWARE_MAX_OMEGA =
       AccelerationLimiter.MAX_VELOCITY / AccelerationLimiter.DRIVE_BASE_RADIUS;
 
+  /**
+   * Conservative fraction of MAX_ANGULAR_DECEL for stopping-profile planning. Slightly below the
+   * default 30% rotation budget to account for AccelerationLimiter lag and jerk limiting.
+   */
+  private static final double DECEL_BUDGET_FACTOR = 0.25;
+
+  /** Max omega achievable under default 30% rotation budget. */
+  private static final double BUDGET_MAX_OMEGA =
+      0.30 * AccelerationLimiter.MAX_FRICTION_ACCEL / AccelerationLimiter.DRIVE_BASE_RADIUS;
+
   private RotationSuppliers() {}
 
   /**
@@ -119,9 +129,7 @@ public final class RotationSuppliers {
 
     // Build the default supplier from heading waypoints
     RotationSupplier defaultSupplier =
-        headingWaypoints.isEmpty()
-            ? faceForward()
-            : interpolateAlongPath(path, headingWaypoints);
+        headingWaypoints.isEmpty() ? faceForward() : interpolateAlongPath(path, headingWaypoints);
 
     if (rotationZones.isEmpty()) {
       return defaultSupplier;
@@ -177,11 +185,11 @@ public final class RotationSuppliers {
    */
   static double angleErrorToOmega(double angleError) {
     double absError = Math.abs(angleError);
-    if (absError < 1e-4) {
+    if (absError < 0.005) {
       return 0.0;
     }
-    double stoppingOmega = Math.sqrt(2.0 * MAX_ANGULAR_DECEL * absError);
-    double omega = Math.min(stoppingOmega, HARDWARE_MAX_OMEGA);
+    double stoppingOmega = Math.sqrt(2.0 * MAX_ANGULAR_DECEL * DECEL_BUDGET_FACTOR * absError);
+    double omega = Math.min(stoppingOmega, BUDGET_MAX_OMEGA);
     return Math.copySign(omega, angleError);
   }
 
