@@ -55,6 +55,13 @@ export function PointInfo({
   const selectedFlags = hasSelection
     ? waypointFlags.filter((flag) => flag.waypointIndex === selectedPointIndex)
     : [];
+  const flagOptions = Array.from(
+    new Set(
+      waypointFlags
+        .map((flag) => flag.label.trim())
+        .filter((label) => label.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b));
 
   // Compute derived values if we have a built spline
   let distance: number | null = null;
@@ -240,6 +247,7 @@ export function PointInfo({
                   <div key={flag.id} className="flex items-center gap-2">
                     <input
                       type="text"
+                      list="waypoint-flag-options"
                       value={flag.label}
                       onChange={(e) =>
                         updateWaypointFlag(flag.id, { label: e.target.value })
@@ -265,6 +273,7 @@ export function PointInfo({
               <div className="flex items-center gap-2">
                 <input
                   type="text"
+                  list="waypoint-flag-options"
                   value={newFlagLabel}
                   onChange={(e) => setNewFlagLabel(e.target.value)}
                   onKeyDown={(e) => {
@@ -285,6 +294,11 @@ export function PointInfo({
                   Add
                 </button>
               </div>
+              <datalist id="waypoint-flag-options">
+                {flagOptions.map((label) => (
+                  <option key={label} value={label} />
+                ))}
+              </datalist>
             </div>
           </div>
         </>

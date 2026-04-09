@@ -125,6 +125,15 @@ describe('Java export/parse roundtrip', () => {
     expect(parsed[0].waypointFlags).toEqual(testPaths[0].waypointFlags);
   });
 
+  it('generates a waypoint flag enum for typed usage in robot code', () => {
+    const java = generatePathsJava(testPaths);
+
+    expect(java).toContain('public enum WaypointFlag');
+    expect(java).toContain('INTAKE("intake")');
+    expect(java).toContain('SETTLE("settle")');
+    expect(java).toContain('SHOOT("shoot")');
+  });
+
   it('roundtrips path name as UPPER_SNAKE_CASE', () => {
     const java = generatePathsJava(testPaths);
     const parsed = parsePathsJava(java);
