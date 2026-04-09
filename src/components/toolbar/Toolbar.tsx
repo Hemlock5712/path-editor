@@ -193,7 +193,7 @@ export function Toolbar({
       </button>
 
       <button
-        onClick={duplicatePath}
+        onClick={() => duplicatePath()}
         disabled={controlPoints.length === 0}
         className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
         title="Duplicate active path"

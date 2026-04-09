@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { usePathStore } from '../../stores/pathStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { MapPin } from 'lucide-react';
@@ -37,7 +38,9 @@ export function PointInfo({
 }: PointInfoProps) {
   const controlPoints = usePathStore((s) => s.controlPoints);
   const selectedPointIndex = useSelectionStore((s) => s.selectedPointIndex);
+  const selectPoint = useSelectionStore((s) => s.selectPoint);
   const movePoint = usePathStore((s) => s.movePoint);
+  const insertPointAfter = usePathStore((s) => s.insertPointAfter);
 
   const hasSelection =
     selectedPointIndex !== null && selectedPointIndex < controlPoints.length;
@@ -81,13 +84,59 @@ export function PointInfo({
     }
   };
 
+  const handleInsertBefore = useCallback(() => {
+    if (!hasSelection) return;
+    if (selectedPointIndex > 0) {
+      const prev = controlPoints[selectedPointIndex - 1];
+      const curr = controlPoints[selectedPointIndex];
+      const mid = { x: (prev.x + curr.x) / 2, y: (prev.y + curr.y) / 2 };
+      insertPointAfter(selectedPointIndex - 1, mid);
+      selectPoint(selectedPointIndex);
+    } else {
+      const curr = controlPoints[0];
+      insertPointAfter(-1, { x: curr.x - 0.5, y: curr.y });
+      selectPoint(0);
+    }
+  }, [hasSelection, selectedPointIndex, controlPoints, insertPointAfter, selectPoint]);
+
+  const handleInsertAfter = useCallback(() => {
+    if (!hasSelection) return;
+    if (selectedPointIndex < controlPoints.length - 1) {
+      const curr = controlPoints[selectedPointIndex];
+      const next = controlPoints[selectedPointIndex + 1];
+      const mid = { x: (curr.x + next.x) / 2, y: (curr.y + next.y) / 2 };
+      insertPointAfter(selectedPointIndex, mid);
+      selectPoint(selectedPointIndex + 1);
+    } else {
+      const curr = controlPoints[selectedPointIndex];
+      insertPointAfter(selectedPointIndex, { x: curr.x + 0.5, y: curr.y });
+      selectPoint(selectedPointIndex + 1);
+    }
+  }, [hasSelection, selectedPointIndex, controlPoints, insertPointAfter, selectPoint]);
+
   return (
     <div>
       {hasSelection && point ? (
         <>
           <div className="mb-3 flex items-center gap-1.5 text-xs text-zinc-400">
             <MapPin size={12} className="text-accent-green/60" />
-            Point {selectedPointIndex + 1} of {totalPoints}
+            <span>Point {selectedPointIndex + 1} of {totalPoints}</span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={handleInsertBefore}
+                className="btn-ghost px-1.5 py-0.5 font-mono text-[10px]"
+                title="Insert point before"
+              >
+                + Before
+              </button>
+              <button
+                onClick={handleInsertAfter}
+                className="btn-ghost px-1.5 py-0.5 font-mono text-[10px]"
+                title="Insert point after"
+              >
+                + After
+              </button>
+            </div>
           </div>
 
           {/* Editable coordinates */}

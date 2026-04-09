@@ -65,6 +65,8 @@ export function useCanvasInteraction({
   const setActivePath = usePathStore((s) => s.setActivePath);
   const selectPoint = useSelectionStore((s) => s.selectPoint);
   const selectZone = useSelectionStore((s) => s.selectZone);
+  const selectedPointIndex = useSelectionStore((s) => s.selectedPointIndex);
+  const insertPointAfter = usePathStore((s) => s.insertPointAfter);
   const snapEnabled = useEditorStore((s) => s.snapToGrid);
   const gridSize = useEditorStore((s) => s.gridSize);
   const setHoveredPointIndex = useEditorStore((s) => s.setHoveredPointIndex);
@@ -172,8 +174,13 @@ export function useCanvasInteraction({
           let pt = canvasToField(cx, cy, cw, ch, transform);
           pt = clampToField(pt);
           pt = maybeSnap(pt);
-          addPoint(pt);
-          selectPoint(controlPoints.length);
+          if (selectedPointIndex !== null && selectedPointIndex < controlPoints.length) {
+            insertPointAfter(selectedPointIndex, pt);
+            selectPoint(selectedPointIndex + 1);
+          } else {
+            addPoint(pt);
+            selectPoint(controlPoints.length);
+          }
           selectZone(null);
         }
       }
@@ -192,6 +199,8 @@ export function useCanvasInteraction({
       selectZone,
       selectPoint,
       addPoint,
+      insertPointAfter,
+      selectedPointIndex,
       maybeSnap,
       inactivePaths,
       setActivePath,

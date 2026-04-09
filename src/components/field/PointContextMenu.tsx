@@ -45,6 +45,10 @@ export function PointContextMenu({
       const mid = { x: (prev.x + curr.x) / 2, y: (prev.y + curr.y) / 2 };
       insertPointAfter(pointIndex - 1, mid);
       selectPoint(pointIndex);
+    } else {
+      const curr = controlPoints[0];
+      insertPointAfter(-1, { x: curr.x - 0.5, y: curr.y });
+      selectPoint(0);
     }
     onClose();
   }, [pointIndex, controlPoints, insertPointAfter, selectPoint, onClose]);
@@ -93,7 +97,6 @@ export function PointContextMenu({
   const hasHeading = headingWaypoints.some(
     (hw) => Math.round(hw.waypointIndex) === pointIndex
   );
-  const canInsertBefore = pointIndex > 0;
   const pointRef = controlPointRefs[pointIndex];
   const namedPointList = Object.values(namedPoints).filter(
     (np) => !np.name.endsWith(' (Mirror)')
@@ -130,7 +133,6 @@ export function PointContextMenu({
         icon={<Plus size={14} />}
         label="Insert Before"
         onClick={handleInsertBefore}
-        disabled={!canInsertBefore}
       />
       <MenuItem
         icon={<Plus size={14} />}
