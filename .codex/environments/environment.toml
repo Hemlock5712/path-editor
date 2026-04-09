@@ -10,5 +10,5 @@ name = "Run"
 icon = "run"
 command = '''
 npm install
-npm run
+npm run dev
 '''
