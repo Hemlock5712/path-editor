@@ -347,14 +347,14 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
 
       {tooltip.visible && (
         <div
-          className="pointer-events-none absolute rounded px-2 py-1 font-mono text-xs"
+          className="pointer-events-none absolute rounded-lg px-2.5 py-1.5 font-mono text-xs"
           style={{
             left: tooltip.x,
             top: tooltip.y,
             background: 'rgba(5, 5, 5, 0.9)',
-            color: '#00FFaa',
-            border: '1px solid rgba(0, 255, 170, 0.15)',
-            boxShadow: '0 0 12px rgba(0, 255, 170, 0.08)',
+            color: '#7fffd4',
+            border: '1px solid rgba(0, 255, 170, 0.14)',
+            boxShadow: '0 12px 24px rgba(0, 0, 0, 0.35)',
             whiteSpace: 'nowrap',
             zIndex: 10,
           }}
@@ -366,17 +366,17 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
       {viewMoved && (
         <button
           onClick={resetView}
-          className="absolute top-2 right-2 flex items-center gap-1.5 rounded px-2 py-1 font-mono text-xs transition-opacity"
+          className="absolute top-3 right-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 font-mono text-xs transition-opacity"
           style={{
-            background: 'rgba(5, 5, 5, 0.85)',
-            color: '#00FFaa',
-            border: '1px solid rgba(0, 255, 170, 0.2)',
-            boxShadow: '0 0 12px rgba(0, 255, 170, 0.08)',
+            background: 'rgba(8, 8, 8, 0.88)',
+            color: '#f2f4f5',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: '0 12px 24px rgba(0, 0, 0, 0.26)',
             zIndex: 10,
           }}
           title="Reset view (0)"
         >
-          <Maximize size={12} />
+          <Maximize size={12} color="#00ffaa" />
           Reset View
         </button>
       )}

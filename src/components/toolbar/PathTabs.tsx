@@ -107,7 +107,7 @@ export function PathTabs() {
   }, []);
 
   return (
-    <div className="flex flex-shrink-0 items-center gap-0.5 overflow-x-auto px-3 pt-1.5 pb-0">
+    <div className="flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-white/[0.04] px-3 pt-2 pb-1.5">
       {pathOrder.map((name, index) => (
         <div
           key={name}
@@ -144,12 +144,15 @@ export function PathTabs() {
                 e.preventDefault();
                 setContextMenu({ name, x: e.clientX, y: e.clientY });
               }}
-              className={`cursor-grab border-b px-2.5 py-1 text-xs font-medium transition-all duration-200 active:cursor-grabbing ${
+              className={`cursor-grab rounded-full border px-3 py-1.5 text-sm font-medium tracking-[0.04em] transition-all duration-200 active:cursor-grabbing ${
                 activePathName === name
-                  ? 'text-accent-green border-accent-green shadow-[0_1px_6px_rgba(0,255,170,0.3)]'
-                  : 'border-transparent text-zinc-600 hover:text-zinc-400'
+                  ? 'border-accent-green/20 bg-accent-green/[0.08] text-zinc-100 shadow-[0_1px_8px_rgba(0,255,170,0.14)]'
+                  : 'border-white/[0.07] bg-white/[0.02] text-zinc-300 hover:bg-white/[0.05] hover:text-zinc-100'
               } ${dragIndex === index ? 'opacity-40' : ''}`}
             >
+              <span className="mr-2 font-mono text-[11px] text-zinc-400">
+                {(index + 1).toString().padStart(2, '0')}
+              </span>
               {name}
             </button>
           )}
@@ -159,7 +162,7 @@ export function PathTabs() {
       {/* Add path button */}
       <button
         onClick={handleAdd}
-        className="btn-ghost hover:text-accent-green ml-1 p-1 text-zinc-600 transition-colors"
+        className="btn-ghost ml-1 rounded-full border border-dashed border-white/[0.08] p-2 text-zinc-300 transition-colors hover:border-accent-green/20 hover:text-accent-green"
         title="New path"
       >
         <Plus size={14} />
@@ -168,18 +171,18 @@ export function PathTabs() {
       {/* Context menu */}
       {contextMenu && (
         <div
-          className="border-accent-green/20 shadow-accent-green/5 fixed z-50 min-w-[120px] rounded-lg border bg-zinc-950/95 py-1 shadow-lg backdrop-blur-sm"
+          className="fixed z-50 min-w-[140px] rounded-xl border border-white/[0.08] bg-zinc-950/95 py-1.5 shadow-2xl backdrop-blur-sm"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <button
-            className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors"
+            className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-2 text-left text-xs tracking-[0.05em] text-zinc-300 transition-colors"
             onClick={() => startRename(contextMenu.name)}
           >
             Rename
           </button>
           <button
-            className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors"
+            className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-2 text-left text-xs tracking-[0.05em] text-zinc-300 transition-colors"
             onClick={() => {
               duplicatePath(contextMenu.name);
               setContextMenu(null);
@@ -188,7 +191,7 @@ export function PathTabs() {
             Duplicate
           </button>
           <button
-            className="w-full px-3 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30"
+            className="w-full px-3 py-2 text-left text-xs tracking-[0.05em] text-red-400 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30"
             disabled={pathOrder.length <= 1}
             onClick={() => {
               deletePath(contextMenu.name);

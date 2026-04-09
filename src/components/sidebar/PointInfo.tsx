@@ -132,20 +132,22 @@ export function PointInfo({
     <div>
       {hasSelection && point ? (
         <>
-          <div className="mb-3 flex items-center gap-1.5 text-xs text-zinc-400">
-            <MapPin size={12} className="text-accent-green/60" />
-            <span>Point {selectedPointIndex + 1} of {totalPoints}</span>
+          <div className="mb-3 flex items-center gap-2 text-[12px] text-zinc-200">
+            <MapPin size={13} className="text-accent-green" />
+            <span>
+              Point {selectedPointIndex + 1} of {totalPoints}
+            </span>
             <div className="ml-auto flex items-center gap-1">
               <button
                 onClick={handleInsertBefore}
-                className="btn-ghost px-1.5 py-0.5 font-mono text-[10px]"
+                className="btn-ghost px-2 py-1 font-mono text-[12px]"
                 title="Insert point before"
               >
                 + Before
               </button>
               <button
                 onClick={handleInsertAfter}
-                className="btn-ghost px-1.5 py-0.5 font-mono text-[10px]"
+                className="btn-ghost px-2 py-1 font-mono text-[12px]"
                 title="Insert point after"
               >
                 + After
@@ -158,7 +160,7 @@ export function PointInfo({
             <div className="flex items-center gap-2">
               <label
                 htmlFor="point-x"
-                className="text-accent-green/40 w-4 font-mono text-xs"
+                className="w-4 font-mono text-[12px] text-accent-green"
               >
                 X
               </label>
@@ -170,12 +172,12 @@ export function PointInfo({
                 onChange={(e) => handleXChange(e.target.value)}
                 className="flex-1"
               />
-              <span className="text-[10px] text-zinc-600">m</span>
+              <span className="text-[12px] text-zinc-500">m</span>
             </div>
             <div className="flex items-center gap-2">
               <label
                 htmlFor="point-y"
-                className="text-accent-green/40 w-4 font-mono text-xs"
+                className="w-4 font-mono text-[12px] text-accent-green"
               >
                 Y
               </label>
@@ -187,7 +189,7 @@ export function PointInfo({
                 onChange={(e) => handleYChange(e.target.value)}
                 className="flex-1"
               />
-              <span className="text-[10px] text-zinc-600">m</span>
+              <span className="text-[12px] text-zinc-500">m</span>
             </div>
           </div>
 
@@ -218,7 +220,7 @@ export function PointInfo({
 
           {/* Heading */}
           <div className="mt-3 border-t border-white/[0.04] pt-3">
-            <h4 className="text-accent-green/40 mb-2 text-[10px] font-light tracking-wide">
+            <h4 className="mb-2 text-xs font-semibold tracking-[0.08em] text-zinc-100 uppercase">
               HEADING
             </h4>
             <HeadingEditor />
@@ -226,8 +228,8 @@ export function PointInfo({
 
           <div className="mt-3 border-t border-white/[0.04] pt-3">
             <div className="mb-2 flex items-center gap-2">
-              <Flag size={12} className="text-sky-300/60" />
-              <h4 className="text-[10px] font-light tracking-wide text-sky-300/50">
+              <Flag size={12} className="text-sky-300" />
+              <h4 className="text-xs font-semibold tracking-[0.08em] text-zinc-100 uppercase">
                 WAYPOINT FLAGS
               </h4>
             </div>
@@ -247,7 +249,7 @@ export function PointInfo({
                     />
                     <button
                       onClick={() => deleteWaypointFlag(flag.id)}
-                      className="btn-ghost px-1.5 py-1 text-zinc-500 hover:text-red-300"
+                      className="btn-ghost px-1.5 py-1 text-zinc-300 hover:text-red-300"
                       title="Delete flag"
                     >
                       <X size={12} />
@@ -255,7 +257,7 @@ export function PointInfo({
                   </div>
                 ))
               ) : (
-                <p className="text-xs italic text-zinc-600">
+                <p className="text-[12px] italic text-zinc-500">
                   No flags on this waypoint
                 </p>
               )}
@@ -276,7 +278,7 @@ export function PointInfo({
                 />
                 <button
                   onClick={handleAddFlag}
-                  className="btn-ghost flex items-center gap-1 px-2 py-1 text-[10px]"
+                  className="btn-ghost flex items-center gap-1 px-2 py-1 text-[12px]"
                   title="Add flag"
                 >
                   <Plus size={12} />
@@ -287,14 +289,14 @@ export function PointInfo({
           </div>
         </>
       ) : (
-        <p className="text-xs text-zinc-600 italic">
+        <p className="text-[12px] text-zinc-500 italic">
           Select a point to view info
         </p>
       )}
 
       {/* Named points */}
       <div className="mt-3 border-t border-white/[0.04] pt-3">
-        <h4 className="mb-2 text-[10px] font-light tracking-wide text-amber-400/40">
+        <h4 className="mb-2 text-xs font-semibold tracking-[0.08em] text-zinc-100 uppercase">
           NAMED POINTS
         </h4>
         <NamedPointsPanel />
@@ -315,11 +317,11 @@ function InfoRow({
   decimals: number;
 }) {
   return (
-    <div className="flex items-center justify-between text-xs">
-      <span className="text-zinc-500">{label}</span>
-      <span className="font-mono text-zinc-300">
+    <div className="flex items-center justify-between text-[12px]">
+      <span className="text-zinc-200">{label}</span>
+      <span className="font-mono text-zinc-100">
         {value !== null ? value.toFixed(decimals) : '--'}{' '}
-        <span className="text-zinc-600">{unit}</span>
+        <span className="text-zinc-300">{unit}</span>
       </span>
     </div>
   );
