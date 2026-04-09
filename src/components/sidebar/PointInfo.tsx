@@ -1,7 +1,7 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { usePathStore } from '../../stores/pathStore';
 import { useSelectionStore } from '../../stores/selectionStore';
-import { MapPin } from 'lucide-react';
+import { Flag, MapPin, Plus, X } from 'lucide-react';
 import type { SplinePath } from '../../math/SplinePath';
 import type { VelocityProfile } from '../../math/VelocityProfile';
 import type { TimeEstimator } from '../../math/TimeEstimator';
@@ -41,12 +41,20 @@ export function PointInfo({
   const selectPoint = useSelectionStore((s) => s.selectPoint);
   const movePoint = usePathStore((s) => s.movePoint);
   const insertPointAfter = usePathStore((s) => s.insertPointAfter);
+  const waypointFlags = usePathStore((s) => s.waypointFlags);
+  const addWaypointFlag = usePathStore((s) => s.addWaypointFlag);
+  const updateWaypointFlag = usePathStore((s) => s.updateWaypointFlag);
+  const deleteWaypointFlag = usePathStore((s) => s.deleteWaypointFlag);
+  const [newFlagLabel, setNewFlagLabel] = useState('');
 
   const hasSelection =
     selectedPointIndex !== null && selectedPointIndex < controlPoints.length;
 
   const point = hasSelection ? controlPoints[selectedPointIndex] : null;
   const totalPoints = controlPoints.length;
+  const selectedFlags = hasSelection
+    ? waypointFlags.filter((flag) => flag.waypointIndex === selectedPointIndex)
+    : [];
 
   // Compute derived values if we have a built spline
   let distance: number | null = null;
@@ -98,6 +106,12 @@ export function PointInfo({
       selectPoint(0);
     }
   }, [hasSelection, selectedPointIndex, controlPoints, insertPointAfter, selectPoint]);
+
+  const handleAddFlag = useCallback(() => {
+    if (!hasSelection) return;
+    addWaypointFlag(selectedPointIndex, newFlagLabel);
+    setNewFlagLabel('');
+  }, [addWaypointFlag, hasSelection, newFlagLabel, selectedPointIndex]);
 
   const handleInsertAfter = useCallback(() => {
     if (!hasSelection) return;
@@ -208,6 +222,68 @@ export function PointInfo({
               HEADING
             </h4>
             <HeadingEditor />
+          </div>
+
+          <div className="mt-3 border-t border-white/[0.04] pt-3">
+            <div className="mb-2 flex items-center gap-2">
+              <Flag size={12} className="text-sky-300/60" />
+              <h4 className="text-[10px] font-light tracking-wide text-sky-300/50">
+                WAYPOINT FLAGS
+              </h4>
+            </div>
+
+            <div className="space-y-2">
+              {selectedFlags.length > 0 ? (
+                selectedFlags.map((flag) => (
+                  <div key={flag.id} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={flag.label}
+                      onChange={(e) =>
+                        updateWaypointFlag(flag.id, { label: e.target.value })
+                      }
+                      className="flex-1"
+                      placeholder="Flag label"
+                    />
+                    <button
+                      onClick={() => deleteWaypointFlag(flag.id)}
+                      className="btn-ghost px-1.5 py-1 text-zinc-500 hover:text-red-300"
+                      title="Delete flag"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs italic text-zinc-600">
+                  No flags on this waypoint
+                </p>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newFlagLabel}
+                  onChange={(e) => setNewFlagLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddFlag();
+                    }
+                  }}
+                  className="flex-1"
+                  placeholder="Add flag label"
+                />
+                <button
+                  onClick={handleAddFlag}
+                  className="btn-ghost flex items-center gap-1 px-2 py-1 text-[10px]"
+                  title="Add flag"
+                >
+                  <Plus size={12} />
+                  Add
+                </button>
+              </div>
+            </div>
           </div>
         </>
       ) : (

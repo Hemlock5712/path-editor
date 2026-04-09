@@ -99,15 +99,12 @@ export function GettingStartedPage() {
                 {`public Command getAutonomousCommand() {
     // Auto-mirrors path when on red alliance
     PathData data = Paths.forAlliance(Paths.SPEAKER_CENTER);
-    SplinePath spline = new SplinePath(data.controlPoints());
-
-    return new FollowPath(drivetrain, spline,
-            data.globalConstraints(), data.constraintZones())
-        .withRotationSupplier(RotationSuppliers.fromZones(
-            spline, data.headingWaypoints(),
-            data.rotationZones()))
-        .withLookahead(0.15, 0.15, 1.0)
-        .withCrossTrackGains(3.0, 0.5);
+    return autoCommands.followPathWithActions(
+        data,
+        List.of(
+            new AutoCommands.PathAction("FeedShoot", 0.5, superstructure.feedShoot()),
+            new AutoCommands.PathAction("StopShoot", 0.5, superstructure.stopShoot()),
+            new AutoCommands.PathAction("HubShoot", 0.5, superstructure.hubShoot())));
 }`}
               </CodeBlock>
               <p className="text-zinc-600">

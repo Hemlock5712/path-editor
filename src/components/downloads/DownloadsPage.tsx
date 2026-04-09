@@ -120,13 +120,11 @@ export function DownloadsPage() {
               <pre className="bg-surface-900 overflow-x-auto rounded p-3 text-[11px] text-zinc-300">
                 {`// Auto-mirrors path when on red alliance
 var pathData = Paths.forAlliance(Paths.MY_PATH);
-var spline = new SplinePath(pathData.controlPoints());
-new FollowPath(drivetrain, spline, pathData.globalConstraints())
-    .withRotationSupplier(RotationSuppliers.fromZones(
-        spline, pathData.headingWaypoints(),
-        pathData.rotationZones()))
-    .withLookahead(0.15, 0.15, 1.0)
-    .withCrossTrackGains(3.0, 0.5);`}
+return autoCommands.followPathWithActions(
+    pathData,
+    List.of(
+        new AutoCommands.PathAction("intake", 0.5, intakeCommand),
+        new AutoCommands.PathAction("shoot", 0.5, shootCommand)));`}
               </pre>
             </div>
           </div>

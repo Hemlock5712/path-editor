@@ -40,6 +40,12 @@ export interface RotationZone {
   targetPoint: Point;
 }
 
+export interface WaypointFlag {
+  id: string;
+  waypointIndex: number;
+  label: string;
+}
+
 export interface NamedPath {
   name: string;
   controlPoints: Point[];
@@ -48,6 +54,7 @@ export interface NamedPath {
   constraints: VelocityConstraints;
   constraintZones: ConstraintZone[];
   rotationZones: RotationZone[];
+  waypointFlags: WaypointFlag[];
 }
 
 export const DEFAULT_CONSTRAINTS: VelocityConstraints = {

@@ -95,7 +95,7 @@ public class FollowPath extends Command {
    * @param path The spline path to follow
    */
   public FollowPath(CommandSwerveDrivetrain swerve, SplinePath path) {
-    this(swerve, path, VelocityConstraints.defaults());
+    this(swerve, path, VelocityConstraints.defaults(), List.of());
   }
 
   /**
@@ -128,6 +128,21 @@ public class FollowPath extends Command {
     this.velocityProfile = new VelocityProfile(path, constraints, constraintZones);
     this.endVelocity = constraints.getEndVelocity();
     addRequirements(swerve);
+  }
+
+  /**
+   * Creates a FollowPath command directly from exported path data.
+   *
+   * @param swerve The swerve drivetrain
+   * @param path The spline path to follow
+   * @param pathData Exported path metadata including constraints and waypoint flags
+   */
+  public FollowPath(CommandSwerveDrivetrain swerve, SplinePath path, PathData pathData) {
+    this(
+        swerve,
+        path,
+        pathData.globalConstraints(),
+        pathData.constraintZones());
   }
 
   // ---- Builder methods (same pattern as DriveToPoint) ----

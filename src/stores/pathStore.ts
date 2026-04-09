@@ -7,6 +7,7 @@ import {
   VelocityConstraints,
   ConstraintZone,
   RotationZone,
+  WaypointFlag,
   NamedPath,
   DEFAULT_CONSTRAINTS,
   FIELD_HEIGHT,
@@ -20,6 +21,7 @@ interface Snapshot {
   constraints: VelocityConstraints;
   constraintZones: ConstraintZone[];
   rotationZones: RotationZone[];
+  waypointFlags: WaypointFlag[];
   namedPoints: Record<string, NamedPoint>;
 }
 
@@ -41,6 +43,7 @@ interface PathState {
   constraints: VelocityConstraints;
   constraintZones: ConstraintZone[];
   rotationZones: RotationZone[];
+  waypointFlags: WaypointFlag[];
   undoStack: Snapshot[];
   redoStack: Snapshot[];
 
@@ -89,6 +92,9 @@ interface PathState {
   updateRotationZone: (id: string, updates: Partial<RotationZone>) => void;
   moveRotationZoneHandle: (id: string, updates: Partial<RotationZone>) => void;
   deleteRotationZone: (id: string) => void;
+  addWaypointFlag: (waypointIndex: number, label: string) => void;
+  updateWaypointFlag: (id: string, updates: Partial<WaypointFlag>) => void;
+  deleteWaypointFlag: (id: string) => void;
   // Path transforms
   flipPathY: () => void;
   duplicatePath: (name?: string) => void;
@@ -113,6 +119,7 @@ function takeSnapshot(state: PathState): Snapshot {
       ...z,
       targetPoint: { ...z.targetPoint },
     })),
+    waypointFlags: state.waypointFlags.map((f) => ({ ...f })),
     namedPoints: Object.fromEntries(
       Object.entries(state.namedPoints).map(([k, v]) => [k, { ...v }])
     ),
@@ -146,6 +153,7 @@ function syncActiveToMap(state: PathState): Record<string, NamedPath> {
         ...z,
         targetPoint: { ...z.targetPoint },
       })),
+      waypointFlags: state.waypointFlags.map((f) => ({ ...f })),
     },
   };
 }
@@ -235,6 +243,7 @@ export const usePathStore = create<PathState>()(
       constraints: { ...DEFAULT_CONSTRAINTS },
       constraintZones: [],
       rotationZones: [],
+      waypointFlags: [],
     },
   },
   pathOrder: ['Path 1'],
@@ -248,6 +257,7 @@ export const usePathStore = create<PathState>()(
   constraints: { ...DEFAULT_CONSTRAINTS },
   constraintZones: [],
   rotationZones: [],
+  waypointFlags: [],
 
   undoStack: [],
   redoStack: [],
@@ -263,6 +273,7 @@ export const usePathStore = create<PathState>()(
           ...p,
           controlPointRefs:
             p.controlPointRefs || Array(p.controlPoints.length).fill(null),
+          waypointFlags: p.waypointFlags || [],
         };
       }
       const pathOrder = namedPaths.map((p) => p.name);
@@ -291,6 +302,7 @@ export const usePathStore = create<PathState>()(
               targetPoint: { ...z.targetPoint },
             }))
           : [],
+        waypointFlags: active ? (active.waypointFlags || []).map((f) => ({ ...f })) : [],
         undoStack: [],
         redoStack: [],
       };
@@ -315,6 +327,7 @@ export const usePathStore = create<PathState>()(
           ...z,
           targetPoint: { ...z.targetPoint },
         })),
+        waypointFlags: (target.waypointFlags || []).map((f) => ({ ...f })),
         undoStack: [],
         redoStack: [],
       };
@@ -351,6 +364,7 @@ export const usePathStore = create<PathState>()(
               targetPoint: { ...z.targetPoint },
             }))
           : [],
+        waypointFlags: target ? (target.waypointFlags || []).map((f) => ({ ...f })) : [],
         undoStack: [],
         redoStack: [],
       };
@@ -389,6 +403,7 @@ export const usePathStore = create<PathState>()(
         constraints: { ...DEFAULT_CONSTRAINTS },
         constraintZones: [],
         rotationZones: [],
+        waypointFlags: [],
       };
       return {
         paths: { ...updatedPaths, [finalName]: newPath },
@@ -400,6 +415,7 @@ export const usePathStore = create<PathState>()(
         constraints: { ...DEFAULT_CONSTRAINTS },
         constraintZones: [],
         rotationZones: [],
+        waypointFlags: [],
         undoStack: [],
         redoStack: [],
       };
@@ -534,6 +550,15 @@ export const usePathStore = create<PathState>()(
                 ? z.endWaypointIndex - 1
                 : z.endWaypointIndex,
           })),
+        waypointFlags: state.waypointFlags
+          .filter((flag) => flag.waypointIndex !== index)
+          .map((flag) => ({
+            ...flag,
+            waypointIndex:
+              flag.waypointIndex > index
+                ? flag.waypointIndex - 1
+                : flag.waypointIndex,
+          })),
       };
     }),
 
@@ -575,6 +600,14 @@ export const usePathStore = create<PathState>()(
             : z.endWaypointIndex,
       }));
 
+      const waypointFlags = state.waypointFlags.map((flag) => ({
+        ...flag,
+        waypointIndex:
+          flag.waypointIndex > index
+            ? flag.waypointIndex + 1
+            : flag.waypointIndex,
+      }));
+
       return {
         ...pushUndo(state),
         controlPoints,
@@ -582,6 +615,7 @@ export const usePathStore = create<PathState>()(
         headingWaypoints,
         constraintZones,
         rotationZones,
+        waypointFlags,
       };
     }),
 
@@ -794,6 +828,14 @@ export const usePathStore = create<PathState>()(
             : z.endWaypointIndex,
       }));
 
+      const waypointFlags = state.waypointFlags.map((flag) => ({
+        ...flag,
+        waypointIndex:
+          flag.waypointIndex > afterIndex
+            ? flag.waypointIndex + 1
+            : flag.waypointIndex,
+      }));
+
       return {
         ...pushUndo(state),
         controlPoints,
@@ -801,6 +843,7 @@ export const usePathStore = create<PathState>()(
         headingWaypoints,
         constraintZones,
         rotationZones,
+        waypointFlags,
       };
     }),
 
@@ -1004,6 +1047,42 @@ export const usePathStore = create<PathState>()(
       };
     }),
 
+  addWaypointFlag: (waypointIndex, label) =>
+    set((state) => {
+      const trimmed = label.trim();
+      if (!trimmed) return state;
+      return {
+        ...pushUndo(state),
+        waypointFlags: [
+          ...state.waypointFlags,
+          { id: crypto.randomUUID(), waypointIndex, label: trimmed },
+        ],
+      };
+    }),
+
+  updateWaypointFlag: (id, updates) =>
+    set((state) => ({
+      ...pushUndo(state),
+      waypointFlags: state.waypointFlags.map((flag) =>
+        flag.id === id
+          ? {
+              ...flag,
+              ...updates,
+              label:
+                updates.label !== undefined
+                  ? updates.label.trim() || flag.label
+                  : flag.label,
+            }
+          : flag
+      ),
+    })),
+
+  deleteWaypointFlag: (id) =>
+    set((state) => ({
+      ...pushUndo(state),
+      waypointFlags: state.waypointFlags.filter((flag) => flag.id !== id),
+    })),
+
   // ---- Path transforms ----
 
   flipPathY: () =>
@@ -1072,6 +1151,10 @@ export const usePathStore = create<PathState>()(
           ...z,
           targetPoint: { ...z.targetPoint },
         })),
+        waypointFlags: (src.waypointFlags || []).map((flag) => ({
+          ...flag,
+          id: crypto.randomUUID(),
+        })),
       };
       return {
         paths: { ...updatedPaths, [finalName]: copy },
@@ -1086,6 +1169,7 @@ export const usePathStore = create<PathState>()(
           ...z,
           targetPoint: { ...z.targetPoint },
         })),
+        waypointFlags: copy.waypointFlags.map((flag) => ({ ...flag })),
         undoStack: [],
         redoStack: [],
       };
@@ -1122,6 +1206,7 @@ export const usePathStore = create<PathState>()(
         constraints: snap.constraints,
         constraintZones: snap.constraintZones,
         rotationZones: snap.rotationZones,
+        waypointFlags: snap.waypointFlags,
         namedPoints: snap.namedPoints,
         paths: propagated.paths,
       };
@@ -1154,6 +1239,7 @@ export const usePathStore = create<PathState>()(
         constraints: snap.constraints,
         constraintZones: snap.constraintZones,
         rotationZones: snap.rotationZones,
+        waypointFlags: snap.waypointFlags,
         namedPoints: snap.namedPoints,
         paths: propagated.paths,
       };
@@ -1172,6 +1258,7 @@ export const usePathStore = create<PathState>()(
         constraints: { ...DEFAULT_CONSTRAINTS },
         constraintZones: [] as ConstraintZone[],
         rotationZones: [] as RotationZone[],
+        waypointFlags: [] as WaypointFlag[],
       };
     }),
 }),
@@ -1188,6 +1275,7 @@ export const usePathStore = create<PathState>()(
       constraints: state.constraints,
       constraintZones: state.constraintZones,
       rotationZones: state.rotationZones,
+      waypointFlags: state.waypointFlags,
     }),
     onRehydrateStorage: () => () => {
       // Clean up old namedPoints localStorage key after migration

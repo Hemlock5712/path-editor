@@ -1,5 +1,6 @@
 import {
   Route,
+  Flag,
   SlidersHorizontal,
   RotateCw,
   FlipHorizontal2,
@@ -18,6 +19,7 @@ import {
 
 const sections = [
   { id: 'follow-path', label: 'FollowPath Command' },
+  { id: 'waypoint-flags', label: 'Waypoint Flags' },
   { id: 'overrides', label: 'Per-Axis Overrides' },
   { id: 'rotation', label: 'Rotation Suppliers' },
   { id: 'alliance', label: 'Alliance Mirroring' },
@@ -116,6 +118,19 @@ new FollowPath(drivetrain, spline, constraints, constraintZones)`}
               </CodeBlock>
 
               <div className="mt-3 mb-1 text-[11px] font-medium text-zinc-300">
+                PathData Shortcut
+              </div>
+              <CodeBlock>
+                {`PathData data = Paths.forAlliance(Paths.SPEAKER_CENTER);
+SplinePath spline = new SplinePath(data.controlPoints());
+
+new FollowPath(drivetrain, spline, data)
+    .withRotationSupplier(RotationSuppliers.fromZones(
+        spline, data.headingWaypoints(),
+        data.rotationZones()));`}
+              </CodeBlock>
+
+              <div className="mt-3 mb-1 text-[11px] font-medium text-zinc-300">
                 Builder Methods
               </div>
               <div className="neon-panel overflow-x-auto p-3">
@@ -187,6 +202,34 @@ new FollowPath(drivetrain, spline, constraints, constraintZones)`}
                 If no rotation supplier is set, the command defaults to holding
                 the robot's current heading at the time{' '}
                 <InlineCode>initialize()</InlineCode> runs.
+              </p>
+            </Prose>
+          </DocsSection>
+
+          <DocsSection
+            icon={<Flag size={13} />}
+            title="Waypoint Flags"
+            id="waypoint-flags"
+          >
+            <Prose>
+              <p>
+                Waypoint flags are string labels attached to control points in
+                the editor. They export with the path and can trigger robot-side
+                actions when your own autonomous helper resolves those labels to
+                control points.
+              </p>
+              <CodeBlock>
+                {`autoCommands.followPathWithActions(
+    data,
+    List.of(
+        new AutoCommands.PathAction("intake", 0.5, intakeCommand),
+        new AutoCommands.PathAction("settle", 0.5, settleShooterCommand),
+        new AutoCommands.PathAction("shoot", 0.5, shootCommand)));`}
+              </CodeBlock>
+              <p className="text-[11px] text-zinc-600">
+                A single flag label can appear on multiple waypoints. Your
+                helper can expand one label-based action into multiple waypoint
+                actions in path order.
               </p>
             </Prose>
           </DocsSection>

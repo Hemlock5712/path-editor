@@ -14,6 +14,7 @@ function resetStores() {
         constraints: { ...DEFAULT_CONSTRAINTS },
         constraintZones: [],
         rotationZones: [],
+        waypointFlags: [],
       },
     },
     pathOrder: ['Path 1'],
@@ -25,6 +26,7 @@ function resetStores() {
     constraints: { ...DEFAULT_CONSTRAINTS },
     constraintZones: [],
     rotationZones: [],
+    waypointFlags: [],
     undoStack: [],
     redoStack: [],
   });
@@ -125,6 +127,67 @@ describe('pathStore', () => {
         'Path 1',
         'Path 2',
       ]);
+    });
+  });
+
+  describe('waypoint flags', () => {
+    it('adds, updates, and deletes flags on the active path', () => {
+      usePathStore.getState().addPoint({ x: 0, y: 0 });
+      usePathStore.getState().addWaypointFlag(0, 'intake');
+      const flag = usePathStore.getState().waypointFlags[0];
+
+      expect(flag.label).toBe('intake');
+
+      usePathStore.getState().updateWaypointFlag(flag.id, { label: 'shoot' });
+      expect(usePathStore.getState().waypointFlags[0].label).toBe('shoot');
+
+      usePathStore.getState().deleteWaypointFlag(flag.id);
+      expect(usePathStore.getState().waypointFlags).toHaveLength(0);
+    });
+
+    it('preserves flags when switching paths', () => {
+      usePathStore.getState().addPoint({ x: 0, y: 0 });
+      usePathStore.getState().addWaypointFlag(0, 'path-1');
+      usePathStore.getState().addPath('Path 2');
+      usePathStore.getState().addPoint({ x: 2, y: 2 });
+      usePathStore.getState().addWaypointFlag(0, 'path-2');
+
+      usePathStore.getState().setActivePath('Path 1');
+      expect(usePathStore.getState().waypointFlags.map((flag) => flag.label)).toEqual([
+        'path-1',
+      ]);
+
+      usePathStore.getState().setActivePath('Path 2');
+      expect(usePathStore.getState().waypointFlags.map((flag) => flag.label)).toEqual([
+        'path-2',
+      ]);
+    });
+
+    it('restores flag changes through undo and redo', () => {
+      usePathStore.getState().addPoint({ x: 0, y: 0 });
+      usePathStore.getState().addWaypointFlag(0, 'shoot');
+
+      expect(usePathStore.getState().waypointFlags).toHaveLength(1);
+
+      usePathStore.getState().undo();
+      expect(usePathStore.getState().waypointFlags).toHaveLength(0);
+
+      usePathStore.getState().redo();
+      expect(usePathStore.getState().waypointFlags).toHaveLength(1);
+      expect(usePathStore.getState().waypointFlags[0].label).toBe('shoot');
+    });
+
+    it('duplicates paths with cloned flag ids', () => {
+      usePathStore.getState().addPoint({ x: 0, y: 0 });
+      usePathStore.getState().addWaypointFlag(0, 'intake');
+      const originalFlag = usePathStore.getState().waypointFlags[0];
+
+      usePathStore.getState().duplicatePath();
+      const copiedFlag = usePathStore.getState().waypointFlags[0];
+
+      expect(copiedFlag.label).toBe('intake');
+      expect(copiedFlag.waypointIndex).toBe(0);
+      expect(copiedFlag.id).not.toBe(originalFlag.id);
     });
   });
 

@@ -6,6 +6,7 @@ import {
   VelocityConstraints,
   ConstraintZone,
   RotationZone,
+  WaypointFlag,
 } from '../types';
 
 const INDENT = '    '; // 4 spaces per level
@@ -32,7 +33,8 @@ function generateSinglePath(
   headingWaypoints: HeadingWaypoint[],
   constraints: VelocityConstraints,
   constraintZones: ConstraintZone[],
-  rotationZones: RotationZone[]
+  rotationZones: RotationZone[],
+  waypointFlags: WaypointFlag[]
 ): string {
   const name = toJavaConstantName(constantName);
   const indent = INDENT.repeat(3); // 12 spaces for list entries
@@ -89,6 +91,19 @@ function generateSinglePath(
     rotZones = `List.of(\n${entries}\n${INDENT.repeat(2)})`;
   }
 
+  let flags: string;
+  if (waypointFlags.length === 0) {
+    flags = 'List.of()';
+  } else {
+    const entries = waypointFlags
+      .map(
+        (flag) =>
+          `${indent}new PathData.WaypointFlag("${flag.id}", ${flag.waypointIndex}, "${flag.label.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+      )
+      .join(',\n');
+    flags = `List.of(\n${entries}\n${INDENT.repeat(2)})`;
+  }
+
   return `    public static final PathData ${name} = new PathData(
         List.of(
 ${points}
@@ -96,7 +111,8 @@ ${points}
         ${headings},
         ${constraintChain},
         ${zones},
-        ${rotZones}
+        ${rotZones},
+        ${flags}
     );`;
 }
 
@@ -134,7 +150,8 @@ export function generatePathsJava(
         p.headingWaypoints,
         p.constraints,
         p.constraintZones,
-        p.rotationZones
+        p.rotationZones,
+        p.waypointFlags
       )
     )
     .join('\n\n');
