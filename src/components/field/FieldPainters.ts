@@ -748,13 +748,13 @@ export function drawScrubberGhost(
   ctx.rotate(-rot); // Canvas rotation is CW, field rotation is CCW
 
   // Neon green robot outline with dark shadow for contrast
-  ctx.fillStyle = 'rgba(0, 255, 170, 0.08)';
+  ctx.fillStyle = 'rgba(0, 255, 170, 0.20)';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
   ctx.shadowBlur = 8;
   ctx.fillRect(-rw / 2, -rh / 2, rw, rh);
 
-  ctx.strokeStyle = 'rgba(0, 255, 170, 0.35)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(0, 255, 170, 0.7)';
+  ctx.lineWidth = 3.5;
   ctx.strokeRect(-rw / 2, -rh / 2, rw, rh);
 
   // Heading triangle at the front
@@ -815,11 +815,11 @@ export function drawWaypointGhosts(
     ctx.rotate(-rot); // Canvas CW, field CCW
 
     // Semi-transparent dashed robot outline (dimmer than scrubber ghost)
-    ctx.fillStyle = 'rgba(0, 255, 170, 0.04)';
+    ctx.fillStyle = 'rgba(0, 255, 170, 0.12)';
     ctx.fillRect(-rw / 2, -rh / 2, rw, rh);
 
-    ctx.strokeStyle = 'rgba(0, 255, 170, 0.18)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(0, 255, 170, 0.45)';
+    ctx.lineWidth = 3;
     ctx.setLineDash([4, 3]);
     ctx.strokeRect(-rw / 2, -rh / 2, rw, rh);
     ctx.setLineDash([]);
@@ -889,11 +889,11 @@ export function drawInterpolatedHeadingGhosts(
       ctx.translate(cx, cy);
       ctx.rotate(-rot);
 
-      ctx.fillStyle = 'rgba(0, 255, 170, 0.02)';
+      ctx.fillStyle = 'rgba(0, 255, 170, 0.08)';
       ctx.fillRect(-rw / 2, -rh / 2, rw, rh);
 
-      ctx.strokeStyle = 'rgba(0, 255, 170, 0.10)';
-      ctx.lineWidth = 1.0;
+      ctx.strokeStyle = 'rgba(0, 255, 170, 0.30)';
+      ctx.lineWidth = 2.5;
       ctx.setLineDash([2, 4]);
       ctx.strokeRect(-rw / 2, -rh / 2, rw, rh);
       ctx.setLineDash([]);
