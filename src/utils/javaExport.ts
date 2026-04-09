@@ -135,6 +135,57 @@ function generateNamedPointConstants(
   return `    // Named field positions\n${lines}\n`;
 }
 
+function generateWaypointFlagEnum(paths: NamedPath[]): string {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const path of paths) {
+    for (const flag of path.waypointFlags) {
+      const trimmed = flag.label.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      labels.push(trimmed);
+    }
+  }
+
+  if (labels.length === 0) return '';
+
+  const usedNames = new Set<string>();
+  const entries = labels
+    .map((label) => {
+      let constant = toJavaConstantName(label);
+      if (constant === 'PATH') {
+        constant = 'FLAG';
+      }
+      let candidate = constant;
+      let i = 2;
+      while (usedNames.has(candidate)) {
+        candidate = `${constant}_${i}`;
+        i += 1;
+      }
+      usedNames.add(candidate);
+
+      const escaped = label.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      return `        ${candidate}("${escaped}")`;
+    })
+    .join(',\n');
+
+  return `    public enum WaypointFlag {
+${entries};
+
+        private final String label;
+
+        WaypointFlag(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
+
+`;
+}
+
 /**
  * Generates a compilable Paths.java file with all path constants.
  */
@@ -162,6 +213,7 @@ export function generatePathsJava(
   const hasPosePoints = namedPoints
     ? Object.values(namedPoints).some((np) => np.headingDegrees !== null)
     : false;
+  const waypointFlagEnum = generateWaypointFlagEnum(paths);
 
   return `package frc.robot.utils.path;
 
@@ -176,7 +228,7 @@ import java.util.List;
 public final class Paths {
     private Paths() {}
 
-${namedPointConstants}${constants}
+${waypointFlagEnum}${namedPointConstants}${constants}
 
     /**
      * Returns the path mirrored for the red alliance if needed.
