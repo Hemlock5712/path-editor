@@ -31,6 +31,10 @@ public final class Paths {
         ),
         List.of(
             new PathData.RotationZone("zone1", 0, 2, new Translation2d(4.0, 3.0))
+        ),
+        List.of(
+            new PathData.WaypointFlag("flag1", 1, "intake"),
+            new PathData.WaypointFlag("flag2", 2, "shoot")
         )
     );
 }`;
@@ -82,6 +86,13 @@ describe('parsePathsJava', () => {
       expect(paths[0].rotationZones[0].startWaypointIndex).toBe(0);
       expect(paths[0].rotationZones[0].endWaypointIndex).toBe(2);
       expect(paths[0].rotationZones[0].targetPoint).toEqual({ x: 4.0, y: 3.0 });
+    });
+
+    it('parses waypoint flags', () => {
+      expect(paths[0].waypointFlags).toEqual([
+        { id: 'flag1', waypointIndex: 1, label: 'intake' },
+        { id: 'flag2', waypointIndex: 2, label: 'shoot' },
+      ]);
     });
   });
 

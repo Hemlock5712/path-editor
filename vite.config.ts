@@ -14,7 +14,8 @@ export default defineConfig({
       manifest: {
         name: 'FRC Path Editor',
         short_name: 'Path Editor',
-        description: 'Create and tune FRC robot paths directly in your browser.',
+        description:
+          'Create and tune FRC robot paths directly in your browser.',
         start_url: '/',
         scope: '/',
         display: 'standalone',

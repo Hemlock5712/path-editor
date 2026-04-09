@@ -79,13 +79,13 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
         return (
           <div
             key={np.name}
-            className="space-y-1.5 rounded border border-amber-500/15 bg-amber-500/[0.04] p-2.5"
+            className="space-y-2 rounded-lg border border-amber-400/20 bg-amber-500/[0.06] p-3"
           >
             <div className="flex items-center justify-between">
               {isRenaming ? (
                 <input
                   ref={renameInputRef}
-                  className="mr-2 w-full border-b border-amber-400/40 bg-transparent font-mono text-[11px] text-amber-300 outline-none"
+                  className="mr-2 w-full border-b border-amber-300/60 bg-transparent font-mono text-[12px] text-amber-100 outline-none"
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
                   onBlur={handleConfirmRename}
@@ -96,25 +96,25 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
                 />
               ) : (
                 <span
-                  className="flex cursor-pointer items-center gap-1.5 font-mono text-[11px] text-amber-400/80"
+                  className="flex cursor-pointer items-center gap-1.5 font-mono text-[12px] text-amber-100"
                   onDoubleClick={() => handleStartRename(np.name)}
                   title="Double-click to rename"
                 >
-                  <MapPin size={10} />
+                  <MapPin size={11} />
                   {np.name}
                 </span>
               )}
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => placeNamedPoint(np.name)}
-                  className="btn-ghost hover:text-accent-green p-0.5 text-zinc-500"
+                  className="btn-ghost p-0.5 text-zinc-300 hover:text-accent-green"
                   title="Place on active path"
                 >
                   <Plus size={12} />
                 </button>
                 <button
                   onClick={() => deleteNamedPoint(np.name)}
-                  className="btn-ghost p-0.5 text-zinc-500 hover:text-red-400"
+                  className="btn-ghost p-0.5 text-zinc-300 hover:text-red-400"
                   title="Delete named point"
                 >
                   <X size={12} />
@@ -122,7 +122,7 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 font-mono text-[10px] text-zinc-500">
+            <div className="flex items-center gap-3 font-mono text-[12px] text-zinc-200">
               <span>x: {np.x.toFixed(2)}</span>
               <span>y: {np.y.toFixed(2)}</span>
               {np.headingDegrees !== null && (
@@ -131,8 +131,8 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
             </div>
 
             {mirror && (
-              <div className="flex items-center gap-3 font-mono text-[10px] text-zinc-600">
-                <span className="text-amber-500/40">mirror</span>
+              <div className="flex items-center gap-3 font-mono text-[12px] text-zinc-500">
+                <span className="text-amber-200">mirror</span>
                 <span>x: {mirror.x.toFixed(2)}</span>
                 <span>y: {mirror.y.toFixed(2)}</span>
                 {mirror.headingDegrees !== null && (
@@ -175,8 +175,8 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
 
       {/* Link/unlink indicator for selected point */}
       {selectedPointIndex !== null && selectedRef && (
-        <div className="flex items-center gap-1.5 font-mono text-[10px] text-amber-400/60">
-          <Link size={10} />
+        <div className="flex items-center gap-1.5 font-mono text-[12px] text-amber-200">
+          <Link size={11} />
           Linked to: {selectedRef}
         </div>
       )}

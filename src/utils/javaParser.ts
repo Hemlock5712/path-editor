@@ -5,6 +5,7 @@ import {
   VelocityConstraints,
   ConstraintZone,
   RotationZone,
+  WaypointFlag,
   DEFAULT_CONSTRAINTS,
 } from '../types';
 
@@ -141,6 +142,23 @@ function parseRotationZones(arg: string): RotationZone[] {
   return zones;
 }
 
+function parseWaypointFlags(arg: string): WaypointFlag[] {
+  const flags: WaypointFlag[] = [];
+  const re = new RegExp(
+    `new\\s+PathData\\.WaypointFlag\\(\\s*"([^"]*)"\\s*,\\s*(\\d+)\\s*,\\s*"([^"]*)"\\s*\\)`,
+    'g'
+  );
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(arg)) !== null) {
+    flags.push({
+      id: m[1] || crypto.randomUUID(),
+      waypointIndex: parseInt(m[2], 10),
+      label: m[3],
+    });
+  }
+  return flags;
+}
+
 /**
  * Parses a Paths.java source file and returns all PathData constants.
  */
@@ -191,6 +209,7 @@ export function parsePathsJava(source: string): NamedPath[] {
           : { ...DEFAULT_CONSTRAINTS },
       constraintZones: args.length > 3 ? parseConstraintZones(args[3]) : [],
       rotationZones: args.length > 4 ? parseRotationZones(args[4]) : [],
+      waypointFlags: args.length > 5 ? parseWaypointFlags(args[5]) : [],
     });
   }
 

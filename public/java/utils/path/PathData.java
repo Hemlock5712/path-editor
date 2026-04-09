@@ -19,7 +19,8 @@ public record PathData(
     List<HeadingWaypoint> headingWaypoints,
     VelocityConstraints globalConstraints,
     List<ConstraintZone> constraintZones,
-    List<RotationZone> rotationZones) {
+    List<RotationZone> rotationZones,
+    List<WaypointFlag> waypointFlags) {
 
   /** 2026 Reefscape field width in meters. */
   public static final double FIELD_WIDTH = 16.54;
@@ -61,6 +62,15 @@ public record PathData(
       Translation2d targetPoint) {}
 
   /**
+   * A label attached to a specific control-point waypoint.
+   *
+   * @param id Unique identifier
+   * @param waypointIndex Control-point index where the flag should fire
+   * @param label User-defined label for robot-side command routing
+   */
+  public record WaypointFlag(String id, int waypointIndex, String label) {}
+
+  /**
    * Returns a new PathData with all coordinates and headings mirrored for the red alliance.
    *
    * <p>Paths are authored for the blue alliance in the editor. Since the Reefscape field is
@@ -100,7 +110,12 @@ public record PathData(
             .toList();
 
     return new PathData(
-        mirroredPoints, mirroredHeadings, globalConstraints, constraintZones, mirroredRotationZones);
+        mirroredPoints,
+        mirroredHeadings,
+        globalConstraints,
+        constraintZones,
+        mirroredRotationZones,
+        waypointFlags);
   }
 
   /**

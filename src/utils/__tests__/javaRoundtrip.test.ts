@@ -42,6 +42,11 @@ describe('Java export/parse roundtrip', () => {
           targetPoint: { x: 4.0, y: 3.0 },
         },
       ],
+      waypointFlags: [
+        { id: 'wf1', waypointIndex: 1, label: 'intake' },
+        { id: 'wf2', waypointIndex: 1, label: 'settle' },
+        { id: 'wf3', waypointIndex: 3, label: 'shoot' },
+      ],
     },
   ];
 
@@ -113,6 +118,13 @@ describe('Java export/parse roundtrip', () => {
     expect(parsed[0].rotationZones[0].targetPoint.y).toBeCloseTo(3.0);
   });
 
+  it('roundtrips waypoint flags', () => {
+    const java = generatePathsJava(testPaths);
+    const parsed = parsePathsJava(java);
+
+    expect(parsed[0].waypointFlags).toEqual(testPaths[0].waypointFlags);
+  });
+
   it('roundtrips path name as UPPER_SNAKE_CASE', () => {
     const java = generatePathsJava(testPaths);
     const parsed = parsePathsJava(java);
@@ -137,6 +149,7 @@ describe('Java export/parse roundtrip', () => {
         constraints: DEFAULT_CONSTRAINTS,
         constraintZones: [],
         rotationZones: [],
+        waypointFlags: [],
       },
     ];
 
@@ -161,6 +174,7 @@ describe('Java export/parse roundtrip', () => {
         constraints: DEFAULT_CONSTRAINTS,
         constraintZones: [],
         rotationZones: [],
+        waypointFlags: [],
       },
     ];
 
@@ -170,5 +184,6 @@ describe('Java export/parse roundtrip', () => {
     expect(parsed[0].headingWaypoints).toHaveLength(0);
     expect(parsed[0].constraintZones).toHaveLength(0);
     expect(parsed[0].rotationZones).toHaveLength(0);
+    expect(parsed[0].waypointFlags).toHaveLength(0);
   });
 });
