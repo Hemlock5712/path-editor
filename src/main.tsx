@@ -8,6 +8,7 @@ import { GettingStartedPage } from './components/docs/GettingStartedPage';
 import { RobotIntegrationPage } from './components/docs/RobotIntegrationPage';
 import { EditorGuidePage } from './components/docs/EditorGuidePage';
 import './app.css';
+import { registerServiceWorker } from './registerServiceWorker';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -26,3 +27,5 @@ createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
   </StrictMode>
 );
+
+registerServiceWorker();
