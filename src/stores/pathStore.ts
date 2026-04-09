@@ -91,7 +91,7 @@ interface PathState {
   deleteRotationZone: (id: string) => void;
   // Path transforms
   flipPathY: () => void;
-  duplicatePath: () => void;
+  duplicatePath: (name?: string) => void;
 
   // Undo / redo
   pushUndoSnapshot: () => void;
@@ -1046,19 +1046,21 @@ export const usePathStore = create<PathState>()(
       };
     }),
 
-  duplicatePath: () =>
+  duplicatePath: (name?: string) =>
     set((state) => {
-      if (!state.activePathName) return state;
+      const sourceName = name || state.activePathName;
+      if (!sourceName) return state;
       useSelectionStore.getState().clearSelection();
       const updatedPaths = syncActiveToMap(state);
-      const baseName = state.activePathName + ' (Copy)';
+      if (!updatedPaths[sourceName]) return state;
+      const baseName = sourceName + ' (Copy)';
       let finalName = baseName;
       let counter = 2;
       while (updatedPaths[finalName]) {
         finalName = `${baseName} ${counter}`;
         counter++;
       }
-      const src = updatedPaths[state.activePathName];
+      const src = updatedPaths[sourceName];
       const copy: NamedPath = {
         name: finalName,
         controlPoints: src.controlPoints.map((p) => ({ ...p })),

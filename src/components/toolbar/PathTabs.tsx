@@ -10,6 +10,7 @@ export function PathTabs() {
   const addPath = usePathStore((s) => s.addPath);
   const renamePath = usePathStore((s) => s.renamePath);
   const deletePath = usePathStore((s) => s.deletePath);
+  const duplicatePath = usePathStore((s) => s.duplicatePath);
   const reorderPath = usePathStore((s) => s.reorderPath);
 
   const [editingName, setEditingName] = useState<string | null>(null);
@@ -176,6 +177,15 @@ export function PathTabs() {
             onClick={() => startRename(contextMenu.name)}
           >
             Rename
+          </button>
+          <button
+            className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors"
+            onClick={() => {
+              duplicatePath(contextMenu.name);
+              setContextMenu(null);
+            }}
+          >
+            Duplicate
           </button>
           <button
             className="w-full px-3 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30"
