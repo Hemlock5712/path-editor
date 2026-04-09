@@ -126,112 +126,107 @@ export function Toolbar({
   };
 
   return (
-    <div className="flex items-center gap-1.5 bg-transparent px-4 py-2">
-      {/* File group */}
-      <button
-        onClick={handleLoadJava}
-        className="btn-default flex items-center gap-1.5 text-xs"
-        title="Load Paths.java (Ctrl+O)"
-      >
-        <FolderOpen size={13} />
-        <span>Load Java</span>
-      </button>
+    <div className="flex items-center gap-3 border-b border-white/[0.04] px-4 py-2.5">
+      <div className="flex items-center gap-1 rounded-full border border-white/[0.05] bg-white/[0.015] p-1">
+        <button
+          onClick={handleLoadJava}
+          className="btn-default flex items-center gap-1.5 rounded-full border-transparent text-xs"
+          title="Load Paths.java (Ctrl+O)"
+        >
+          <FolderOpen size={13} />
+          <span>Load Java</span>
+        </button>
 
-      <button
-        onClick={handleSaveJava}
-        className="btn-default flex items-center gap-1.5 text-xs"
-        title="Save Paths.java (Ctrl+S)"
-      >
-        <Save size={13} />
-        <span>Save Java</span>
-      </button>
+        <button
+          onClick={handleSaveJava}
+          className="btn-primary flex items-center gap-1.5 rounded-full text-xs"
+          title="Save Paths.java (Ctrl+S)"
+        >
+          <Save size={13} />
+          <span>Save Java</span>
+        </button>
+      </div>
 
-      {/* Separator */}
-      <div className="bg-accent-green/[0.08] mx-1 h-4 w-px" />
+      <div className="flex items-center gap-1 rounded-full border border-white/[0.05] bg-white/[0.015] p-1">
+        <button
+          onClick={undo}
+          disabled={undoStack.length === 0}
+          className="btn-ghost rounded-full p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
+          title="Undo (Ctrl+Z)"
+        >
+          <Undo2 size={14} />
+        </button>
 
-      {/* Undo/Redo group */}
-      <button
-        onClick={undo}
-        disabled={undoStack.length === 0}
-        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
-        title="Undo (Ctrl+Z)"
-      >
-        <Undo2 size={14} />
-      </button>
+        <button
+          onClick={redo}
+          disabled={redoStack.length === 0}
+          className="btn-ghost rounded-full p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
+          title="Redo (Ctrl+Y)"
+        >
+          <Redo2 size={14} />
+        </button>
+      </div>
 
-      <button
-        onClick={redo}
-        disabled={redoStack.length === 0}
-        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
-        title="Redo (Ctrl+Y)"
-      >
-        <Redo2 size={14} />
-      </button>
+      <div className="flex items-center gap-1 rounded-full border border-white/[0.05] bg-white/[0.015] p-1">
+        <button
+          onClick={handleDeletePath}
+          disabled={!activePathName || pathCount <= 1}
+          className="btn-danger flex items-center gap-1 rounded-full text-xs disabled:cursor-not-allowed disabled:opacity-20"
+          title="Delete active path"
+        >
+          <Trash2 size={13} />
+          <span>Delete Path</span>
+        </button>
 
-      {/* Separator */}
-      <div className="bg-accent-green/[0.08] mx-1 h-4 w-px" />
+        <button
+          onClick={flipPathY}
+          disabled={controlPoints.length < 2}
+          className="btn-ghost rounded-full p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
+          title="Flip path left/right (mirror Y)"
+        >
+          <FlipVertical2 size={14} />
+        </button>
 
-      {/* Delete active path */}
-      <button
-        onClick={handleDeletePath}
-        disabled={!activePathName || pathCount <= 1}
-        className="btn-danger flex items-center gap-1 text-xs disabled:cursor-not-allowed disabled:opacity-20"
-        title="Delete active path"
-      >
-        <Trash2 size={13} />
-        <span>Delete Path</span>
-      </button>
+        <button
+          onClick={() => duplicatePath()}
+          disabled={controlPoints.length === 0}
+          className="btn-ghost rounded-full p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
+          title="Duplicate active path"
+        >
+          <Copy size={14} />
+        </button>
+      </div>
 
-      {/* Flip & Duplicate */}
-      <button
-        onClick={flipPathY}
-        disabled={controlPoints.length < 2}
-        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
-        title="Flip path left/right (mirror Y)"
-      >
-        <FlipVertical2 size={14} />
-      </button>
+      <div className="mr-1 flex items-center gap-1 rounded-full border border-white/[0.05] bg-white/[0.015] p-1">
+        <button
+          onClick={toggleWaypointGhosts}
+          className={`rounded-full p-1.5 transition-colors ${
+            showWaypointGhosts
+              ? 'bg-accent-green/[0.08] text-accent-green'
+              : 'text-zinc-300 hover:bg-white/[0.05] hover:text-zinc-100'
+          }`}
+          title="Toggle robot outlines at waypoints"
+        >
+          <Box size={14} />
+        </button>
+      </div>
 
-      <button
-        onClick={() => duplicatePath()}
-        disabled={controlPoints.length === 0}
-        className="btn-ghost p-1.5 disabled:cursor-not-allowed disabled:opacity-20"
-        title="Duplicate active path"
-      >
-        <Copy size={14} />
-      </button>
+      <div className="min-w-0 flex-1" />
 
-      {/* Separator */}
-      <div className="bg-accent-green/[0.08] mx-1 h-4 w-px" />
-
-      {/* Waypoint ghosts toggle */}
-      <button
-        onClick={toggleWaypointGhosts}
-        className="rounded p-1.5 transition-colors"
-        style={{
-          color: showWaypointGhosts ? '#00FFaa' : '#6b6b7a',
-          background: showWaypointGhosts
-            ? 'rgba(0, 255, 170, 0.08)'
-            : 'transparent',
-        }}
-        title="Toggle robot outlines at waypoints"
-      >
-        <Box size={14} />
-      </button>
-
-      {/* Separator */}
-      <div className="bg-accent-green/[0.08] mx-1 h-4 w-px" />
-
-      {/* Playback controls inline */}
-      <PlaybackControls
-        onPlay={onPlay}
-        onPause={onPause}
-        onResume={onResume}
-        onStop={onStop}
-        onStepForward={onStepForward}
-        onStepBackward={onStepBackward}
-        playbackState={playbackState}
-      />
+      <div className="flex items-center gap-2 rounded-full border border-white/[0.05] bg-white/[0.015] px-2 py-1">
+        <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-zinc-300">
+          Playback
+        </span>
+        <PlaybackControls
+          onPlay={onPlay}
+          onPause={onPause}
+          onResume={onResume}
+          onStop={onStop}
+          onStepForward={onStepForward}
+          onStepBackward={onStepBackward}
+          playbackState={playbackState}
+        />
+      </div>
     </div>
   );
 }

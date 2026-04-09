@@ -50,22 +50,40 @@ export function Titlebar({ stats, showSidebar = false }: TitlebarProps) {
   }, [docsOpen]);
 
   return (
-    <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-white/[0.04] bg-[#050505] px-5">
+    <div className="relative flex h-16 flex-shrink-0 items-center justify-between border-b border-white/[0.05] bg-[#050505]/95 px-5 backdrop-blur-sm">
       {/* Left: App title + Nav */}
-      <div className="flex items-center gap-5">
-        <h1 className="text-xs font-light tracking-[0.2em] text-zinc-400 uppercase">
-          FRC Path Editor
-        </h1>
-        <nav className="flex items-center gap-1">
+      <div className="flex min-w-0 items-center gap-5">
+        <div className="brand-rail min-w-0 pr-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/8 bg-white/[0.02]">
+              <div className="grid h-[18px] w-[18px] grid-cols-2 gap-0.5">
+                <span className="rounded-[2px] bg-accent-green/80" />
+                <span className="rounded-[2px] bg-white/15" />
+                <span className="rounded-[2px] bg-white/15" />
+                <span className="rounded-[2px] bg-accent-blue/70" />
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="brand-wordmark truncate text-[13px] font-semibold leading-none">
+                FRC Path Editor
+              </div>
+              <div className="brand-kicker mt-1 text-[11px] leading-none">
+                Trajectory Workspace
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <nav className="flex items-center gap-1.5">
           {navLinks.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                `rounded px-2.5 py-1 text-[11px] font-medium tracking-wide transition-all ${
+                `rounded-full px-3 py-1.5 text-xs font-medium tracking-[0.05em] transition-all ${
                   isActive
-                    ? 'text-accent-green bg-accent-green/[0.06]'
-                    : 'text-zinc-500 hover:text-zinc-300'
+                    ? 'bg-accent-green/[0.08] text-zinc-100 ring-1 ring-accent-green/18'
+                    : 'text-zinc-300 hover:bg-white/[0.05] hover:text-zinc-100'
                 }`
               }
             >
@@ -77,10 +95,10 @@ export function Titlebar({ stats, showSidebar = false }: TitlebarProps) {
           <div ref={docsRef} className="relative">
             <button
               onClick={() => setDocsOpen((prev) => !prev)}
-              className={`flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-medium tracking-wide transition-all ${
+              className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium tracking-[0.05em] transition-all ${
                 isDocsActive
-                  ? 'text-accent-green bg-accent-green/[0.06]'
-                  : 'text-zinc-500 hover:text-zinc-300'
+                  ? 'bg-accent-green/[0.08] text-zinc-100 ring-1 ring-accent-green/18'
+                  : 'text-zinc-300 hover:bg-white/[0.05] hover:text-zinc-100'
               }`}
             >
               Docs
@@ -90,17 +108,17 @@ export function Titlebar({ stats, showSidebar = false }: TitlebarProps) {
               />
             </button>
             {docsOpen && (
-              <div className="border-accent-green/10 shadow-accent-green/5 animate-fadeIn absolute top-full left-0 z-50 mt-1 min-w-[160px] rounded-lg border bg-zinc-950/95 py-1 shadow-lg backdrop-blur-sm">
+              <div className="animate-fadeIn absolute top-full left-0 z-50 mt-2 min-w-[180px] rounded-xl border border-white/8 bg-zinc-950/95 py-1.5 shadow-2xl backdrop-blur-sm">
                 {docsLinks.map((link) => (
                   <NavLink
                     key={link.to}
                     to={link.to}
                     onClick={() => setDocsOpen(false)}
                     className={({ isActive }) =>
-                      `block px-3 py-1.5 text-[11px] transition-colors ${
+                      `block px-3 py-2 text-xs tracking-[0.03em] transition-colors ${
                         isActive
-                          ? 'text-accent-green bg-accent-green/[0.06]'
-                          : 'hover:text-accent-green hover:bg-accent-green/[0.04] text-zinc-400'
+                          ? 'bg-accent-green/[0.06] text-zinc-100'
+                          : 'text-zinc-200 hover:bg-white/[0.04] hover:text-accent-green'
                       }`
                     }
                   >
@@ -114,13 +132,23 @@ export function Titlebar({ stats, showSidebar = false }: TitlebarProps) {
 
         {/* Stats (editor only) */}
         {isEditor && stats && (
-          <div className="flex items-center gap-4 font-mono text-xs">
-            <span className="text-accent-green neon-glow">
-              {stats.totalLength.toFixed(2)}m
+          <div className="flex items-center gap-2 font-mono text-xs">
+            <span className="precision-chip text-zinc-300">
+              <span className="text-[11px] uppercase tracking-[0.1em] text-zinc-300">
+                Distance
+              </span>
+              <span className="text-accent-green neon-glow">
+                {stats.totalLength.toFixed(2)}m
+              </span>
             </span>
-            <span className="text-accent-amber flex items-center gap-1.5">
-              <Timer size={11} />
-              {stats.estimatedTime.toFixed(2)}s
+            <span className="precision-chip text-zinc-300">
+              <span className="text-[11px] uppercase tracking-[0.1em] text-zinc-300">
+                Time
+              </span>
+              <span className="text-accent-amber flex items-center gap-1.5">
+                <Timer size={11} />
+                {stats.estimatedTime.toFixed(2)}s
+              </span>
             </span>
           </div>
         )}
@@ -128,8 +156,13 @@ export function Titlebar({ stats, showSidebar = false }: TitlebarProps) {
 
       {/* Center: Scrubber info (editor only) */}
       {isEditor && stats && scrubberDistance > 0 && (
-        <div className="text-accent-green/50 font-mono text-xs">
-          {scrubberDistance.toFixed(2)}m / {stats.totalLength.toFixed(2)}m
+        <div className="hidden text-sm font-mono tracking-[0.08em] text-zinc-300 uppercase xl:block">
+          <span className="mr-2 text-zinc-200">Cursor</span>
+          <span className="text-accent-green/70">
+            {scrubberDistance.toFixed(2)}m
+          </span>
+          <span className="mx-2 text-zinc-500">/</span>
+          <span className="text-zinc-300">{stats.totalLength.toFixed(2)}m</span>
         </div>
       )}
 
@@ -138,7 +171,8 @@ export function Titlebar({ stats, showSidebar = false }: TitlebarProps) {
         {isEditor && showSidebar && (
           <button
             onClick={toggleSidebar}
-            className="btn-ghost hover:text-accent-green p-1.5 transition-colors"
+            className="btn-ghost rounded-full border border-white/[0.05] p-2 transition-colors"
+            title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
           >
             {sidebarCollapsed ? (
               <PanelRightOpen size={15} />
