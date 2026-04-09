@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import {
   Point,
   NamedPoint,
@@ -221,16 +222,10 @@ function loadNamedPointsFromStorage(): Record<string, NamedPoint> {
   return {};
 }
 
-/** Persist named points to localStorage. */
-function saveNamedPointsToStorage(namedPoints: Record<string, NamedPoint>) {
-  try {
-    localStorage.setItem('pathEditor_namedPoints', JSON.stringify(namedPoints));
-  } catch {
-    /* ignore */
-  }
-}
 
-export const usePathStore = create<PathState>()((set, get) => ({
+export const usePathStore = create<PathState>()(
+  persist(
+  (set, get) => ({
   paths: {
     'Path 1': {
       name: 'Path 1',
@@ -452,7 +447,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
             y: FIELD_HEIGHT - point.y,
           };
         }
-        saveNamedPointsToStorage(newNamedPoints);
+
 
         // Sync active path into map first so propagation sees latest state
         const synced = syncActiveToMap(state);
@@ -613,7 +608,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
           mirrorName: name,
         },
       };
-      saveNamedPointsToStorage(newNamedPoints);
+
       return { namedPoints: newNamedPoints };
     }),
 
@@ -644,7 +639,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
         r === name || r === np.mirrorName ? null : r
       );
 
-      saveNamedPointsToStorage(newNamedPoints);
+
       return {
         namedPoints: newNamedPoints,
         paths: updatedPaths,
@@ -688,7 +683,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
         r === oldName ? trimmed : r
       );
 
-      saveNamedPointsToStorage(newNamedPoints);
+
       return {
         namedPoints: newNamedPoints,
         paths: updatedPaths,
@@ -712,7 +707,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
           y: FIELD_HEIGHT - point.y,
         };
       }
-      saveNamedPointsToStorage(newNamedPoints);
+
 
       const synced = syncActiveToMap(state);
       const propagated = propagateNamedPoints(
@@ -835,7 +830,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
       const controlPointRefs = [...state.controlPointRefs];
       controlPointRefs[index] = name;
 
-      saveNamedPointsToStorage(newNamedPoints);
+
       return { namedPoints: newNamedPoints, controlPointRefs };
     }),
 
@@ -908,7 +903,19 @@ export const usePathStore = create<PathState>()((set, get) => ({
           ];
         }
       }
-      return { ...pushUndo(state), headingWaypoints };
+      // Sync heading back to linked named point and its mirror
+      const refName = state.controlPointRefs[waypointIndex];
+      let namedPoints = state.namedPoints;
+      if (refName && namedPoints[refName]) {
+        const np = namedPoints[refName];
+        namedPoints = { ...namedPoints, [refName]: { ...np, headingDegrees: degrees } };
+        if (np.mirrorName && namedPoints[np.mirrorName]) {
+          const mirror = namedPoints[np.mirrorName];
+          namedPoints = { ...namedPoints, [np.mirrorName]: { ...mirror, headingDegrees: mirrorHeading(degrees) } };
+        }
+      }
+
+      return { ...pushUndo(state), headingWaypoints, namedPoints };
     }),
 
   // ---- Constraint mutations ----
@@ -1103,7 +1110,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
         state.activePathName
       );
 
-      saveNamedPointsToStorage(snap.namedPoints);
+
       return {
         undoStack: state.undoStack.slice(0, -1),
         redoStack,
@@ -1135,7 +1142,7 @@ export const usePathStore = create<PathState>()((set, get) => ({
         state.activePathName
       );
 
-      saveNamedPointsToStorage(snap.namedPoints);
+
       return {
         redoStack: state.redoStack.slice(0, -1),
         undoStack,
@@ -1165,4 +1172,29 @@ export const usePathStore = create<PathState>()((set, get) => ({
         rotationZones: [] as RotationZone[],
       };
     }),
-}));
+}),
+  {
+    name: 'frc-path-editor-paths',
+    partialize: (state) => ({
+      paths: syncActiveToMap(state),
+      pathOrder: state.pathOrder,
+      activePathName: state.activePathName,
+      namedPoints: state.namedPoints,
+      controlPoints: state.controlPoints,
+      controlPointRefs: state.controlPointRefs,
+      headingWaypoints: state.headingWaypoints,
+      constraints: state.constraints,
+      constraintZones: state.constraintZones,
+      rotationZones: state.rotationZones,
+    }),
+    onRehydrateStorage: () => () => {
+      // Clean up old namedPoints localStorage key after migration
+      try {
+        localStorage.removeItem('pathEditor_namedPoints');
+      } catch {
+        /* ignore */
+      }
+    },
+  }
+  )
+);

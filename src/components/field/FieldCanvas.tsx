@@ -29,8 +29,8 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
   const fieldImageRef = useRef<HTMLImageElement | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  // Canvas dimensions tracking
-  const [canvasDims, setCanvasDims] = useState({ width: 800, height: 400 });
+  // Canvas dimensions tracking (dpr stored alongside to avoid mismatch)
+  const [canvasDims, setCanvasDims] = useState({ width: 800, height: 400, dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1 });
 
   // Stores
   const controlPoints = usePathStore((s) => s.controlPoints);
@@ -94,35 +94,54 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
     };
   }, []);
 
+  // Track DPR changes (e.g. window moved between monitors)
+  const [currentDpr, setCurrentDpr] = useState(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+  useEffect(() => {
+    const mql = window.matchMedia(`(resolution: ${currentDpr}dppx)`);
+    const handler = () => setCurrentDpr(window.devicePixelRatio || 1);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [currentDpr]);
+
   // ResizeObserver to fill container, maintaining aspect ratio
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    const recalc = (containerW: number, containerH: number) => {
+      if (containerW <= 0 || containerH <= 0) return;
+
+      const fieldAspect = FIELD_WIDTH / FIELD_HEIGHT;
+      let drawW = containerW;
+      let drawH = containerW / fieldAspect;
+      if (drawH > containerH) {
+        drawH = containerH;
+        drawW = containerH * fieldAspect;
+      }
+
+      const dpr = window.devicePixelRatio || 1;
+      setCanvasDims({
+        width: Math.round(drawW * dpr),
+        height: Math.round(drawH * dpr),
+        dpr,
+      });
+    };
+
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width: containerW, height: containerH } = entry.contentRect;
-        if (containerW <= 0 || containerH <= 0) continue;
-
-        const fieldAspect = FIELD_WIDTH / FIELD_HEIGHT;
-        let drawW = containerW;
-        let drawH = containerW / fieldAspect;
-        if (drawH > containerH) {
-          drawH = containerH;
-          drawW = containerH * fieldAspect;
-        }
-
-        const dpr = window.devicePixelRatio || 1;
-        setCanvasDims({
-          width: Math.round(drawW * dpr),
-          height: Math.round(drawH * dpr),
-        });
+        recalc(containerW, containerH);
       }
     });
 
     observer.observe(container);
+
+    // Recalculate immediately when DPR changes
+    const rect = container.getBoundingClientRect();
+    recalc(rect.width, rect.height);
+
     return () => observer.disconnect();
-  }, []);
+  }, [currentDpr]);
 
   const cw = canvasDims.width;
   const ch = canvasDims.height;
@@ -293,9 +312,8 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
     ]
   );
 
-  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  const cssWidth = cw / dpr;
-  const cssHeight = ch / dpr;
+  const cssWidth = cw / canvasDims.dpr;
+  const cssHeight = ch / canvasDims.dpr;
 
   const viewMoved = zoom !== 1.0 || panOffset.x !== 0 || panOffset.y !== 0;
 

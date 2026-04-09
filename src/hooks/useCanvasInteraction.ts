@@ -249,9 +249,9 @@ export function useCanvasInteraction({
         fieldPt = clampToField(fieldPt);
         fieldPt = maybeSnap(fieldPt);
         movePoint(dragging, fieldPt);
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const rect = canvas.getBoundingClientRect();
+        const container = containerRef.current;
+        if (container) {
+          const rect = container.getBoundingClientRect();
           showTooltip(
             e.clientX - rect.left + 16,
             e.clientY - rect.top - 28,
@@ -270,9 +270,9 @@ export function useCanvasInteraction({
       let fieldPt = canvasToField(cx, cy, cw, ch, transform);
       fieldPt = clampToField(fieldPt);
       const snapped = maybeSnap(fieldPt);
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const rect = canvas.getBoundingClientRect();
+      const container = containerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
         showTooltip(
           e.clientX - rect.left + 16,
           e.clientY - rect.top - 28,
@@ -334,12 +334,10 @@ export function useCanvasInteraction({
       fieldPt = clampToField(fieldPt);
       fieldPt = maybeSnap(fieldPt);
 
-      const container = containerRef.current;
-      if (container) {
-        const rect = container.getBoundingClientRect();
+      if (containerRef.current) {
         showContextMenu(
-          e.clientX - rect.left,
-          e.clientY - rect.top,
+          e.clientX,
+          e.clientY,
           hit,
           fieldPt.x,
           fieldPt.y

@@ -1,5 +1,6 @@
 package frc.robot.utils.path;
 
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import java.util.List;
@@ -100,5 +101,22 @@ public record PathData(
 
     return new PathData(
         mirroredPoints, mirroredHeadings, globalConstraints, constraintZones, mirroredRotationZones);
+  }
+
+  /**
+   * Returns the starting pose of this path.
+   *
+   * <p>The position is the first control point. The heading is the first heading waypoint at index
+   * 0, or zero if none exists.
+   */
+  public Pose2d getStartingPose() {
+    Translation2d start = controlPoints.get(0);
+    Rotation2d heading =
+        headingWaypoints.stream()
+            .filter(hw -> hw.waypointIndex() == 0)
+            .findFirst()
+            .map(HeadingWaypoint::heading)
+            .orElse(Rotation2d.kZero);
+    return new Pose2d(start, heading);
   }
 }

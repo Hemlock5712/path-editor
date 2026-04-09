@@ -16,6 +16,7 @@ import { ConstraintZonesEditor } from './components/sidebar/ConstraintZonesEdito
 import { RotationZoneEditor } from './components/sidebar/RotationZoneEditor';
 import { PointInfo } from './components/sidebar/PointInfo';
 import { PathStats } from './components/sidebar/PathStats';
+import { PointList } from './components/sidebar/PointList';
 import { SidebarSection } from './components/sidebar/SidebarSection';
 import { parsePathsJava } from './utils/javaParser';
 import { generatePathsJava } from './utils/javaExport';
@@ -170,23 +171,26 @@ export default function App() {
       }
       sidebar={
         <>
-          <SidebarSection title="Point Info" delay={0}>
+          <SidebarSection title="Points" delay={0}>
+            <PointList />
+          </SidebarSection>
+          <SidebarSection title="Point Info" delay={1}>
             <PointInfo
               splinePath={splinePath}
               velocityProfile={velocityProfile}
               timeEstimator={timeEstimator}
             />
           </SidebarSection>
-          <SidebarSection title="Statistics" delay={1}>
+          <SidebarSection title="Statistics" delay={2}>
             <PathStats stats={stats} />
           </SidebarSection>
-          <SidebarSection title="Rotation Zones" delay={2}>
+          <SidebarSection title="Rotation Zones" delay={3}>
             <RotationZoneEditor />
           </SidebarSection>
-          <SidebarSection title="Constraint Zones" delay={3}>
+          <SidebarSection title="Constraint Zones" delay={4}>
             <ConstraintZonesEditor />
           </SidebarSection>
-          <SidebarSection title="Constraints" delay={4}>
+          <SidebarSection title="Constraints" delay={5}>
             <PathSettings />
           </SidebarSection>
         </>

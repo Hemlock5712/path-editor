@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { ContextMenuState } from '../../hooks/useContextMenu';
 import { PointContextMenu } from './PointContextMenu';
 import { EmptySpaceContextMenu } from './EmptySpaceContextMenu';
@@ -38,10 +39,10 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
 
   if (!menu.visible) return null;
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
-      className="absolute z-50"
+      className="fixed z-[9999]"
       style={{ left: menu.x, top: menu.y }}
     >
       <div
@@ -63,6 +64,7 @@ export function FieldContextMenu({ menu, onClose }: FieldContextMenuProps) {
           />
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

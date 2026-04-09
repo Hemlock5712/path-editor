@@ -15,8 +15,8 @@ export const ConstraintZonesEditor = memo(function ConstraintZonesEditor() {
   const handleAdd = () => {
     addConstraintZone({
       id: crypto.randomUUID(),
-      startWaypointIndex: 0,
-      endWaypointIndex: Math.min(1, maxIndex),
+      startWaypointIndex: 1,
+      endWaypointIndex: Math.min(2, maxIndex),
       maxVelocity: constraints.maxVelocity,
       maxAcceleration: constraints.maxAcceleration,
     });
@@ -68,13 +68,14 @@ export const ConstraintZonesEditor = memo(function ConstraintZonesEditor() {
             </span>
             <select
               value={zone.startWaypointIndex}
-              onChange={(e) =>
-                handleUpdate(i, 'startWaypointIndex', e.target.value)
-              }
+              onChange={(e) => {
+                const newStart = parseInt(e.target.value);
+                const updated = { ...zone, startWaypointIndex: newStart, endWaypointIndex: newStart + 1 };
+                updateConstraintZone(i, updated);
+              }}
               className="min-w-0 flex-1 rounded px-1.5 py-0.5 text-xs"
             >
-              {Array.from({ length: maxIndex + 1 }, (_, idx) => idx)
-                .filter((idx) => idx < zone.endWaypointIndex)
+              {Array.from({ length: maxIndex - 1 }, (_, idx) => idx + 1)
                 .map((idx) => (
                   <option key={idx} value={idx}>
                     Pt {idx}
