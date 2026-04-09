@@ -33,8 +33,7 @@ export function computeAnalytics(
   path: SplinePath,
   profile: VelocityProfile,
   timeEst: TimeEstimator,
-  headingWaypoints: HeadingWaypoint[],
-  numControlPoints: number
+  headingWaypoints: HeadingWaypoint[]
 ): AnalyticsArrays {
   const n = profile.velocities.length;
   const distances: number[] = new Array(n);
@@ -83,10 +82,10 @@ export function computeAnalytics(
   }
 
   // Headings: interpolate from heading waypoints
-  if (headingWaypoints.length === 0 || numControlPoints < 2) {
+  if (headingWaypoints.length === 0 || path.controlPoints.length < 2) {
     headings.fill(NaN);
   } else {
-    const sorted = buildSortedHeadings(headingWaypoints, numControlPoints);
+    const sorted = buildArcLengthHeadings(headingWaypoints, path);
 
     for (let i = 0; i < n; i++) {
       const progress = totalLength > 1e-12 ? distances[i] / totalLength : 0;
@@ -98,7 +97,7 @@ export function computeAnalytics(
   const angularVelocities: number[] = new Array(n);
   const dthetaDs = computeHeadingRate(
     headingWaypoints,
-    numControlPoints,
+    path,
     distances,
     totalLength
   );
@@ -148,7 +147,7 @@ export function computeStats(
   // Peak angular velocity
   const dthetaDs = computeHeadingRate(
     headingWaypoints,
-    numControlPoints,
+    path,
     profile.samples,
     profile.totalLength
   );
@@ -184,6 +183,8 @@ export interface SortedHeadingEntry {
 
 /**
  * Sort and convert heading waypoints to fraction/radian entries.
+ * Uses uniform spacing (waypointIndex / (numCPs - 1)) — prefer
+ * buildArcLengthHeadings when a SplinePath is available.
  */
 export function buildSortedHeadings(
   headingWaypoints: HeadingWaypoint[],
@@ -198,12 +199,46 @@ export function buildSortedHeadings(
 }
 
 /**
+ * Sort and convert heading waypoints using actual arc-length fractions
+ * on the spline path. This correctly handles non-uniform control point spacing.
+ */
+export function buildArcLengthHeadings(
+  headingWaypoints: HeadingWaypoint[],
+  splinePath: SplinePath
+): SortedHeadingEntry[] {
+  const cps = splinePath.controlPoints;
+  if (cps.length < 2 || splinePath.totalLength <= 0) return [];
+
+  const n = cps.length;
+  const cpS: number[] = new Array(n);
+  cpS[0] = 0;
+  cpS[n - 1] = splinePath.totalLength;
+  for (let i = 1; i < n - 1; i++) {
+    cpS[i] = splinePath.getClosestPointS(cps[i]);
+  }
+
+  return headingWaypoints
+    .map((hw) => {
+      const idx = hw.waypointIndex;
+      const lo = Math.max(0, Math.min(Math.floor(idx), n - 1));
+      const hi = Math.min(lo + 1, n - 1);
+      const frac = idx - lo;
+      const s = cpS[lo] + frac * (cpS[hi] - cpS[lo]);
+      return {
+        frac: s / splinePath.totalLength,
+        rad: (hw.degrees * Math.PI) / 180,
+      };
+    })
+    .sort((a, b) => a.frac - b.frac);
+}
+
+/**
  * Compute dtheta/ds (radians per meter) at each sample distance.
  * Used by VelocityProfile to enforce angular velocity/acceleration limits.
  */
 export function computeHeadingRate(
   headingWaypoints: HeadingWaypoint[],
-  numControlPoints: number,
+  splinePath: SplinePath,
   sampleDistances: number[],
   totalLength: number
 ): number[] {
@@ -212,13 +247,13 @@ export function computeHeadingRate(
 
   if (
     headingWaypoints.length < 2 ||
-    numControlPoints < 2 ||
+    splinePath.controlPoints.length < 2 ||
     totalLength < 1e-12
   ) {
     return dthetaDs;
   }
 
-  const sorted = buildSortedHeadings(headingWaypoints, numControlPoints);
+  const sorted = buildArcLengthHeadings(headingWaypoints, splinePath);
   if (sorted.length < 2) return dthetaDs;
 
   // Compute heading at each sample, then finite-difference for dtheta/ds

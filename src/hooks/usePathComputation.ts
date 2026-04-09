@@ -97,15 +97,13 @@ export function usePathComputation() {
       splinePath,
       velocityProfile,
       timeEstimator,
-      headingWaypoints,
-      controlPoints.length
+      headingWaypoints
     );
   }, [
     splinePath,
     velocityProfile,
     timeEstimator,
     headingWaypoints,
-    controlPoints.length,
   ]);
 
   const stats = useMemo(() => {

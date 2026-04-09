@@ -15,6 +15,11 @@ import {
 } from '../../utils/canvasTransform';
 import { curvatureToColor, drawOutlinedText } from '../../utils/colors';
 import { SplinePath } from '../../math/SplinePath';
+import {
+  buildArcLengthHeadings,
+  interpolateHeadingSorted,
+} from '../../math/ProfileAnalytics';
+import { shortestArcDiff } from '../../math/angleUtils';
 
 // ─── Inactive Path ──────────────────────────────────────────────────────────
 
@@ -829,6 +834,80 @@ export function drawWaypointGhosts(
     ctx.fill();
 
     ctx.restore();
+  }
+}
+
+// ─── Interpolated Heading Ghosts ─────────────────────────────────────────────
+
+export function drawInterpolatedHeadingGhosts(
+  ctx: CanvasRenderingContext2D,
+  cw: number,
+  ch: number,
+  transform: CanvasTransform,
+  splinePath: SplinePath,
+  controlPoints: Point[],
+  headingWaypoints: HeadingWaypoint[],
+  robotLength: number,
+  robotWidth: number
+): void {
+  if (
+    headingWaypoints.length < 2 ||
+    controlPoints.length < 2 ||
+    splinePath.totalLength <= 0
+  )
+    return;
+
+  const sorted = buildArcLengthHeadings(headingWaypoints, splinePath);
+  if (sorted.length < 2) return;
+
+  const scale = getScale(cw, transform);
+  const rw = robotLength * scale;
+  const rh = robotWidth * scale;
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const angularDiff = Math.abs(shortestArcDiff(sorted[i].rad, sorted[i + 1].rad));
+    if (angularDiff < 0.01) continue;
+
+    const startDist = sorted[i].frac * splinePath.totalLength;
+    const endDist = sorted[i + 1].frac * splinePath.totalLength;
+    const segLength = endDist - startDist;
+
+    if (segLength < robotLength) continue;
+
+    const numGhosts = Math.max(2, Math.min(5, Math.ceil(segLength / 0.5)));
+
+    for (let j = 1; j <= numGhosts; j++) {
+      const t = j / (numGhosts + 1);
+      const dist = startDist + t * segLength;
+      const progress = dist / splinePath.totalLength;
+
+      const pt = splinePath.getPoint(dist);
+      const rot = interpolateHeadingSorted(sorted, progress);
+      const { cx, cy } = fieldToCanvas(pt, cw, ch, transform);
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-rot);
+
+      ctx.fillStyle = 'rgba(0, 255, 170, 0.02)';
+      ctx.fillRect(-rw / 2, -rh / 2, rw, rh);
+
+      ctx.strokeStyle = 'rgba(0, 255, 170, 0.10)';
+      ctx.lineWidth = 1.0;
+      ctx.setLineDash([2, 4]);
+      ctx.strokeRect(-rw / 2, -rh / 2, rw, rh);
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = 'rgba(0, 255, 170, 0.14)';
+      ctx.beginPath();
+      ctx.moveTo(rw / 2, 0);
+      ctx.lineTo(rw / 2 - 6, -4);
+      ctx.lineTo(rw / 2 - 6, 4);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
   }
 }
 

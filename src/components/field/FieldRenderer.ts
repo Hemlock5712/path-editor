@@ -177,6 +177,21 @@ export function renderFieldCanvas(
     );
   }
 
+  // Layer 4.4: Interpolated heading ghosts (between waypoints)
+  if (dc.splinePath && dc.showWaypointGhosts && dc.controlPoints.length >= 2) {
+    Painters.drawInterpolatedHeadingGhosts(
+      ctx,
+      cw,
+      ch,
+      transform,
+      dc.splinePath,
+      dc.controlPoints,
+      dc.headingWaypoints,
+      dc.robotLength,
+      dc.robotWidth
+    );
+  }
+
   // Layer 4.5: Waypoint ghosts
   if (dc.splinePath && dc.showWaypointGhosts && dc.controlPoints.length >= 2) {
     Painters.drawWaypointGhosts(

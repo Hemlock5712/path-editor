@@ -147,7 +147,7 @@ export class VelocityProfile {
     // Step 1c: Angular velocity limit — slow translation where rotation demand is high
     const dthetaDs = computeHeadingRate(
       headingWaypoints,
-      numControlPoints,
+      path,
       this.samples,
       this.totalLength
     );

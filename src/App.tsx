@@ -21,7 +21,7 @@ import { SidebarSection } from './components/sidebar/SidebarSection';
 import { parsePathsJava } from './utils/javaParser';
 import { generatePathsJava } from './utils/javaExport';
 import {
-  buildSortedHeadings,
+  buildArcLengthHeadings,
   interpolateHeadingSorted,
 } from './math/ProfileAnalytics';
 
@@ -57,13 +57,12 @@ export default function App() {
       }
     }
 
-    const sorted = buildSortedHeadings(headingWaypoints, numControlPoints);
+    const sorted = buildArcLengthHeadings(headingWaypoints, splinePath);
     const heading = interpolateHeadingSorted(sorted, progress);
     return isNaN(heading) ? null : heading;
   }, [
     splinePath,
     headingWaypoints,
-    numControlPoints,
     rotationZones,
     scrubberDistance,
   ]);

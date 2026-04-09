@@ -47,8 +47,7 @@ describe('computeAnalytics', () => {
       path,
       profile,
       timeEst,
-      headingWaypoints,
-      controlPoints.length
+      headingWaypoints
     );
   });
 
@@ -88,8 +87,7 @@ describe('computeAnalytics', () => {
       path,
       profile,
       timeEst,
-      [],
-      controlPoints.length
+      []
     );
     for (const h of noHeadingAnalytics.headings) {
       expect(Number.isNaN(h)).toBe(true);
