@@ -55,10 +55,12 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
   const robotLength = useSettingsStore((s) => s.robotLength);
   const robotWidth = useSettingsStore((s) => s.robotWidth);
 
+  const hiddenPaths = useEditorStore((s) => s.hiddenPaths);
+
   // Compute splines for inactive paths
   const inactivePaths = useMemo(() => {
     return Object.entries(paths)
-      .filter(([name]) => name !== activePathName)
+      .filter(([name]) => name !== activePathName && !hiddenPaths.includes(name))
       .map(([name, path]) => ({
         name,
         controlPoints: path.controlPoints,
@@ -67,7 +69,7 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
             ? new SplinePath(path.controlPoints)
             : null,
       }));
-  }, [paths, activePathName]);
+  }, [paths, activePathName, hiddenPaths]);
 
   // Zoom/pan
   const { transform, handleWheel, handleMiddleMouseDrag, resetView } =

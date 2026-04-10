@@ -149,6 +149,7 @@ export function useCanvasInteraction({
       const hit = hitTestControlPoint(cx, cy, controlPoints, cw, ch, transform);
 
       if (hit !== null) {
+        pushUndoSnapshot();
         setDragging(hit);
         selectPoint(hit);
         selectZone(null);

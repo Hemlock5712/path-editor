@@ -51,7 +51,7 @@ export const ConstraintZonesEditor = memo(function ConstraintZonesEditor() {
         >
           <div className="flex items-center justify-between">
             <span className="font-mono text-[10px] text-amber-400/60">
-              Zone {i + 1}
+              Zone {i}
             </span>
             <button
               onClick={() => deleteConstraintZone(i)}

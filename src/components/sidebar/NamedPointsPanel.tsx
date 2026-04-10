@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { usePathStore } from '../../stores/pathStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { MapPin, X, Plus, Link } from 'lucide-react';
+import { Combobox } from '../ui/Combobox';
 
 export const NamedPointsPanel = memo(function NamedPointsPanel() {
   const namedPoints = usePathStore((s) => s.namedPoints);
@@ -66,12 +67,38 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
     setSavingName(false);
   };
 
+  const [pickerValue, setPickerValue] = useState('');
+
+  const pointOptions = useMemo(
+    () =>
+      primaryPoints.map((np) => ({
+        value: np.name,
+        label: np.name,
+        detail: `(${np.x.toFixed(2)}, ${np.y.toFixed(2)})${np.headingDegrees !== null ? ` hdg: ${np.headingDegrees.toFixed(0)}\u00B0` : ''}`,
+      })),
+    [primaryPoints]
+  );
+
   const canSave = selectedPointIndex !== null && controlPoints.length > 0;
   const selectedRef =
     selectedPointIndex !== null ? controlPointRefs[selectedPointIndex] : null;
 
   return (
     <div className="space-y-2.5">
+      {/* Quick-place named point picker */}
+      {pointOptions.length > 0 && (
+        <Combobox
+          options={pointOptions}
+          value={pickerValue}
+          onChange={setPickerValue}
+          onCommit={(name) => {
+            placeNamedPoint(name);
+            setPickerValue('');
+          }}
+          placeholder="Place a named point..."
+        />
+      )}
+
       {primaryPoints.map((np) => {
         const mirror = np.mirrorName ? namedPoints[np.mirrorName] : null;
         const isRenaming = renamingKey === np.name;

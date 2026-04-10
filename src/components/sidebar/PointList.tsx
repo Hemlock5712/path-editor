@@ -34,7 +34,7 @@ export const PointList = memo(function PointList() {
             }`}
           >
             <span className="w-6 shrink-0 font-mono text-[12px] text-accent-green">
-              {i + 1}
+              {i}
             </span>
             <span className="shrink-0 font-mono text-[12px] text-zinc-100">
               {pt.x.toFixed(2)}, {pt.y.toFixed(2)}

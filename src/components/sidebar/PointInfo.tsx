@@ -1,12 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { usePathStore } from '../../stores/pathStore';
 import { useSelectionStore } from '../../stores/selectionStore';
-import { Flag, MapPin, Plus, X } from 'lucide-react';
+import { Flag, MapPin, X } from 'lucide-react';
 import type { SplinePath } from '../../math/SplinePath';
 import type { VelocityProfile } from '../../math/VelocityProfile';
 import type { TimeEstimator } from '../../math/TimeEstimator';
 import { NamedPointsPanel } from './NamedPointsPanel';
 import { HeadingEditor } from './HeadingEditor';
+import { Combobox } from '../ui/Combobox';
 
 interface PointInfoProps {
   splinePath: SplinePath | null;
@@ -45,6 +46,7 @@ export function PointInfo({
   const addWaypointFlag = usePathStore((s) => s.addWaypointFlag);
   const updateWaypointFlag = usePathStore((s) => s.updateWaypointFlag);
   const deleteWaypointFlag = usePathStore((s) => s.deleteWaypointFlag);
+  const paths = usePathStore((s) => s.paths);
   const [newFlagLabel, setNewFlagLabel] = useState('');
 
   const hasSelection =
@@ -55,13 +57,24 @@ export function PointInfo({
   const selectedFlags = hasSelection
     ? waypointFlags.filter((flag) => flag.waypointIndex === selectedPointIndex)
     : [];
-  const flagOptions = Array.from(
-    new Set(
-      waypointFlags
-        .map((flag) => flag.label.trim())
-        .filter((label) => label.length > 0)
-    )
-  ).sort((a, b) => a.localeCompare(b));
+
+  // Gather flag labels from ALL paths
+  const allFlagOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const flag of waypointFlags) {
+      const t = flag.label.trim();
+      if (t) seen.add(t);
+    }
+    for (const path of Object.values(paths)) {
+      for (const flag of path.waypointFlags || []) {
+        const t = flag.label.trim();
+        if (t) seen.add(t);
+      }
+    }
+    return Array.from(seen)
+      .sort((a, b) => a.localeCompare(b))
+      .map((label) => ({ value: label, label }));
+  }, [paths, waypointFlags]);
 
   // Compute derived values if we have a built spline
   let distance: number | null = null;
@@ -114,12 +127,6 @@ export function PointInfo({
     }
   }, [hasSelection, selectedPointIndex, controlPoints, insertPointAfter, selectPoint]);
 
-  const handleAddFlag = useCallback(() => {
-    if (!hasSelection) return;
-    addWaypointFlag(selectedPointIndex, newFlagLabel);
-    setNewFlagLabel('');
-  }, [addWaypointFlag, hasSelection, newFlagLabel, selectedPointIndex]);
-
   const handleInsertAfter = useCallback(() => {
     if (!hasSelection) return;
     if (selectedPointIndex < controlPoints.length - 1) {
@@ -142,7 +149,7 @@ export function PointInfo({
           <div className="mb-3 flex items-center gap-2 text-[12px] text-zinc-200">
             <MapPin size={13} className="text-accent-green" />
             <span>
-              Point {selectedPointIndex + 1} of {totalPoints}
+              Point {selectedPointIndex} of {totalPoints}
             </span>
             <div className="ml-auto flex items-center gap-1">
               <button
@@ -245,15 +252,15 @@ export function PointInfo({
               {selectedFlags.length > 0 ? (
                 selectedFlags.map((flag) => (
                   <div key={flag.id} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      list="waypoint-flag-options"
+                    <Combobox
+                      options={allFlagOptions}
                       value={flag.label}
-                      onChange={(e) =>
-                        updateWaypointFlag(flag.id, { label: e.target.value })
+                      onChange={(label) =>
+                        updateWaypointFlag(flag.id, { label })
                       }
-                      className="flex-1"
+                      allowCustom
                       placeholder="Flag label"
+                      className="flex-1"
                     />
                     <button
                       onClick={() => deleteWaypointFlag(flag.id)}
@@ -270,35 +277,17 @@ export function PointInfo({
                 </p>
               )}
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  list="waypoint-flag-options"
-                  value={newFlagLabel}
-                  onChange={(e) => setNewFlagLabel(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddFlag();
-                    }
-                  }}
-                  className="flex-1"
-                  placeholder="Add flag label"
-                />
-                <button
-                  onClick={handleAddFlag}
-                  className="btn-ghost flex items-center gap-1 px-2 py-1 text-[12px]"
-                  title="Add flag"
-                >
-                  <Plus size={12} />
-                  Add
-                </button>
-              </div>
-              <datalist id="waypoint-flag-options">
-                {flagOptions.map((label) => (
-                  <option key={label} value={label} />
-                ))}
-              </datalist>
+              <Combobox
+                options={allFlagOptions}
+                value={newFlagLabel}
+                onChange={setNewFlagLabel}
+                onCommit={(label) => {
+                  addWaypointFlag(selectedPointIndex, label);
+                  setNewFlagLabel('');
+                }}
+                allowCustom
+                placeholder="Add flag label"
+              />
             </div>
           </div>
         </>

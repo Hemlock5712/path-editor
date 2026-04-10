@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Eye, EyeOff } from 'lucide-react';
 import { usePathStore } from '../../stores/pathStore';
+import { useEditorStore } from '../../stores/editorStore';
 
 export function PathTabs() {
   const paths = usePathStore((s) => s.paths);
@@ -12,6 +13,11 @@ export function PathTabs() {
   const deletePath = usePathStore((s) => s.deletePath);
   const duplicatePath = usePathStore((s) => s.duplicatePath);
   const reorderPath = usePathStore((s) => s.reorderPath);
+
+  const hiddenPaths = useEditorStore((s) => s.hiddenPaths);
+  const togglePathVisibility = useEditorStore((s) => s.togglePathVisibility);
+  const showAllPaths = useEditorStore((s) => s.showAllPaths);
+  const hideAllInactivePaths = useEditorStore((s) => s.hideAllInactivePaths);
 
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -106,6 +112,16 @@ export function PathTabs() {
     setDropIndex(null);
   }, []);
 
+  const handleActivate = useCallback(
+    (name: string) => {
+      if (hiddenPaths.includes(name)) {
+        togglePathVisibility(name);
+      }
+      setActivePath(name);
+    },
+    [setActivePath, hiddenPaths, togglePathVisibility]
+  );
+
   return (
     <div className="flex flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-white/[0.04] px-3 pt-2 pb-1.5">
       {pathOrder.map((name, index) => (
@@ -137,24 +153,39 @@ export function PathTabs() {
               className="text-accent-green border-accent-green/40 w-28 rounded border bg-zinc-900 px-2.5 py-1 text-xs font-medium outline-none"
             />
           ) : (
-            <button
-              onClick={() => setActivePath(name)}
-              onDoubleClick={() => startRename(name)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContextMenu({ name, x: e.clientX, y: e.clientY });
-              }}
-              className={`cursor-grab rounded-full border px-3 py-1.5 text-sm font-medium tracking-[0.04em] transition-all duration-200 active:cursor-grabbing ${
+            <div
+              className={`flex items-center rounded-full border transition-all duration-200 ${
                 activePathName === name
                   ? 'border-accent-green/20 bg-accent-green/[0.08] text-zinc-100 shadow-[0_1px_8px_rgba(0,255,170,0.14)]'
-                  : 'border-white/[0.07] bg-white/[0.02] text-zinc-300 hover:bg-white/[0.05] hover:text-zinc-100'
+                  : hiddenPaths.includes(name)
+                    ? 'border-white/[0.04] bg-white/[0.01] text-zinc-500'
+                    : 'border-white/[0.07] bg-white/[0.02] text-zinc-300 hover:bg-white/[0.05] hover:text-zinc-100'
               } ${dragIndex === index ? 'opacity-40' : ''}`}
             >
-              <span className="mr-2 font-mono text-[11px] text-zinc-400">
-                {(index + 1).toString().padStart(2, '0')}
-              </span>
-              {name}
-            </button>
+              <button
+                onClick={() => handleActivate(name)}
+                onDoubleClick={() => startRename(name)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ name, x: e.clientX, y: e.clientY });
+                }}
+                className="cursor-grab px-3 py-1.5 text-sm font-medium tracking-[0.04em] active:cursor-grabbing"
+              >
+                <span className="mr-2 font-mono text-[11px] text-zinc-400">
+                  {(index + 1).toString().padStart(2, '0')}
+                </span>
+                {name}
+              </button>
+              {activePathName !== name && (
+                <button
+                  onClick={() => togglePathVisibility(name)}
+                  className="mr-1.5 rounded-full p-1 opacity-40 hover:opacity-100 transition-opacity"
+                  title={hiddenPaths.includes(name) ? 'Show path' : 'Hide path'}
+                >
+                  {hiddenPaths.includes(name) ? <EyeOff size={11} /> : <Eye size={11} />}
+                </button>
+              )}
+            </div>
           )}
         </div>
       ))}
@@ -167,6 +198,27 @@ export function PathTabs() {
       >
         <Plus size={14} />
       </button>
+
+      {/* Bulk visibility controls */}
+      {pathOrder.length >= 2 && (
+        <div className="ml-1 flex items-center gap-0.5">
+          <button
+            onClick={showAllPaths}
+            className="rounded-full p-1.5 text-zinc-400 transition-colors hover:text-zinc-100 disabled:opacity-30"
+            title="Show all paths"
+            disabled={hiddenPaths.length === 0}
+          >
+            <Eye size={13} />
+          </button>
+          <button
+            onClick={hideAllInactivePaths}
+            className="rounded-full p-1.5 text-zinc-400 transition-colors hover:text-zinc-100"
+            title="Hide all other paths"
+          >
+            <EyeOff size={13} />
+          </button>
+        </div>
+      )}
 
       {/* Context menu */}
       {contextMenu && (
@@ -181,6 +233,17 @@ export function PathTabs() {
           >
             Rename
           </button>
+          {contextMenu.name !== activePathName && (
+            <button
+              className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-2 text-left text-xs tracking-[0.05em] text-zinc-300 transition-colors"
+              onClick={() => {
+                togglePathVisibility(contextMenu.name);
+                setContextMenu(null);
+              }}
+            >
+              {hiddenPaths.includes(contextMenu.name) ? 'Show' : 'Hide'}
+            </button>
+          )}
           <button
             className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-2 text-left text-xs tracking-[0.05em] text-zinc-300 transition-colors"
             onClick={() => {

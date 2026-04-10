@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { usePathStore } from './pathStore';
 
 interface EditorState {
   zoom: number;
@@ -15,6 +16,7 @@ interface EditorState {
   bottomPanelHeight: number;
   hoveredPointIndex: number | null;
   showWaypointGhosts: boolean;
+  hiddenPaths: string[];
 
   setZoom: (zoom: number) => void;
   setPanOffset: (offset: { x: number; y: number }) => void;
@@ -30,6 +32,9 @@ interface EditorState {
   setBottomPanelHeight: (height: number) => void;
   setHoveredPointIndex: (index: number | null) => void;
   toggleWaypointGhosts: () => void;
+  togglePathVisibility: (name: string) => void;
+  showAllPaths: () => void;
+  hideAllInactivePaths: () => void;
   resetView: () => void;
 }
 
@@ -48,6 +53,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   bottomPanelHeight: 200,
   hoveredPointIndex: null,
   showWaypointGhosts: true,
+  hiddenPaths: [],
 
   setZoom: (zoom) => set({ zoom }),
   setPanOffset: (panOffset) => set({ panOffset }),
@@ -65,5 +71,21 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setHoveredPointIndex: (hoveredPointIndex) => set({ hoveredPointIndex }),
   toggleWaypointGhosts: () =>
     set((state) => ({ showWaypointGhosts: !state.showWaypointGhosts })),
+  togglePathVisibility: (name) =>
+    set((state) => {
+      const isHidden = state.hiddenPaths.includes(name);
+      if (isHidden) {
+        return { hiddenPaths: state.hiddenPaths.filter((n) => n !== name) };
+      }
+      const activePathName = usePathStore.getState().activePathName;
+      if (name === activePathName) return state;
+      return { hiddenPaths: [...state.hiddenPaths, name] };
+    }),
+  showAllPaths: () => set({ hiddenPaths: [] }),
+  hideAllInactivePaths: () =>
+    set(() => {
+      const { pathOrder, activePathName } = usePathStore.getState();
+      return { hiddenPaths: pathOrder.filter((n) => n !== activePathName) };
+    }),
   resetView: () => set({ zoom: 1.0, panOffset: { x: 0, y: 0 } }),
 }));

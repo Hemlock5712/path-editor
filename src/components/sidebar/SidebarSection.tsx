@@ -9,7 +9,7 @@ export function SidebarSection({
 }) {
   return (
     <div
-      className="neon-panel animate-fadeIn relative overflow-hidden p-4"
+      className="neon-panel animate-fadeIn relative overflow-visible p-4"
       style={{ animationDelay: `${delay * 50}ms` }}
     >
       <div className="absolute top-0 left-0 h-8 w-8 border-t border-l border-accent-green/14" />
