@@ -30,6 +30,7 @@ interface PathState {
   paths: Record<string, NamedPath>;
   pathOrder: string[];
   activePathName: string | null;
+  hiddenPathNames: string[];
 
   // Named points registry (global, not per-path)
   namedPoints: Record<string, NamedPoint>;
@@ -51,6 +52,8 @@ interface PathState {
   renamePath: (oldName: string, newName: string) => void;
   deletePath: (name: string) => void;
   reorderPath: (fromIndex: number, toIndex: number) => void;
+  togglePathHidden: (name: string) => void;
+  setAllPathsHidden: (hidden: boolean) => void;
   getAllPaths: () => NamedPath[];
 
   // Point mutations (operate on active path)
@@ -239,6 +242,7 @@ export const usePathStore = create<PathState>()(
   },
   pathOrder: ['Path 1'],
   activePathName: 'Path 1',
+  hiddenPathNames: [],
 
   namedPoints: loadNamedPointsFromStorage(),
 
@@ -272,6 +276,7 @@ export const usePathStore = create<PathState>()(
         paths,
         pathOrder,
         activePathName: firstName,
+        hiddenPathNames: [],
         controlPoints: active
           ? active.controlPoints.map((p) => ({ ...p }))
           : [],
@@ -332,6 +337,7 @@ export const usePathStore = create<PathState>()(
         paths: remaining,
         pathOrder: newOrder,
         activePathName: newActive,
+        hiddenPathNames: state.hiddenPathNames.filter((n) => n !== name),
         controlPoints: target
           ? target.controlPoints.map((p) => ({ ...p }))
           : [],
@@ -364,6 +370,18 @@ export const usePathStore = create<PathState>()(
       return { pathOrder: order };
     }),
 
+  togglePathHidden: (name) =>
+    set((state) => ({
+      hiddenPathNames: state.hiddenPathNames.includes(name)
+        ? state.hiddenPathNames.filter((hiddenName) => hiddenName !== name)
+        : [...state.hiddenPathNames, name],
+    })),
+
+  setAllPathsHidden: (hidden) =>
+    set((state) => ({
+      hiddenPathNames: hidden ? [...state.pathOrder] : [],
+    })),
+
   getAllPaths: () => {
     const state = get();
     const updatedPaths = syncActiveToMap(state);
@@ -394,6 +412,7 @@ export const usePathStore = create<PathState>()(
         paths: { ...updatedPaths, [finalName]: newPath },
         pathOrder: [...state.pathOrder, finalName],
         activePathName: finalName,
+        hiddenPathNames: state.hiddenPathNames,
         controlPoints: [],
         controlPointRefs: [],
         headingWaypoints: [],
@@ -416,6 +435,9 @@ export const usePathStore = create<PathState>()(
       return {
         paths: { ...rest, [trimmed]: { ...pathData, name: trimmed } },
         pathOrder: state.pathOrder.map((n) => (n === oldName ? trimmed : n)),
+        hiddenPathNames: state.hiddenPathNames.map((name) =>
+          name === oldName ? trimmed : name
+        ),
         activePathName:
           state.activePathName === oldName ? trimmed : state.activePathName,
       };
@@ -1077,6 +1099,7 @@ export const usePathStore = create<PathState>()(
         paths: { ...updatedPaths, [finalName]: copy },
         pathOrder: [...state.pathOrder, finalName],
         activePathName: finalName,
+        hiddenPathNames: state.hiddenPathNames,
         controlPoints: copy.controlPoints.map((p) => ({ ...p })),
         controlPointRefs: [...copy.controlPointRefs],
         headingWaypoints: copy.headingWaypoints.map((h) => ({ ...h })),
@@ -1181,6 +1204,7 @@ export const usePathStore = create<PathState>()(
       paths: syncActiveToMap(state),
       pathOrder: state.pathOrder,
       activePathName: state.activePathName,
+      hiddenPathNames: state.hiddenPathNames,
       namedPoints: state.namedPoints,
       controlPoints: state.controlPoints,
       controlPointRefs: state.controlPointRefs,

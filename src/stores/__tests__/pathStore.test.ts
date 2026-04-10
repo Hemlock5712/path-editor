@@ -18,6 +18,7 @@ function resetStores() {
     },
     pathOrder: ['Path 1'],
     activePathName: 'Path 1',
+    hiddenPathNames: [],
     namedPoints: {},
     controlPoints: [],
     controlPointRefs: [],
@@ -125,6 +126,39 @@ describe('pathStore', () => {
         'Path 1',
         'Path 2',
       ]);
+    });
+
+    it('toggles hidden paths and preserves the flag through rename', () => {
+      usePathStore.getState().addPath('Path 2');
+
+      usePathStore.getState().togglePathHidden('Path 1');
+      expect(usePathStore.getState().hiddenPathNames).toEqual(['Path 1']);
+
+      usePathStore.getState().renamePath('Path 1', 'Start Path');
+      expect(usePathStore.getState().hiddenPathNames).toEqual(['Start Path']);
+    });
+
+    it('removes hidden state when deleting a path', () => {
+      usePathStore.getState().addPath('Path 2');
+      usePathStore.getState().togglePathHidden('Path 2');
+
+      usePathStore.getState().deletePath('Path 2');
+      expect(usePathStore.getState().hiddenPathNames).toEqual([]);
+    });
+
+    it('hides and shows all paths at once', () => {
+      usePathStore.getState().addPath('Path 2');
+      usePathStore.getState().addPath('Path 3');
+
+      usePathStore.getState().setAllPathsHidden(true);
+      expect(usePathStore.getState().hiddenPathNames).toEqual([
+        'Path 1',
+        'Path 2',
+        'Path 3',
+      ]);
+
+      usePathStore.getState().setAllPathsHidden(false);
+      expect(usePathStore.getState().hiddenPathNames).toEqual([]);
     });
   });
 

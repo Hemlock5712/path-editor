@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus } from 'lucide-react';
+import { Eye, EyeOff, Plus } from 'lucide-react';
 import { usePathStore } from '../../stores/pathStore';
 
 export function PathTabs() {
@@ -12,6 +12,9 @@ export function PathTabs() {
   const deletePath = usePathStore((s) => s.deletePath);
   const duplicatePath = usePathStore((s) => s.duplicatePath);
   const reorderPath = usePathStore((s) => s.reorderPath);
+  const hiddenPathNames = usePathStore((s) => s.hiddenPathNames);
+  const togglePathHidden = usePathStore((s) => s.togglePathHidden);
+  const setAllPathsHidden = usePathStore((s) => s.setAllPathsHidden);
 
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -70,6 +73,9 @@ export function PathTabs() {
     addPath(name);
   }, [pathOrder.length, paths, addPath]);
 
+  const allPathsHidden =
+    pathOrder.length > 0 && hiddenPathNames.length === pathOrder.length;
+
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
     setDragIndex(index);
     e.dataTransfer.effectAllowed = 'move';
@@ -108,7 +114,20 @@ export function PathTabs() {
 
   return (
     <div className="flex flex-shrink-0 items-center gap-0.5 overflow-x-auto px-3 pt-1.5 pb-0">
-      {pathOrder.map((name, index) => (
+      <button
+        onClick={() => setAllPathsHidden(!allPathsHidden)}
+        className="btn-ghost hover:text-accent-green mr-1 p-1 text-zinc-600 transition-colors"
+        title={allPathsHidden ? 'Show all paths on canvas' : 'Hide all paths on canvas'}
+        aria-label={
+          allPathsHidden ? 'Show all paths on canvas' : 'Hide all paths on canvas'
+        }
+      >
+        {allPathsHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+
+      {pathOrder.map((name, index) => {
+        const isHidden = hiddenPathNames.includes(name);
+        return (
         <div
           key={name}
           className={`relative flex-shrink-0 ${
@@ -137,24 +156,52 @@ export function PathTabs() {
               className="text-accent-green border-accent-green/40 w-28 rounded border bg-zinc-900 px-2.5 py-1 text-xs font-medium outline-none"
             />
           ) : (
-            <button
-              onClick={() => setActivePath(name)}
-              onDoubleClick={() => startRename(name)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContextMenu({ name, x: e.clientX, y: e.clientY });
-              }}
-              className={`cursor-grab border-b px-2.5 py-1 text-xs font-medium transition-all duration-200 active:cursor-grabbing ${
+            <div
+              className={`flex items-center border-b transition-all duration-200 ${
                 activePathName === name
                   ? 'text-accent-green border-accent-green shadow-[0_1px_6px_rgba(0,255,170,0.3)]'
                   : 'border-transparent text-zinc-600 hover:text-zinc-400'
               } ${dragIndex === index ? 'opacity-40' : ''}`}
             >
-              {name}
-            </button>
+              <button
+                onClick={() => setActivePath(name)}
+                onDoubleClick={() => startRename(name)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ name, x: e.clientX, y: e.clientY });
+                }}
+                className="cursor-grab px-2.5 py-1 text-xs font-medium active:cursor-grabbing"
+              >
+                {name}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePathHidden(name);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({ name, x: e.clientX, y: e.clientY });
+                }}
+                className={`mr-1 rounded p-1 transition-colors ${
+                  isHidden
+                    ? 'text-zinc-500 hover:text-zinc-300'
+                    : 'text-zinc-700 hover:text-accent-green'
+                }`}
+                title={isHidden ? 'Show path on canvas' : 'Hide path on canvas'}
+                aria-label={
+                  isHidden ? 'Show path on canvas' : 'Hide path on canvas'
+                }
+              >
+                {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+            </div>
           )}
         </div>
-      ))}
+        );
+      })}
 
       {/* Add path button */}
       <button
@@ -177,6 +224,17 @@ export function PathTabs() {
             onClick={() => startRename(contextMenu.name)}
           >
             Rename
+          </button>
+          <button
+            className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors"
+            onClick={() => {
+              togglePathHidden(contextMenu.name);
+              setContextMenu(null);
+            }}
+          >
+            {hiddenPathNames.includes(contextMenu.name)
+              ? 'Show Path'
+              : 'Hide Path'}
           </button>
           <button
             className="hover:bg-accent-green/10 hover:text-accent-green w-full px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors"

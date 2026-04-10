@@ -43,6 +43,7 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
   const selectedZoneId = useSelectionStore((s) => s.selectedZoneId);
   const paths = usePathStore((s) => s.paths);
   const activePathName = usePathStore((s) => s.activePathName);
+  const hiddenPathNames = usePathStore((s) => s.hiddenPathNames);
 
   const showGrid = useEditorStore((s) => s.showGrid);
   const showMinimap = useEditorStore((s) => s.showMinimap);
@@ -58,7 +59,9 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
   // Compute splines for inactive paths
   const inactivePaths = useMemo(() => {
     return Object.entries(paths)
-      .filter(([name]) => name !== activePathName)
+      .filter(
+        ([name]) => name !== activePathName && !hiddenPathNames.includes(name)
+      )
       .map(([name, path]) => ({
         name,
         controlPoints: path.controlPoints,
@@ -67,7 +70,7 @@ export function FieldCanvas({ splinePath, scrubberHeading }: FieldCanvasProps) {
             ? new SplinePath(path.controlPoints)
             : null,
       }));
-  }, [paths, activePathName]);
+  }, [paths, activePathName, hiddenPathNames]);
 
   // Zoom/pan
   const { transform, handleWheel, handleMiddleMouseDrag, resetView } =
