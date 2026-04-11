@@ -44,7 +44,7 @@ export default defineConfig({
               url.origin === self.location.origin &&
               request.method === 'GET' &&
               request.destination !== 'document',
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'path-editor-runtime-assets',
             },
