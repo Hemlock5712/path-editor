@@ -300,7 +300,7 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
       ctx.arc(sx, PADDING.top, 4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Value dot
+      // Value dot + axis labels
       const hRad = getHeadingAtDistance(scrubberDistance);
       if (!isNaN(hRad)) {
         const deg = (hRad * 180) / Math.PI;
@@ -312,6 +312,13 @@ export function HeadingChart({ analytics, splinePath }: HeadingChartProps) {
         ctx.strokeStyle = '#ef4444';
         ctx.lineWidth = 1;
         ctx.stroke();
+
+        // Axis value label (top-right corner)
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#ef4444';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${scrubberDistance.toFixed(2)} m  |  ${deg.toFixed(1)}\u00B0`, size.width - PADDING.right - 4, PADDING.top + 12);
+        ctx.textAlign = 'left';
       }
     }
   }, [

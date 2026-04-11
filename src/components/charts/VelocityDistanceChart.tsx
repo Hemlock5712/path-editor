@@ -226,7 +226,7 @@ export function VelocityDistanceChart({
       ctx.arc(sx, PADDING.top, 4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Value dot on the curve
+      // Value dot on the curve + axis labels
       if (profile) {
         const v = profile.getVelocity(scrubberDistance);
         const dotY = velToY(v);
@@ -237,6 +237,13 @@ export function VelocityDistanceChart({
         ctx.strokeStyle = '#ef4444';
         ctx.lineWidth = 1;
         ctx.stroke();
+
+        // Axis value label (top-right corner)
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#ef4444';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${scrubberDistance.toFixed(2)} m  |  ${v.toFixed(2)} m/s`, size.width - PADDING.right - 4, PADDING.top + 12);
+        ctx.textAlign = 'left';
       }
     }
   }, [

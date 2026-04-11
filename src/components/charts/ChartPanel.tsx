@@ -38,6 +38,7 @@ export function ChartPanel({
   const setActiveChart = useEditorStore((s) => s.setActiveChart);
   const setScrubberDistance = useEditorStore((s) => s.setScrubberDistance);
   const selectedPointIndex = useSelectionStore((s) => s.selectedPointIndex);
+  const selectionVersion = useSelectionStore((s) => s.selectionVersion);
   const settings = useSettingsStore();
   const constraints = usePathStore((s) => s.constraints);
   const maxVelocity = useMemo(() => {
@@ -51,7 +52,8 @@ export function ChartPanel({
     if (selectedPointIndex !== null && splinePath) {
       setScrubberDistance(splinePath.getArcLengthAtWaypointIndex(selectedPointIndex));
     }
-  }, [selectedPointIndex, splinePath, setScrubberDistance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPointIndex, selectionVersion, splinePath, setScrubberDistance]);
 
   return (
     <div className="flex h-full flex-col bg-[#050505]">

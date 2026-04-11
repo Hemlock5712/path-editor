@@ -262,7 +262,7 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
       ctx.arc(sx, PADDING.top, 4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Value dot
+      // Value dot + axis labels
       const accelVal = getAccelAtDistance(scrubberDistance);
       const dotY = accelToY(accelVal);
       ctx.fillStyle = '#ffffff';
@@ -272,6 +272,13 @@ export function AccelerationChart({ analytics }: AccelerationChartProps) {
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1;
       ctx.stroke();
+
+      // Axis value label (top-right corner)
+      ctx.font = '10px monospace';
+      ctx.fillStyle = '#ef4444';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${scrubberDistance.toFixed(2)} m  |  ${accelVal.toFixed(2)} m/s\u00B2`, size.width - PADDING.right - 4, PADDING.top + 12);
+      ctx.textAlign = 'left';
     }
   }, [
     analytics,
