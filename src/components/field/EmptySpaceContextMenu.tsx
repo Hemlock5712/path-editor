@@ -3,6 +3,7 @@ import { usePathStore } from '../../stores/pathStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { MenuItem, MenuSeparator, SubMenu } from '../ui/ContextMenuPrimitives';
 import { Plus, Crosshair, FlipVertical2, Copy, MapPin } from 'lucide-react';
+import { getPrimaryNamedPoints } from '../../types';
 
 interface EmptySpaceContextMenuProps {
   fieldX: number;
@@ -58,9 +59,7 @@ export function EmptySpaceContextMenu({
     onClose();
   }, [controlPoints.length, fieldX, fieldY, addRotationZone, onClose]);
 
-  const namedPointList = Object.values(namedPoints).filter(
-    (np) => !np.name.endsWith(' (Mirror)')
-  );
+  const namedPointList = getPrimaryNamedPoints(namedPoints);
 
   return (
     <>

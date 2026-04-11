@@ -3,6 +3,7 @@ import { usePathStore } from '../../stores/pathStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { MapPin, X, Plus, Link } from 'lucide-react';
 import { Combobox } from '../ui/Combobox';
+import { getPrimaryNamedPoints } from '../../types';
 
 export const NamedPointsPanel = memo(function NamedPointsPanel() {
   const namedPoints = usePathStore((s) => s.namedPoints);
@@ -29,12 +30,7 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
     if (savingName && saveInputRef.current) saveInputRef.current.focus();
   }, [savingName]);
 
-  // Only show primary points (exclude mirrors to reduce clutter)
-  const primaryPoints = Object.values(namedPoints).filter((np) => {
-    // A point is "primary" if its mirror's mirrorName points back to it
-    // and its name doesn't end with " (Mirror)"
-    return !np.name.endsWith(' (Mirror)');
-  });
+  const primaryPoints = getPrimaryNamedPoints(namedPoints);
 
   const handleStartRename = (name: string) => {
     setRenamingKey(name);

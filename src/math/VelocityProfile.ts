@@ -47,6 +47,23 @@ export class VelocityProfile {
     const kt = c.stallTorque / c.stallCurrent;
     const maxFrictionAccel = c.frictionCoefficient * GRAVITY;
 
+    // Compute theoretical max velocity from motor free speed, gear ratio, and wheel radius
+    const freeSpeedRadPerSec = (c.freeSpeedRpm * 2 * Math.PI) / 60;
+    const theoreticalMaxVelocity =
+      (freeSpeedRadPerSec / c.gearRatio) * c.wheelRadius;
+
+    // 0 = auto (use physics limit); positive = user-imposed cap
+    const effectiveMaxConstraint =
+      constraints.maxVelocity > 0
+        ? Math.min(constraints.maxVelocity, theoreticalMaxVelocity)
+        : theoreticalMaxVelocity;
+
+    // 0 = auto (use friction limit); positive = user-imposed cap
+    const effectiveMaxAccelConstraint =
+      constraints.maxAcceleration > 0
+        ? Math.min(constraints.maxAcceleration, maxFrictionAccel)
+        : maxFrictionAccel;
+
     this.totalLength = path.getTotalLength();
 
     const numSamples = Math.max(
@@ -63,10 +80,10 @@ export class VelocityProfile {
 
     // Precompute effective constraints per sample (zones are restrictive-only)
     const effectiveMaxVel: number[] = new Array(numSamples + 1).fill(
-      constraints.maxVelocity
+      effectiveMaxConstraint
     );
     const effectiveMaxAccel: number[] = new Array(numSamples + 1).fill(
-      constraints.maxAcceleration
+      effectiveMaxAccelConstraint
     );
 
     if (constraintZones && constraintZones.length > 0) {
@@ -131,7 +148,7 @@ export class VelocityProfile {
     // At Catmull-Rom knots, curvature can be discontinuous (C1 only). Without smoothing,
     // the passes immediately exploit freed-up friction budget when curvature drops,
     // but the robot's control loop can't react that fast.
-    const windowMeters = constraints.maxVelocity * REACTION_TIME;
+    const windowMeters = effectiveMaxConstraint * REACTION_TIME;
     const windowSamples = Math.max(1, Math.floor(windowMeters / ds));
     const smoothedKappas: number[] = new Array(numSamples + 1);
     for (let i = 0; i <= numSamples; i++) {

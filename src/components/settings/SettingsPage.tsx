@@ -177,7 +177,7 @@ export function SettingsPage() {
                 value={`${derived.motorAccelAtZero.toFixed(2)} m/s\u00B2`}
               />
               <ComputedRow
-                label="Motor accel @ max v"
+                label="Motor accel @ 95% max v"
                 value={`${derived.motorAccelAtMax.toFixed(2)} m/s\u00B2`}
               />
             </div>

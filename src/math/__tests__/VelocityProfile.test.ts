@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { SplinePath } from '../SplinePath';
 import { VelocityProfile } from '../VelocityProfile';
 import { DEFAULT_CONSTRAINTS } from '../../types';
-import { DEFAULT_SETTINGS } from '../../stores/settingsStore';
+import { DEFAULT_SETTINGS, computeDerived } from '../../stores/settingsStore';
 
 const controlPoints = [
   { x: 0, y: 0 },
@@ -47,10 +47,11 @@ describe('VelocityProfile', () => {
     }
   });
 
-  it('velocity is bounded by maxVelocity', () => {
+  it('velocity is bounded by theoretical max velocity', () => {
+    const { maxTheoreticalVelocity } = computeDerived(DEFAULT_SETTINGS);
     for (let i = 0; i < profile.velocities.length; i++) {
       expect(profile.velocities[i]).toBeLessThanOrEqual(
-        DEFAULT_CONSTRAINTS.maxVelocity + 0.01
+        maxTheoreticalVelocity + 0.01
       );
     }
   });
@@ -65,7 +66,8 @@ describe('VelocityProfile', () => {
     const midS = profile.totalLength / 2;
     const v = profile.getVelocity(midS);
     expect(v).toBeGreaterThan(0);
-    expect(v).toBeLessThanOrEqual(DEFAULT_CONSTRAINTS.maxVelocity + 0.01);
+    const { maxTheoreticalVelocity } = computeDerived(DEFAULT_SETTINGS);
+    expect(v).toBeLessThanOrEqual(maxTheoreticalVelocity + 0.01);
   });
 
   describe('with non-zero start/end velocity', () => {

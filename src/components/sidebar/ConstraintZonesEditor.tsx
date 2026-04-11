@@ -1,5 +1,6 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { usePathStore } from '../../stores/pathStore';
+import { useSettingsStore, computeDerived } from '../../stores/settingsStore';
 import { Plus, X, Gauge, Zap } from 'lucide-react';
 
 export const ConstraintZonesEditor = memo(function ConstraintZonesEditor() {
@@ -10,15 +11,27 @@ export const ConstraintZonesEditor = memo(function ConstraintZonesEditor() {
   const updateConstraintZone = usePathStore((s) => s.updateConstraintZone);
   const deleteConstraintZone = usePathStore((s) => s.deleteConstraintZone);
 
+  const settings = useSettingsStore();
+  const derived = useMemo(() => computeDerived(settings), [settings]);
+
   const maxIndex = Math.max(0, numPoints - 1);
 
   const handleAdd = () => {
+    // When path constraints are 0 (auto), use physics limits for zone defaults
+    const zoneMaxVel =
+      constraints.maxVelocity > 0
+        ? constraints.maxVelocity
+        : derived.maxTheoreticalVelocity;
+    const zoneMaxAccel =
+      constraints.maxAcceleration > 0
+        ? constraints.maxAcceleration
+        : derived.maxFrictionAccel;
     addConstraintZone({
       id: crypto.randomUUID(),
       startWaypointIndex: 1,
       endWaypointIndex: Math.min(2, maxIndex),
-      maxVelocity: constraints.maxVelocity,
-      maxAcceleration: constraints.maxAcceleration,
+      maxVelocity: zoneMaxVel,
+      maxAcceleration: zoneMaxAccel,
     });
   };
 

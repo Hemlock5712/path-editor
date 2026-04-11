@@ -8,6 +8,7 @@ import {
   RotationZone,
   WaypointFlag,
 } from '../types';
+import { getRobotConfig, computeDerived } from '../stores/settingsStore';
 
 const INDENT = '    '; // 4 spaces per level
 
@@ -57,7 +58,17 @@ function generateSinglePath(
   }
 
   const chainIndent = INDENT.repeat(3);
-  let constraintChain = `VelocityConstraints.defaults()\n${chainIndent}.withMaxVelocity(${constraints.maxVelocity})\n${chainIndent}.withMaxAcceleration(${constraints.maxAcceleration})`;
+  // When constraints are 0 (auto), export the computed physics limits from robot config
+  const robotDerived = computeDerived(getRobotConfig());
+  const exportMaxVelocity =
+    constraints.maxVelocity > 0
+      ? constraints.maxVelocity
+      : robotDerived.maxTheoreticalVelocity;
+  const exportMaxAccel =
+    constraints.maxAcceleration > 0
+      ? constraints.maxAcceleration
+      : robotDerived.maxFrictionAccel;
+  let constraintChain = `VelocityConstraints.defaults()\n${chainIndent}.withMaxVelocity(${exportMaxVelocity})\n${chainIndent}.withMaxAcceleration(${exportMaxAccel})`;
   if (constraints.startVelocity !== 0) {
     constraintChain += `\n${chainIndent}.withStartVelocity(${constraints.startVelocity})`;
   }

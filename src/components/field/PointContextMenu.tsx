@@ -3,6 +3,7 @@ import { usePathStore } from '../../stores/pathStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { MenuItem, MenuSeparator, SubMenu } from '../ui/ContextMenuPrimitives';
 import { Trash2, Plus, Navigation, MapPin, Link, Unlink } from 'lucide-react';
+import { getPrimaryNamedPoints } from '../../types';
 
 interface PointContextMenuProps {
   pointIndex: number;
@@ -98,9 +99,7 @@ export function PointContextMenu({
     (hw) => Math.round(hw.waypointIndex) === pointIndex
   );
   const pointRef = controlPointRefs[pointIndex];
-  const namedPointList = Object.values(namedPoints).filter(
-    (np) => !np.name.endsWith(' (Mirror)')
-  );
+  const namedPointList = getPrimaryNamedPoints(namedPoints);
 
   return (
     <>

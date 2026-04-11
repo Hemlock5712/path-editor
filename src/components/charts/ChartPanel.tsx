@@ -1,4 +1,8 @@
+import { useEffect, useMemo } from 'react';
 import { useEditorStore } from '../../stores/editorStore';
+import { useSelectionStore } from '../../stores/selectionStore';
+import { useSettingsStore, computeDerived } from '../../stores/settingsStore';
+import { usePathStore } from '../../stores/pathStore';
 import { VelocityDistanceChart } from './VelocityDistanceChart';
 import { VelocityTimeChart } from './VelocityTimeChart';
 import { CurvatureChart } from './CurvatureChart';
@@ -32,7 +36,22 @@ export function ChartPanel({
 }: ChartPanelProps) {
   const activeChart = useEditorStore((s) => s.activeChart);
   const setActiveChart = useEditorStore((s) => s.setActiveChart);
-  const maxVelocity = 5.0;
+  const setScrubberDistance = useEditorStore((s) => s.setScrubberDistance);
+  const selectedPointIndex = useSelectionStore((s) => s.selectedPointIndex);
+  const settings = useSettingsStore();
+  const constraints = usePathStore((s) => s.constraints);
+  const maxVelocity = useMemo(() => {
+    const { maxTheoreticalVelocity } = computeDerived(settings);
+    return constraints.maxVelocity > 0
+      ? Math.min(constraints.maxVelocity, maxTheoreticalVelocity)
+      : maxTheoreticalVelocity;
+  }, [settings, constraints.maxVelocity]);
+
+  useEffect(() => {
+    if (selectedPointIndex !== null && splinePath) {
+      setScrubberDistance(splinePath.getArcLengthAtWaypointIndex(selectedPointIndex));
+    }
+  }, [selectedPointIndex, splinePath, setScrubberDistance]);
 
   return (
     <div className="flex h-full flex-col bg-[#050505]">

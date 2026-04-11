@@ -71,7 +71,6 @@ interface PathState {
   renameNamedPoint: (oldName: string, newName: string) => void;
   updateNamedPointPosition: (name: string, point: Point) => void;
   placeNamedPoint: (name: string) => void;
-  placeNamedPointAt: (name: string, afterIndex: number) => void;
   savePointAsNamed: (index: number, name: string) => void;
   linkPointToNamed: (index: number, name: string) => void;
   unlinkPoint: (index: number) => void;
@@ -209,6 +208,25 @@ function propagateNamedPoints(
 function mirrorHeading(degrees: number | null): number | null {
   if (degrees === null) return null;
   return ((-degrees % 360) + 360) % 360;
+}
+
+function createNamedPointPair(
+  name: string,
+  x: number,
+  y: number,
+  heading: number | null
+): Record<string, NamedPoint> {
+  const mirrorName = `${name} (Mirror)`;
+  return {
+    [name]: { name, x, y, headingDegrees: heading, mirrorName },
+    [mirrorName]: {
+      name: mirrorName,
+      x,
+      y: FIELD_HEIGHT - y,
+      headingDegrees: mirrorHeading(heading),
+      mirrorName: name,
+    },
+  };
 }
 
 /** Load named points from localStorage. */
@@ -624,26 +642,12 @@ export const usePathStore = create<PathState>()(
   addNamedPoint: (name, point, headingDegrees) =>
     set((state) => {
       const heading = headingDegrees ?? null;
-      const mirrorName = `${name} (Mirror)`;
       const newNamedPoints: Record<string, NamedPoint> = {
         ...state.namedPoints,
-        [name]: {
-          name,
-          x: point.x,
-          y: point.y,
-          headingDegrees: heading,
-          mirrorName,
-        },
-        [mirrorName]: {
-          name: mirrorName,
-          x: point.x,
-          y: FIELD_HEIGHT - point.y,
-          headingDegrees: mirrorHeading(heading),
-          mirrorName: name,
-        },
+        ...createNamedPointPair(name, point.x, point.y, heading),
       };
 
-      return { namedPoints: newNamedPoints };
+      return { ...pushUndo(state), namedPoints: newNamedPoints };
     }),
 
   deleteNamedPoint: (name) =>
@@ -779,74 +783,6 @@ export const usePathStore = create<PathState>()(
       };
     }),
 
-  placeNamedPointAt: (name, afterIndex) =>
-    set((state) => {
-      const np = state.namedPoints[name];
-      if (!np) return state;
-
-      const controlPoints = [...state.controlPoints];
-      controlPoints.splice(afterIndex + 1, 0, { x: np.x, y: np.y });
-
-      const controlPointRefs = [...state.controlPointRefs];
-      controlPointRefs.splice(afterIndex + 1, 0, name);
-
-      const headingWaypoints = state.headingWaypoints.map((hw) => ({
-        ...hw,
-        waypointIndex:
-          hw.waypointIndex > afterIndex
-            ? hw.waypointIndex + 1
-            : hw.waypointIndex,
-      }));
-      if (np.headingDegrees !== null) {
-        headingWaypoints.push({
-          waypointIndex: afterIndex + 1,
-          degrees: np.headingDegrees,
-        });
-      }
-
-      const constraintZones = state.constraintZones.map((z) => ({
-        ...z,
-        startWaypointIndex:
-          z.startWaypointIndex > afterIndex
-            ? z.startWaypointIndex + 1
-            : z.startWaypointIndex,
-        endWaypointIndex:
-          z.endWaypointIndex > afterIndex
-            ? z.endWaypointIndex + 1
-            : z.endWaypointIndex,
-      }));
-
-      const rotationZones = state.rotationZones.map((z) => ({
-        ...z,
-        startWaypointIndex:
-          z.startWaypointIndex > afterIndex
-            ? z.startWaypointIndex + 1
-            : z.startWaypointIndex,
-        endWaypointIndex:
-          z.endWaypointIndex > afterIndex
-            ? z.endWaypointIndex + 1
-            : z.endWaypointIndex,
-      }));
-
-      const waypointFlags = state.waypointFlags.map((flag) => ({
-        ...flag,
-        waypointIndex:
-          flag.waypointIndex > afterIndex
-            ? flag.waypointIndex + 1
-            : flag.waypointIndex,
-      }));
-
-      return {
-        ...pushUndo(state),
-        controlPoints,
-        controlPointRefs,
-        headingWaypoints,
-        constraintZones,
-        rotationZones,
-        waypointFlags,
-      };
-    }),
-
   savePointAsNamed: (index, name) =>
     set((state) => {
       const pt = state.controlPoints[index];
@@ -857,24 +793,15 @@ export const usePathStore = create<PathState>()(
       );
       const heading = headingWp ? headingWp.degrees : null;
 
-      const mirrorName = `${name} (Mirror)`;
       const newNamedPoints: Record<string, NamedPoint> = {
         ...state.namedPoints,
-        [name]: { name, x: pt.x, y: pt.y, headingDegrees: heading, mirrorName },
-        [mirrorName]: {
-          name: mirrorName,
-          x: pt.x,
-          y: FIELD_HEIGHT - pt.y,
-          headingDegrees: mirrorHeading(heading),
-          mirrorName: name,
-        },
+        ...createNamedPointPair(name, pt.x, pt.y, heading),
       };
 
       const controlPointRefs = [...state.controlPointRefs];
       controlPointRefs[index] = name;
 
-
-      return { namedPoints: newNamedPoints, controlPointRefs };
+      return { ...pushUndo(state), namedPoints: newNamedPoints, controlPointRefs };
     }),
 
   linkPointToNamed: (index, name) =>
@@ -1061,21 +988,24 @@ export const usePathStore = create<PathState>()(
     }),
 
   updateWaypointFlag: (id, updates) =>
-    set((state) => ({
-      ...pushUndo(state),
-      waypointFlags: state.waypointFlags.map((flag) =>
-        flag.id === id
-          ? {
-              ...flag,
-              ...updates,
-              label:
-                updates.label !== undefined
-                  ? updates.label.trim() || flag.label
-                  : flag.label,
-            }
-          : flag
-      ),
-    })),
+    set((state) => {
+      if (updates.label !== undefined && !updates.label.trim()) return state;
+      return {
+        ...pushUndo(state),
+        waypointFlags: state.waypointFlags.map((flag) =>
+          flag.id === id
+            ? {
+                ...flag,
+                ...updates,
+                label:
+                  updates.label !== undefined
+                    ? updates.label.trim()
+                    : flag.label,
+              }
+            : flag
+        ),
+      };
+    }),
 
   deleteWaypointFlag: (id) =>
     set((state) => ({

@@ -61,10 +61,6 @@ export function PointInfo({
   // Gather flag labels from ALL paths
   const allFlagOptions = useMemo(() => {
     const seen = new Set<string>();
-    for (const flag of waypointFlags) {
-      const t = flag.label.trim();
-      if (t) seen.add(t);
-    }
     for (const path of Object.values(paths)) {
       for (const flag of path.waypointFlags || []) {
         const t = flag.label.trim();
@@ -74,7 +70,7 @@ export function PointInfo({
     return Array.from(seen)
       .sort((a, b) => a.localeCompare(b))
       .map((label) => ({ value: label, label }));
-  }, [paths, waypointFlags]);
+  }, [paths]);
 
   // Compute derived values if we have a built spline
   let distance: number | null = null;
