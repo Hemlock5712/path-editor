@@ -188,17 +188,33 @@ export function PointContextMenu({
           )}
           {namedPointList.length > 0 && (
             <SubMenu icon={<Link size={14} />} label="Link to Named Point">
-              {namedPointList.map((np) => (
-                <MenuItem
-                  key={np.name}
-                  icon={<MapPin size={12} />}
-                  label={np.name}
-                  onClick={() => {
-                    linkPointToNamed(pointIndex, np.name);
-                    onClose();
-                  }}
-                />
-              ))}
+              {namedPointList.flatMap((np) => {
+                const items = [
+                  <MenuItem
+                    key={np.name}
+                    icon={<MapPin size={12} />}
+                    label={np.name}
+                    onClick={() => {
+                      linkPointToNamed(pointIndex, np.name);
+                      onClose();
+                    }}
+                  />,
+                ];
+                if (np.mirrorName && namedPoints[np.mirrorName]) {
+                  items.push(
+                    <MenuItem
+                      key={np.mirrorName}
+                      icon={<MapPin size={12} />}
+                      label={`${np.name} (Flipped)`}
+                      onClick={() => {
+                        linkPointToNamed(pointIndex, np.mirrorName!);
+                        onClose();
+                      }}
+                    />
+                  );
+                }
+                return items;
+              })}
             </SubMenu>
           )}
         </>

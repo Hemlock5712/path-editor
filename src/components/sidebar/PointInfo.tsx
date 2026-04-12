@@ -145,7 +145,7 @@ export function PointInfo({
           <div className="mb-3 flex items-center gap-2 text-[12px] text-zinc-200">
             <MapPin size={13} className="text-accent-green" />
             <span>
-              Point {selectedPointIndex} of {totalPoints}
+              Point {selectedPointIndex + 1} of {totalPoints}
             </span>
             <div className="ml-auto flex items-center gap-1">
               <button

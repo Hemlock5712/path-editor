@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { usePathStore } from '../../stores/pathStore';
 import { useSelectionStore } from '../../stores/selectionStore';
-import { MapPin, X, Plus, Link } from 'lucide-react';
+import { MapPin, X, Plus, Link, FlipVertical2 } from 'lucide-react';
 import { Combobox } from '../ui/Combobox';
 import { getPrimaryNamedPoints } from '../../types';
 
@@ -67,12 +67,25 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
 
   const pointOptions = useMemo(
     () =>
-      primaryPoints.map((np) => ({
-        value: np.name,
-        label: np.name,
-        detail: `(${np.x.toFixed(2)}, ${np.y.toFixed(2)})${np.headingDegrees !== null ? ` hdg: ${np.headingDegrees.toFixed(0)}\u00B0` : ''}`,
-      })),
-    [primaryPoints]
+      primaryPoints.flatMap((np) => {
+        const mirror = np.mirrorName ? namedPoints[np.mirrorName] : null;
+        const items = [
+          {
+            value: np.name,
+            label: np.name,
+            detail: `(${np.x.toFixed(2)}, ${np.y.toFixed(2)})${np.headingDegrees !== null ? ` hdg: ${np.headingDegrees.toFixed(0)}\u00B0` : ''}`,
+          },
+        ];
+        if (mirror) {
+          items.push({
+            value: mirror.name,
+            label: `${np.name} (Flipped)`,
+            detail: `(${mirror.x.toFixed(2)}, ${mirror.y.toFixed(2)})${mirror.headingDegrees !== null ? ` hdg: ${mirror.headingDegrees.toFixed(0)}\u00B0` : ''}`,
+          });
+        }
+        return items;
+      }),
+    [primaryPoints, namedPoints]
   );
 
   const canSave = selectedPointIndex !== null && controlPoints.length > 0;
@@ -135,6 +148,15 @@ export const NamedPointsPanel = memo(function NamedPointsPanel() {
                 >
                   <Plus size={12} />
                 </button>
+                {np.mirrorName && namedPoints[np.mirrorName] && (
+                  <button
+                    onClick={() => placeNamedPoint(np.mirrorName!)}
+                    className="btn-ghost p-0.5 text-zinc-300 hover:text-accent-green"
+                    title="Place flipped on active path"
+                  >
+                    <FlipVertical2 size={12} />
+                  </button>
+                )}
                 <button
                   onClick={() => deleteNamedPoint(np.name)}
                   className="btn-ghost p-0.5 text-zinc-300 hover:text-red-400"

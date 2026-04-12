@@ -17,6 +17,7 @@ import frc.robot.utils.path.RotationSupplier;
 import frc.robot.utils.path.SplinePath;
 import frc.robot.utils.path.VelocityConstraints;
 import frc.robot.utils.path.VelocityProfile;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.DoubleSupplier;
 import org.littletonrobotics.junction.Logger;
@@ -76,6 +77,14 @@ public class FollowPath extends Command {
   private boolean limitOverrideVx = true;
   private boolean limitOverrideVy = true;
   private boolean limitOverrideOmega = true;
+
+  // Center of rotation zones: rotate around a custom point between waypoints
+  public record CenterOfRotationZone(
+      int startWaypointIndex, int endWaypointIndex, Translation2d center) {}
+
+  private final List<CenterOfRotationZone> centerOfRotationZones = new ArrayList<>();
+  private double[] corZoneStartS;
+  private double[] corZoneEndS;
 
   // State tracking between execute cycles (same pattern as DriveToPoint/OrbitDrive)
   private ChassisSpeeds lastCommandedVelocity = new ChassisSpeeds();
@@ -237,6 +246,21 @@ public class FollowPath extends Command {
   }
 
   /**
+   * Adds a center of rotation zone. Between the given waypoints, the swerve drive will rotate
+   * around the specified robot-relative offset instead of the robot center.
+   *
+   * @param startWaypoint Start waypoint index (inclusive)
+   * @param endWaypoint End waypoint index (inclusive)
+   * @param center Robot-relative offset to rotate around (e.g. turret position)
+   * @return This command for chaining
+   */
+  public FollowPath withCenterOfRotation(
+      int startWaypoint, int endWaypoint, Translation2d center) {
+    centerOfRotationZones.add(new CenterOfRotationZone(startWaypoint, endWaypoint, center));
+    return this;
+  }
+
+  /**
    * Sets the maximum fraction of friction budget that rotation can consume.
    *
    * <p>When rotation demands exceed this fraction, omega is capped and translation gets the
@@ -345,6 +369,16 @@ public class FollowPath extends Command {
     if (rotationSupplier == null) {
       Rotation2d currentHeading = swerve.getPose().getRotation();
       rotationSupplier = frc.robot.utils.path.RotationSuppliers.holdHeading(currentHeading);
+    }
+
+    // Pre-compute arc-length ranges for center of rotation zones
+    corZoneStartS = new double[centerOfRotationZones.size()];
+    corZoneEndS = new double[centerOfRotationZones.size()];
+    for (int i = 0; i < centerOfRotationZones.size(); i++) {
+      corZoneStartS[i] =
+          path.getArcLengthAtWaypointIndex(centerOfRotationZones.get(i).startWaypointIndex());
+      corZoneEndS[i] =
+          path.getArcLengthAtWaypointIndex(centerOfRotationZones.get(i).endWaypointIndex());
     }
 
     // Initial projection: find where the robot is on the path
@@ -481,7 +515,15 @@ public class FollowPath extends Command {
             vxUnlimited ? vx : limitedOutput.vxMetersPerSecond,
             vyUnlimited ? vy : limitedOutput.vyMetersPerSecond,
             omegaUnlimited ? omega : limitedOutput.omegaRadiansPerSecond);
-    swerve.setControl(request.withSpeeds(output));
+    // Apply center of rotation if within a configured zone
+    Translation2d activeCenter = Translation2d.kZero;
+    for (int i = 0; i < centerOfRotationZones.size(); i++) {
+      if (sRobot >= corZoneStartS[i] && sRobot <= corZoneEndS[i]) {
+        activeCenter = centerOfRotationZones.get(i).center();
+        break;
+      }
+    }
+    swerve.setControl(request.withCenterOfRotation(activeCenter).withSpeeds(output));
 
     // Update state for next cycle
     lastCommandedVelocity = output;
