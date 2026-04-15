@@ -85,10 +85,16 @@ export function usePlayback(
   const play = useCallback(() => {
     if (!splinePath || !velocityProfile) return;
     const currentDistance = useEditorStore.getState().scrubberDistance;
-    playbackSRef.current = currentDistance;
+    const totalLength = splinePath.totalLength;
+    const startDistance =
+      totalLength > 0 && currentDistance >= totalLength - 1e-6
+        ? 0
+        : currentDistance;
+    playbackSRef.current = startDistance;
+    setScrubberDistance(startDistance);
     lastFrameTimeRef.current = 0;
     setPlaybackState('playing');
-  }, [splinePath, velocityProfile, setPlaybackState]);
+  }, [splinePath, velocityProfile, setPlaybackState, setScrubberDistance]);
 
   const pause = useCallback(() => {
     setPlaybackState('paused');
