@@ -209,7 +209,6 @@ export function drawRotationZones(
 ): void {
   if (rotationZones.length === 0 || splinePath.totalLength <= 0) return;
 
-  const numCPs = splinePath.controlPoints.length;
   const lineWidth = Math.max(6, Math.min(16, 12 / Math.sqrt(transform.zoom)));
   const numSamples = Math.max(200, Math.floor(transform.zoom * 200));
   const ds = splinePath.totalLength / numSamples;
@@ -217,10 +216,8 @@ export function drawRotationZones(
 
   for (const zone of rotationZones) {
     const isSelected = zone.id === selectedZoneId;
-    const startFrac = zone.startWaypointIndex / (numCPs - 1);
-    const endFrac = zone.endWaypointIndex / (numCPs - 1);
-    const startS = startFrac * splinePath.totalLength;
-    const endS = endFrac * splinePath.totalLength;
+    const startS = splinePath.getArcLengthAtWaypointIndex(zone.startWaypointIndex);
+    const endS = splinePath.getArcLengthAtWaypointIndex(zone.endWaypointIndex);
 
     const color = isSelected
       ? 'rgba(255, 153, 51, 0.4)'

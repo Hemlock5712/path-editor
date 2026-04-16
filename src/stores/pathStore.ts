@@ -530,9 +530,15 @@ export const usePathStore = create<PathState>()(
         ...pushUndo(state),
         controlPoints: state.controlPoints.filter((_, i) => i !== index),
         controlPointRefs: state.controlPointRefs.filter((_, i) => i !== index),
-        headingWaypoints: state.headingWaypoints.filter(
-          (hw) => Math.round(hw.waypointIndex) !== index
-        ),
+        headingWaypoints: state.headingWaypoints
+          .filter((hw) => Math.round(hw.waypointIndex) !== index)
+          .map((hw) => ({
+            ...hw,
+            waypointIndex:
+              hw.waypointIndex > index
+                ? hw.waypointIndex - 1
+                : hw.waypointIndex,
+          })),
         constraintZones: state.constraintZones
           .filter(
             (z) =>

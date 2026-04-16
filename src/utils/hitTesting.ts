@@ -53,8 +53,7 @@ export function hitTestRotationZone(
     for (const handle of ['start', 'end'] as const) {
       const idx =
         handle === 'start' ? zone.startWaypointIndex : zone.endWaypointIndex;
-      const frac = idx / (numControlPoints - 1);
-      const s = frac * splinePath.totalLength;
+      const s = splinePath.getArcLengthAtWaypointIndex(idx);
       const pt = splinePath.getPoint(s);
       const pc = fieldToCanvas(pt, cw, ch, transform);
       if (

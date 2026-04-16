@@ -165,10 +165,14 @@ public final class RotationSuppliers {
    * @return Arc-length in meters
    */
   private static double waypointIndexToArcLength(SplinePath path, double waypointIndex) {
-    int numSegments = path.getNumSegments(); // N-1 for N control points
-    int numCPs = numSegments + 1;
-    double frac = waypointIndex / (numCPs - 1);
-    return frac * path.getTotalLength();
+    int lo = (int) waypointIndex;
+    int hi = lo + 1;
+    double frac = waypointIndex - lo;
+
+    double loS = path.getArcLengthAtWaypointIndex(lo);
+    double hiS = path.getArcLengthAtWaypointIndex(hi);
+
+    return loS + frac * (hiS - loS);
   }
 
   // ---- Internal helpers ----
