@@ -50,18 +50,10 @@ export const JAVA_FILES: JavaFileInfo[] = [
     filename: 'RotationSupplier.java',
     relativePath: 'utils/path/RotationSupplier.java',
     packagePath: 'frc/robot/utils/path/',
-    description: 'Functional interface for path-aware rotation strategies',
-    category: 'core',
-    lineCount: 24,
-  },
-  {
-    filename: 'RotationSuppliers.java',
-    relativePath: 'utils/path/RotationSuppliers.java',
-    packagePath: 'frc/robot/utils/path/',
     description:
-      'Factory methods for heading strategies: face forward, face point, hold, interpolate, zone-based',
+      'Heading strategies with static factories: face forward, face point, hold, interpolate, zone-based',
     category: 'core',
-    lineCount: 273,
+    lineCount: 200,
   },
   {
     filename: 'PathData.java',
@@ -70,7 +62,7 @@ export const JAVA_FILES: JavaFileInfo[] = [
     description:
       'Data model record with red alliance mirroring for control points, headings, constraints, and rotation zones',
     category: 'core',
-    lineCount: 104,
+    lineCount: 196,
   },
   {
     filename: 'ProjectionResult.java',

@@ -3,6 +3,7 @@ package frc.robot.utils.path;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import java.util.IdentityHashMap;
 import java.util.List;
 
 /**
@@ -45,7 +46,8 @@ public record PathData(
    * @param maxVelocity Maximum velocity in m/s within this zone
    * @param maxAcceleration Maximum acceleration in m/s² within this zone
    */
-  public record ConstraintZone(int startWaypointIndex, int endWaypointIndex, double maxVelocity, double maxAcceleration) {}
+  public record ConstraintZone(
+      int startWaypointIndex, int endWaypointIndex, double maxVelocity, double maxAcceleration) {}
 
   /**
    * A rotation zone that overrides the default heading strategy for a segment of the path.
@@ -56,10 +58,7 @@ public record PathData(
    * @param targetPoint Field point the robot should face within this zone
    */
   public record RotationZone(
-      String id,
-      double startWaypointIndex,
-      double endWaypointIndex,
-      Translation2d targetPoint) {}
+      String id, double startWaypointIndex, double endWaypointIndex, Translation2d targetPoint) {}
 
   /**
    * A label attached to a specific control-point waypoint.
@@ -133,5 +132,65 @@ public record PathData(
             .map(HeadingWaypoint::heading)
             .orElse(Rotation2d.kZero);
     return new Pose2d(start, heading);
+  }
+
+  /**
+   * Returns the target (ending) pose of this path.
+   *
+   * <p>The position is the last control point. The heading is the heading waypoint at the last
+   * index, or zero if none exists.
+   */
+  public Pose2d getTargetPose() {
+    int lastIndex = controlPoints.size() - 1;
+    Translation2d end = controlPoints.get(lastIndex);
+    Rotation2d heading =
+        headingWaypoints.stream()
+            .filter(hw -> hw.waypointIndex() == lastIndex)
+            .findFirst()
+            .map(HeadingWaypoint::heading)
+            .orElse(Rotation2d.kZero);
+    return new Pose2d(end, heading);
+  }
+
+  /**
+   * Returns a copy of this path with the first control point replaced.
+   *
+   * @param newStart The new starting position
+   */
+  public PathData withStartingPoint(Translation2d newStart) {
+    var newPoints = new java.util.ArrayList<>(controlPoints);
+    newPoints.set(0, newStart);
+    return new PathData(
+        List.copyOf(newPoints),
+        headingWaypoints,
+        globalConstraints,
+        constraintZones,
+        rotationZones,
+        waypointFlags);
+  }
+
+  // ---- Precomputation cache (identity-based, since PathData objects are reused) ----
+
+  private static final IdentityHashMap<PathData, SplinePath> SPLINE_CACHE = new IdentityHashMap<>();
+  private static final IdentityHashMap<PathData, VelocityProfile> PROFILE_CACHE =
+      new IdentityHashMap<>();
+
+  /** Returns the SplinePath for this PathData, computing and caching on first call. */
+  public SplinePath getSplinePath() {
+    return SPLINE_CACHE.computeIfAbsent(this, pd -> new SplinePath(pd.controlPoints()));
+  }
+
+  /** Returns the VelocityProfile for this PathData, computing and caching on first call. */
+  public VelocityProfile getVelocityProfile() {
+    return PROFILE_CACHE.computeIfAbsent(
+        this,
+        pd ->
+            new VelocityProfile(pd.getSplinePath(), pd.globalConstraints(), pd.constraintZones()));
+  }
+
+  /** Eagerly computes and caches the SplinePath and VelocityProfile for this PathData. */
+  public void precompute() {
+    getSplinePath();
+    getVelocityProfile();
   }
 }
