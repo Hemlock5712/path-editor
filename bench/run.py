@@ -32,9 +32,10 @@ OUT = os.path.join(HERE, "out")
 MD = os.path.join(HERE, "RESULTS.md")
 START, END = "<!-- generated:start -->", "<!-- generated:end -->"
 
-MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_curve", "bline_tuned",
+MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_caps", "bline_tuned", "bline_tuned_caps",
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
-                "drive_to_pose_chain"]
+                "drive_to_pose_chain", "choreo", "choreo_hybrid"]
+TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme"}
 EXTRA = {  # registry entries that only exist in the bench driver
     "pathplanner_tuned": ("pathplanner", None, "PathPlanner (tuned) + hold"),
     "pathplanner_hold_cof09": ("pathplanner", {"hold": True, "cof": 0.9}, "PathPlanner (kP 5) + hold, wheel COF 0.9"),
@@ -44,19 +45,23 @@ SWEEP_POSE = "truth"  # tune the control law, not the odometry calibration luck 
 TIME_PER_METRE_CT = 10.0  # s per metre of RMS cross-track in the tuning score (10 cm costs 1 s)
 
 
-def bline_grid(quick):
+def bline_grid(quick, caps=False):
     if quick:
-        return [{"kp": kp, "kp_ct": 2.0, "tol": 0.01, "radius": 0.3} for kp in (2.0, 5.0)]
+        return [{"kp": kp, "kp_ct": 2.0, "tol": 0.01, "radius": 0.45, "caps": caps} for kp in (2.0, 5.0)]
+    if caps:  # BLine-Web's seeding assumes the corner's handoff radius, so the radius is swept with it
+        return [{"kp": kp, "kp_ct": ct, "tol": 0.01, "radius": r, "caps": True}
+                for kp in (1.5, 2.0, 3.0, 4.0, 5.0) for ct in (2.0, 4.0, 6.0)
+                for r in (0.30, 0.45, 0.60, 0.90, 1.20, 1.60)]
     return [{"kp": kp, "kp_ct": ct, "tol": tol, "radius": r}
             for kp in (1.5, 2.0, 3.0, 4.0, 5.0) for ct in (2.0, 4.0, 6.0) for tol in (0.03, 0.01)
-            for r in (0.30, 0.45, 0.60, 0.90, 1.20)]
+            for r in (0.60, 0.90, 1.20, 1.60, 2.00, 2.50, 3.00)]
 
 
 def pp_grid(quick):
     if quick:
         return [{"kp": kp, "kp_rot": 5.0, "hold": True} for kp in (5.0, 10.0)]
-    return [{"kp": kp, "kp_rot": kr, "hold": True, "cof": cof} for kp in (3.0, 5.0, 7.0, 10.0) for kr in (5.0, 10.0)
-            for cof in (0.7, 0.9, 1.15)]
+    return [{"kp": kp, "kp_rot": kr, "hold": True, "cof": cof} for kp in (5.0, 7.0, 10.0, 15.0, 20.0)
+            for kr in (5.0, 10.0) for cof in (0.4, 0.5, 0.6, 0.7, 0.9, 1.15)]
 
 
 def resolve(key, tuned):
@@ -65,7 +70,7 @@ def resolve(key, tuned):
         base, opts, _ = EXTRA[key]
         return base, (tuned[key] if opts is None else opts)
     if METHODS[key][2] is None:
-        return key.replace("_tuned", "_readme"), tuned[key]
+        return TUNED_BASE[key], tuned[key]
     return key, None
 
 
@@ -94,6 +99,7 @@ def agg(rows):
         out[k + "_mean"] = float(good.mean()) if len(good) else None
         out[k + "_worst"] = float(good.max()) if len(good) else None
         out[k + "_median"] = float(np.median(good)) if len(good) else None
+        out[k + "_min"] = float(good.min()) if len(good) else None
         out[k + "_nan"] = int(np.isnan(a).sum())
     return out
 
@@ -130,6 +136,26 @@ def sweep(pool, base_key, grid, courses):
     return best["opts"], table
 
 
+def _pf_job(args):
+    from pathfind import run_pathfind
+
+    return run_pathfind(args)
+
+
+def pathfind_grid(pool, seeds, poses):
+    from pathfind import PATHFIND_METHODS, planned_geometry
+
+    out = {"geometry": planned_geometry(), "runs": {}}
+    for pose in poses:
+        jobs = [(m, s, pose) for m in PATHFIND_METHODS for s in seeds]
+        res = pool.map(_pf_job, jobs, chunksize=1)
+        by = {}
+        for (m, _, _), r in zip(jobs, res):
+            by.setdefault(m, []).append(r)
+        out["runs"][pose] = {m: agg(v) for m, v in by.items()}
+    return out
+
+
 # ============================================================================================ main
 def main():
     ap = argparse.ArgumentParser()
@@ -157,6 +183,9 @@ def main():
         best, table = sweep(pool, "bline_readme", bline_grid(a.quick), courses)
         out["tuned"]["bline_tuned"], out["sweeps"]["bline"] = best, table
         print("BLine tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
+        best, table = sweep(pool, "bline_readme", bline_grid(a.quick, caps=True), courses)
+        out["tuned"]["bline_tuned_caps"], out["sweeps"]["bline_caps"] = best, table
+        print("BLine tuned with caps:", best, f"({time.time() - t0:.0f} s)", flush=True)
         best, table = sweep(pool, "pathplanner", pp_grid(a.quick), courses)
         out["tuned"]["pathplanner_tuned"], out["sweeps"]["pathplanner"] = best, table
         print("PathPlanner tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
@@ -174,6 +203,9 @@ def main():
                 by.setdefault(c, {}).setdefault(m, []).append(r)
             out["runs"][pose] = {c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()}
             print(pose, "grid done", f"({time.time() - t0:.0f} s)", flush=True)
+        if not a.quick:
+            out["pathfind"] = pathfind_grid(pool, seeds, poses)
+            print("pathfinding done", f"({time.time() - t0:.0f} s)", flush=True)
     # geometry each method authored, and one true path per method/course (seed 0, odometry)
     from sim import run_one
 
@@ -256,17 +288,20 @@ def tables(out):
 
 
 def geometry_md(out):
-    from courses import to_bezier, to_bline, to_bline_curve, to_goal_chain
+    from courses import CHOREO_TRAJ, bline_corner_caps, to_bezier, to_bline, to_goal_chain
+    from followers.choreo import load_traj
 
     def p(xy):
         return f"({xy[0]:.2f}, {xy[1]:.2f})"
 
+    gen_path = os.path.join(HERE, "choreo", "generation_times.json")
+    gen = json.load(open(gen_path)) if os.path.exists(gen_path) else {}
     L = []
     for c in out["meta"]["courses"]:
         co = COURSES[c]
         L.append(f"**{c}**\n")
         wps = ", ".join(p((w.x, w.y)) + ("" if w.heading_deg is None else f" @{w.heading_deg:g} deg") for w in co.waypoints)
-        L.append(f"- Waypoints (old path-editor control points; PathPlanner anchors): {wps}")
+        L.append(f"- Waypoints (old path-editor control points; PathPlanner anchors; Choreo waypoints): {wps}")
         if co.start_velocity != (0.0, 0.0, 0.0):
             L.append(f"- Start velocity (field): {co.start_velocity}")
         if co.impulse:
@@ -281,9 +316,15 @@ def geometry_md(out):
         bl = to_bline(co)["elements"]
         L.append("- BLine (waypoints): " + ", ".join(
             p(e["xy"]) if e["kind"] == "T" else f"R {math.degrees(e['rot']):g} deg @t {e['t_ratio']:g}" for e in bl)
-            + " (handoff 0.30 m; 0.45 m in the r 0.45 row; the tuned row's radius is in the sweep)")
-        bc = [e for e in to_bline_curve(co)["elements"] if e["kind"] == "T"]
-        L.append(f"- BLine curve targets ({len(bc)} targets, handoff 0.45 m): " + ", ".join(p(e["xy"]) for e in bc))
+            + " (handoff 0.30 m; 0.45 m in the r 0.45 rows; the tuned rows' radius is in the sweeps)")
+        caps = [e["vmax"] for e in bline_corner_caps([dict(e, radius=0.45) if e["kind"] == "T" else e for e in bl],
+                                                     co.limits.max_speed, co.limits.max_accel) if e["kind"] == "T"]
+        L.append("- BLine-Web corner caps at r 0.45, per target (m/s): " + ", ".join(f"{v:g}" for v in caps))
+        tr = load_traj(c)
+        name = CHOREO_TRAJ[c]
+        g_s = gen.get(name)
+        L.append(f"- Choreo `{name}.traj`: {len(tr['samples'])} samples, {tr['samples'][-1][0]:.3f} s"
+                 + (f", generated in {g_s:.1f} s by choreo-cli" if g_s is not None else ""))
         g = to_goal_chain(co)["goals"]
         L.append("- DriveToPose chain goals: " + ", ".join(f"{p(x)} @{math.degrees(x[2]):.0f} deg" for x in g))
         L.append(f"- Neutral path length {NeutralPath(co).length:.2f} m; old path-editor and PathPlanner author the same "
@@ -294,13 +335,59 @@ def geometry_md(out):
 
 def sweep_md(out):
     L = []
-    for name, key in (("bline", "bline_tuned"), ("pathplanner", "pathplanner_tuned")):
+    for name, key, edge, title in (("bline", "bline_tuned", "radius", "BLine, no caps"),
+                                   ("bline_caps", "bline_tuned_caps", "radius", "BLine with corner caps"),
+                                   ("pathplanner", "pathplanner_tuned", "cof", "PathPlanner + hold")):
+        if name not in out["sweeps"]:
+            continue
         tab = sorted(out["sweeps"][name], key=lambda e: (-e["settled_frac"], e["score"]))
-        L.append(f"**{name}** sweep ({len(tab)} variants, perfect pose, seeds {out['meta']['sweep_seeds']}, all courses). "
+        L.append(f"**{title}** ({len(tab)} variants, perfect pose, seeds {out['meta']['sweep_seeds']}, all courses). "
                  f"Chosen: `{out['tuned'][key]}`. Best five:\n")
         L.append("| options | settled fraction | score s |\n|---|---|---|")
         for e in tab[:5]:
             L.append(f"| `{e['opts']}` | {e['settled_frac']:.2f} | {e['score']:.2f} |")
+        best = {}
+        for e in tab:
+            v = e["opts"].get(edge)
+            if v not in best:
+                best[v] = e
+        L.append(f"\nBest variant at each `{edge}`: " + "; ".join(
+            f"{v:g}: {best[v]['settled_frac']:.2f} settled, {best[v]['score']:.2f} s" for v in sorted(best)) + "\n")
+    return "\n".join(L)
+
+
+def pathfind_md(out):
+    pf = out.get("pathfind")
+    if not pf:
+        return "_Not run (quick mode)._\n"
+    from pathfind import PATHFIND_METHODS
+
+    L = ["Field `bench/fields/obstacles_v1.json`: start (-4.0, -1.5) to goal (3.8, 1.4), 8.32 m apart in a straight "
+         "line, six convex obstacles, robot 0.85 x 0.85 m with bumpers. Navgrid 0.2 m; a node is blocked when its "
+         "centre is within 0.60 m (the bumpers' half-diagonal) of an obstacle.\n",
+         "AD* anytime steps (one planning request, Python wall-clock, relative only):\n",
+         "| eps | planning ms | path points | route length m |\n|---|---|---|---|"]
+    for e in pf["geometry"]["eps"]:
+        pts = np.array(e["points"])
+        L.append(f"| {e['eps']:g} | {e['ms']:.1f} | {len(pts)} | {np.hypot(*np.diff(pts, axis=0).T).sum():.2f} |")
+    L.append("")
+    hdr = ("| method | route m (planned / driven) | plan ms (first path / all four, median) | t to 5 cm s | "
+           "t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run / mean) | "
+           "contact ms (worst run) | wheel slip ms |\n|---|---|---|---|---|---|---|---|---|")
+    titles = {"odom": "Wheel odometry + gyro", "truth": "Perfect pose"}
+    for pose, rows in pf["runs"].items():
+        L.append(f"**{titles[pose]}**\n")
+        L.append(hdr)
+        for m, a in rows.items():
+            n, ns = a["n"], a["t_settle_nan"]
+            st = "never" if ns == n else f"{a['t_settle_mean']:.2f} ({n - ns}/{n})"
+            n5 = a["t_5cm_nan"]
+            t5 = "never" if n5 == n else f"{a['t_5cm_mean']:.2f}" + ("" if n5 == 0 else f" ({n - n5}/{n})")
+            L.append(f"| {PATHFIND_METHODS[m][2]} | {a['route_m_mean']:.2f} / {a['driven_m_mean']:.2f} | "
+                     f"{a['plan_first_ms_median']:.0f} / {a['plan_total_ms_median']:.0f} | {t5} | {st} | "
+                     f"{a['err_end_cm_mean']:.1f} / {a['err_end_cm_worst']:.1f} | "
+                     f"{a['clearance_cm_min']:.1f} / {a['clearance_cm_mean']:.1f} | "
+                     f"{a['contact_ms_worst']:.0f} | {a['wheel_slip_ms_mean']:.0f} |")
         L.append("")
     return "\n".join(L)
 
@@ -315,8 +402,10 @@ def write_md(out):
         "Accuracy is always against the TRUE plant pose. Cross-track is measured from the start until the robot first "
         "reaches the end of the path. Times are means over the runs that got there; 'settled' = within 2 cm and 1 deg "
         "of the end pose, true speed under 5 cm/s, held 0.25 s. Wheel slip = milliseconds of slip summed over the four "
-        "wheels. Path prep = median wall-clock of the method's own preparation in Python (relative only).\n",
+        "wheels. Path prep = median wall-clock of the method's own preparation in Python (relative only; for Choreo it "
+        "is only loading the .traj, its solver time is in the geometry section).\n",
         tables(out),
+        "## Pathfinding course\n", pathfind_md(out),
         "## Geometry each method authored\n", geometry_md(out), END])
     text = open(MD).read() if os.path.exists(MD) else f"# Path-following bench: results\n\n{START}\n{END}\n"
     i, j = text.index(START), text.index(END) + len(END)
