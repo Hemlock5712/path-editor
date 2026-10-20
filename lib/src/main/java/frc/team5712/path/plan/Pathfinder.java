@@ -1,0 +1,476 @@
+package frc.team5712.path.plan;
+
+import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.GeometrySample;
+import frc.team5712.path.core.HeadingProfile;
+import frc.team5712.path.core.Path;
+import frc.team5712.path.core.PathGeometry;
+import frc.team5712.path.core.PathSpec;
+import frc.team5712.path.core.Pose;
+import frc.team5712.path.core.RobotConfig;
+import frc.team5712.path.core.RotationTarget;
+import frc.team5712.path.core.Waypoint;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * Plans a collision-free path across the field during a match.
+ *
+ * <p>At boot ({@link #Pathfinder}): every obstacle is grown by the bumpers' half-diagonal plus a margin
+ * (a Minkowski sum with a disc, rounded corners as short arcs, approximated from outside), the field
+ * walls are moved in by the same amount, and the visibility graph between the grown corners is built.
+ *
+ * <p>Per query ({@link #plan}):
+ * <ol>
+ *   <li>a start or goal inside a grown obstacle (or too near a wall) is snapped out to the nearest free
+ *       point, and the result says so;
+ *   <li>the start and goal are connected to the graph and A* finds the shortest route (exact for the
+ *       grown polygons);
+ *   <li>the route's corners become waypoints of the core quintic, curvature-continuous spline. The
+ *       oriented bumper rectangle is swept along it (with the planned heading) and must keep the margin
+ *       from every obstacle and wall; where it doesn't, the nearest point of the route is added as a
+ *       waypoint and the spline refit, at most {@code maxRefits} times;
+ *   <li>the velocity profile is built from the robot's current speed (along its direction of travel
+ *       when moving) to rest, with the heading blended from the current heading to the goal's.
+ * </ol>
+ * The result is an ordinary {@link Path} for the follower. Deterministic: same inputs, same path.
+ */
+public final class Pathfinder {
+  private final FieldMap field;
+  private final RobotConfig robot;
+  private final PlannerConfig config;
+  private final List<ConvexPolygon> grown;
+  /** The robot centre must stay within these (walls moved in by the grow distance). */
+  private final double xMin;
+  private final double xMax;
+  private final double yMin;
+  private final double yMax;
+  private final double[] nodeX;
+  private final double[] nodeY;
+  /** Straight-line length between visible node pairs, +∞ where blocked. */
+  private final double[][] edge;
+  private final double bootMicros;
+
+  public Pathfinder(FieldMap field, RobotConfig robot, PlannerConfig config) {
+    long t0 = System.nanoTime();
+    this.field = field;
+    this.robot = robot;
+    this.config = config;
+    double r = config.growMeters();
+    List<ConvexPolygon> g = new ArrayList<>();
+    for (ConvexPolygon p : field.obstacles()) {
+      g.add(p.grow(r, config.arcStepRadians()));
+    }
+    grown = List.copyOf(g);
+    xMin = -field.lengthMeters() / 2 + r;
+    xMax = field.lengthMeters() / 2 - r;
+    yMin = -field.widthMeters() / 2 + r;
+    yMax = field.widthMeters() / 2 - r;
+    List<double[]> nodes = new ArrayList<>();
+    for (ConvexPolygon p : grown) {
+      for (int i = 0; i < p.size(); i++) {
+        if (isFree(p.x(i), p.y(i))) {
+          nodes.add(new double[] {p.x(i), p.y(i)});
+        }
+      }
+    }
+    int n = nodes.size();
+    nodeX = new double[n];
+    nodeY = new double[n];
+    for (int i = 0; i < n; i++) {
+      nodeX[i] = nodes.get(i)[0];
+      nodeY[i] = nodes.get(i)[1];
+    }
+    edge = new double[n][n];
+    for (double[] row : edge) {
+      Arrays.fill(row, Double.POSITIVE_INFINITY);
+    }
+    for (int i = 0; i < n; i++) {
+      edge[i][i] = 0;
+      for (int j = i + 1; j < n; j++) {
+        if (visible(nodeX[i], nodeY[i], nodeX[j], nodeY[j])) {
+          edge[i][j] = edge[j][i] = Math.hypot(nodeX[j] - nodeX[i], nodeY[j] - nodeY[i]);
+        }
+      }
+    }
+    bootMicros = (System.nanoTime() - t0) / 1e3;
+  }
+
+  public FieldMap field() {
+    return field;
+  }
+
+  public PlannerConfig config() {
+    return config;
+  }
+
+  /** The grown obstacles (what the robot centre must stay out of). */
+  public List<ConvexPolygon> grownObstacles() {
+    return grown;
+  }
+
+  public int nodeCount() {
+    return nodeX.length;
+  }
+
+  /** Time the constructor took (grow + graph), microseconds. */
+  public double bootMicros() {
+    return bootMicros;
+  }
+
+  /** True when a robot centre at (x, y) is outside every grown obstacle and inside the moved-in walls. */
+  public boolean isFree(double x, double y) {
+    if (x < xMin - ConvexPolygon.EPS || x > xMax + ConvexPolygon.EPS
+        || y < yMin - ConvexPolygon.EPS || y > yMax + ConvexPolygon.EPS) {
+      return false;
+    }
+    for (ConvexPolygon p : grown) {
+      if (p.containsStrictly(x, y)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** True when the straight segment crosses no grown obstacle (the walls are convex, so ends suffice). */
+  public boolean visible(double x0, double y0, double x1, double y1) {
+    for (ConvexPolygon p : grown) {
+      if (p.blocksSegment(x0, y0, x1, y1)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------------------------ query
+
+  /** Plans from the robot's pose and field velocity to the goal pose (arriving at rest). */
+  public PlanResult plan(Pose start, FieldSpeeds startVelocity, Pose goal) {
+    long t0 = System.nanoTime();
+    double[] s = snap(start.xMeters(), start.yMeters());
+    double[] g = snap(goal.xMeters(), goal.yMeters());
+    double startSnap = Math.hypot(s[0] - start.xMeters(), s[1] - start.yMeters());
+    double goalSnap = Math.hypot(g[0] - goal.xMeters(), g[1] - goal.yMeters());
+    List<double[]> route = shortestRoute(s, g);
+    long t1 = System.nanoTime();
+    double straight = Math.hypot(goal.xMeters() - start.xMeters(), goal.yMeters() - start.yMeters());
+    if (route == null) {
+      return PlanResult.failed("no route between the start and the goal", startSnap, goalSnap, straight,
+          (t1 - t0) / 1e3);
+    }
+    // the path starts where the robot is and ends where the goal is, through the snapped points if any
+    List<double[]> pts = new ArrayList<>();
+    if (startSnap > 1e-9) {
+      pts.add(new double[] {start.xMeters(), start.yMeters()});
+    }
+    pts.addAll(route);
+    if (goalSnap > 1e-9) {
+      pts.add(new double[] {goal.xMeters(), goal.yMeters()});
+    }
+    pts = dedupe(pts);
+    double routeLength = 0;
+    for (int i = 1; i < pts.size(); i++) {
+      routeLength += Math.hypot(pts.get(i)[0] - pts.get(i - 1)[0], pts.get(i)[1] - pts.get(i - 1)[1]);
+    }
+
+    double v = Math.hypot(startVelocity.vxMetersPerSecond(), startVelocity.vyMetersPerSecond());
+    boolean moving = v > 0.1;
+    double startTangent = moving ? Math.atan2(startVelocity.vyMetersPerSecond(), startVelocity.vxMetersPerSecond())
+        : Double.NaN;
+    double startSpeed = moving ? Math.min(v, config.maxMetersPerSecond()) : 0.0;
+
+    // fit, sweep the bumpers, add route points where the margin is broken, refit
+    int refits = 0;
+    Sweep sweep;
+    PathSpec spec;
+    while (true) {
+      spec = Path.pureRotation(spec(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians()));
+      PathGeometry geometry = PathGeometry.build(spec.waypoints());
+      HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones());
+      double skipStart = startSnap > 1e-9 ? geometry.waypointS(1) : 0.0;
+      double skipEnd = goalSnap > 1e-9 ? geometry.waypointS(pts.size() - 2) : geometry.lengthMeters();
+      sweep = sweep(geometry, heading, skipStart, skipEnd);
+      if (sweep.violations.isEmpty() || refits >= config.maxRefits()) {
+        break;
+      }
+      refits++;
+      // one new waypoint per broken stretch, on the route segment under its worst point
+      List<double[]> inserts = new ArrayList<>();
+      for (double sv : sweep.violations) {
+        int seg = segmentAt(geometry, sv, pts.size());
+        double[] a = pts.get(seg);
+        double[] b = pts.get(seg + 1);
+        double[] p = xy(geometry, sv);
+        double ex = b[0] - a[0];
+        double ey = b[1] - a[1];
+        double len = Math.hypot(ex, ey);
+        double t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / (len * len);
+        double minT = Math.min(0.5, 0.05 / len); // stay at least 5 cm from both ends
+        t = Math.max(minT, Math.min(1 - minT, t));
+        inserts.add(new double[] {seg, a[0] + t * ex, a[1] + t * ey});
+      }
+      inserts.sort((x, y) -> Double.compare(y[0], x[0])); // back to front keeps indices valid
+      int lastSeg = -1;
+      for (double[] ins : inserts) {
+        if ((int) ins[0] == lastSeg) {
+          continue; // one per segment per round
+        }
+        lastSeg = (int) ins[0];
+        pts.add(lastSeg + 1, new double[] {ins[1], ins[2]});
+      }
+    }
+    long t2 = System.nanoTime();
+    Path path = Path.build(spec, robot);
+    long t3 = System.nanoTime();
+    return new PlanResult(path, List.copyOf(pts), routeLength, straight, startSnap, goalSnap, refits,
+        sweep.violations.isEmpty(), sweep.minClearance, (t1 - t0) / 1e3, (t2 - t1) / 1e3, (t3 - t2) / 1e3,
+        (t3 - t0) / 1e3, null);
+  }
+
+  private static double[] xy(PathGeometry geometry, double s) {
+    GeometrySample p = geometry.sample(s);
+    return new double[] {p.xMeters(), p.yMeters()};
+  }
+
+  /** Index of the waypoint segment containing arc length s. */
+  private static int segmentAt(PathGeometry geometry, double s, int waypoints) {
+    for (int i = 1; i < waypoints; i++) {
+      if (s <= geometry.waypointS(i)) {
+        return i - 1;
+      }
+    }
+    return waypoints - 2;
+  }
+
+  private PathSpec spec(List<double[]> pts, double startTangent, double startSpeed, double startHeading,
+      double goalHeading) {
+    List<Waypoint> wps = new ArrayList<>(pts.size());
+    for (int i = 0; i < pts.size(); i++) {
+      double tangent = i == 0 ? startTangent : Double.NaN;
+      wps.add(new Waypoint(pts.get(i)[0], pts.get(i)[1], tangent, 1.0));
+    }
+    return PathSpec.of(wps)
+        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, startHeading),
+            RotationTarget.atWaypoint(pts.size() - 1, goalHeading)))
+        .withLimits(config.maxMetersPerSecond(), config.maxMetersPerSecondSquared())
+        .withEndSpeeds(startSpeed, 0.0);
+  }
+
+  private static List<double[]> dedupe(List<double[]> pts) {
+    List<double[]> out = new ArrayList<>();
+    for (double[] p : pts) {
+      if (out.isEmpty() || Math.hypot(p[0] - out.getLast()[0], p[1] - out.getLast()[1]) > 0.01) {
+        out.add(p);
+      }
+    }
+    if (out.size() == 1) {
+      out.add(pts.getLast()); // start and goal within 1 cm: keep both so there is a path
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------------------ snapping and A*
+
+  /** The point itself if free, else the nearest free point on a grown obstacle's boundary or the walls. */
+  double[] snap(double x, double y) {
+    if (isFree(x, y)) {
+      return new double[] {x, y};
+    }
+    List<double[]> candidates = new ArrayList<>();
+    candidates.add(new double[] {clamp(x, xMin, xMax), clamp(y, yMin, yMax)});
+    for (ConvexPolygon p : grown) {
+      double[] b = p.nearestBoundaryPoint(x, y);
+      // push 1 mm outwards from the polygon's centre so the point is clearly free
+      double dx = b[0] - p.cx;
+      double dy = b[1] - p.cy;
+      double d = Math.hypot(dx, dy);
+      candidates.add(new double[] {b[0] + 1e-3 * dx / d, b[1] + 1e-3 * dy / d});
+    }
+    candidates.sort((a, b) -> Double.compare(Math.hypot(a[0] - x, a[1] - y), Math.hypot(b[0] - x, b[1] - y)));
+    for (double[] c : candidates) {
+      if (isFree(c[0], c[1])) {
+        return c;
+      }
+    }
+    // overlapping obstacles cover every nearest point: search outwards on rings
+    for (double r = 0.05; r < 8.0; r += 0.05) {
+      for (int k = 0; k < 72; k++) {
+        double a = k * Math.PI / 36;
+        double cx = x + r * Math.cos(a);
+        double cy = y + r * Math.sin(a);
+        if (isFree(cx, cy)) {
+          return new double[] {cx, cy};
+        }
+      }
+    }
+    throw new IllegalStateException("no free point on the field");
+  }
+
+  private static double clamp(double v, double lo, double hi) {
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  /** A* over the static graph plus the start and goal; the route's points, or null if there is none. */
+  private List<double[]> shortestRoute(double[] s, double[] g) {
+    if (visible(s[0], s[1], g[0], g[1])) {
+      return List.of(s, g);
+    }
+    int n = nodeX.length;
+    int start = n;
+    int goal = n + 1;
+    double[] toStart = new double[n];
+    double[] toGoal = new double[n];
+    for (int i = 0; i < n; i++) {
+      toStart[i] = visible(s[0], s[1], nodeX[i], nodeY[i]) ? Math.hypot(nodeX[i] - s[0], nodeY[i] - s[1])
+          : Double.POSITIVE_INFINITY;
+      toGoal[i] = visible(nodeX[i], nodeY[i], g[0], g[1]) ? Math.hypot(g[0] - nodeX[i], g[1] - nodeY[i])
+          : Double.POSITIVE_INFINITY;
+    }
+    double[] cost = new double[n + 2];
+    int[] parent = new int[n + 2];
+    boolean[] closed = new boolean[n + 2];
+    Arrays.fill(cost, Double.POSITIVE_INFINITY);
+    Arrays.fill(parent, -1);
+    cost[start] = 0;
+    while (true) {
+      int best = -1;
+      double bestF = Double.POSITIVE_INFINITY;
+      for (int i = 0; i < n + 2; i++) {
+        if (!closed[i] && cost[i] < Double.POSITIVE_INFINITY) {
+          double f = cost[i] + heuristic(i, n, s, g);
+          if (f < bestF) { // ties keep the lowest index: deterministic
+            bestF = f;
+            best = i;
+          }
+        }
+      }
+      if (best < 0) {
+        return null;
+      }
+      if (best == goal) {
+        break;
+      }
+      closed[best] = true;
+      for (int j = 0; j < n + 2; j++) {
+        if (closed[j] || j == best) {
+          continue;
+        }
+        double w = weight(best, j, n, toStart, toGoal);
+        if (w < Double.POSITIVE_INFINITY && cost[best] + w < cost[j]) {
+          cost[j] = cost[best] + w;
+          parent[j] = best;
+        }
+      }
+    }
+    List<double[]> out = new ArrayList<>();
+    for (int i = goal; i >= 0; i = parent[i]) {
+      out.add(i == start ? s : i == goal ? g : new double[] {nodeX[i], nodeY[i]});
+      if (i == start) {
+        break;
+      }
+    }
+    java.util.Collections.reverse(out);
+    return out;
+  }
+
+  private double heuristic(int i, int n, double[] s, double[] g) {
+    double x = i == n ? s[0] : i == n + 1 ? g[0] : nodeX[i];
+    double y = i == n ? s[1] : i == n + 1 ? g[1] : nodeY[i];
+    return Math.hypot(g[0] - x, g[1] - y);
+  }
+
+  private double weight(int a, int b, int n, double[] toStart, double[] toGoal) {
+    if (a < n && b < n) {
+      return edge[a][b];
+    }
+    if (a == n || b == n) {
+      int other = a == n ? b : a;
+      return other < n ? toStart[other] : Double.POSITIVE_INFINITY; // start-goal was handled up front
+    }
+    int other = a == n + 1 ? b : a;
+    return other < n ? toGoal[other] : Double.POSITIVE_INFINITY;
+  }
+
+  // ------------------------------------------------------------------------------ swept bumpers
+
+  /** Result of sweeping the bumper rectangle along a path. */
+  private record Sweep(double minClearance, List<Double> violations) {}
+
+  /**
+   * Sweeps the oriented bumper rectangle along the geometry with the planned heading. Returns the
+   * smallest clearance to an obstacle or a wall, and for each stretch closer than the margin the arc
+   * length of its worst point. Stretches before {@code skipStart} or after {@code skipEnd} (a snapped
+   * start or goal, already inside the margin) are not reported.
+   */
+  private Sweep sweep(PathGeometry geometry, HeadingProfile heading, double skipStart, double skipEnd) {
+    double len = geometry.lengthMeters();
+    int n = Math.max(2, (int) Math.ceil(len / config.checkStepMeters()) + 1);
+    double need = config.marginMeters();
+    double reach = config.halfDiagonalMeters();
+    double min = Double.POSITIVE_INFINITY;
+    List<Double> worst = new ArrayList<>();
+    boolean inBad = false;
+    double badMin = 0;
+    double badS = 0;
+    double[] qx = new double[4];
+    double[] qy = new double[4];
+    for (int k = 0; k < n; k++) {
+      double s = len * k / (n - 1);
+      GeometrySample gs = geometry.sample(s);
+      double th = heading.sample(gs).radians();
+      double x = gs.xMeters();
+      double y = gs.yMeters();
+      double c = clearance(x, y, th, reach, qx, qy);
+      boolean counted = s >= skipStart && s <= skipEnd;
+      if (counted) {
+        min = Math.min(min, c);
+      }
+      boolean bad = counted && c < need;
+      if (bad) {
+        if (!inBad || c < badMin) {
+          badMin = c;
+          badS = s;
+        }
+        inBad = true;
+      } else if (inBad) {
+        worst.add(badS);
+        inBad = false;
+      }
+    }
+    if (inBad) {
+      worst.add(badS);
+    }
+    return new Sweep(min, worst);
+  }
+
+  /** Clearance of the bumper rectangle at (x, y, th) to every obstacle and the field walls. */
+  public double clearance(double x, double y, double th) {
+    return clearance(x, y, th, config.halfDiagonalMeters(), new double[4], new double[4]);
+  }
+
+  private double clearance(double x, double y, double th, double reach, double[] qx, double[] qy) {
+    double c = Math.cos(th);
+    double s = Math.sin(th);
+    double hl = config.bumperLengthMeters() / 2;
+    double hw = config.bumperWidthMeters() / 2;
+    double[] px = {hl, -hl, -hl, hl}; // front-left, back-left, back-right, front-right: counter-clockwise
+    double[] py = {hw, hw, -hw, -hw};
+    double halfL = field.lengthMeters() / 2;
+    double halfW = field.widthMeters() / 2;
+    double best = Double.POSITIVE_INFINITY;
+    for (int i = 0; i < 4; i++) {
+      qx[i] = x + c * px[i] - s * py[i];
+      qy[i] = y + s * px[i] + c * py[i];
+      best = Math.min(best, Math.min(halfL - Math.abs(qx[i]), halfW - Math.abs(qy[i])));
+    }
+    for (ConvexPolygon p : field.obstacles()) {
+      double centre = Math.hypot(x - p.cx, y - p.cy) - p.radius - reach;
+      if (centre >= best) {
+        continue; // cannot be closer than what we already have
+      }
+      best = Math.min(best, p.distanceToPolygon(qx, qy));
+    }
+    return best;
+  }
+}

@@ -11,7 +11,7 @@ import java.util.Map;
  * { "massKg": 60, "momentOfInertiaKgM2": 6, "moduleRadiusMeters": 0.41012,
  *   "wheelRadiusMeters": 0.0508, "driveGearRatio": 6.75, "driveMotorCount": 4,
  *   "statorCurrentLimitAmps": 120, "frictionCoefficient": 0.7,
- *   "maxWheelMetersPerSecond": 4.5, "maxAngularRadPerSec": 9.4,
+ *   "maxWheelMetersPerSecond": 4.5, "maxAngularRadPerSec": 9.4, "maxAngularRadPerSecSquared": 12.6,
  *   "motor": { "nominalVolts": 12, "stallTorqueNewtonMeters": 9.362, "stallCurrentAmps": 476.1,
  *              "freeSpeedRadPerSec": 605.8 } }
  * </pre>
@@ -47,7 +47,8 @@ public final class RobotFile {
         PathFile.number(m, "statorCurrentLimitAmps", d.statorCurrentLimitAmps()),
         PathFile.number(m, "frictionCoefficient", d.frictionCoefficient()),
         PathFile.number(m, "maxWheelMetersPerSecond", d.maxWheelMetersPerSecond()),
-        PathFile.number(m, "maxAngularRadPerSec", d.maxAngularRadPerSec()));
+        PathFile.number(m, "maxAngularRadPerSec", d.maxAngularRadPerSec()),
+        PathFile.number(m, "maxAngularRadPerSecSquared", d.maxAngularRadPerSecSquared()));
   }
 
   /** The JSON tree; unset optional limits are left out. */
@@ -66,6 +67,9 @@ public final class RobotFile {
     }
     if (Double.isFinite(r.maxAngularRadPerSec())) {
       m.put("maxAngularRadPerSec", r.maxAngularRadPerSec());
+    }
+    if (Double.isFinite(r.maxAngularRadPerSecSquared())) {
+      m.put("maxAngularRadPerSecSquared", r.maxAngularRadPerSecSquared());
     }
     Map<String, Object> motor = new LinkedHashMap<>();
     motor.put("nominalVolts", r.driveMotor().nominalVolts());

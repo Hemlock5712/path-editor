@@ -5,7 +5,8 @@
 | `frc.team5712.path.core` (phase 2) | geometry, heading and velocity profiles, frame flips, path files | nothing |
 | `frc.team5712.path.follow` (phase 3) | `PathFollower`: one controller from path to pose | core, slip |
 | `frc.team5712.path.slip` | `SlipDetector`, `SlipAwareOdometry` (optional), `SlipSignal` | core |
-| `frc.team5712.path.tools` | `FixtureGen`, `ProfileCli`, `BenchServer` (the bench bridge) | core, follow |
+| `frc.team5712.path.plan` (phase 4) | `Pathfinder`: obstacle-avoiding paths during a match | core |
+| `frc.team5712.path.tools` | `FixtureGen`, `ProfileCli`, `PlanCli`, `BenchServer` (the bench bridge) | core, follow, plan, slip |
 | `frc.team5712.path.wpilib` (source set `src/wpilib`) | Commands v3 and v2 adapters, `PathLibrary`, telemetry | WPILib 2027 |
 
 The core and the follower have no dependencies, so they test in seconds; the core ports line for
@@ -20,6 +21,7 @@ line to TypeScript (`editor/core/`).
 | Regenerate `fixtures/*.json` | `lib/gradlew -p lib fixtures` |
 | Build the jar for the bench | `lib/gradlew -p lib jar` (core, follower and tools: `lib/build/libs/pathcore.jar`) |
 | Bench bridge | `java -cp lib/build/libs/pathcore.jar frc.team5712.path.tools.BenchServer` (protocol below) |
+| Time a pathfinding query (cold, then warm) | `java -cp lib/build/libs/pathcore.jar frc.team5712.path.tools.PlanCli field.json sx sy sdeg gx gy gdeg [vx vy] [--repeat 2000]` |
 | Profile a path for the bench | `java -cp lib/build/libs/pathcore.jar frc.team5712.path.tools.ProfileCli my.path.json [--robot robot.json] [--step 0.05] [--grid 0.03]` |
 | TS port tests | `cd editor/core && npm install && npm test` |
 
@@ -210,6 +212,7 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 | `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
 | `{"op": "geometry", "step": 0.02}`: the built path, sampled | `{"x": [...], "y": [...]}` |
+| `{"op": "pathfind", "field": <field file tree>, "start": pose, "vel": vel, "goal": pose}` plus optional `"robot"`, `"options"`, `"margin"`, `"maxSpeed"`, `"maxAccel"`: plans with our pathfinder and loads the result like `load` | `{"ok", "lengthMeters", "totalTimeSeconds", "planMs", "searchMs", "smoothMs", "profileMs", "routeLengthMeters", "straightLineMeters", "startSnapMeters", "goalSnapMeters", "refits", "clear", "minClearanceMeters", "waypoints"}`, plus `"bootMs"` when the pathfinder was (re)built |
 | `{"op": "quit"}` | `{"ok": true}`, then exits |
 
 `bench/followers/ours_v2.py` starts one server per bench worker process and keeps it for all that
@@ -279,3 +282,98 @@ shares. See the notes below for what that means for the boot budget.
   first. v2 schedules them independently.
 - **The first `start()` in a fresh JVM takes about 1.4 ms of class loading,** but no path work. One
   throwaway start/step in robot init would remove it.
+
+## Pathfinding (phase 4)
+
+`Pathfinder` (`frc.team5712.path.plan`) is built once at boot from a `FieldMap`. Calling `plan(pose, velocity,
+goal)` returns a `PlanResult` whose `path()` is an ordinary `Path` for the `PathFollower`.
+
+**Field file** (`deploy/paths/field.json`; `bench/fields/obstacles_v1.json` is the example and the test resource):
+`{"field": {"length_m", "width_m"}, "obstacles": [{"name", "polygon": [[x, y], ...]}]}`. Metres, origin at the
+field centre. Each polygon is replaced by its convex hull. `FieldMap.read(file)` loads it.
+
+**Boot.**
+- Each obstacle is grown by the bumpers' half-diagonal plus `marginMeters` (default 5 cm), so the result is safe
+  in any heading.
+- The grown shape is a Minkowski sum with a disc. Each corner's arc is cut into steps of at most 30°, and the arc
+  points sit at r / cos(step / 2), so the polygon contains the exact sum and overshoots it by at most 2.3 cm.
+- The walls are moved in by the same distance.
+- The visibility graph joins every pair of grown corners whose straight segment misses every grown interior
+  (Cyrus-Beck clipping, touching allowed). On the bench field: 83 corners.
+
+**Query.**
+1. A start or goal inside a grown obstacle, or too close to a wall, is snapped to the nearest free point. The path
+   still starts at the robot and ends at the goal, through the snapped points, and the result reports the snap
+   distances.
+2. Start and goal are joined to the graph, and A* (Euclidean heuristic, lowest index on ties) finds the shortest
+   route around the grown shapes.
+3. The route's corners become quintic spline waypoints. The first tangent is the robot's velocity direction when it
+   is moving faster than 0.1 m/s; the other tangents are automatic. The heading blends from the current heading to
+   the goal's.
+4. The oriented bumper rectangle is swept every 2 cm with the planned heading. Each stretch closer than the margin
+   to an obstacle or a wall gets the route point under its worst spot added as a waypoint, and the spline is
+   refit, up to 8 times. Snapped end stretches are not checked.
+5. The core `VelocityProfile` is built: start speed = the robot's speed along the path, end at rest, 4 m/s and
+   6 m/s² by default.
+
+**Timings** (this PC, `PlannerPerformanceTest` and `PlanCli`, other work running):
+
+| | |
+| --- | --- |
+| Query, warm, 9.2 m route through six obstacles | 1.9-2.3 ms median (best 1.2-1.6 ms, 95th percentile 4.8-8.1 ms) |
+| The same, by part | search 0.08 ms, smoothing and sweep 1.7 ms, profile 0.15 ms |
+| Queries on the other three bench routes | 0.47-1.0 ms median |
+| First query in a fresh JVM | 17-35 ms on the bench routes (class loading and the interpreter) |
+| Boot (grow + graph) in a fresh JVM | 32-135 ms |
+
+The sweep dominates and could be cut, but the warm query is already inside PLAN.md's 5 ms. The roboRIO has not
+been measured.
+
+**Tests** (`PathfinderTest`):
+- shortest-route lengths against an independent hull-wrap calculation (60 random single-obstacle cases), plus a
+  straight line, symmetry and a blocked field;
+- 300 random start/goal pairs whose routes never enter a grown obstacle;
+- 300 random pairs (random headings, a third moving) whose swept bumpers keep the margin on the profiled path
+  (34 needed refits, none failed, closest 5.1 cm);
+- determinism, snapping, a moving start, the end heading, and file errors.
+
+### Phase 4 departures from PLAN.md
+
+- **The obstacles are grown by the half-diagonal, for any heading.** The swept check then uses the real heading.
+  A heading-aware grow would allow tighter gaps but needs a configuration-space search.
+- **Smoothing adds waypoints only.** Tangent magnitudes stay at the core's defaults. Inserting the route point under
+  a violation always converges here because the corner-to-corner route itself keeps the margin.
+- **Short hops and turns on the spot** plan in the core, not as a special case in the planner (see below).
+- **Concave obstacles become their convex hulls,** which is conservative.
+- **Not done yet:** dynamic obstacles, a WPILib command wrapper, and loading `deploy/paths/field.json` in
+  `PathLibrary` (callers use `FieldMap.read`).
+- **The margin stays 0.05 m by default.** On the bench's four routes with wheel odometry, 0.10 m and 0.15 m
+  shut gaps and forced detours up to three times longer, and still touched once the odometry drifted (see
+  bench/RESULTS.md). Vision fixes the contacts; a wider berth doesn't.
+
+### Short hops with big turns (core)
+
+The heading is tied to s, so a turn that needs more time than the translation slows the translation down. Two
+changes make that work for any hop:
+
+- **Bisection in the step.** The velocity profile's step used to solve `v = f(v)` with two fixed-point rounds kept
+  from below. Where the budget falls steeply with speed (a fast turn over a few centimetres) the rounds never closed
+  and the plan stalled: 0.2 m with an 80° turn could not be built. Now, when the rounds leave a gap, the step
+  bisects inside their bracket. It stays O(N); other paths move by about 1e-5.
+- **Spin acceleration cap.** `RobotConfig.maxAngularRadPerSecSquared` (optional; +∞ by default, and
+  `"maxAngularRadPerSecSquared"` in the robot file) adds `|a·θ' + v²·θ''| ≤ α_max` to the budget and
+  `v ≤ √(α_max/|θ''|)` to the ceiling, next to the existing `v·|θ'| ≤ ω_max`.
+
+Every path also gets at least 16 grid cells. Two waypoints at the same place are a turn on the spot, planned on a
+1 mm segment (`Path.PURE_ROTATION_METERS`) that ends exactly on the point along the final heading.
+
+With 540°/s and 720°/s² (`ShortHopTest`):
+
+| Hop | Time | Minimum-jerk floor |
+| --- | --- | --- |
+| 0.2 m, 80° | 0.84 s | 0.80 s |
+| 0.05 m, 180° | 1.27 s | 1.20 s |
+| 0 m, 90° | 0.90 s | 0.85 s |
+
+Peak spin acceleration is within 1 % of the cap. The TS port matches, with new `short_hop` and `pure_rotation`
+fixtures; parity is still exact.

@@ -25,7 +25,9 @@ import java.util.List;
  *   <li><b>Wheel speed</b>: the fastest wheel rolls at {@code v + r·|ω|}, so
  *       {@code v ≤ v_wheel / (1 + r·|θ'|)}. Planned spin takes speed away from translation.
  *   <li><b>Caps</b>: the path's and each zone's speed and acceleration, the robot's spin cap
- *       {@code v·|θ'| ≤ ω_max}, and the start and end speeds. A zone caps every grid point of every
+ *       {@code v·|θ'| ≤ ω_max} and spin acceleration cap {@code |a·θ' + v²·θ''| ≤ α_max}, and the start
+ *       and end speeds. A turn that needs more time than the translation slows the translation down:
+ *       the heading is tied to s, and the plan simply takes longer to cover s. A zone caps every grid point of every
  *       cell it overlaps, so the speed is already down when the zone starts.
  * </ul>
  *
@@ -40,13 +42,18 @@ import java.util.List;
  * points. A step must keep the limits at both of its ends, each with its own geometry and speed, and
  * the end speed depends on the step's acceleration. The step solves that by a short fixed-point
  * iteration that approaches from above and keeps the last answer from below, so the limits hold
- * at every grid point. On the fixture paths a 3 cm grid's total time is within 0.1-0.9 % of a 1 mm
+ * at every grid point. Where the budget falls steeply with speed (a fast turn over a short hop), the
+ * two rounds don't close, and the step bisects inside their bracket instead; that keeps O(N).
+ * Every path gets at least {@link #MIN_CELLS} cells, so short hops are resolved too. On the fixture paths a 3 cm grid's total time is within 0.1-0.9 % of a 1 mm
  * grid's (the larger figures come from zones capping every cell they touch). Curvature is
  * continuous, so no smoothing window is needed.
  */
 public final class VelocityProfile {
   /** Default grid spacing, metres. */
   public static final double DEFAULT_GRID_METERS = 0.03;
+
+  /** Fewest grid cells on any path, so a short hop's turn is resolved. */
+  public static final int MIN_CELLS = 16;
 
   private final double lengthMeters;
   private final double ds;
@@ -85,7 +92,7 @@ public final class VelocityProfile {
       RobotConfig robot,
       double gridMeters) {
     double length = geometry.lengthMeters();
-    int cells = Math.max(1, (int) Math.ceil(length / gridMeters));
+    int cells = Math.max(MIN_CELLS, (int) Math.ceil(length / gridMeters));
     double ds = length / cells;
     int nodes = cells + 1;
 
@@ -103,6 +110,7 @@ public final class VelocityProfile {
     double moduleRadius = robot.moduleRadiusMeters();
     double wheelCap = robot.wheelSpeedCapMetersPerSecond();
     double spinCap = robot.maxAngularRadPerSec();
+    double spinAccelCap = robot.maxAngularRadPerSecSquared();
 
     // Per grid point: |κ|, |θ'|, |θ''|, the speed ceiling and the acceleration cap
     Budget budget = new Budget(robot, nodes);
@@ -128,6 +136,9 @@ public final class VelocityProfile {
       vCap = Math.min(vCap, wheelCap / (1.0 + moduleRadius * hp));
       if (hp > 0.0) {
         vCap = Math.min(vCap, spinCap / hp);
+      }
+      if (hpp > 0.0) {
+        vCap = Math.min(vCap, Math.sqrt(spinAccelCap / hpp)); // steady speed: α = v²θ''
       }
       double bend = kAbs + lever * hpp;
       if (bend > 0.0) {
@@ -199,6 +210,23 @@ public final class VelocityProfile {
       a = Math.min(atStart, budget.accel(to, below, speedingUp));
       above = Math.min(Math.sqrt(v0 * v0 + 2.0 * a * ds), capTo);
     }
+    // f(v) = min(√(v0² + 2·ds·min(atStart, budget(to, v))), capTo) falls as v rises, so the answer
+    // v = f(v) lies in [below, above]. When the rounds haven't closed, bisect: f(m) ≥ m means m is
+    // still at or below the answer.
+    if (above - below > 1e-9) {
+      double lo = below;
+      double hi = above;
+      for (int k = 0; k < 60 && hi - lo > 1e-12; k++) {
+        double mid = 0.5 * (lo + hi);
+        double a = Math.min(atStart, budget.accel(to, mid, speedingUp));
+        if (Math.min(Math.sqrt(v0 * v0 + 2.0 * a * ds), capTo) >= mid) {
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+      below = lo;
+    }
     return below;
   }
 
@@ -213,6 +241,7 @@ public final class VelocityProfile {
     private final double lever;
     private final double moduleRadius;
     private final double brake;
+    private final double spinAccelCap;
 
     Budget(RobotConfig robot, int nodes) {
       this.robot = robot;
@@ -220,6 +249,7 @@ public final class VelocityProfile {
       this.lever = robot.spinLeverMeters();
       this.moduleRadius = robot.moduleRadiusMeters();
       this.brake = robot.brakeAccelMetersPerSecondSquared();
+      this.spinAccelCap = robot.maxAngularRadPerSecSquared();
       curvature = new double[nodes];
       spin = new double[nodes];
       spinBend = new double[nodes];
@@ -247,6 +277,11 @@ public final class VelocityProfile {
           ? robot.driveAccelMetersPerSecondSquared(v * (1.0 + moduleRadius * spin[i]))
           : brake;
       a = Math.min(a, (drive - spinPush) / (1.0 + k));
+      if (spinAccelCap < Double.POSITIVE_INFINITY) {
+        // |α| ≤ |a|·|θ'| + v²·|θ''| ≤ α_max
+        double room = spinAccelCap - vSq * spinBend[i];
+        a = room <= 0.0 ? 0.0 : (spin[i] > 0.0 ? Math.min(a, room / spin[i]) : a);
+      }
       return a > 0.0 ? a : 0.0;
     }
   }

@@ -1,4 +1,6 @@
-"""Pathfinding course: PathPlanner's pathfinding (AD* on a navgrid) across bench/fields/obstacles_v1.json.
+"""Pathfinding course: four start/goal pairs (bench/fields/routes_v1.json) across bench/fields/obstacles_v1.json,
+planned by PathPlanner's pathfinding (AD* on a navgrid, ported below) and by ours (lib/, through BenchServer's
+`pathfind` op; OursPathfind).
 
 Port of PathPlannerLib (mjansen4857/pathplanner, branch 2027, 7fbd798):
 - pathfinding/LocalADStar: the grid, reset, computeOrImprovePath, updateState, key/topKey, cost, isCollision,
@@ -19,7 +21,8 @@ Approximations:
   works in corner coordinates (x + length/2, y + width/2) and converts back.
 - The navgrid is built from the polygons: PathPlanner's docs say a node is free only if the robot CENTRE can
   pass through it without hitting anything, so a node is blocked when its centre is within the bumpers'
-  half-diagonal (0.60 m, any heading) of an obstacle. PathPlanner's GUI has you paint this by hand.
+  half-diagonal (0.60 m, any heading) of an obstacle or a field wall. PathPlanner's GUI has you paint this by
+  hand (its default grids have a border along the walls).
 """
 
 import json
@@ -98,14 +101,17 @@ def footprint(x, y, th, length, width):
 
 
 def swept_clearance(xs, ys, ths, field):
-    """Minimum distance from the bumper footprint to any obstacle along a trajectory, and the number of
-    samples in contact."""
+    """Minimum distance from the bumper footprint to any obstacle or field wall along a trajectory, and the
+    number of samples in contact."""
     L, W = field["robot"]["bumper_length_m"], field["robot"]["bumper_width_m"]
+    hx, hy = field["field"]["length_m"] / 2, field["field"]["width_m"] / 2
     polys = [[tuple(p) for p in o["polygon"]] for o in field["obstacles"]]
     best, hits = math.inf, 0
     for x, y, th in zip(xs, ys, ths):
         fp = footprint(x, y, th, L, W)
         d = min(poly_distance(fp, q) for q in polys)
+        d = min(d, min(min(hx - abs(px), hy - abs(py)) for px, py in fp))
+        d = max(d, 0.0)
         best = min(best, d)
         hits += d <= 0.0
     return best, hits
@@ -126,7 +132,8 @@ class LocalADStar:
         for gx in range(self.nodes_x):
             for gy in range(self.nodes_y):
                 c = self.grid_to_xy((gx, gy))
-                if any(point_poly_distance(c, q) < self.inflate for q in polys):
+                near_wall = min(c[0], fl - c[0], c[1], fw - c[1]) < self.inflate
+                if near_wall or any(point_poly_distance(c, q) < self.inflate for q in polys):
                     self.obstacles.add((gx, gy))
 
     # grid helpers ---------------------------------------------------------------------------------
@@ -400,54 +407,137 @@ class PathfindingCommand(Follower):
         return self.finished
 
 
-PATHFIND_METHODS = {  # ours joins here later
+ROUTES_FILE = os.path.join(HERE, "fields", "routes_v1.json")
+
+
+def load_routes():
+    """The start/goal pairs on the field: name -> (start pose, goal pose, start velocity), radians."""
+    with open(ROUTES_FILE) as fh:
+        data = json.load(fh)
+    out = {}
+    for r in data["routes"]:
+        s, g = r["start"], r["goal"]
+        out[r["name"]] = ((s[0], s[1], math.radians(s[2])), (g[0], g[1], math.radians(g[2])),
+                          tuple(r["start_velocity"]))
+    return out
+
+
+_warmed_pid = None
+_warmed_server = None
+
+
+def _warm_mark():
+    from followers.ours_v2 import server
+
+    global _warmed_pid, _warmed_server
+    _warmed_pid, _warmed_server = os.getpid(), server()
+
+
+class OursPathfind(Follower):
+    """Our pathfinder (lib/, frc.team5712.path.plan) through BenchServer's `pathfind` op, then our follower
+    as shipped (the same options and planning grip as the ours_v2 row). The plan is made in reset(), from
+    the measured start state, as a command would at its start; the reply's Java timings and the Python
+    wall-clock of the whole round trip are kept. Each BenchServer plans once before its first timed query,
+    as robot init would (see lib/README.md); cold timings come from PlanCli in a fresh JVM."""
+
+    def __init__(self, mu=0.7, margin=0.05, limits: Limits = Limits(), **follower_options):
+        self.mu = mu
+        self.margin = margin  # bumper margin the planner grows obstacles by and checks the sweep against
+        self.lim = limits
+        self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
+                        "brakeMetersPerSecondSquared": limits.max_accel}
+        self.options.update(follower_options)
+
+    def reset(self, native, start):
+        from followers.ours_v2 import call_fresh, robot_json, server
+
+        def plan(goal):
+            return call_fresh(op="pathfind", field=native["field"], start=[float(v) for v in start.pose],
+                              vel=[float(v) for v in start.vel], goal=[float(v) for v in goal],
+                              robot=robot_json(self.mu), options=self.options, margin=self.margin,
+                              maxSpeed=self.lim.max_speed, maxAccel=self.lim.max_accel)
+
+        if _warmed_pid != os.getpid() or server() is not _warmed_server:
+            # robot init: build the pathfinder and plan once so the JVM has loaded and compiled the code;
+            # the cold numbers come from PlanCli in a fresh JVM instead
+            plan(native["goal"])
+            _warm_mark()
+        t0 = time.perf_counter()
+        r = plan(native["goal"])
+        self.bridge_ms = 1000 * (time.perf_counter() - t0)
+        self.plan = r
+        self.srv = server()
+        g = self.srv.call(op="geometry", step=0.05)
+        self.geometry = [[round(x, 3), round(y, 3)] for x, y in zip(g["x"], g["y"])]
+        self.srv.call(op="reset", t=start.t, pose=[float(v) for v in start.pose], vel=[float(v) for v in start.vel])
+        self.finished = False
+
+    def step(self, t, pose, vel):
+        r = self.srv.call(op="step", t=float(t), pose=[float(v) for v in pose], vel=[float(v) for v in vel])
+        self.finished = r["done"]
+        return tuple(r["cmd"])
+
+    def done(self):
+        return self.finished
+
+
+PATHFIND_METHODS = {
     "pp_pathfind": (PathfindingCommand, {}, "PathPlanner pathfinding (AD*, kP 5)"),
     "pp_pathfind_hold": (PathfindingCommand, {"hold": True}, "PathPlanner pathfinding (AD*, kP 5) + hold"),
+    "ours_pathfind": (OursPathfind, {}, "Ours (visibility graph + A* + quintic, our follower)"),
+    "ours_pathfind_m10": (OursPathfind, {"margin": 0.10}, "Ours, bumper margin 0.10 m"),
+    "ours_pathfind_m15": (OursPathfind, {"margin": 0.15}, "Ours, bumper margin 0.15 m"),
 }
 
 
-def plan_once(field=None):
+def plan_once(field=None, route=None):
+    """PathPlanner's planner for one route: (planner, anytime steps, grid build ms)."""
     field = field or load_field()
+    start, goal, _ = route or load_routes()["across"]
     t0 = time.perf_counter()
     planner = LocalADStar(field)
     grid_ms = 1000 * (time.perf_counter() - t0)
-    r = field["route"]
-    steps = planner.plan(r["start"][:2], r["goal"][:2])
+    steps = planner.plan(start[:2], goal[:2])
     return planner, steps, grid_ms
 
 
 def run_pathfind(job):
-    """job = (method key, seed, pose source). Plans, follows, and measures against the true pose."""
+    """job = (method key, route name, seed, pose source). Plans, follows, and measures against the true pose."""
     from dataclasses import replace
 
     from sim import DisturbedPlant, end_metrics, simulate
 
-    key, seed, pose_src = job
+    key, rname, seed, pose_src = job
     field = load_field()
-    _, steps, grid_ms = plan_once(field)
-    route = field["route"]
-    start, goal = tuple(route["start"]), tuple(route["goal"])
+    start, goal, v0 = load_routes()[rname]
     cls, kw, _ = PATHFIND_METHODS[key]
     rng = np.random.default_rng(seed)
     rp = replace(RP, wheel_radius_error=rng.normal(0, 0.01), gyro_scale_error=rng.normal(0, 0.002))
     follower = cls(**kw)
-    native = {"paths": [s[1] for s in steps], "goal": goal}
-    v0 = tuple(route["start_velocity"])
+    extra = {}
+    if cls is PathfindingCommand:
+        _, steps, grid_ms = plan_once(field, (start, goal, v0))
+        native = {"paths": [s[1] for s in steps], "goal": goal}
+        final = PathPlannerPath({"waypoints": steps[-1][1], "rotation_targets": [], "goal_rotation": goal[2]})
+        pts = np.array([p.position for p in final.points])
+        extra.update(path_m=float(np.hypot(*np.diff(pts, axis=0).T).sum()), plan_first_ms=steps[0][2],
+                     plan_ms=sum(s[2] for s in steps), grid_ms=grid_ms)
+    else:
+        native = {"field": field, "goal": goal}
     plant = DisturbedPlant(rp, start, v0, rng)
     r = simulate(follower, native, start, v0, rp, rng, 12.0, pose_src, plant)
+    if cls is OursPathfind:
+        p = follower.plan
+        extra.update(path_m=p["lengthMeters"], route_m=p["routeLengthMeters"], plan_ms=p["planMs"],
+                     bridge_ms=follower.bridge_ms, refits=p["refits"], plan_clear=float(p["clear"]),
+                     plan_clearance_cm=100 * p["minClearanceMeters"])
     dist, eth, t_5cm, t_settle = end_metrics(r, goal)
     clear, hits = swept_clearance(r["x"], r["y"], r["th"], field)
-    final = PathPlannerPath({"waypoints": steps[-1][1], "rotation_targets": [], "goal_rotation": goal[2]})
-    pts = np.array([p.position for p in final.points])
-    planned_len = float(np.hypot(*np.diff(pts, axis=0).T).sum())
     driven = np.hypot(np.diff(r["x"]), np.diff(r["y"]))
     stop = int(np.flatnonzero(dist < 0.05)[0]) if (dist < 0.05).any() else len(driven)
-    return {
-        "route_m": planned_len,
+    out = {
+        "straight_m": math.dist(start[:2], goal[:2]),
         "driven_m": float(driven[:stop].sum()),
-        "plan_first_ms": steps[0][2],
-        "plan_total_ms": sum(s[2] for s in steps),
-        "grid_ms": grid_ms,
         "t_5cm": t_5cm,
         "t_settle": t_settle,
         "t_done": float("nan") if r["t_done"] is None else r["t_done"],
@@ -455,21 +545,50 @@ def run_pathfind(job):
         "yaw_end_deg": math.degrees(float(eth[-1])),
         "clearance_cm": 100 * clear,
         "contact_ms": 1000 * hits * LP.odom_period,
+        "contact_run": float(hits > 0),
         "wheel_slip_ms": 1000 * r["wheel_slip"],
         "odo_err_cm": r["odo_err_cm"],
     }
+    out.update(extra)
+    return out
 
 
 def planned_geometry():
-    """Every anytime path's sampled points (centre coords) and the blocked grid, for results.json."""
+    """For results.json: PathPlanner's anytime paths per route, ours per route, and the blocked grid."""
+    from followers.base import Start
+
     field = load_field()
-    planner, steps, _ = plan_once(field)
-    out = {"eps": [], "blocked": sorted([list(planner.grid_to_xy(g)) for g in planner.obstacles])}
-    ox, oy = planner.off
-    out["blocked"] = [[round(x - ox, 2), round(y - oy, 2)] for x, y in out["blocked"]]
-    for eps, wps, ms in steps:
-        path = PathPlannerPath({"waypoints": wps, "rotation_targets": [], "goal_rotation": 0.0})
-        out["eps"].append({"eps": eps, "ms": ms, "points": [[round(p.position[0], 3), round(p.position[1], 3)]
-                                                          for p in path.points]})
+    out = {"routes": {}}
+    for name, route in load_routes().items():
+        planner, steps, _ = plan_once(field, route)
+        if "blocked" not in out:
+            ox, oy = planner.off
+            out["blocked"] = [[round(x - ox, 2), round(y - oy, 2)]
+                              for x, y in sorted(planner.grid_to_xy(g) for g in planner.obstacles)]
+        eps = []
+        for e, wps, ms in steps:
+            path = PathPlannerPath({"waypoints": wps, "rotation_targets": [], "goal_rotation": 0.0})
+            eps.append({"eps": e, "ms": ms, "points": [[round(p.position[0], 3), round(p.position[1], 3)]
+                                                       for p in path.points]})
+        ours = OursPathfind()
+        start, goal, v0 = route
+        ours.reset({"field": field, "goal": goal}, Start(0.0, start, v0))
+        out["routes"][name] = {"pathplanner": eps, "ours": ours.geometry,
+                               "ours_waypoints": ours.plan["waypoints"]}
     return out
 
+
+def java_plan_timing(route):
+    """Cold (first query in a fresh JVM) and warm Java timings for one route, from PlanCli."""
+    import subprocess
+
+    from followers.ours_v2 import JAR
+
+    start, goal, v0 = route
+    java = os.path.join(os.environ["JAVA_HOME"], "bin", "java") if os.environ.get("JAVA_HOME") else "java"
+    args = [java, "-cp", JAR, "frc.team5712.path.tools.PlanCli", FIELD_FILE,
+            *[repr(v) for v in (start[0], start[1], math.degrees(start[2]), goal[0], goal[1], math.degrees(goal[2]))]]
+    if math.hypot(v0[0], v0[1]) > 0:
+        args += [repr(v0[0]), repr(v0[1])]
+    out = subprocess.run(args + ["--repeat", "2000"], capture_output=True, text=True, check=True).stdout
+    return json.loads(out)

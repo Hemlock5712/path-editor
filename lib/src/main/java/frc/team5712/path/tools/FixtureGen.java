@@ -28,14 +28,24 @@ public final class FixtureGen {
     java.nio.file.Path out = java.nio.file.Path.of(args.length > 0 ? args[0] : "fixtures");
     Files.createDirectories(out);
     for (Map.Entry<String, PathSpec> e : FixturePaths.all().entrySet()) {
-      Map<String, Object> pathTree =
-          PathFile.asMap(Json.parse(Json.write(PathFile.toJson(e.getValue()), Json::exact)), "path");
-      Map<String, Object> tree =
-          ProfileSamples.toJson(
-              pathTree, RobotConfig.DEFAULT, VelocityProfile.DEFAULT_GRID_METERS, STEP_METERS);
-      java.nio.file.Path file = out.resolve(e.getKey() + ".json");
-      Files.writeString(file, Json.write(tree, Json::exact), StandardCharsets.UTF_8);
-      System.out.println("wrote " + file);
+      write(out, e.getKey(), e.getValue(), RobotConfig.DEFAULT);
     }
+    for (Map.Entry<String, PathSpec> e : FixturePaths.spinLimited().entrySet()) {
+      write(out, e.getKey(), e.getValue(), FixturePaths.SPIN_LIMITED_ROBOT);
+    }
+  }
+
+  /** The fixture text for one path and robot. */
+  public static String fixture(PathSpec spec, RobotConfig robot) {
+    Map<String, Object> pathTree = PathFile.asMap(Json.parse(Json.write(PathFile.toJson(spec), Json::exact)), "path");
+    return Json.write(ProfileSamples.toJson(pathTree, robot, VelocityProfile.DEFAULT_GRID_METERS, STEP_METERS),
+        Json::exact);
+  }
+
+  private static void write(java.nio.file.Path out, String name, PathSpec spec, RobotConfig robot)
+      throws IOException {
+    java.nio.file.Path file = out.resolve(name + ".json");
+    Files.writeString(file, fixture(spec, robot), StandardCharsets.UTF_8);
+    System.out.println("wrote " + file);
   }
 }

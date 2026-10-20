@@ -31,10 +31,39 @@ public final class Path {
    * existing path smoothly.
    */
   public static Path build(PathSpec spec, RobotConfig robot, double gridMeters, double startCurvature) {
+    spec = pureRotation(spec);
     PathGeometry geometry = PathGeometry.build(spec.waypoints(), startCurvature);
     HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones());
     VelocityProfile profile = VelocityProfile.build(geometry, heading, spec, robot, gridMeters);
     return new Path(spec, geometry, heading, profile);
+  }
+
+  /** Length of the segment a pure rotation is planned on, metres. */
+  public static final double PURE_ROTATION_METERS = 0.001;
+
+  /**
+   * A spec whose two waypoints are at the same place is a turn on the spot. The heading is tied to
+   * distance, so it is planned on a {@link #PURE_ROTATION_METERS} segment that ends exactly on the
+   * point, pointing along the final heading: the spin limits then set the time, and the robot moves
+   * at most 1 mm. Any other spec is returned unchanged.
+   */
+  public static PathSpec pureRotation(PathSpec spec) {
+    java.util.List<Waypoint> w = spec.waypoints();
+    if (w.size() != 2 || w.get(0).position().minus(w.get(1).position()).norm() > 1e-9) {
+      return spec;
+    }
+    double end = Double.NaN;
+    for (RotationTarget t : spec.rotationTargets()) {
+      end = t.headingRadians();
+    }
+    double dir = Double.isNaN(end) ? 0.0 : end;
+    Waypoint p = w.get(1);
+    Waypoint a = new Waypoint(p.xMeters() - PURE_ROTATION_METERS * StrictMath.cos(dir),
+        p.yMeters() - PURE_ROTATION_METERS * StrictMath.sin(dir), dir, 1.0);
+    Waypoint b = new Waypoint(p.xMeters(), p.yMeters(), dir, 1.0);
+    return new PathSpec(java.util.List.of(a, b), spec.rotationTargets(), spec.facePointZones(),
+        spec.constraintZones(), spec.maxMetersPerSecond(), spec.maxMetersPerSecondSquared(),
+        0.0, 0.0);
   }
 
   public PathSpec spec() {

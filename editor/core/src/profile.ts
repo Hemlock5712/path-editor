@@ -17,6 +17,9 @@ import type { PathSpec } from "./spec.ts";
 /** Default grid spacing, metres. */
 export const DEFAULT_GRID_METERS = 0.03;
 
+/** Fewest grid cells on any path, so a short hop's turn is resolved (as in Java). */
+export const MIN_CELLS = 16;
+
 export class VelocityProfile {
   readonly lengthMeters: number;
   /** Grid spacing actually used, metres (the path length split into equal cells). */
@@ -49,7 +52,7 @@ export class VelocityProfile {
     gridMeters = DEFAULT_GRID_METERS,
   ): VelocityProfile {
     const length = geometry.lengthMeters;
-    const cells = Math.max(1, Math.ceil(length / gridMeters));
+    const cells = Math.max(MIN_CELLS, Math.ceil(length / gridMeters));
     const ds = length / cells;
     const nodes = cells + 1;
 
@@ -67,6 +70,7 @@ export class VelocityProfile {
     const moduleRadius = robot.moduleRadiusMeters;
     const wheelCap = wheelSpeedCapMetersPerSecond(robot);
     const spinCap = robot.maxAngularRadPerSec;
+    const spinAccelCap = robot.maxAngularRadPerSecSquared;
 
     const budget = new Budget(robot, nodes);
     const speedCap = new Float64Array(nodes);
@@ -90,6 +94,7 @@ export class VelocityProfile {
       }
       vCap = Math.min(vCap, wheelCap / (1.0 + moduleRadius * hp));
       if (hp > 0.0) vCap = Math.min(vCap, spinCap / hp);
+      if (hpp > 0.0) vCap = Math.min(vCap, Math.sqrt(spinAccelCap / hpp)); // steady speed: α = v²θ''
       const bend = kAbs + lever * hpp;
       if (bend > 0.0) vCap = Math.min(vCap, Math.sqrt(grip / bend));
       speedCap[i] = vCap;
@@ -202,7 +207,10 @@ function snapToGrid(cells: number): number {
   return Math.abs(cells - nearest) < 1e-6 ? nearest : cells;
 }
 
-/** One step of a pass: a two-round fixed point so the step's |a| fits the budget at both ends. */
+/**
+ * One step of a pass: a two-round fixed point so the step's |a| fits the budget at both ends, then
+ * bisection inside the rounds' bracket when they haven't closed (a fast turn over a short hop).
+ */
 function step(
   budget: Budget,
   v0: number,
@@ -221,6 +229,17 @@ function step(
     a = Math.min(atStart, budget.accel(to, below, speedingUp));
     above = Math.min(Math.sqrt(v0 * v0 + 2.0 * a * ds), capTo);
   }
+  if (above - below > 1e-9) {
+    let lo = below;
+    let hi = above;
+    for (let k = 0; k < 60 && hi - lo > 1e-12; k++) {
+      const mid = 0.5 * (lo + hi);
+      const a = Math.min(atStart, budget.accel(to, mid, speedingUp));
+      if (Math.min(Math.sqrt(v0 * v0 + 2.0 * a * ds), capTo) >= mid) lo = mid;
+      else hi = mid;
+    }
+    below = lo;
+  }
   return below;
 }
 
@@ -235,6 +254,7 @@ class Budget {
   private readonly lever: number;
   private readonly moduleRadius: number;
   private readonly brake: number;
+  private readonly spinAccelCap: number;
 
   constructor(robot: RobotConfig, nodes: number) {
     this.robot = robot;
@@ -242,6 +262,7 @@ class Budget {
     this.lever = spinLeverMeters(robot);
     this.moduleRadius = robot.moduleRadiusMeters;
     this.brake = brakeAccelMetersPerSecondSquared(robot);
+    this.spinAccelCap = robot.maxAngularRadPerSecSquared;
     this.curvature = new Float64Array(nodes);
     this.spin = new Float64Array(nodes);
     this.spinBend = new Float64Array(nodes);
@@ -268,6 +289,11 @@ class Budget {
       ? driveAccelMetersPerSecondSquared(this.robot, v * (1.0 + this.moduleRadius * this.spin[i]!))
       : this.brake;
     a = Math.min(a, (drive - spinPush) / (1.0 + k));
+    if (this.spinAccelCap < Infinity) {
+      // |α| ≤ |a|·|θ'| + v²·|θ''| ≤ α_max
+      const room = this.spinAccelCap - vSq * this.spinBend[i]!;
+      a = room <= 0.0 ? 0.0 : this.spin[i]! > 0.0 ? Math.min(a, room / this.spin[i]!) : a;
+    }
     return a > 0.0 ? a : 0.0;
   }
 }

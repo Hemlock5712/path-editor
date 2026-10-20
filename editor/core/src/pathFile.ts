@@ -144,6 +144,7 @@ export function robotFromJson(m: JsonObject): RobotConfig {
     frictionCoefficient: num(m, "frictionCoefficient", d.frictionCoefficient),
     maxWheelMetersPerSecond: num(m, "maxWheelMetersPerSecond", d.maxWheelMetersPerSecond),
     maxAngularRadPerSec: num(m, "maxAngularRadPerSec", d.maxAngularRadPerSec),
+    maxAngularRadPerSecSquared: num(m, "maxAngularRadPerSecSquared", d.maxAngularRadPerSecSquared),
   });
 }
 
@@ -161,6 +162,7 @@ export function robotToJson(r: RobotConfig): JsonObject {
   };
   putIfFinite(m, "maxWheelMetersPerSecond", r.maxWheelMetersPerSecond);
   putIfFinite(m, "maxAngularRadPerSec", r.maxAngularRadPerSec);
+  putIfFinite(m, "maxAngularRadPerSecSquared", r.maxAngularRadPerSecSquared);
   m.motor = {
     nominalVolts: r.driveMotor.nominalVolts,
     stallTorqueNewtonMeters: r.driveMotor.stallTorqueNewtonMeters,
