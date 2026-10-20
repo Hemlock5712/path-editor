@@ -207,7 +207,7 @@ class VelocityProfileTest {
       double fine = Path.build(spec, ROBOT, 0.002).totalTimeSeconds();
       double normal = Path.build(spec, ROBOT).totalTimeSeconds();
       double coarse = Path.build(spec, ROBOT, 0.05).totalTimeSeconds();
-      // zones reach one grid point past their ends, so paths with zones converge only linearly
+      // zones cap every cell they touch, so paths with zones converge only linearly
       assertEquals(fine, normal, 0.01 * fine);
       assertEquals(fine, coarse, 0.02 * fine);
     }

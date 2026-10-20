@@ -25,8 +25,8 @@ import java.util.List;
  *   <li><b>Wheel speed</b>: the fastest wheel rolls at {@code v + r·|ω|}, so
  *       {@code v ≤ v_wheel / (1 + r·|θ'|)}. Planned spin takes speed away from translation.
  *   <li><b>Caps</b>: the path's and each zone's speed and acceleration, the robot's spin cap
- *       {@code v·|θ'| ≤ ω_max}, and the start and end speeds. A zone's caps reach one grid point
- *       past each of its ends, so the speed is already down when the zone starts.
+ *       {@code v·|θ'| ≤ ω_max}, and the start and end speeds. A zone caps every grid point of every
+ *       cell it overlaps, so the speed is already down when the zone starts.
  * </ul>
  *
  * <p>{@code |α| ≤ |a|·|θ'| + v²·|θ''|} turns the grip limit into a closed form for the largest |a|:
@@ -41,7 +41,7 @@ import java.util.List;
  * the end speed depends on the step's acceleration. The step solves that by a short fixed-point
  * iteration that approaches from above and keeps the last answer from below, so the limits hold
  * at every grid point. On the fixture paths a 3 cm grid's total time is within 0.1-0.9 % of a 1 mm
- * grid's (the larger figures come from zone caps reaching one grid point early). Curvature is
+ * grid's (the larger figures come from zones capping every cell they touch). Curvature is
  * continuous, so no smoothing window is needed.
  */
 public final class VelocityProfile {
@@ -80,13 +80,13 @@ public final class VelocityProfile {
     double ds = length / cells;
     int nodes = cells + 1;
 
-    // Zones, resolved to metres
+    // Zones, resolved to the grid points they cap: every point of every cell the zone overlaps
     List<ConstraintZone> zones = spec.constraintZones();
-    double[] zoneA = new double[zones.size()];
-    double[] zoneB = new double[zones.size()];
-    for (int j = 0; j < zoneA.length; j++) {
-      zoneA[j] = geometry.sAtWaypoint(zones.get(j).fromWaypoint());
-      zoneB[j] = geometry.sAtWaypoint(zones.get(j).toWaypoint());
+    int[] zoneFirst = new int[zones.size()];
+    int[] zoneLast = new int[zones.size()];
+    for (int j = 0; j < zoneFirst.length; j++) {
+      zoneFirst[j] = (int) Math.floor(snapToGrid(geometry.sAtWaypoint(zones.get(j).fromWaypoint()) / ds));
+      zoneLast[j] = (int) Math.ceil(snapToGrid(geometry.sAtWaypoint(zones.get(j).toWaypoint()) / ds));
     }
 
     double grip = robot.gripMetersPerSecondSquared();
@@ -110,9 +110,8 @@ public final class VelocityProfile {
 
       double vCap = spec.maxMetersPerSecond();
       double aCap = spec.maxMetersPerSecondSquared();
-      for (int j = 0; j < zoneA.length; j++) {
-        // a grid point is in the zone when either of its cells overlaps the zone
-        if (s > zoneA[j] - ds && s < zoneB[j] + ds) {
+      for (int j = 0; j < zoneFirst.length; j++) {
+        if (i >= zoneFirst[j] && i <= zoneLast[j]) {
           vCap = Math.min(vCap, zones.get(j).maxMetersPerSecond());
           aCap = Math.min(aCap, zones.get(j).maxMetersPerSecondSquared());
         }
@@ -161,6 +160,16 @@ public final class VelocityProfile {
       time[i + 1] = time[i] + 2.0 * ds / (v0 + v1);
     }
     return new VelocityProfile(length, ds, velocity, accel, time);
+  }
+
+  /**
+   * A position in grid cells, snapped to the nearest grid point when within a millionth of a cell,
+   * so a zone that starts exactly on a grid point (common on symmetric paths) doesn't flip to the
+   * cell before it on rounding.
+   */
+  private static double snapToGrid(double cells) {
+    double nearest = Math.rint(cells);
+    return Math.abs(cells - nearest) < 1e-6 ? nearest : cells;
   }
 
   /**
