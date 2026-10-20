@@ -33,6 +33,7 @@ public final class FollowPathCommandV2 extends Command {
   private Supplier<FieldSpeeds> handedCommand;
   private DoubleSupplier clock = Timer::getTimestamp;
   private Supplier<FieldFrame> frameSource;
+  private PathLibrary library;
 
   public FollowPathCommandV2(
       String name,
@@ -56,6 +57,15 @@ public final class FollowPathCommandV2 extends Command {
   /** Schedules {@code command} when the path event {@code eventName} fires. */
   public FollowPathCommandV2 onEvent(String eventName, Command command) {
     eventCommands.put(eventName, command);
+    return this;
+  }
+
+  /**
+   * Schedules the commands bound in {@code library} ({@link PathLibrary#bindEvent}) when their events
+   * fire. A command given to {@link #onEvent} for the same name wins.
+   */
+  public FollowPathCommandV2 withEvents(PathLibrary library) {
+    this.library = library;
     return this;
   }
 
@@ -100,6 +110,9 @@ public final class FollowPathCommandV2 extends Command {
     telemetry.log(follower);
     for (String event : fired) {
       Command c = eventCommands.get(event);
+      if (c == null && library != null) {
+        c = library.eventCommandV2(event).orElse(null);
+      }
       if (c != null) {
         CommandScheduler.getInstance().schedule(c);
       }

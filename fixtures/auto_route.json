@@ -1,7 +1,7 @@
 {
   "inputs": {
     "path": {
-      "schema": 1,
+      "schema": 2,
       "waypoints": [
         { "x": -5.2, "y": -2.5, "tangentDegrees": 0 },
         { "x": -3.6, "y": -1.5 },
@@ -26,6 +26,7 @@
       "constraintZones": [
         { "fromWaypoint": 7, "toWaypoint": 8, "maxMetersPerSecond": 2 }
       ],
+      "events": [],
       "maxMetersPerSecond": 4,
       "maxMetersPerSecondSquared": 6,
       "startMetersPerSecond": 0,

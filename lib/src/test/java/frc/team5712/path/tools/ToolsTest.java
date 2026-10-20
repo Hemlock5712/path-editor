@@ -101,5 +101,8 @@ class ToolsTest {
       assertEquals(FixtureGen.fixture(e.getValue(), FixturePaths.SPIN_LIMITED_ROBOT), committed.replace("\r\n", "\n"),
           e.getKey() + ".json is stale: run lib/gradlew -p lib fixtures");
     }
+    String files = Files.readString(dir.resolve(FixtureGen.PATH_FILES), StandardCharsets.UTF_8);
+    assertEquals(FixtureGen.pathFiles(), files.replace("\r\n", "\n"),
+        FixtureGen.PATH_FILES + " is stale: run lib/gradlew -p lib fixtures");
   }
 }

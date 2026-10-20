@@ -86,7 +86,7 @@ class PathFileTest {
     String written = PathFile.write(FixturePaths.autoRoute());
     String[] order = {
       "\"schema\"", "\"waypoints\"", "\"rotationTargets\"", "\"facePointZones\"", "\"constraintZones\"",
-      "\"maxMetersPerSecond\": 4", "\"maxMetersPerSecondSquared\"", "\"startMetersPerSecond\"",
+      "\"events\"", "\"maxMetersPerSecond\": 4", "\"maxMetersPerSecondSquared\"", "\"startMetersPerSecond\"",
       "\"endMetersPerSecond\""
     };
     int at = -1;
@@ -111,7 +111,10 @@ class PathFileTest {
     assertThrows(IllegalArgumentException.class, () -> PathFile.read("{ \"waypoints\": [] }"));
     assertThrows(
         IllegalArgumentException.class,
-        () -> PathFile.read("{ \"schema\": 2, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
+        () -> PathFile.read("{ \"schema\": 3, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> PathFile.read("{ \"schema\": 1.5, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
     assertThrows(
         IllegalArgumentException.class,
         () -> PathFile.read("{ \"schema\": 1, \"waypoints\": [ { \"x\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
@@ -119,6 +122,68 @@ class PathFileTest {
         IllegalArgumentException.class,
         () -> PathFile.read("{ \"schema\": 1, \"waypoints\": [ { \"x\": \"0\", \"y\": 0 } ] }"));
     assertThrows(IllegalArgumentException.class, () -> PathFile.read("[1, 2]"));
+  }
+
+  static String exampleV1() throws IOException {
+    try (InputStream in = PathFileTest.class.getResourceAsStream("/example.v1.path.json")) {
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    }
+  }
+
+  @Test
+  void schemaOneFilesStillRead() throws IOException {
+    PathSpec v1 = PathFile.read(exampleV1());
+    PathSpec v2 = PathFile.read(example());
+    assertTrue(v1.events().isEmpty());
+    assertEquals(v2.waypoints(), v1.waypoints());
+    assertEquals(v2.rotationTargets(), v1.rotationTargets());
+    String written = PathFile.write(v1);
+    assertTrue(written.startsWith("{\n  \"schema\": 2,"), "writes the current schema");
+    assertTrue(written.contains("\"events\": []"), written);
+  }
+
+  @Test
+  void eventsReadInFileOrder() throws IOException {
+    List<PathEvent> events = PathFile.read(example()).events();
+    assertEquals(4, events.size());
+    assertEquals(PathEvent.atWaypoint("intakeDown", 0.5), events.get(0));
+    assertEquals(PathEvent.atMeters("spinUp", 6.25), events.get(1));
+    assertEquals("score \"L4\"", events.get(3).name());
+    assertEquals(15.98765, events.get(3).meters(), 0.0);
+    PathSpec spec = PathFile.read(example());
+    Path path = Path.build(spec, RobotConfig.DEFAULT);
+    assertEquals(path.geometry().sAtWaypoint(0.5), events.get(0).sMeters(path.geometry()), 0.0);
+    assertEquals(6.25, events.get(1).sMeters(path.geometry()), 0.0);
+  }
+
+  @Test
+  void rejectsBadEvents() {
+    String head = "{ \"schema\": 2, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ], \"events\": ";
+    assertThrows(IllegalArgumentException.class, () -> PathFile.read(head + "[ { \"atMeters\": 1 } ] }"));
+    assertThrows(IllegalArgumentException.class, () -> PathFile.read(head + "[ { \"name\": 3, \"atMeters\": 1 } ] }"));
+    assertThrows(IllegalArgumentException.class, () -> PathFile.read(head + "[ { \"name\": \" \", \"atMeters\": 1 } ] }"));
+    assertThrows(IllegalArgumentException.class, () -> PathFile.read(head + "[ { \"name\": \"a\" } ] }"));
+    assertThrows(IllegalArgumentException.class,
+        () -> PathFile.read(head + "[ { \"name\": \"a\", \"atMeters\": 1, \"atWaypoint\": 0 } ] }"));
+    assertThrows(IllegalArgumentException.class, () -> PathFile.read(head + "{ \"name\": \"a\" } }"));
+  }
+
+  /** The same specs PathFileSamples gives the TS port: each file reads back to the same text. */
+  @Test
+  void everySampleFileRoundTrips() {
+    int events = 0;
+    for (PathSpec spec : frc.team5712.path.tools.PathFileSamples.all()) {
+      String once = PathFile.write(spec);
+      PathSpec read = PathFile.read(once);
+      assertEquals(once, PathFile.write(read));
+      assertEquals(spec.events().size(), read.events().size());
+      for (int i = 0; i < spec.events().size(); i++) {
+        assertEquals(spec.events().get(i).name(), read.events().get(i).name());
+        assertEquals(spec.events().get(i).byWaypoint(), read.events().get(i).byWaypoint());
+      }
+      events += spec.events().size();
+    }
+    assertTrue(events > 20, "the samples exercise events: " + events);
   }
 
   @Test

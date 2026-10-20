@@ -7,3 +7,5 @@ build/
 bin/
 .DS_Store
 bench/out/
+test-results/
+playwright-report/

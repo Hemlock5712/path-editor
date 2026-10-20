@@ -2,13 +2,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { exact, fixed5, writeJson } from "../src/json.ts";
-import { Path } from "../src/path.ts";
+import { eventMeters, Path } from "../src/path.ts";
 import { pathToJson, readPath, robotFromJson, robotToJson, writePath } from "../src/pathFile.ts";
 import { DEFAULT_ROBOT } from "../src/robot.ts";
-import { makePathSpec, makeWaypoint } from "../src/spec.ts";
+import { eventAtMeters, eventAtWaypoint, makePathSpec, makeWaypoint } from "../src/spec.ts";
+import { allSamples, COUNT, SEED } from "./pathFileSamples.ts";
 
-const EXAMPLE = join(import.meta.dirname, "..", "..", "..", "lib", "src", "test", "resources", "example.path.json");
-const example = () => readFileSync(EXAMPLE, "utf8").replace(/\r\n/g, "\n");
+const ROOT = join(import.meta.dirname, "..", "..", "..");
+const RESOURCES = join(ROOT, "lib", "src", "test", "resources");
+const read = (file: string) => readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+const example = () => read(join(RESOURCES, "example.path.json"));
+const exampleV1 = () => read(join(RESOURCES, "example.v1.path.json"));
 
 describe("fixed5", () => {
   it("rounds and trims like the Java writer", () => {
@@ -83,6 +87,7 @@ describe("path files", () => {
       "rotationTargets",
       "facePointZones",
       "constraintZones",
+      "events",
       "startMetersPerSecond",
       "endMetersPerSecond",
     ]);
@@ -90,7 +95,8 @@ describe("path files", () => {
 
   it("rejects a wrong schema and missing fields", () => {
     expect(() => readPath('{ "waypoints": [] }')).toThrow(/schema/);
-    expect(() => readPath('{ "schema": 2, "waypoints": [] }')).toThrow(/schema 2/);
+    expect(() => readPath('{ "schema": 3, "waypoints": [] }')).toThrow(/schema 3/);
+    expect(() => readPath('{ "schema": 1.5, "waypoints": [] }')).toThrow(/schema 1.5/);
     expect(() => readPath('{ "schema": 1, "waypoints": [ { "x": 0 }, { "x": 1, "y": 0 } ] }')).toThrow(/'y'/);
     expect(() => readPath('{ "schema": 1, "waypoints": [ { "x": "0", "y": 0 } ] }')).toThrow(/number/);
     expect(() => readPath("[1, 2]")).toThrow(/object/);
@@ -101,5 +107,65 @@ describe("path files", () => {
     expect(robotFromJson(JSON.parse(writeJson(robotToJson(r), exact)))).toEqual(r);
     expect(robotFromJson({})).toEqual(DEFAULT_ROBOT);
     expect(robotFromJson({ massKg: 50, motor: { stallCurrentAmps: 400 } }).driveMotor.stallTorqueNewtonMeters).toBe(9.362);
+  });
+});
+
+describe("events (schema 2)", () => {
+  it("still reads schema 1 files, and writes the current schema", () => {
+    const v1 = readPath(exampleV1());
+    const v2 = readPath(example());
+    expect(v1.events).toEqual([]);
+    expect(v1.waypoints).toEqual(v2.waypoints);
+    const written = writePath(v1);
+    expect(written.startsWith('{\n  "schema": 2,')).toBe(true);
+    expect(written).toContain('"events": []');
+  });
+
+  it("reads events in file order, with positions along the path", () => {
+    const spec = readPath(example());
+    expect(spec.events).toHaveLength(4);
+    expect(spec.events[0]).toEqual(eventAtWaypoint("intakeDown", 0.5));
+    expect(spec.events[1]).toEqual(eventAtMeters("spinUp", 6.25));
+    expect(spec.events[3]!.name).toBe('score "L4"');
+    const path = Path.build(spec, DEFAULT_ROBOT);
+    expect(eventMeters(spec.events[0]!, path.geometry)).toBe(path.geometry.sAtWaypoint(0.5));
+    expect(eventMeters(spec.events[1]!, path.geometry)).toBe(6.25);
+  });
+
+  it("rejects bad events like the Java reader", () => {
+    const head = '{ "schema": 2, "waypoints": [ { "x": 0, "y": 0 }, { "x": 1, "y": 0 } ], "events": ';
+    expect(() => readPath(head + '[ { "atMeters": 1 } ] }')).toThrow(/name/);
+    expect(() => readPath(head + '[ { "name": 3, "atMeters": 1 } ] }')).toThrow(/name/);
+    expect(() => readPath(head + '[ { "name": " ", "atMeters": 1 } ] }')).toThrow(/name/);
+    expect(() => readPath(head + '[ { "name": "a" } ] }')).toThrow(/exactly one/);
+    expect(() => readPath(head + '[ { "name": "a", "atMeters": 1, "atWaypoint": 0 } ] }')).toThrow(/exactly one/);
+    expect(() => readPath(head + '{ "name": "a" } }')).toThrow(/list/);
+  });
+
+  // The Java <-> TS round trip: Java wrote these files from PathFileSamples; the TS port builds the
+  // same specs from the same generator and must print the same characters, and reading any of them
+  // and writing it again must give the file back.
+  const fixture = JSON.parse(read(join(ROOT, "fixtures", "files", "path_files.json"))) as {
+    seed: number;
+    files: { text: string }[];
+  };
+
+  it("has the Java-written sample files", () => {
+    expect(fixture.seed).toBe(SEED);
+    expect(fixture.files).toHaveLength(COUNT);
+  });
+
+  it("prints the same text as Java for the same specs", () => {
+    const specs = allSamples();
+    let events = 0;
+    specs.forEach((spec, i) => {
+      expect(writePath(spec), `sample ${i}`).toBe(fixture.files[i]!.text);
+      events += spec.events.length;
+    });
+    expect(events).toBeGreaterThan(20);
+  });
+
+  it("reads each Java-written file and writes it back byte for byte", () => {
+    for (const { text } of fixture.files) expect(writePath(readPath(text))).toBe(text);
   });
 });

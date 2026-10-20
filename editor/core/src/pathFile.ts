@@ -1,21 +1,27 @@
 // Reads and writes *.path.json. Port of lib's PathFile.java and RobotFile.java: 5-decimal numbers,
 // keys in a fixed order, degrees in the file and radians everywhere else, unknown keys ignored.
+// Schema 2 added events; schema 1 files still read, and writing always gives the current schema.
 
 import { fixed5, writeJson, type JsonValue } from "./json.ts";
 import { DEFAULT_ROBOT, checkRobot, type Motor, type RobotConfig } from "./robot.ts";
 import {
   DEFAULT_BLEND_METERS,
+  eventByWaypoint,
   hasTangent,
   makeConstraintZone,
   makeFacePointZone,
+  makePathEvent,
   makePathSpec,
   makeRotationTarget,
   makeWaypoint,
   type PathSpec,
 } from "./spec.ts";
 
-/** The schema this code writes and reads. */
-export const SCHEMA = 1;
+/** The schema this code writes. */
+export const SCHEMA = 2;
+
+/** The oldest schema this code still reads. */
+export const OLDEST_SCHEMA = 1;
 
 const DEGREES = Math.PI / 180.0;
 
@@ -56,6 +62,9 @@ export function pathToJson(spec: PathSpec): JsonObject {
     putIfFinite(m, "maxMetersPerSecondSquared", z.maxMetersPerSecondSquared);
     return m;
   });
+  root.events = spec.events.map((e): JsonObject =>
+    eventByWaypoint(e) ? { name: e.name, atWaypoint: e.waypoint } : { name: e.name, atMeters: e.meters },
+  );
   putIfFinite(root, "maxMetersPerSecond", spec.maxMetersPerSecond);
   putIfFinite(root, "maxMetersPerSecondSquared", spec.maxMetersPerSecondSquared);
   root.startMetersPerSecond = spec.startMetersPerSecond;
@@ -70,9 +79,11 @@ function putIfFinite(m: JsonObject, key: string, v: number): void {
 /** Builds a spec from a parsed file. */
 export function pathFromJson(root: JsonObject): PathSpec {
   const schema = num(root, "schema", Number.NaN);
-  if (schema !== SCHEMA) {
+  if (!(schema >= OLDEST_SCHEMA && schema <= SCHEMA && Number.isInteger(schema))) {
     throw new RangeError(
-      Number.isNaN(schema) ? "not a path file: no schema" : `path file schema ${schema} (this code reads ${SCHEMA})`,
+      Number.isNaN(schema)
+        ? "not a path file: no schema"
+        : `path file schema ${schema} (this code reads ${OLDEST_SCHEMA} to ${SCHEMA})`,
     );
   }
   const waypoints = list(root, "waypoints").map((o) => {
@@ -107,6 +118,11 @@ export function pathFromJson(root: JsonObject): PathSpec {
       num(m, "maxMetersPerSecondSquared", Infinity),
     );
   });
+  const events = list(root, "events").map((o) => {
+    const m = asObject(o, "event");
+    if (typeof m.name !== "string") throw new RangeError("an event needs a 'name' string");
+    return makePathEvent(m.name, num(m, "atWaypoint", Number.NaN), num(m, "atMeters", Number.NaN));
+  });
   return makePathSpec({
     waypoints,
     rotationTargets,
@@ -116,6 +132,7 @@ export function pathFromJson(root: JsonObject): PathSpec {
     maxMetersPerSecondSquared: num(root, "maxMetersPerSecondSquared", Infinity),
     startMetersPerSecond: num(root, "startMetersPerSecond", 0.0),
     endMetersPerSecond: num(root, "endMetersPerSecond", 0.0),
+    events,
   });
 }
 

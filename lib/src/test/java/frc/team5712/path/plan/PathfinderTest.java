@@ -307,6 +307,16 @@ class PathfinderTest {
     }
   }
 
+  @Test
+  void bumpersComeFromTheRobotFile() {
+    PlannerConfig c = PlannerConfig.fromRobotFile(
+        PathFile.asMap(Json.parse("{\"massKg\": 55, \"bumperLengthMeters\": 0.9, \"bumperWidthMeters\": 0.8}"), "r"));
+    assertEquals(0.9, c.bumperLengthMeters(), 0.0);
+    assertEquals(0.8, c.bumperWidthMeters(), 0.0);
+    assertEquals(PlannerConfig.DEFAULT.marginMeters(), c.marginMeters(), 0.0);
+    assertEquals(PlannerConfig.DEFAULT, PlannerConfig.fromRobotFile(Map.of()));
+  }
+
   static double[] freePoint(Pathfinder pf, Random rnd) {
     while (true) {
       double x = (rnd.nextDouble() - 0.5) * 16.54;

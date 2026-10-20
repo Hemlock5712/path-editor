@@ -14,6 +14,7 @@ import java.util.List;
  * @param maxMetersPerSecondSquared path-wide acceleration and braking cap (+∞ = grip and motors only)
  * @param startMetersPerSecond speed along the path at the start
  * @param endMetersPerSecond speed along the path at the end (above 0 = a rolling hand-off)
+ * @param events named events along the path, in file order (the follower fires them in path order)
  */
 public record PathSpec(
     List<Waypoint> waypoints,
@@ -23,13 +24,15 @@ public record PathSpec(
     double maxMetersPerSecond,
     double maxMetersPerSecondSquared,
     double startMetersPerSecond,
-    double endMetersPerSecond) {
+    double endMetersPerSecond,
+    List<PathEvent> events) {
 
   public PathSpec {
     waypoints = List.copyOf(waypoints);
     rotationTargets = List.copyOf(rotationTargets);
     facePointZones = List.copyOf(facePointZones);
     constraintZones = List.copyOf(constraintZones);
+    events = List.copyOf(events);
     if (waypoints.size() < 2) {
       throw new IllegalArgumentException("a path needs at least two waypoints");
     }
@@ -39,6 +42,20 @@ public record PathSpec(
     if (!(startMetersPerSecond >= 0.0) || !(endMetersPerSecond >= 0.0)) {
       throw new IllegalArgumentException("start and end speeds must be >= 0");
     }
+  }
+
+  /** A spec with no events. */
+  public PathSpec(
+      List<Waypoint> waypoints,
+      List<RotationTarget> rotationTargets,
+      List<FacePointZone> facePointZones,
+      List<ConstraintZone> constraintZones,
+      double maxMetersPerSecond,
+      double maxMetersPerSecondSquared,
+      double startMetersPerSecond,
+      double endMetersPerSecond) {
+    this(waypoints, rotationTargets, facePointZones, constraintZones, maxMetersPerSecond,
+        maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, List.of());
   }
 
   /** A path through these waypoints with no targets, zones or path-wide caps, from rest to rest. */
@@ -56,26 +73,31 @@ public record PathSpec(
 
   public PathSpec withRotationTargets(List<RotationTarget> targets) {
     return new PathSpec(waypoints, targets, facePointZones, constraintZones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events);
   }
 
   public PathSpec withFacePointZones(List<FacePointZone> zones) {
     return new PathSpec(waypoints, rotationTargets, zones, constraintZones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events);
   }
 
   public PathSpec withConstraintZones(List<ConstraintZone> zones) {
     return new PathSpec(waypoints, rotationTargets, facePointZones, zones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events);
   }
 
   public PathSpec withLimits(double maxSpeed, double maxAccel) {
     return new PathSpec(waypoints, rotationTargets, facePointZones, constraintZones,
-        maxSpeed, maxAccel, startMetersPerSecond, endMetersPerSecond);
+        maxSpeed, maxAccel, startMetersPerSecond, endMetersPerSecond, events);
   }
 
   public PathSpec withEndSpeeds(double startSpeed, double endSpeed) {
     return new PathSpec(waypoints, rotationTargets, facePointZones, constraintZones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startSpeed, endSpeed);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startSpeed, endSpeed, events);
+  }
+
+  public PathSpec withEvents(List<PathEvent> newEvents) {
+    return new PathSpec(waypoints, rotationTargets, facePointZones, constraintZones,
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, newEvents);
   }
 }

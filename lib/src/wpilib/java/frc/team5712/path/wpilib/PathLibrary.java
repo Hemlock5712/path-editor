@@ -1,6 +1,7 @@
 package frc.team5712.path.wpilib;
 
 import frc.team5712.path.core.Path;
+import frc.team5712.path.core.PathEvent;
 import frc.team5712.path.core.PathFile;
 import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.core.RobotFile;
@@ -10,9 +11,13 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import org.wpilib.system.Filesystem;
 
 /**
@@ -23,7 +28,15 @@ import org.wpilib.system.Filesystem;
  * // Robot constructor
  * PathLibrary paths = PathLibrary.loadAll();
  * Path toReef = paths.get("ToReef");
+ *
+ * // Events authored in the editor fire by name; bind each name to a command once, for every path
+ * paths.bindEvent("intakeDown", intake.lower())
+ *      .bindEvent("shoot", shooter.shoot());
+ * Command go = new FollowPathCommand("ToReef", drive, follower, ...).withEvents(paths);
  * </pre>
+ *
+ * {@link #unboundEventNames} lists the names the path files use that have no command yet, which is
+ * where a typo between the editor and the code shows up.
  */
 public final class PathLibrary {
   public static final String SUFFIX = ".path.json";
@@ -31,6 +44,8 @@ public final class PathLibrary {
   private final Map<String, Path> paths;
   private final RobotConfig robot;
   private final double buildMillis;
+  private final Map<String, org.wpilib.command3.Command> eventCommands = new HashMap<>();
+  private final Map<String, org.wpilib.command2.Command> eventCommandsV2 = new HashMap<>();
 
   private PathLibrary(Map<String, Path> paths, RobotConfig robot, double buildMillis) {
     this.paths = Collections.unmodifiableMap(paths);
@@ -90,6 +105,47 @@ public final class PathLibrary {
 
   public RobotConfig robot() {
     return robot;
+  }
+
+  /** Runs {@code command} (Commands v3) whenever a path followed with {@code withEvents(this)} fires {@code eventName}. */
+  public PathLibrary bindEvent(String eventName, org.wpilib.command3.Command command) {
+    eventCommands.put(eventName, command);
+    return this;
+  }
+
+  /** The same for Commands v2 ({@link FollowPathCommandV2}). */
+  public PathLibrary bindEvent(String eventName, org.wpilib.command2.Command command) {
+    eventCommandsV2.put(eventName, command);
+    return this;
+  }
+
+  /** The Commands v3 command bound to an event name, if any. */
+  public Optional<org.wpilib.command3.Command> eventCommand(String eventName) {
+    return Optional.ofNullable(eventCommands.get(eventName));
+  }
+
+  /** The Commands v2 command bound to an event name, if any. */
+  public Optional<org.wpilib.command2.Command> eventCommandV2(String eventName) {
+    return Optional.ofNullable(eventCommandsV2.get(eventName));
+  }
+
+  /** Every event name the loaded path files use, sorted. */
+  public Set<String> eventNames() {
+    Set<String> names = new TreeSet<>();
+    for (Path p : paths.values()) {
+      for (PathEvent e : p.spec().events()) {
+        names.add(e.name());
+      }
+    }
+    return names;
+  }
+
+  /** Event names in the path files with no command bound in either framework, sorted. */
+  public Set<String> unboundEventNames() {
+    Set<String> names = eventNames();
+    names.removeAll(eventCommands.keySet());
+    names.removeAll(eventCommandsV2.keySet());
+    return names;
   }
 
   /** How long loading and building took, milliseconds. */

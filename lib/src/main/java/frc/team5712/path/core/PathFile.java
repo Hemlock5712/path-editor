@@ -15,7 +15,7 @@ import java.util.Map;
  *
  * <pre>
  * {
- *   "schema": 1,
+ *   "schema": 2,
  *   "waypoints": [
  *     { "x": -6, "y": -2, "tangentDegrees": 0 },
  *     { "x": -3, "y": -1, "tangentScale": 1.2 }
@@ -30,6 +30,10 @@ import java.util.Map;
  *   "constraintZones": [
  *     { "fromWaypoint": 1.5, "toWaypoint": 2, "maxMetersPerSecond": 1.5 }
  *   ],
+ *   "events": [
+ *     { "name": "intakeDown", "atWaypoint": 0.5 },
+ *     { "name": "shoot", "atMeters": 4.25 }
+ *   ],
  *   "maxMetersPerSecond": 4,
  *   "maxMetersPerSecondSquared": 6,
  *   "startMetersPerSecond": 0,
@@ -40,10 +44,16 @@ import java.util.Map;
  * Optional keys: {@code tangentDegrees}, {@code tangentScale} (default 1), a zone's two limits and
  * the path-wide maxima (absent = no cap). Unknown keys are ignored, so editor-only data can't break
  * the robot.
+ *
+ * <p>Schema 2 added {@code events}. Schema 1 files (no events) still read; writing always gives the
+ * current schema.
  */
 public final class PathFile {
-  /** The schema this code writes and reads. */
-  public static final int SCHEMA = 1;
+  /** The schema this code writes. */
+  public static final int SCHEMA = 2;
+
+  /** The oldest schema this code still reads. */
+  public static final int OLDEST_SCHEMA = 1;
 
   private static final double DEGREES = Math.PI / 180.0;
 
@@ -123,6 +133,19 @@ public final class PathFile {
     }
     root.put("constraintZones", zones);
 
+    List<Object> events = new ArrayList<>();
+    for (PathEvent e : spec.events()) {
+      Map<String, Object> m = new LinkedHashMap<>();
+      m.put("name", e.name());
+      if (e.byWaypoint()) {
+        m.put("atWaypoint", e.waypoint());
+      } else {
+        m.put("atMeters", e.meters());
+      }
+      events.add(m);
+    }
+    root.put("events", events);
+
     putIfFinite(root, "maxMetersPerSecond", spec.maxMetersPerSecond());
     putIfFinite(root, "maxMetersPerSecondSquared", spec.maxMetersPerSecondSquared());
     root.put("startMetersPerSecond", spec.startMetersPerSecond());
@@ -141,11 +164,11 @@ public final class PathFile {
   /** Builds a spec from a parsed file. */
   public static PathSpec fromJson(Map<String, Object> root) {
     double schema = number(root, "schema", Double.NaN);
-    if (schema != SCHEMA) {
+    if (!(schema >= OLDEST_SCHEMA && schema <= SCHEMA && schema == Math.rint(schema))) {
       throw new IllegalArgumentException(
           Double.isNaN(schema)
               ? "not a path file: no schema"
-              : "path file schema " + schema + " (this code reads " + SCHEMA + ")");
+              : "path file schema " + schema + " (this code reads " + OLDEST_SCHEMA + " to " + SCHEMA + ")");
     }
 
     List<Waypoint> waypoints = new ArrayList<>();
@@ -192,6 +215,15 @@ public final class PathFile {
               number(m, "maxMetersPerSecondSquared", Double.POSITIVE_INFINITY)));
     }
 
+    List<PathEvent> events = new ArrayList<>();
+    for (Object o : list(root, "events")) {
+      Map<String, Object> m = asMap(o, "event");
+      if (!(m.get("name") instanceof String name)) {
+        throw new IllegalArgumentException("an event needs a 'name' string");
+      }
+      events.add(new PathEvent(name, number(m, "atWaypoint", Double.NaN), number(m, "atMeters", Double.NaN)));
+    }
+
     return new PathSpec(
         waypoints,
         targets,
@@ -200,7 +232,8 @@ public final class PathFile {
         number(root, "maxMetersPerSecond", Double.POSITIVE_INFINITY),
         number(root, "maxMetersPerSecondSquared", Double.POSITIVE_INFINITY),
         number(root, "startMetersPerSecond", 0.0),
-        number(root, "endMetersPerSecond", 0.0));
+        number(root, "endMetersPerSecond", 0.0),
+        events);
   }
 
   // ------------------------------------------------------------------------------ helpers
@@ -225,7 +258,8 @@ public final class PathFile {
     return l;
   }
 
-  static double number(Map<String, Object> m, String key, double fallback) {
+  /** A number from a parsed object, or {@code fallback} when the key is absent. */
+  public static double number(Map<String, Object> m, String key, double fallback) {
     Object v = m.get(key);
     if (v == null) {
       return fallback;

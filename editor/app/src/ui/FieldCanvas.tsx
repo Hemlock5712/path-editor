@@ -1,0 +1,553 @@
+// The field: draws the project and turns pointer input into edits. Every edit goes through the
+// editor store (one undo step per click or drag); this component only works out what was hit.
+
+import { useEffect, useRef } from "react";
+import { eventMeters, makePathEvent, makeRotationTarget, type PathGeometry } from "../../../core/src/index.ts";
+import {
+  addEvent,
+  addRotationTarget,
+  appendWaypoint,
+  insertWaypoint,
+  moveWaypoint,
+  setTangent,
+  updateEvent,
+  updateFacePointZone,
+  updateRotationTarget,
+} from "../model/edits.ts";
+import { moveNamedPoint } from "../model/namedPoints.ts";
+import { eventNames, type Project } from "../model/project.ts";
+import { round5, round5Radians, waypointAtS } from "../model/positions.ts";
+import { analysis, geometryOf, playback } from "../state/analysis.ts";
+import {
+  activePath,
+  beginGesture,
+  editor,
+  editPath,
+  editProject,
+  endGesture,
+  notify,
+  previewPath,
+  previewProject,
+  select,
+  setDraftObstacle,
+  setView,
+  type EditorState,
+  type Selection,
+} from "../state/editor.ts";
+import { live } from "../state/live.ts";
+import { drawField, headingAtS, rotationHandle, tangentHandle, TANGENT_HANDLE_METERS } from "./draw.ts";
+import { FieldView } from "./fieldView.ts";
+
+type Drag =
+  | { kind: "pan"; startX: number; startY: number; cx0: number; cy0: number; moved: boolean }
+  | { kind: "waypoint"; index: number; label: string }
+  | { kind: "tangent"; index: number }
+  | { kind: "rotation"; index: number }
+  | { kind: "face"; index: number }
+  | { kind: "point"; id: string }
+  | { kind: "event"; index: number }
+  | { kind: "vertex"; obstacle: number; vertex: number }
+  | { kind: "obstacle"; index: number; startX: number; startY: number };
+
+type Hit = Exclude<Drag, { kind: "pan" } | { kind: "waypoint" } | { kind: "obstacle" }>
+  | { kind: "waypoint"; index: number }
+  | { kind: "obstacle"; index: number };
+
+const HIT_PX = 10;
+/** A click this close to the path lands on it (inserting a waypoint, placing an event). */
+const PATH_SNAP_PX = 14;
+const EVENT_SNAP_PX = 40;
+
+function makeView(s: EditorState, width: number, height: number): FieldView {
+  return new FieldView(width, height, s.project.field.lengthMeters, s.project.field.widthMeters, s.view, s.project.settings.redFrame);
+}
+
+/** Point in convex-or-not polygon (even-odd). */
+function insidePolygon(x: number, y: number, poly: readonly (readonly [number, number])[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]!;
+    const [xj, yj] = poly[j]!;
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+export function FieldCanvas() {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const sizeRef = useRef({ width: 800, height: 400 });
+  const dragRef = useRef<Drag | null>(null);
+  const frameRef = useRef(0);
+
+  // ---------------------------------------------------------------------------- drawing
+
+  const draw = () => {
+    frameRef.current = 0;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const { width, height } = sizeRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const s = editor.get();
+    const active = activePath(s);
+    const a = analysis.get().result;
+    const pb = playback.get();
+    drawField(ctx, {
+      view: makeView(s, width, height),
+      image: imageRef.current,
+      project: s.project,
+      active,
+      geometry: geometryOf(active.spec),
+      analysis: a && a.ok ? a : null,
+      selection: s.selection,
+      tool: s.tool,
+      playbackT: pb.t,
+      showPlaybackRobot: pb.playing || pb.t > 0,
+      hoverS: pb.hoverS,
+      draftObstacle: s.draftObstacle,
+      live: live.get().robot,
+      geometryOf,
+    });
+  };
+
+  const schedule = () => {
+    if (frameRef.current === 0) frameRef.current = requestAnimationFrame(draw);
+  };
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      imageRef.current = img;
+      schedule();
+    };
+    img.src = `${import.meta.env.BASE_URL}field-2026.png`;
+    const unsubs = [editor.subscribe(schedule), analysis.subscribe(schedule), playback.subscribe(schedule), live.subscribe(schedule)];
+    const wrap = wrapRef.current!;
+    const observer = new ResizeObserver(() => {
+      const rect = wrap.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      sizeRef.current = { width: rect.width, height: rect.height };
+      const canvas = canvasRef.current!;
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      draw();
+    });
+    observer.observe(wrap);
+    return () => {
+      for (const u of unsubs) u();
+      observer.disconnect();
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------------------------------------------------------------------- hit testing
+
+  const view = () => makeView(editor.get(), sizeRef.current.width, sizeRef.current.height);
+
+  const pointer = (e: { clientX: number; clientY: number }): [number, number] => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  };
+
+  const near = (v: FieldView, px: number, py: number, x: number, y: number, r = HIT_PX) => {
+    const [cx, cy] = v.toCanvas(x, y);
+    return Math.hypot(cx - px, cy - py) <= r;
+  };
+
+  const nearRaw = (v: FieldView, px: number, py: number, x: number, y: number, r = HIT_PX) => {
+    const [cx, cy] = v.toCanvasRaw(x, y);
+    return Math.hypot(cx - px, cy - py) <= r;
+  };
+
+  const hitTest = (px: number, py: number): Hit | null => {
+    const s = editor.get();
+    const v = view();
+    const path = activePath(s);
+    const g = geometryOf(path.spec);
+    const spec = path.spec;
+    if (s.selection?.kind === "waypoint") {
+      const h = tangentHandle({ active: path, geometry: g }, s.selection.index);
+      if (h && near(v, px, py, h.x, h.y)) return { kind: "tangent", index: s.selection.index };
+    }
+    for (let i = spec.rotationTargets.length - 1; i >= 0; i--) {
+      const h = rotationHandle({ project: s.project, geometry: g }, spec.rotationTargets[i]!);
+      if (h && near(v, px, py, h[2], h[3])) return { kind: "rotation", index: i };
+    }
+    for (let i = spec.waypoints.length - 1; i >= 0; i--) {
+      const w = spec.waypoints[i]!;
+      if (near(v, px, py, w.xMeters, w.yMeters)) return { kind: "waypoint", index: i };
+    }
+    if (g) {
+      for (let i = spec.events.length - 1; i >= 0; i--) {
+        const p = g.sample(Math.max(0, Math.min(g.lengthMeters, eventMeters(spec.events[i]!, g))));
+        const [cx, cy] = v.toCanvas(p.xMeters, p.yMeters);
+        // the flag stands above the point: accept the pole and the pennant
+        if (Math.abs(px - cx - 4) <= 9 && py <= cy + 4 && py >= cy - 24) return { kind: "event", index: i };
+      }
+    }
+    for (const p of s.project.namedPoints) if (near(v, px, py, p.x, p.y)) return { kind: "point", id: p.id };
+    for (let i = spec.facePointZones.length - 1; i >= 0; i--) {
+      const z = spec.facePointZones[i]!;
+      if (near(v, px, py, z.point.x, z.point.y)) return { kind: "face", index: i };
+    }
+    const obstacles = s.project.field.obstacles;
+    const editingObstacles = s.tool === "obstacle" || s.selection?.kind === "obstacle";
+    if (editingObstacles) {
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const poly = obstacles[i]!.polygon;
+        for (let j = 0; j < poly.length; j++) {
+          if (nearRaw(v, px, py, poly[j]![0], poly[j]![1])) return { kind: "vertex", obstacle: i, vertex: j };
+        }
+      }
+    }
+    if (s.tool === "select" || s.tool === "obstacle") {
+      const [rx, ry] = v.toRaw(px, py);
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        if (insidePolygon(rx, ry, obstacles[i]!.polygon)) return { kind: "obstacle", index: i };
+      }
+    }
+    return null;
+  };
+
+  /** The nearest point on the active path to a canvas point, and how far it is in pixels. */
+  const projectToPath = (px: number, py: number): { s: number; px: number; g: PathGeometry } | null => {
+    const s = editor.get();
+    const g = geometryOf(activePath(s).spec);
+    if (!g) return null;
+    const v = view();
+    const [x, y] = v.toField(px, py);
+    const p = g.projectGlobal(x, y);
+    return { s: p.s, px: p.distanceMeters * v.scale, g };
+  };
+
+  // ---------------------------------------------------------------------------- clicks on empty field
+
+  const clickTool = (px: number, py: number, shift: boolean): boolean => {
+    const s = editor.get();
+    const v = view();
+    const [fx, fy] = v.toField(px, py);
+    const x = snap(fx, shift);
+    const y = snap(fy, shift);
+    const path = activePath(s);
+    switch (s.tool) {
+      case "waypoint": {
+        const hit = projectToPath(px, py);
+        if (hit && hit.px <= PATH_SNAP_PX && hit.s > 1e-3 && hit.s < hit.g.lengthMeters - 1e-3) {
+          const w = waypointAtS(hit.g, hit.s);
+          const k = Math.min(path.spec.waypoints.length - 2, Math.floor(w));
+          const p = hit.g.sample(hit.s);
+          editPath("Insert waypoint", (pp) => insertWaypoint(pp, k, w - k, round5(p.xMeters), round5(p.yMeters)), {
+            kind: "waypoint",
+            index: k + 1,
+          });
+        } else {
+          editPath("Add waypoint", (pp) => appendWaypoint(pp, x, y), { kind: "waypoint", index: path.spec.waypoints.length });
+        }
+        return true;
+      }
+      case "event": {
+        const hit = projectToPath(px, py);
+        if (!hit || hit.px > EVENT_SNAP_PX) {
+          notify("Click on the path to place an event.");
+          return true;
+        }
+        const names = eventNames(s.project);
+        const last = s.selection?.kind === "event" ? path.spec.events[s.selection.index]?.name : undefined;
+        const name = last ?? names[0] ?? "event";
+        editPath("Add event", (pp) => addEvent(pp, makePathEvent(name, round5(waypointAtS(hit.g, hit.s)), Number.NaN)), {
+          kind: "event",
+          index: path.spec.events.length,
+        });
+        return true;
+      }
+      case "rotation": {
+        const hit = projectToPath(px, py);
+        if (!hit || hit.px > EVENT_SNAP_PX) {
+          notify("Click on the path to add a rotation target.");
+          return true;
+        }
+        const a = analysis.get().result;
+        const heading = a && a.ok ? headingAtS(a.stations, hit.s) : 0;
+        const target = makeRotationTarget(round5(waypointAtS(hit.g, hit.s)), Number.NaN, round5Radians(heading));
+        editPath("Add rotation target", (pp) => addRotationTarget(pp, target), {
+          kind: "rotation",
+          index: path.spec.rotationTargets.length,
+        });
+        return true;
+      }
+      case "obstacle": {
+        const [rx, ry] = v.toRaw(px, py);
+        const draft = s.draftObstacle ?? [];
+        setDraftObstacle([...draft, [snap(rx, shift), snap(ry, shift)]]);
+        return true;
+      }
+      case "select":
+        return false;
+    }
+  };
+
+  // ---------------------------------------------------------------------------- dragging
+
+  const selectionOf = (hit: Hit): Selection => {
+    switch (hit.kind) {
+      case "waypoint":
+      case "tangent":
+        return { kind: "waypoint", index: hit.index };
+      case "rotation":
+        return { kind: "rotation", index: hit.index };
+      case "event":
+        return { kind: "event", index: hit.index };
+      case "face":
+        return { kind: "face", index: hit.index };
+      case "point":
+        return { kind: "point", id: hit.id };
+      case "vertex":
+        return { kind: "obstacle", index: hit.obstacle };
+      case "obstacle":
+        return { kind: "obstacle", index: hit.index };
+    }
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    canvasRef.current!.focus();
+    const [px, py] = pointer(e);
+    const s = editor.get();
+    if (e.button === 1 || e.button === 2) {
+      dragRef.current = { kind: "pan", startX: px, startY: py, cx0: s.view.centerX, cy0: s.view.centerY, moved: false };
+      canvasRef.current!.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (e.button !== 0) return;
+    const hit = hitTest(px, py);
+    if (hit) {
+      select(selectionOf(hit));
+      beginGesture();
+      if (hit.kind === "obstacle") {
+        const [rx, ry] = view().toRaw(px, py);
+        dragRef.current = { kind: "obstacle", index: hit.index, startX: rx, startY: ry };
+      } else if (hit.kind === "waypoint") {
+        dragRef.current = { kind: "waypoint", index: hit.index, label: activePath(s).links[hit.index] ? "Move point" : "Move waypoint" };
+      } else {
+        dragRef.current = hit;
+      }
+      canvasRef.current!.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (clickTool(px, py, e.shiftKey)) return;
+    // select tool on empty field: pan, and deselect if it was just a click
+    dragRef.current = { kind: "pan", startX: px, startY: py, cx0: s.view.centerX, cy0: s.view.centerY, moved: false };
+    canvasRef.current!.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const [px, py] = pointer(e);
+    const drag = dragRef.current;
+    const v = view();
+    if (!drag) {
+      const hit = projectToPath(px, py);
+      const hoverS = hit && hit.px <= PATH_SNAP_PX ? hit.s : Number.NaN;
+      if (!(Number.isNaN(hoverS) && Number.isNaN(playback.get().hoverS))) playback.set({ hoverS });
+      canvasRef.current!.style.cursor = hitTest(px, py) ? "grab" : editor.get().tool === "select" ? "default" : "crosshair";
+      return;
+    }
+    const [fx, fy] = v.toField(px, py);
+    const x = snap(fx, e.shiftKey);
+    const y = snap(fy, e.shiftKey);
+    switch (drag.kind) {
+      case "pan": {
+        if (Math.hypot(px - drag.startX, py - drag.startY) > 3) drag.moved = true;
+        setView({ centerX: drag.cx0 - (px - drag.startX) / v.scale, centerY: drag.cy0 + (py - drag.startY) / v.scale });
+        return;
+      }
+      case "waypoint": {
+        const link = activePath().links[drag.index];
+        if (link) previewProject((base) => moveNamedPoint(base, link, x, y));
+        else previewPath((p) => moveWaypoint(p, drag.index, x, y));
+        return;
+      }
+      case "tangent": {
+        previewPath((p) => {
+          const w = p.spec.waypoints[drag.index]!;
+          const dx = fx - w.xMeters;
+          const dy = fy - w.yMeters;
+          const angle = round5Radians(snapAngle(Math.atan2(dy, dx), e.shiftKey));
+          const scale = Math.round(Math.min(3, Math.max(0.2, Math.hypot(dx, dy) / TANGENT_HANDLE_METERS)) * 100) / 100;
+          return setTangent(p, drag.index, angle, scale);
+        });
+        return;
+      }
+      case "rotation": {
+        previewPath((p) => {
+          const t = p.spec.rotationTargets[drag.index]!;
+          const g = geometryOf(p.spec);
+          if (!g) return p;
+          const c = g.sample(Number.isNaN(t.waypoint) ? t.meters : g.sAtWaypoint(t.waypoint));
+          const heading = round5Radians(snapAngle(Math.atan2(fy - c.yMeters, fx - c.xMeters), e.shiftKey, 1));
+          return updateRotationTarget(p, drag.index, makeRotationTarget(t.waypoint, t.meters, heading));
+        });
+        return;
+      }
+      case "face": {
+        previewPath((p) => {
+          const z = p.spec.facePointZones[drag.index]!;
+          return updateFacePointZone(p, drag.index, { ...z, point: { x, y } });
+        });
+        return;
+      }
+      case "point": {
+        previewProject((base) => moveNamedPoint(base, drag.id, x, y));
+        return;
+      }
+      case "event": {
+        previewPath((p) => {
+          const g = geometryOf(p.spec);
+          if (!g) return p;
+          const s = g.projectGlobal(fx, fy).s;
+          const ev = p.spec.events[drag.index]!;
+          const moved = Number.isNaN(ev.waypoint)
+            ? makePathEvent(ev.name, Number.NaN, round5(s))
+            : makePathEvent(ev.name, round5(waypointAtS(g, s)), Number.NaN);
+          return updateEvent(p, drag.index, moved);
+        });
+        return;
+      }
+      case "vertex": {
+        const [rx, ry] = v.toRaw(px, py);
+        previewProject((base) => withObstacle(base, drag.obstacle, (poly) => poly.map((q, j) => (j === drag.vertex ? [snap(rx, e.shiftKey), snap(ry, e.shiftKey)] : q))));
+        return;
+      }
+      case "obstacle": {
+        const [rx, ry] = v.toRaw(px, py);
+        const dx = snap(rx - drag.startX, e.shiftKey);
+        const dy = snap(ry - drag.startY, e.shiftKey);
+        previewProject((base) => withObstacle(base, drag.index, (poly) => poly.map(([qx, qy]) => [round5(qx + dx), round5(qy + dy)])));
+        return;
+      }
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (canvasRef.current!.hasPointerCapture(e.pointerId)) canvasRef.current!.releasePointerCapture(e.pointerId);
+    if (!drag) return;
+    if (drag.kind === "pan") {
+      if (!drag.moved && e.button === 0) select(null);
+      return;
+    }
+    endGesture(dragLabel(drag));
+  };
+
+  const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const [px, py] = pointer(e);
+    const s = editor.get();
+    if (s.tool === "obstacle" && s.draftObstacle) {
+      finishObstacle();
+      return;
+    }
+    const hit = hitTest(px, py);
+    if (hit?.kind === "tangent") {
+      editPath("Automatic tangent", (p) => setTangent(p, hit.index, Number.NaN, 1.0));
+    }
+  };
+
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    const [px, py] = pointer(e);
+    setView(view().zoomAbout(px, py, Math.exp(-e.deltaY * 0.0015)));
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current!;
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="field-wrap">
+      <canvas
+        ref={canvasRef}
+        className="field-canvas"
+        tabIndex={0}
+        role="application"
+        aria-label="Field. Click and drag waypoints and handles; every item can also be edited in the side panel."
+        data-testid="field"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onPointerLeave={() => !dragRef.current && playback.set({ hoverS: Number.NaN })}
+        onDoubleClick={onDoubleClick}
+        onContextMenu={(e) => e.preventDefault()}
+      />
+    </div>
+  );
+}
+
+/** The undo label for a finished drag. */
+function dragLabel(drag: Exclude<Drag, { kind: "pan" }>): string {
+  switch (drag.kind) {
+    case "waypoint":
+      return drag.label;
+    case "tangent":
+      return "Change tangent";
+    case "rotation":
+      return "Turn rotation target";
+    case "face":
+      return "Move face point";
+    case "point":
+      return "Move point";
+    case "event":
+      return "Move event";
+    case "vertex":
+      return "Move obstacle corner";
+    case "obstacle":
+      return "Move obstacle";
+  }
+}
+
+/** Metres, rounded to what the file holds; Shift snaps to 5 cm. */
+function snap(v: number, shift: boolean): number {
+  return shift ? Math.round(v * 20) / 20 : round5(v);
+}
+
+/** Whole degrees (Shift: 15°) for dragged angles. */
+function snapAngle(radians: number, shift: boolean, stepDegrees = 0.5): number {
+  const step = ((shift ? 15 : stepDegrees) * Math.PI) / 180;
+  return Math.round(radians / step) * step;
+}
+
+function withObstacle(
+  project: Project,
+  index: number,
+  fn: (poly: readonly (readonly [number, number])[]) => (readonly [number, number])[],
+): Project {
+  const obstacles = project.field.obstacles.map((o, i) => (i === index ? { ...o, polygon: fn(o.polygon) } : o));
+  return { ...project, field: { ...project.field, obstacles } };
+}
+
+/** Turns the obstacle being drawn into an obstacle (three corners or more). */
+export function finishObstacle(): void {
+  const s = editor.get();
+  // a double-click to finish also lands two clicks on the last corner: drop repeats
+  const draft = s.draftObstacle?.filter((p, i, all) => i === 0 || Math.hypot(p[0] - all[i - 1]![0], p[1] - all[i - 1]![1]) > 0.01);
+  setDraftObstacle(null);
+  if (!draft || draft.length < 3) {
+    if (draft && draft.length > 0) notify("An obstacle needs at least three corners.", "error");
+    return;
+  }
+  const taken = new Set(s.project.field.obstacles.map((o) => o.name));
+  let n = s.project.field.obstacles.length + 1;
+  while (taken.has(`obstacle ${n}`)) n++;
+  editProject(
+    "Add obstacle",
+    (p) => ({ ...p, field: { ...p.field, obstacles: [...p.field.obstacles, { name: `obstacle ${n}`, polygon: draft.map(([x, y]) => [x, y] as const) }] } }),
+    { kind: "obstacle", index: s.project.field.obstacles.length },
+  );
+}
