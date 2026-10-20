@@ -1,11 +1,10 @@
 // The live checks on the active path. Clicking one moves the playback cursor to it.
 
-import { playback } from "../../state/analysis.ts";
+import { analysis, playback } from "../../state/analysis.ts";
+import { useStore } from "../../state/store.ts";
 import { Section } from "../controls.tsx";
 import { atS } from "../draw.ts";
 import { useAnalysis } from "./common.tsx";
-import { useStore } from "../../state/store.ts";
-import { analysis } from "../../state/analysis.ts";
 
 const KIND_LABELS = {
   curvature: "Bend",

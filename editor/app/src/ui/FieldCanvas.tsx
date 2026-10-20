@@ -535,7 +535,8 @@ function withObstacle(
 /** Turns the obstacle being drawn into an obstacle (three corners or more). */
 export function finishObstacle(): void {
   const s = editor.get();
-  const draft = s.draftObstacle;
+  // a double-click to finish also lands two clicks on the last corner: drop repeats
+  const draft = s.draftObstacle?.filter((p, i, all) => i === 0 || Math.hypot(p[0] - all[i - 1]![0], p[1] - all[i - 1]![1]) > 0.01);
   setDraftObstacle(null);
   if (!draft || draft.length < 3) {
     if (draft && draft.length > 0) notify("An obstacle needs at least three corners.", "error");
