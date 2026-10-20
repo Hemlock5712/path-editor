@@ -50,6 +50,7 @@ public final class FollowPathCommand implements Command {
   private Supplier<FieldSpeeds> handedCommand;
   private DoubleSupplier clock = Timer::getTimestamp;
   private Supplier<FieldFrame> frameSource;
+  private PathLibrary library;
 
   /**
    * @param drive the drivetrain mechanism this command requires
@@ -80,6 +81,15 @@ public final class FollowPathCommand implements Command {
   /** Forks {@code command} when the path event {@code eventName} fires. */
   public FollowPathCommand onEvent(String eventName, Command command) {
     eventCommands.put(eventName, command);
+    return this;
+  }
+
+  /**
+   * Forks the commands bound in {@code library} ({@link PathLibrary#bindEvent}) when their events
+   * fire. A command given to {@link #onEvent} for the same name wins.
+   */
+  public FollowPathCommand withEvents(PathLibrary library) {
+    this.library = library;
     return this;
   }
 
@@ -144,6 +154,9 @@ public final class FollowPathCommand implements Command {
     telemetry.log(follower);
     for (String event : fired) {
       Command c = eventCommands.get(event);
+      if (c == null && library != null) {
+        c = library.eventCommand(event).orElse(null);
+      }
       if (c != null) {
         coroutine.fork(c);
       }

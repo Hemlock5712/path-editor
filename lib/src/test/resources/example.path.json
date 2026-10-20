@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "waypoints": [
     { "x": -5.2, "y": -2.5, "tangentDegrees": 0 },
     { "x": -3.6, "y": -1.5 },
@@ -23,6 +23,12 @@
   ],
   "constraintZones": [
     { "fromWaypoint": 7, "toWaypoint": 8, "maxMetersPerSecond": 2 }
+  ],
+  "events": [
+    { "name": "intakeDown", "atWaypoint": 0.5 },
+    { "name": "spinUp", "atMeters": 6.25 },
+    { "name": "intakeUp", "atWaypoint": 3 },
+    { "name": "score \"L4\"", "atMeters": 15.98765 }
   ],
   "maxMetersPerSecond": 4,
   "maxMetersPerSecondSquared": 6,

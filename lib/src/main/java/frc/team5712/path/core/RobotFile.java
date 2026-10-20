@@ -13,8 +13,11 @@ import java.util.Map;
  *   "statorCurrentLimitAmps": 120, "frictionCoefficient": 0.7,
  *   "maxWheelMetersPerSecond": 4.5, "maxAngularRadPerSec": 9.4, "maxAngularRadPerSecSquared": 12.6,
  *   "motor": { "nominalVolts": 12, "stallTorqueNewtonMeters": 9.362, "stallCurrentAmps": 476.1,
- *              "freeSpeedRadPerSec": 605.8 } }
+ *              "freeSpeedRadPerSec": 605.8 },
+ *   "bumperLengthMeters": 0.85, "bumperWidthMeters": 0.85 }
  * </pre>
+ *
+ * The bumper keys aren't part of {@link RobotConfig}; {@code PlannerConfig.fromRobotFile} reads them.
  */
 public final class RobotFile {
   private RobotFile() {}

@@ -4,6 +4,7 @@ import frc.team5712.path.core.Angles;
 import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.Path;
+import frc.team5712.path.core.PathEvent;
 import frc.team5712.path.core.PathSample;
 import frc.team5712.path.core.PathSpec;
 import frc.team5712.path.core.Pose;
@@ -135,11 +136,18 @@ public final class PathFollower {
     this.baseGoal = new Pose(end.xMeters(), end.yMeters(), end.headingRadians());
     this.active = path;
     this.goal = baseGoal;
+    for (PathEvent e : path.spec().events()) {
+      addEvent(e.name(), e.sMeters(path.geometry()), () -> {});
+    }
   }
 
   // ------------------------------------------------------------------------------ set-up (robot init)
 
-  /** Runs {@code action} when the robot passes {@code sMeters} along the path. */
+  /**
+   * Runs {@code action} when the robot passes {@code sMeters} along the path. The path file's own
+   * events are already registered (with no action; {@link #onEvent} sees their names), so this is for
+   * events that only exist in code.
+   */
   public PathFollower addEvent(String name, double sMeters, Runnable action) {
     eventNames.add(name);
     eventActions.add(action);
@@ -593,5 +601,15 @@ public final class PathFollower {
   /** The path this follower was built for (before any tail rebuild). */
   public Path path() {
     return basePath;
+  }
+
+  /** Every event's name (the file's and code's), in the order they fire. */
+  public List<String> eventNames() {
+    return List.copyOf(eventNames);
+  }
+
+  /** Each event's position on the base path, metres, in the order of {@link #eventNames}. */
+  public double[] eventMeters() {
+    return eventBaseS.clone();
   }
 }

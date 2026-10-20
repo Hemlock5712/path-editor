@@ -81,11 +81,17 @@ path again from flipped inputs and match the transformed blue plan (position to 
 mirror's sign, heading, speeds and times to a few parts in 10⁹), then drive a small follower on red
 twice, once converting to blue and once on the red-built path: the traces agree to 1e-6 m.
 
-**Files (`PathFile`, `RobotFile`, `Json`).** `*.path.json` with `"schema": 1`, waypoints
+**Files (`PathFile`, `RobotFile`, `Json`).** `*.path.json` with `"schema": 2`, waypoints
 (`x`, `y`, optional `tangentDegrees`, `tangentScale`), `rotationTargets` (`waypoint` or `meters`,
-`degrees`), `facePointZones`, `constraintZones`, path-wide maxima and start/end speeds. Written to 5
-decimals with trailing zeros dropped, keys in a fixed order, one object per line; unknown keys are
-ignored. The TS writer prints the same characters (tested on `src/test/resources/example.path.json`).
+`degrees`), `facePointZones`, `constraintZones`, `events` (`name`, and `atWaypoint` or `atMeters`),
+path-wide maxima and start/end speeds. Written to 5 decimals with trailing zeros dropped, keys in a
+fixed order, one object per line; unknown keys are ignored. Schema 1 files (no events) still read;
+writing always gives schema 2. The TS writer prints the same characters: tested on
+`src/test/resources/example.path.json`, and on the 40 pseudo-random files in
+`fixtures/files/path_files.json`, which `PathFileSamples` and its TS port build from the same LCG
+(every key, awkward event names, numbers that need rounding). The robot file may also carry
+`bumperLengthMeters` and `bumperWidthMeters`; `RobotFile` ignores them and
+`PlannerConfig.fromRobotFile` reads them.
 
 **Fixtures.** `FixtureGen` writes six paths (straight, S-curve, hairpin, slalom with a slow zone,
 the 16 m auto route, tangent scales with a moving start) to `fixtures/`, each with its inputs and
@@ -143,9 +149,11 @@ The other pieces:
   `alongTrackScale` (0..1). Raw `overrideX/Y/Omega` take a supplier (NaN = off) and an
   `OverrideMode`: `RESPECT_LIMITS` replaces the wish before the limiter, `BYPASS` replaces the
   output after it.
-- **Events.** `addEvent(name, s, action)` and `addEventAtWaypoint`. They fire in order as the robot
+- **Events.** The path file's `events` are registered when the follower is made; code can add more
+  with `addEvent(name, s, action)` and `addEventAtWaypoint`. They fire in order as the robot
   passes them; any that haven't fired by a normal finish fire then; `cancel()` drops them.
-  `onEvent(listener)` sees every name (the adapters map names to commands).
+  `onEvent(listener)` sees every name (the adapters map names to commands). `eventNames()` and
+  `eventMeters()` list them in firing order.
 - **Robustness.** A NaN pose brakes within the limits instead of throwing.
 
 All gains are in `FollowerConfig` (defaults from DriveToPose and the hybrid prototype).
@@ -189,6 +197,10 @@ skips them with a warning if the repo is missing.
 
 - `PathLibrary.loadAll()` builds every `deploy/paths/*.path.json` (with `deploy/paths/robot.json` if
   present) in robot init. A bad file fails at boot.
+- `PathLibrary.bindEvent(name, command)` (a v3 or a v2 command) binds an event name from the path
+  files to a command once for every path; a follow command picks the bindings up with
+  `withEvents(library)`, and its own `onEvent` wins for the same name. `unboundEventNames()` lists
+  the names the files use with nothing bound, which is where a typo shows up.
 - `FollowPathCommand` (Commands v3) runs the follower in its coroutine and forks event commands as
   children. `FollowPathCommandV2` (Commands v2) schedules event commands independently. Both read
   the alliance as a `FieldFrame` when the path starts, send zero at the end (except on a rolling
@@ -275,7 +287,7 @@ shares. See the notes below for what that means for the boot budget.
   default stays 1.0.
 - **A rebuilt tail drops the zones in that stretch.** Its heading blends from the planned heading to
   the goal's starting at zero spin rate, so ω can kink at the join if the old plan was mid-turn.
-- **Events are set in code (`addEvent`), not yet in the path file.**
+- **Events were set in code only in phase 3.** Phase 5 added them to the path file (schema 2).
 - **Slip handling is not in PLAN.md.** The detector, adaptive grip and slip-aware odometry were
   added after the phase 3 bench showed the low-grip weakness with odometry.
 - **Commands v3 events are forked children,** so they end with the path command unless they finish

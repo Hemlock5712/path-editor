@@ -1,5 +1,8 @@
 package frc.team5712.path.plan;
 
+import frc.team5712.path.core.PathFile;
+import java.util.Map;
+
 /**
  * Pathfinder settings.
  *
@@ -33,6 +36,19 @@ public record PlannerConfig(
         || !(checkStepMeters > 0) || !(maxMetersPerSecond > 0) || !(maxMetersPerSecondSquared > 0)) {
       throw new IllegalArgumentException("bad planner settings");
     }
+  }
+
+  /**
+   * {@link #DEFAULT} with the bumper size from a robot file's tree ({@code deploy/paths/robot.json},
+   * keys {@code bumperLengthMeters} and {@code bumperWidthMeters}, both optional). The editor writes
+   * them next to the {@code RobotConfig} keys, which {@code RobotFile} reads.
+   */
+  public static PlannerConfig fromRobotFile(Map<String, Object> robot) {
+    return new PlannerConfig(
+        PathFile.number(robot, "bumperLengthMeters", DEFAULT.bumperLengthMeters),
+        PathFile.number(robot, "bumperWidthMeters", DEFAULT.bumperWidthMeters),
+        DEFAULT.marginMeters, DEFAULT.arcStepRadians, DEFAULT.maxRefits, DEFAULT.checkStepMeters,
+        DEFAULT.maxMetersPerSecond, DEFAULT.maxMetersPerSecondSquared);
   }
 
   /** The bumpers' half-diagonal: the robot's reach in any heading. */

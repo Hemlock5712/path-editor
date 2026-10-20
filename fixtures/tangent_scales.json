@@ -1,7 +1,7 @@
 {
   "inputs": {
     "path": {
-      "schema": 1,
+      "schema": 2,
       "waypoints": [
         { "x": -2, "y": -2 },
         { "x": -1.5, "y": -1.7, "tangentScale": 0.7 },
@@ -12,6 +12,7 @@
       "rotationTargets": [],
       "facePointZones": [],
       "constraintZones": [],
+      "events": [],
       "maxMetersPerSecond": 3.5,
       "maxMetersPerSecondSquared": 5,
       "startMetersPerSecond": 1.2,

@@ -4,7 +4,7 @@ import { PathGeometry } from "./geometry.ts";
 import { HeadingProfile } from "./heading.ts";
 import { DEFAULT_GRID_METERS, VelocityProfile } from "./profile.ts";
 import type { RobotConfig } from "./robot.ts";
-import type { PathSpec } from "./spec.ts";
+import { eventByWaypoint, type PathEvent, type PathSpec } from "./spec.ts";
 
 /** Everything the plan says about one distance along the path. */
 export interface PathSample {
@@ -20,6 +20,11 @@ export interface PathSample {
   readonly metersPerSecond: number;
   readonly metersPerSecondSquared: number;
   readonly seconds: number;
+}
+
+/** An event's metres along the path built from geometry (PathEvent.sMeters in Java). Waypoint positions clamp. */
+export function eventMeters(e: PathEvent, geometry: PathGeometry): number {
+  return eventByWaypoint(e) ? geometry.sAtWaypoint(e.waypoint) : e.meters;
 }
 
 /** Length of the segment a pure rotation is planned on, metres (as in Java). */

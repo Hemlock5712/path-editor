@@ -11,6 +11,7 @@ import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.GeometrySample;
 import frc.team5712.path.core.HeadingProfile;
 import frc.team5712.path.core.Path;
+import frc.team5712.path.core.PathEvent;
 import frc.team5712.path.core.PathGeometry;
 import frc.team5712.path.core.PathSample;
 import frc.team5712.path.core.PathSpec;
@@ -212,6 +213,26 @@ class PathFollowerTest {
     assertEquals(List.of("a", "b", "c"), fired);
     assertTrue(where.get(0) >= 1.0 && where.get(0) < 1.2, "fired as it passed, at " + where.get(0));
     assertTrue(where.get(2) >= 6.0 && where.get(2) < 6.2);
+  }
+
+  @Test
+  void pathFileEventsFireWithCodeEvents() {
+    PathSpec spec = FixturePaths.sCurve()
+        .withEvents(List.of(PathEvent.atMeters("fileLate", 6.0), PathEvent.atWaypoint("fileEarly", 0.5)));
+    Path path = Path.build(spec, ROBOT);
+    PathFollower f = new PathFollower(path, CFG);
+    assertEquals(List.of("fileEarly", "fileLate"), f.eventNames(), "file events are registered, in path order");
+    List<String> fired = new ArrayList<>();
+    List<Double> where = new ArrayList<>();
+    f.addEvent("code", 3.0, () -> {}).onEvent(name -> {
+      fired.add(name);
+      where.add(f.progressMeters());
+    });
+    assertEquals(path.geometry().sAtWaypoint(0.5), f.eventMeters()[0], 0.0);
+    run(path, f, FieldFrame.RED_HALF_TURN, 20, NONE);
+    assertEquals(List.of("fileEarly", "code", "fileLate"), fired);
+    assertTrue(Math.abs(where.get(0) - path.geometry().sAtWaypoint(0.5)) < 0.2, "fired as it passed: " + where);
+    assertTrue(where.get(2) >= 6.0 && where.get(2) < 6.2, "fired as it passed: " + where);
   }
 
   @Test

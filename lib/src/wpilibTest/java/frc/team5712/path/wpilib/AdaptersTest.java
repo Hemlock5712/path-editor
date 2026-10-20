@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.Path;
+import frc.team5712.path.core.PathEvent;
 import frc.team5712.path.core.PathFile;
 import frc.team5712.path.core.Pose;
 import frc.team5712.path.core.RobotConfig;
@@ -18,6 +19,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.wpilib.command2.Subsystem;
@@ -133,5 +135,52 @@ class AdaptersTest {
     assertTrue(eventRan[0], "the event's command ran");
     assertEquals(4.0, pose[0].getX(), 0.02);
     assertEquals(1.0, pose[0].getY(), 0.02);
+  }
+
+  /** Events from the path file run the commands bound by name in the library, in path order. */
+  @Test
+  void libraryBindsFileEventsToCommands(@TempDir File dir) throws IOException {
+    PathFile.write(FixturePaths.sCurve().withEvents(List.of(
+        PathEvent.atMeters("shoot", 5.0), PathEvent.atWaypoint("intakeDown", 0.5), PathEvent.atMeters("typo", 6.0))),
+        dir.toPath().resolve("SCurve.path.json"));
+    PathLibrary lib = PathLibrary.loadAll(dir, RobotConfig.DEFAULT);
+    assertEquals(Set.of("intakeDown", "shoot", "typo"), lib.eventNames());
+
+    Scheduler scheduler = Scheduler.createIndependentScheduler();
+    Mechanism drive = new Mechanism() {
+      @Override
+      public Scheduler getRegisteredScheduler() {
+        return scheduler;
+      }
+    };
+    List<String> ran = new ArrayList<>();
+    lib.bindEvent("intakeDown", org.wpilib.command3.Command.noRequirements(co -> ran.add("intakeDown")).named("i"))
+        .bindEvent("shoot", org.wpilib.command3.Command.noRequirements(co -> ran.add("shoot")).named("s"));
+    assertEquals(Set.of("typo"), lib.unboundEventNames(), "names with no command show up");
+
+    Path path = lib.get("SCurve");
+    PathFollower follower = new PathFollower(path, FollowerConfig.defaults(RobotConfig.DEFAULT));
+    double[] t = {0.0};
+    Pose2d[] pose = {new Pose2d(-4.0, -1.0, new Rotation2d(0.0))};
+    ChassisVelocities[] vel = {new ChassisVelocities()};
+    List<ChassisVelocities> outputs = new ArrayList<>();
+    FollowPathCommand cmd = new FollowPathCommand("SCurve", drive, follower,
+        () -> pose[0], () -> vel[0], outputs::add, FieldFrame.RED_HALF_TURN)
+        .withClock(() -> t[0])
+        .withFrame(() -> FieldFrame.BLUE)
+        .withEvents(lib);
+    scheduler.schedule(cmd);
+    while (t[0] < 10 && (t[0] == 0 || scheduler.isScheduledOrRunning(cmd))) {
+      t[0] += 0.02;
+      ChassisVelocities last = vel[0];
+      scheduler.run();
+      pose[0] = new Pose2d(pose[0].getX() + last.vx * 0.02, pose[0].getY() + last.vy * 0.02,
+          new Rotation2d(pose[0].getRotation().getRadians() + last.omega * 0.02));
+      if (!outputs.isEmpty()) {
+        vel[0] = outputs.get(outputs.size() - 1);
+      }
+    }
+    assertTrue(follower.isFinished());
+    assertEquals(List.of("intakeDown", "shoot"), ran);
   }
 }

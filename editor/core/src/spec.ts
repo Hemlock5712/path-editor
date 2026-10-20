@@ -1,6 +1,6 @@
 // The authored inputs of a path, before any maths. Port of lib's Waypoint, RotationTarget,
-// FacePointZone, ConstraintZone and PathSpec records; the constructors' checks are in the make*
-// functions.
+// FacePointZone, ConstraintZone, PathEvent and PathSpec records; the constructors' checks are in the
+// make* functions.
 
 /** A point or vector on the field, metres. */
 export interface Vec2 {
@@ -46,6 +46,16 @@ export interface ConstraintZone {
   readonly maxMetersPerSecondSquared: number;
 }
 
+/**
+ * A named event at a place on the path: waypoint-relative (1.5 = halfway along the arc between
+ * waypoints 1 and 2) or metres along the path. Exactly one is set; the other is NaN.
+ */
+export interface PathEvent {
+  readonly name: string;
+  readonly waypoint: number;
+  readonly meters: number;
+}
+
 /** Everything a path file says. */
 export interface PathSpec {
   readonly waypoints: readonly Waypoint[];
@@ -56,6 +66,8 @@ export interface PathSpec {
   readonly maxMetersPerSecondSquared: number;
   readonly startMetersPerSecond: number;
   readonly endMetersPerSecond: number;
+  /** Named events, in file order (the follower fires them in path order). */
+  readonly events: readonly PathEvent[];
 }
 
 export const DEFAULT_BLEND_METERS = 0.5;
@@ -110,6 +122,25 @@ export function makeConstraintZone(
   return { fromWaypoint, toWaypoint, maxMetersPerSecond, maxMetersPerSecondSquared };
 }
 
+export function makePathEvent(name: string, waypoint: number, meters: number): PathEvent {
+  if (name.trim() === "") fail("an event needs a name");
+  if (Number.isNaN(waypoint) === Number.isNaN(meters)) fail("set exactly one of atWaypoint or atMeters");
+  if (Math.abs(waypoint) === Infinity || Math.abs(meters) === Infinity) fail("event position must be finite");
+  return { name, waypoint, meters };
+}
+
+export function eventAtWaypoint(name: string, waypoint: number): PathEvent {
+  return makePathEvent(name, waypoint, Number.NaN);
+}
+
+export function eventAtMeters(name: string, meters: number): PathEvent {
+  return makePathEvent(name, Number.NaN, meters);
+}
+
+export function eventByWaypoint(e: PathEvent): boolean {
+  return !Number.isNaN(e.waypoint);
+}
+
 /** A checked spec; unspecified parts default to none, no caps, from rest to rest. */
 export function makePathSpec(parts: Partial<PathSpec> & { waypoints: readonly Waypoint[] }): PathSpec {
   const spec: PathSpec = {
@@ -121,6 +152,7 @@ export function makePathSpec(parts: Partial<PathSpec> & { waypoints: readonly Wa
     maxMetersPerSecondSquared: parts.maxMetersPerSecondSquared ?? Infinity,
     startMetersPerSecond: parts.startMetersPerSecond ?? 0.0,
     endMetersPerSecond: parts.endMetersPerSecond ?? 0.0,
+    events: parts.events ?? [],
   };
   if (spec.waypoints.length < 2) fail("a path needs at least two waypoints");
   if (!(spec.maxMetersPerSecond > 0.0) || !(spec.maxMetersPerSecondSquared > 0.0)) {
