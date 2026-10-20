@@ -97,8 +97,11 @@ low grip) at Choreo's speed, without an offline solver.
 **Ours v2.** This is lib/'s Java `PathFollower` on our own quintic spline and profile. It plans at mu 0.7,
 follows by position and finishes with DriveToPose's law. Since phase 3 its ease-in line defaults to 12/s (phase
 3's sweep pick; the limiter's mu stays 1.0, see lib/README.md). It also has adaptive grip: when lib's
-`SlipDetector` sees slip, the limiter, the brake and the speed plan drop to the grip the floor gave. This run's
-sweep picked exactly the shipped defaults, so "tuned" equals "as shipped".
+`SlipDetector` sees slip, the limiter's budget for speeding up, the brake law and the speed plan drop to the grip
+the floor gave. Braking keeps a limiter budget of at least mu 0.85 (`slipBrakeFriction`, chosen on the tuning
+seeds). Ours' rows (and the pathfinding grid, which runs ours) come from a targeted re-run after that change;
+every other row is from the full run, and its code did not change. The sweep again picked exactly the shipped
+defaults, so "tuned" equals "as shipped".
 - **Perfect pose:** settled in all 90 runs, 0.1 cm off. On the clean courses it is level with Choreo, within
   -0.10 to +0.06 s: 1.43 s vs 1.48 s on the straight, 2.18 s vs 2.17 s on the S-curve, 2.97 s vs 3.07 s on the
   hairpin, 2.94 s vs 2.99 s on the slalom, 4.01 s vs 3.98 s on the 12 m route, 1.99 s vs 1.93 s on the moving
@@ -106,30 +109,38 @@ sweep picked exactly the shipped defaults, so "tuned" equals "as shipped".
 - **Where ours loses (perfect pose):**
   - Against the authored Catmull-Rom path it is 1.2-1.5 cm RMS, because it follows its own curve.
   - On the 12 m route it is 3.9 cm RMS.
-  - Adaptive grip costs time where the floor is slippery: low grip 2.68 s against 2.46 s with it off, the grip
-    drop 2.59 s against 2.39 s, the shove 2.36 s against 2.22 s.
-  - On the grip drop it overshoots up to 24.9 cm, against 6.2 cm with adaptive grip off. The grip it measures
-    before the seam is high, so it reaches the slick half fast. Adaptive grip is not yet right for a sudden drop.
+  - At low grip, adaptive grip costs time: 2.68 s against 2.46 s with it off (tuned PathPlanner 2.52 s). In
+    return the wheels slip 0.3 s summed instead of 8.0 s, and it overshoots 0.2 cm instead of 6.7 cm.
+- **The grip-drop overshoot is fixed.** Before, adaptive grip overshot up to 24.9 cm there (6.2 cm with it off),
+  and the traces showed why. The grip it latched was below what a sliding tread still gives, and the limiter
+  capped braking at it. The robot came into the stop braking gentler than the floor allowed, slid past, and
+  came back. Now braking keeps at least mu 0.85 in the limiter while the brake law still plans with the
+  measured grip. Grip drop: 0.4 cm worst overshoot, settled in 2.25 s (2.39 s with adaptive grip off, tuned
+  PathPlanner 2.52 s). Shove: 0.3 cm, 2.22 s (was 6.0 cm, 2.36 s). Low grip unchanged. Clean-course settle
+  times are identical to the last run.
 
 **Slip handling (wheel odometry, the main condition):**
 - **Low grip:** ours ends 4.1 cm off, against 12.1 cm with adaptive grip off. Tuned PathPlanner ends 4.4 cm off,
   the chain 4.8 cm and Choreo 10.7 cm. Its wheels slip 0.9 s summed, against 7.3 s with adaptive grip off and
   6.3 s for PathPlanner. It settles 4 of 10 runs, as PathPlanner does.
-- **Grip drop:** ours 6.5 cm (6.8 cm off), PathPlanner 6.9 cm, the chain 3.9 cm, Choreo 20.4 cm.
-- **Shove:** ours 29.9 cm (41.6 cm off), PathPlanner 41.3 cm, the chain 33.3 cm, Choreo 103.1 cm.
+- **Grip drop:** ours 7.9 cm (6.8 cm with adaptive grip off), PathPlanner 6.9 cm, the chain 3.9 cm, Choreo 20.4 cm.
+- **Shove:** ours 39.6 cm (41.6 cm off), PathPlanner 41.3 cm, the chain 33.3 cm, Choreo 103.1 cm.
+- **The cost of the grip-drop fix:** with odometry, harder braking means more sliding for the odometry to
+  over-read. Ours' grip-drop error went from 6.5 to 7.9 cm and the shove's from 29.9 to 39.6 cm.
 - **Moving start:** ours 3.7 cm, the chain 3.8 cm, PathPlanner 54.2 cm, Choreo 27.3 cm.
-- **All courses:** ours averages 7.5 cm final error, level with the chain and below PathPlanner (14.4 cm) and
-  Choreo (20.5 cm). It slips least, at 0.9 s mean. It settles 21 of 90 runs, against the chain's 32 and
-  PathPlanner's 23.
+- **All courses:** ours averages 8.7 cm final error (7.5 cm before the fix). The chain gets 7.5 cm, PathPlanner
+  14.4 cm and Choreo 20.5 cm. Ours slips least, at 0.9 s mean. It settles 20 of 90 runs, against the chain's 32
+  and PathPlanner's 23.
 
 **Slip-aware odometry, for every method:**
-- **Mean final error over all courses:** ours 7.5 to 6.5 cm, PathPlanner 14.4 to 12.4, the chain 7.5 to 4.3 (36
+- **Mean final error over all courses:** ours 8.7 to 5.8 cm, PathPlanner 14.4 to 12.4, the chain 7.5 to 4.3 (36
   of 90 settled, the most), Choreo 20.5 to 12.1, the hybrid 16.4 to 9.3.
-- **It wins on shoves:** the chain 33.3 to 3.9 cm, PathPlanner 41.3 to 24.3, Choreo 103.1 to 28.5, ours 29.9 to
-  21.2 (with adaptive grip off, 41.6 to 13.7).
+- **It wins on shoves:** the chain 33.3 to 3.9 cm, PathPlanner 41.3 to 24.3, Choreo 103.1 to 28.5, ours 39.6 to
+  11.3 (with adaptive grip off, 41.6 to 13.7).
 - **It can lose on long slides,** because the IMU's bias is not yet learnt and it carries the pose for up to
   1.5 s per spell. At low grip PathPlanner goes from 4.4 to 7.0 cm, the chain 4.8 to 5.4, the hybrid 7.2 to
-  15.7; on the grip drop PathPlanner 6.9 to 7.9, Choreo 20.4 to 21.5. Ours is level (4.1 to 4.0, 6.5 to 6.5).
+  15.7; on the grip drop PathPlanner 6.9 to 7.9, Choreo 20.4 to 21.5, ours 7.9 to 10.3. Ours is level at low
+  grip (4.0 to 4.0).
 - **Detector, false positives:** on the five clean courses it flagged 0.0 % of ticks, for every method.
   Adaptive grip never fired there: ours' settle times on those courses are identical with it on and off. On
   the moving start, which does slip, it costs 0.04 s.
@@ -137,7 +148,9 @@ sweep picked exactly the shipped defaults, so "tuned" equals "as shipped".
   slipping. That count includes micro-slip below the detection threshold; the detector is tuned to the
   acceleration gap the IMU can trust.
 - **Tuning:** every slip threshold (IMU gap 2.5 m/s^2, follower confidence 0.3, recovery 0.05 mu/s, IMU spell
-  0.1-1.5 s) was chosen on the tuning seeds only. The IMU-gap threshold was widened once.
+  0.1-1.5 s, braking floor 0.85) was chosen on the tuning seeds only. The IMU-gap threshold was widened once.
+  The braking floor was swept over 0.6-1.0. 0.85 scored best on the bench's score (perfect pose); 0.6 gave the
+  lowest odometry error on the tuning seeds, at the cost of a 2.9 cm shove overshoot.
 
 <!-- generated:start -->
 _Generated by `python bench/run.py --both` (10 seeds, 1122 s wall)._
@@ -186,13 +199,13 @@ Best variant at each `cof`: 0.4: 1.00 settled, 3.35 s; 0.5: 1.00 settled, 3.16 s
 
 | options | settled fraction | score s |
 |---|---|---|
-| `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 1.0}` | 1.00 | 3.01 |
-| `{'easeInPerSecond': 16.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 1.0}` | 1.00 | 3.01 |
-| `{'easeInPerSecond': 9.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 1.0}` | 1.00 | 3.03 |
-| `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 1.4}` | 1.00 | 3.03 |
-| `{'easeInPerSecond': 16.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 1.4}` | 1.00 | 3.03 |
+| `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 1.0}` | 1.00 | 2.93 |
+| `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 2.0}` | 1.00 | 2.93 |
+| `{'easeInPerSecond': 16.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 1.0}` | 1.00 | 2.93 |
+| `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 1.4}` | 1.00 | 2.93 |
+| `{'easeInPerSecond': 16.0, 'latencySeconds': 0.05, 'limiterFrictionCoefficient': 2.0}` | 1.00 | 2.93 |
 
-Best variant at each `easeInPerSecond`: 9: 1.00 settled, 3.03 s; 12: 1.00 settled, 3.01 s; 16: 1.00 settled, 3.01 s
+Best variant at each `easeInPerSecond`: 9: 1.00 settled, 2.94 s; 12: 1.00 settled, 2.93 s; 16: 1.00 settled, 2.93 s
 
 ## Per-course tables
 
@@ -215,9 +228,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 32/90 | 0/9 | 6.6 | 58.7 | 7.5 | 2270 |
 | Choreo + ChoreoLib follower (as shipped) | 22/90 | 0/9 | 16.2 | 100.7 | 20.5 | 1983 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 14/90 | 0/9 | 15.1 | 99.5 | 16.4 | 1931 |
-| Ours v2 (as shipped) | 21/90 | 0/9 | 5.6 | 37.4 | 7.5 | 913 |
+| Ours v2 (as shipped) | 20/90 | 0/9 | 6.5 | 39.2 | 8.7 | 872 |
 | Ours v2 (as shipped, adaptive grip off) | 15/90 | 0/9 | 7.0 | 41.0 | 9.7 | 1724 |
-| Ours v2 (tuned) | 21/90 | 0/9 | 5.6 | 37.4 | 7.5 | 913 |
+| Ours v2 (tuned) | 20/90 | 0/9 | 6.5 | 39.2 | 8.7 | 872 |
 
 **straight_3m**: 3 m straight, heading held at 0 (6.5 s simulated)
 
@@ -236,9 +249,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.9 | 0.0 | 5.2 | 1.33 (9/10) | 1.52 (5/10) | 0 | 0.02 |
 | Choreo + ChoreoLib follower (as shipped) | 0.3 / 1.1 | 0.1 / 0.4 | 3.0 / 6.9 | 0.0 | 7.8 | 1.26 | 1.48 (5/10) | 66 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 0.3 / 1.0 | 0.1 / 0.5 | 2.3 / 6.1 | 0.1 | 5.1 | 1.32 (9/10) | 1.58 (5/10) | 24 | 2.84 |
-| Ours v2 (as shipped) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.19 |
-| Ours v2 (as shipped, adaptive grip off) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.16 |
-| Ours v2 (tuned) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.12 |
+| Ours v2 (as shipped) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.03 |
+| Ours v2 (as shipped, adaptive grip off) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.37 |
+| Ours v2 (tuned) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.11 |
 
 **s_curve**: S-curve (lane change): 5 m ahead, 1.6 m to the left, min radius 1.1 m, heading held (8.6 s simulated)
 
@@ -257,9 +270,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.9 / 8.7 | 0.8 / 3.3 | 4.1 / 10.5 | 0.0 | 8.9 | 4.04 (8/10) | 4.20 (4/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 4.6 / 11.2 | 2.0 / 5.6 | 4.5 / 10.8 | 0.1 | 11.3 | 1.95 (8/10) | 2.18 (4/10) | 0 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 4.9 / 12.7 | 2.9 / 6.8 | 4.1 / 10.5 | 0.1 | 8.8 | 2.01 (8/10) | 2.27 (4/10) | 18 | 4.37 |
-| Ours v2 (as shipped) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.15 |
-| Ours v2 (as shipped, adaptive grip off) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.20 |
-| Ours v2 (tuned) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.20 |
+| Ours v2 (as shipped) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.17 |
+| Ours v2 (as shipped, adaptive grip off) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.11 |
+| Ours v2 (tuned) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.62 |
 
 **hairpin**: 2 m out, 180 deg turn on a 1 m radius (0.75 m at the joins), 2 m back; heading held (9.9 s simulated)
 
@@ -278,9 +291,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.1 / 9.2 | 1.6 / 6.2 | 1.7 / 3.8 | 0.0 | 0.0 | 7.61 | 7.81 (8/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 2.4 / 8.8 | 2.3 / 8.7 | 1.9 / 4.0 | 0.1 | 0.4 | 2.88 | 3.07 (7/10) | 258 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 3.1 / 10.2 | 3.0 / 10.1 | 3.1 / 4.6 | 0.1 | 0.0 | 3.02 | never | 19 | 5.69 |
-| Ours v2 (as shipped) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.57 |
-| Ours v2 (as shipped, adaptive grip off) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.64 |
-| Ours v2 (tuned) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.27 |
+| Ours v2 (as shipped) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.21 |
+| Ours v2 (as shipped, adaptive grip off) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.02 |
+| Ours v2 (tuned) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.08 |
 
 **slalom**: through 3 gate centres at x = 1.75 / 3.5 / 5.25 m, y = +0.4 / -0.4 / +0.4 m (10.3 s simulated)
 
@@ -299,9 +312,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 4.2 / 11.3 | 1.2 / 4.0 | 5.4 / 14.0 | 0.0 | 12.1 | 4.68 (8/10) | 4.84 (3/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 8.5 / 22.1 | 2.7 / 8.9 | 5.8 / 13.7 | 0.1 | 14.1 | 2.79 (6/10) | 3.00 (4/10) | 196 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 8.7 / 23.3 | 3.6 / 9.6 | 6.0 / 14.1 | 0.3 | 11.7 | 2.89 (7/10) | 3.10 (1/10) | 22 | 4.03 |
-| Ours v2 (as shipped) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 1.19 |
-| Ours v2 (as shipped, adaptive grip off) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 1.16 |
-| Ours v2 (tuned) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 1.14 |
+| Ours v2 (as shipped) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 1.29 |
+| Ours v2 (as shipped, adaptive grip off) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 1.46 |
+| Ours v2 (tuned) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 1.20 |
 
 **long_auto**: auto-style route, heading 0 -> 90 deg at waypoint 2 -> 180 deg at the end (14.1 s simulated)
 
@@ -320,9 +333,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 8.1 / 31.5 | 4.6 / 18.9 | 8.0 / 17.8 | 0.9 | 5.0 | 6.54 (4/10) | 6.64 (3/10) | 2 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 9.2 / 27.8 | 5.3 / 20.5 | 8.0 / 18.7 | 1.8 | 5.7 | 3.76 (4/10) | 3.98 (2/10) | 182 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 9.8 / 29.1 | 6.1 / 22.8 | 8.3 / 19.3 | 1.0 | 3.2 | 3.85 (4/10) | 4.09 (2/10) | 176 | 6.88 |
-| Ours v2 (as shipped) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.25 |
-| Ours v2 (as shipped, adaptive grip off) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.16 |
-| Ours v2 (tuned) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.20 |
+| Ours v2 (as shipped) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 2.98 |
+| Ours v2 (as shipped, adaptive grip off) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.33 |
+| Ours v2 (tuned) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.14 |
 
 **moving_start**: starts moving 2 m/s sideways (+y), path heads +x then curves left (7.9 s simulated)
 
@@ -341,9 +354,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 21.1 / 58.7 | 19.5 / 54.8 | 3.8 / 8.3 | 0.0 | 7.6 | 3.65 (9/10) | 3.86 (4/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 20.4 / 27.0 | 21.8 / 26.8 | 27.3 / 30.6 | 0.0 | 28.4 | never | never | 1412 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 11.3 / 28.1 | 11.7 / 29.5 | 3.8 / 9.6 | 0.3 | 6.2 | 1.82 (8/10) | 2.09 (2/10) | 1922 | 2.55 |
-| Ours v2 (as shipped) | 11.7 / 30.1 | 11.8 / 30.2 | 3.7 / 9.2 | 0.1 | 5.9 | 1.86 (8/10) | 1.97 (3/10) | 1326 | 0.78 |
-| Ours v2 (as shipped, adaptive grip off) | 11.4 / 28.1 | 11.6 / 28.1 | 4.0 / 9.6 | 0.1 | 6.4 | 1.79 (8/10) | 1.94 (2/10) | 1804 | 1.00 |
-| Ours v2 (tuned) | 11.7 / 30.1 | 11.8 / 30.2 | 3.7 / 9.2 | 0.1 | 5.9 | 1.86 (8/10) | 1.97 (3/10) | 1326 | 0.63 |
+| Ours v2 (as shipped) | 11.4 / 28.6 | 11.5 / 28.6 | 3.7 / 9.2 | 0.1 | 6.0 | 1.84 (8/10) | 1.95 (3/10) | 1478 | 1.24 |
+| Ours v2 (as shipped, adaptive grip off) | 11.4 / 28.1 | 11.6 / 28.1 | 4.0 / 9.6 | 0.1 | 6.4 | 1.79 (8/10) | 1.94 (2/10) | 1804 | 1.06 |
+| Ours v2 (tuned) | 11.4 / 28.6 | 11.5 / 28.6 | 3.7 / 9.2 | 0.1 | 6.0 | 1.84 (8/10) | 1.95 (3/10) | 1478 | 1.18 |
 
 **hit_mid_path**: the S-curve with a 0.3 s lateral shove (to the left of travel) at half distance (8.6 s simulated)
 
@@ -362,9 +375,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 15.0 / 29.8 | 16.8 / 32.8 | 33.3 / 41.6 | 0.0 | 0.0 | never | never | 1931 | 0.00 |
 | Choreo + ChoreoLib follower (as shipped) | 87.5 / 100.7 | 83.6 / 97.4 | 103.1 / 106.2 | 0.1 | 0.0 | never | never | 3316 | 0.00 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 84.1 / 99.5 | 80.1 / 96.7 | 98.8 / 105.9 | 0.2 | 0.0 | never | never | 3212 | 3.10 |
-| Ours v2 (as shipped) | 22.9 / 37.4 | 23.1 / 38.5 | 29.9 / 37.4 | 0.1 | 0.6 | never | never | 2730 | 0.93 |
-| Ours v2 (as shipped, adaptive grip off) | 34.1 / 41.0 | 34.3 / 41.5 | 41.6 / 48.2 | 0.1 | 0.0 | never | never | 2427 | 0.99 |
-| Ours v2 (tuned) | 22.9 / 37.4 | 23.1 / 38.5 | 29.9 / 37.4 | 0.1 | 0.6 | never | never | 2730 | 0.97 |
+| Ours v2 (as shipped) | 32.2 / 39.2 | 32.4 / 39.4 | 39.6 / 44.2 | 0.1 | 0.0 | never | never | 2403 | 0.88 |
+| Ours v2 (as shipped, adaptive grip off) | 34.1 / 41.0 | 34.3 / 41.5 | 41.6 / 48.2 | 0.1 | 0.0 | never | never | 2427 | 0.91 |
+| Ours v2 (tuned) | 32.2 / 39.2 | 32.4 / 39.4 | 39.6 / 44.2 | 0.1 | 0.0 | never | never | 2403 | 0.96 |
 
 **low_grip_s_curve**: the S-curve on mu 0.70 static / 0.61 kinetic (8.6 s simulated)
 
@@ -383,9 +396,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 3.1 / 9.6 | 1.1 / 4.1 | 4.8 / 13.2 | 0.0 | 4.8 | 4.00 (7/10) | 4.13 (3/10) | 12394 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 4.5 / 13.9 | 3.2 / 9.0 | 10.7 / 19.3 | 0.1 | 19.0 | 1.94 (9/10) | never | 8298 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 5.5 / 12.1 | 4.8 / 12.9 | 7.2 / 14.9 | 0.0 | 4.7 | 2.03 (4/10) | never | 8080 | 3.14 |
-| Ours v2 (as shipped) | 1.6 / 6.3 | 1.5 / 5.2 | 4.1 / 11.0 | 0.1 | 8.9 | 2.40 (8/10) | 2.61 (4/10) | 949 | 2.48 |
-| Ours v2 (as shipped, adaptive grip off) | 4.1 / 11.4 | 4.0 / 10.3 | 12.1 / 23.6 | 0.1 | 0.0 | 2.11 (1/10) | never | 7330 | 1.36 |
-| Ours v2 (tuned) | 1.6 / 6.3 | 1.5 / 5.2 | 4.1 / 11.0 | 0.1 | 8.9 | 2.40 (8/10) | 2.61 (4/10) | 949 | 2.89 |
+| Ours v2 (as shipped) | 1.6 / 6.4 | 1.5 / 5.3 | 4.0 / 10.0 | 0.1 | 8.8 | 2.40 (8/10) | 2.62 (4/10) | 998 | 0.95 |
+| Ours v2 (as shipped, adaptive grip off) | 4.1 / 11.4 | 4.0 / 10.3 | 12.1 / 23.6 | 0.1 | 0.0 | 2.11 (1/10) | never | 7330 | 0.97 |
+| Ours v2 (tuned) | 1.6 / 6.4 | 1.5 / 5.3 | 4.0 / 10.0 | 0.1 | 8.8 | 2.40 (8/10) | 2.62 (4/10) | 998 | 1.08 |
 
 **grip_drop_s_curve**: the S-curve; halfway along, the floor drops from mu 1.15 / 1.0 to 0.70 / 0.61 (a worn carpet seam) (8.6 s simulated)
 
@@ -404,9 +417,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.9 / 8.5 | 0.9 / 3.1 | 3.9 / 10.5 | 0.0 | 6.7 | 4.03 (8/10) | 4.16 (2/10) | 6102 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 8.3 / 21.9 | 5.8 / 19.3 | 20.4 / 32.1 | 0.1 | 29.1 | never | never | 4118 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 8.1 / 17.4 | 5.5 / 13.6 | 13.7 / 19.1 | 0.0 | 16.6 | never | never | 3908 | 4.62 |
-| Ours v2 (as shipped) | 3.2 / 18.5 | 3.4 / 19.3 | 6.5 / 13.3 | 0.1 | 20.3 | 2.10 (8/10) | 2.84 (1/10) | 2879 | 1.22 |
-| Ours v2 (as shipped, adaptive grip off) | 1.6 / 6.1 | 1.7 / 6.1 | 6.8 / 13.4 | 0.1 | 12.3 | 2.03 (7/10) | never | 3616 | 1.46 |
-| Ours v2 (tuned) | 3.2 / 18.5 | 3.4 / 19.3 | 6.5 / 13.3 | 0.1 | 20.3 | 2.10 (8/10) | 2.84 (1/10) | 2879 | 1.42 |
+| Ours v2 (as shipped) | 2.2 / 6.5 | 2.4 / 6.5 | 7.9 / 13.5 | 0.1 | 12.0 | 2.06 (3/10) | never | 2630 | 1.44 |
+| Ours v2 (as shipped, adaptive grip off) | 1.6 / 6.1 | 1.7 / 6.1 | 6.8 / 13.4 | 0.1 | 12.3 | 2.03 (7/10) | never | 3616 | 0.97 |
+| Ours v2 (tuned) | 2.2 / 6.5 | 2.4 / 6.5 | 7.9 / 13.5 | 0.1 | 12.0 | 2.06 (3/10) | never | 2630 | 1.05 |
 
 ### Slip-aware odometry + gyro + IMU (lib's SlipAwareOdometry, no vision)
 
@@ -425,9 +438,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 36/90 | 0/9 | 5.7 | 58.7 | 4.3 | 2316 |
 | Choreo + ChoreoLib follower (as shipped) | 22/90 | 0/9 | 11.8 | 97.2 | 12.1 | 2298 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 14/90 | 0/9 | 11.0 | 103.7 | 9.3 | 2322 |
-| Ours v2 (as shipped) | 21/90 | 0/9 | 4.9 | 37.7 | 6.5 | 995 |
+| Ours v2 (as shipped) | 20/90 | 0/9 | 4.5 | 35.9 | 5.8 | 1026 |
 | Ours v2 (as shipped, adaptive grip off) | 14/90 | 0/9 | 4.8 | 38.4 | 6.5 | 1872 |
-| Ours v2 (tuned) | 21/90 | 0/9 | 4.9 | 37.7 | 6.5 | 995 |
+| Ours v2 (tuned) | 20/90 | 0/9 | 4.5 | 35.9 | 5.8 | 1026 |
 
 **straight_3m**: 3 m straight, heading held at 0 (6.5 s simulated)
 
@@ -446,9 +459,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.9 | 0.0 | 5.2 | 1.33 (9/10) | 1.52 (5/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 0.3 / 1.1 | 0.1 / 0.4 | 3.0 / 6.9 | 0.0 | 7.8 | 1.26 | 1.48 (5/10) | 66 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 0.3 / 1.0 | 0.1 / 0.5 | 2.3 / 6.1 | 0.1 | 5.1 | 1.32 (9/10) | 1.58 (5/10) | 24 | 2.12 |
-| Ours v2 (as shipped) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.46 |
-| Ours v2 (as shipped, adaptive grip off) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 2.03 |
-| Ours v2 (tuned) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.37 |
+| Ours v2 (as shipped) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 1.10 |
+| Ours v2 (as shipped, adaptive grip off) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 0.99 |
+| Ours v2 (tuned) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.8 | 0.1 | 5.4 | 1.29 (9/10) | 1.43 (4/10) | 16 | 0.87 |
 
 **s_curve**: S-curve (lane change): 5 m ahead, 1.6 m to the left, min radius 1.1 m, heading held (8.6 s simulated)
 
@@ -467,9 +480,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.9 / 8.7 | 0.8 / 3.3 | 4.1 / 10.5 | 0.0 | 8.9 | 4.04 (8/10) | 4.20 (4/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 4.6 / 11.2 | 2.0 / 5.6 | 4.5 / 10.8 | 0.1 | 11.3 | 1.95 (8/10) | 2.18 (4/10) | 0 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 4.9 / 12.7 | 2.9 / 6.8 | 4.1 / 10.5 | 0.1 | 8.8 | 2.01 (8/10) | 2.27 (4/10) | 18 | 3.03 |
-| Ours v2 (as shipped) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.16 |
-| Ours v2 (as shipped, adaptive grip off) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.24 |
-| Ours v2 (tuned) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.43 |
+| Ours v2 (as shipped) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 0.93 |
+| Ours v2 (as shipped, adaptive grip off) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 0.90 |
+| Ours v2 (tuned) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.17 (4/10) | 16 | 1.05 |
 
 **hairpin**: 2 m out, 180 deg turn on a 1 m radius (0.75 m at the joins), 2 m back; heading held (9.9 s simulated)
 
@@ -488,9 +501,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.1 / 9.2 | 1.6 / 6.2 | 1.7 / 3.8 | 0.0 | 0.0 | 7.61 | 7.81 (8/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 2.4 / 8.8 | 2.3 / 8.7 | 1.9 / 3.9 | 0.1 | 0.4 | 2.88 | 3.07 (7/10) | 263 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 3.1 / 10.2 | 3.0 / 10.1 | 3.1 / 4.6 | 0.1 | 0.0 | 3.02 | never | 19 | 4.33 |
-| Ours v2 (as shipped) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.02 |
-| Ours v2 (as shipped, adaptive grip off) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.05 |
-| Ours v2 (tuned) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 0.98 |
+| Ours v2 (as shipped) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 1.14 |
+| Ours v2 (as shipped, adaptive grip off) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 0.91 |
+| Ours v2 (tuned) | 2.0 / 8.2 | 1.8 / 8.2 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 18 | 8.74 |
 
 **slalom**: through 3 gate centres at x = 1.75 / 3.5 / 5.25 m, y = +0.4 / -0.4 / +0.4 m (10.3 s simulated)
 
@@ -509,9 +522,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 4.2 / 11.3 | 1.2 / 4.0 | 5.4 / 14.0 | 0.0 | 12.1 | 4.68 (8/10) | 4.84 (3/10) | 0 | 0.00 |
 | Choreo + ChoreoLib follower (as shipped) | 8.5 / 22.1 | 2.7 / 8.9 | 5.8 / 13.7 | 0.1 | 14.1 | 2.79 (6/10) | 3.00 (4/10) | 196 | 0.00 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 8.7 / 23.3 | 3.6 / 9.6 | 6.0 / 14.1 | 0.3 | 11.7 | 2.89 (7/10) | 3.10 (1/10) | 22 | 4.10 |
-| Ours v2 (as shipped) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 0.79 |
-| Ours v2 (as shipped, adaptive grip off) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 0.90 |
-| Ours v2 (tuned) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 1.05 |
+| Ours v2 (as shipped) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 20.29 |
+| Ours v2 (as shipped, adaptive grip off) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 0.96 |
+| Ours v2 (tuned) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.1 | 2.79 (8/10) | 2.93 (3/10) | 16 | 10.67 |
 
 **long_auto**: auto-style route, heading 0 -> 90 deg at waypoint 2 -> 180 deg at the end (14.1 s simulated)
 
@@ -530,9 +543,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 8.1 / 31.5 | 4.6 / 18.9 | 8.0 / 17.8 | 0.9 | 5.0 | 6.54 (4/10) | 6.64 (3/10) | 2 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 9.2 / 27.8 | 5.3 / 20.5 | 8.0 / 18.7 | 1.8 | 5.7 | 3.76 (4/10) | 3.98 (2/10) | 182 | 0.00 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 9.8 / 29.1 | 6.1 / 22.8 | 8.3 / 19.3 | 1.0 | 3.2 | 3.85 (4/10) | 4.09 (2/10) | 176 | 4.93 |
-| Ours v2 (as shipped) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 0.96 |
-| Ours v2 (as shipped, adaptive grip off) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.04 |
-| Ours v2 (tuned) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 0.91 |
+| Ours v2 (as shipped) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.19 |
+| Ours v2 (as shipped, adaptive grip off) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.66 |
+| Ours v2 (tuned) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 3.0 | 3.88 (4/10) | 4.00 (2/10) | 270 | 1.05 |
 
 **moving_start**: starts moving 2 m/s sideways (+y), path heads +x then curves left (7.9 s simulated)
 
@@ -551,9 +564,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 21.1 / 58.7 | 19.5 / 54.8 | 3.8 / 8.3 | 0.0 | 7.6 | 3.65 (9/10) | 3.86 (4/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 19.5 / 25.8 | 21.2 / 25.7 | 25.2 / 26.7 | 0.0 | 18.0 | never | never | 1937 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 11.3 / 28.1 | 11.7 / 29.5 | 4.0 / 9.7 | 0.3 | 6.5 | 1.82 (8/10) | 2.09 (2/10) | 1921 | 2.66 |
-| Ours v2 (as shipped) | 11.7 / 30.1 | 11.8 / 30.2 | 3.7 / 9.2 | 0.1 | 5.9 | 1.86 (8/10) | 1.97 (3/10) | 1326 | 0.86 |
-| Ours v2 (as shipped, adaptive grip off) | 11.5 / 28.1 | 11.6 / 28.1 | 4.1 / 9.6 | 0.1 | 6.4 | 1.79 (8/10) | 1.94 (1/10) | 1812 | 0.95 |
-| Ours v2 (tuned) | 11.7 / 30.1 | 11.8 / 30.2 | 3.7 / 9.2 | 0.1 | 5.9 | 1.86 (8/10) | 1.97 (3/10) | 1326 | 0.83 |
+| Ours v2 (as shipped) | 11.4 / 28.6 | 11.5 / 28.6 | 3.7 / 9.2 | 0.1 | 6.0 | 1.84 (8/10) | 1.95 (3/10) | 1478 | 0.94 |
+| Ours v2 (as shipped, adaptive grip off) | 11.5 / 28.1 | 11.6 / 28.1 | 4.1 / 9.6 | 0.1 | 6.4 | 1.79 (8/10) | 1.94 (1/10) | 1812 | 1.10 |
+| Ours v2 (tuned) | 11.4 / 28.6 | 11.5 / 28.6 | 3.7 / 9.2 | 0.1 | 6.0 | 1.84 (8/10) | 1.95 (3/10) | 1478 | 1.32 |
 
 **hit_mid_path**: the S-curve with a 0.3 s lateral shove (to the left of travel) at half distance (8.6 s simulated)
 
@@ -572,9 +585,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 7.2 / 29.0 | 7.8 / 32.0 | 3.9 / 9.1 | 0.0 | 7.5 | 4.22 (8/10) | 4.29 (3/10) | 2272 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 47.9 / 97.2 | 46.3 / 94.8 | 28.5 / 32.6 | 0.2 | 28.5 | 2.24 (1/10) | never | 5520 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 47.3 / 103.7 | 45.7 / 99.7 | 24.4 / 27.4 | 0.3 | 58.1 | never | never | 6361 | 2.96 |
-| Ours v2 (as shipped) | 16.4 / 37.7 | 16.7 / 38.8 | 21.2 / 29.1 | 0.1 | 4.8 | never | never | 3994 | 1.08 |
-| Ours v2 (as shipped, adaptive grip off) | 13.0 / 38.4 | 13.2 / 39.5 | 13.7 / 19.5 | 0.1 | 3.2 | never | never | 3606 | 0.92 |
-| Ours v2 (tuned) | 16.4 / 37.7 | 16.7 / 38.8 | 21.2 / 29.1 | 0.1 | 4.8 | never | never | 3994 | 1.05 |
+| Ours v2 (as shipped) | 12.7 / 35.9 | 12.8 / 36.9 | 11.3 / 17.0 | 0.1 | 7.3 | 2.16 (1/10) | never | 3572 | 0.84 |
+| Ours v2 (as shipped, adaptive grip off) | 13.0 / 38.4 | 13.2 / 39.5 | 13.7 / 19.5 | 0.1 | 3.2 | never | never | 3606 | 1.65 |
+| Ours v2 (tuned) | 12.7 / 35.9 | 12.8 / 36.9 | 11.3 / 17.0 | 0.1 | 7.3 | 2.16 (1/10) | never | 3572 | 0.88 |
 
 **low_grip_s_curve**: the S-curve on mu 0.70 static / 0.61 kinetic (8.6 s simulated)
 
@@ -593,9 +606,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 3.1 / 9.4 | 1.4 / 4.2 | 5.4 / 13.2 | 0.0 | 4.2 | 4.00 (5/10) | 4.12 (3/10) | 12448 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 4.9 / 13.8 | 4.0 / 12.5 | 10.2 / 15.8 | 0.1 | 15.7 | 1.94 (7/10) | never | 8315 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 5.3 / 13.6 | 3.8 / 7.4 | 15.7 / 33.1 | 0.0 | 28.9 | 1.97 (6/10) | never | 8326 | 3.26 |
-| Ours v2 (as shipped) | 1.6 / 6.4 | 1.5 / 5.3 | 4.0 / 10.3 | 0.1 | 9.0 | 2.48 (8/10) | 2.69 (4/10) | 469 | 1.12 |
-| Ours v2 (as shipped, adaptive grip off) | 5.6 / 14.7 | 5.5 / 13.6 | 10.6 / 21.1 | 0.1 | 2.0 | 2.11 (1/10) | never | 7502 | 1.20 |
-| Ours v2 (tuned) | 1.6 / 6.4 | 1.5 / 5.3 | 4.0 / 10.3 | 0.1 | 9.0 | 2.48 (8/10) | 2.69 (4/10) | 469 | 1.30 |
+| Ours v2 (as shipped) | 1.6 / 6.4 | 1.5 / 5.3 | 4.0 / 10.3 | 0.1 | 9.0 | 2.48 (8/10) | 2.70 (4/10) | 516 | 1.04 |
+| Ours v2 (as shipped, adaptive grip off) | 5.6 / 14.7 | 5.5 / 13.6 | 10.6 / 21.1 | 0.1 | 2.0 | 2.11 (1/10) | never | 7502 | 0.89 |
+| Ours v2 (tuned) | 1.6 / 6.4 | 1.5 / 5.3 | 4.0 / 10.3 | 0.1 | 9.0 | 2.48 (8/10) | 2.70 (4/10) | 516 | 1.05 |
 
 **grip_drop_s_curve**: the S-curve; halfway along, the floor drops from mu 1.15 / 1.0 to 0.70 / 0.61 (a worn carpet seam) (8.6 s simulated)
 
@@ -614,9 +627,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.9 / 8.4 | 0.9 / 3.1 | 4.0 / 10.4 | 0.0 | 7.0 | 4.03 (8/10) | 4.17 (3/10) | 6122 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 8.4 / 22.8 | 6.0 / 20.9 | 21.5 / 33.8 | 0.1 | 23.5 | never | never | 4202 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 8.1 / 17.4 | 5.5 / 13.6 | 16.2 / 19.7 | 0.0 | 16.0 | never | never | 4034 | 3.18 |
-| Ours v2 (as shipped) | 3.2 / 18.5 | 3.5 / 19.3 | 6.5 / 13.3 | 0.1 | 20.3 | 2.21 (4/10) | 2.84 (1/10) | 2834 | 1.05 |
-| Ours v2 (as shipped, adaptive grip off) | 1.9 / 6.1 | 2.1 / 6.1 | 7.2 / 13.4 | 0.1 | 12.3 | 2.07 (2/10) | never | 3586 | 1.17 |
-| Ours v2 (tuned) | 3.2 / 18.5 | 3.5 / 19.3 | 6.5 / 13.3 | 0.1 | 20.3 | 2.21 (4/10) | 2.84 (1/10) | 2834 | 1.00 |
+| Ours v2 (as shipped) | 3.1 / 9.8 | 3.3 / 9.8 | 10.3 / 14.9 | 0.1 | 7.3 | never | never | 3336 | 1.13 |
+| Ours v2 (as shipped, adaptive grip off) | 1.9 / 6.1 | 2.1 / 6.1 | 7.2 / 13.4 | 0.1 | 12.3 | 2.07 (2/10) | never | 3586 | 0.93 |
+| Ours v2 (tuned) | 3.1 / 9.8 | 3.3 / 9.8 | 10.3 / 14.9 | 0.1 | 7.3 | never | never | 3336 | 1.14 |
 
 ### Perfect pose (the control law alone)
 
@@ -635,9 +648,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 90/90 | 9/9 | 5.6 | 58.6 | 0.4 | 2430 |
 | Choreo + ChoreoLib follower (as shipped) | 57/90 | 5/9 | 12.7 | 97.6 | 22.7 | 2793 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 90/90 | 9/9 | 11.5 | 103.4 | 0.1 | 2734 |
-| Ours v2 (as shipped) | 90/90 | 9/9 | 4.6 | 38.6 | 0.1 | 933 |
+| Ours v2 (as shipped) | 90/90 | 9/9 | 4.1 | 36.4 | 0.1 | 991 |
 | Ours v2 (as shipped, adaptive grip off) | 90/90 | 9/9 | 4.1 | 37.8 | 0.1 | 1988 |
-| Ours v2 (tuned) | 90/90 | 9/9 | 4.6 | 38.6 | 0.1 | 933 |
+| Ours v2 (tuned) | 90/90 | 9/9 | 4.1 | 36.4 | 0.1 | 991 |
 
 **straight_3m**: 3 m straight, heading held at 0 (6.5 s simulated)
 
@@ -656,8 +669,8 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 0.1 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 0.0 | 1.34 | 1.55 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 0.3 / 1.0 | 0.1 / 0.3 | 1.5 / 1.7 | 0.0 | 2.5 | 1.26 | 1.48 (10/10) | 30 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 0.3 / 1.0 | 0.1 / 0.3 | 0.1 / 0.1 | 0.0 | 0.0 | 1.33 | 1.58 (10/10) | 37 | 2.72 |
-| Ours v2 (as shipped) | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.2 | 0.0 | 0.2 | 1.29 | 1.43 (10/10) | 19 | 0.65 |
-| Ours v2 (as shipped, adaptive grip off) | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.2 | 0.0 | 0.2 | 1.29 | 1.43 (10/10) | 19 | 0.61 |
+| Ours v2 (as shipped) | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.2 | 0.0 | 0.2 | 1.29 | 1.43 (10/10) | 19 | 0.99 |
+| Ours v2 (as shipped, adaptive grip off) | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.2 | 0.0 | 0.2 | 1.29 | 1.43 (10/10) | 19 | 1.13 |
 | Ours v2 (tuned) | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.2 | 0.0 | 0.2 | 1.29 | 1.43 (10/10) | 19 | 0.76 |
 
 **s_curve**: S-curve (lane change): 5 m ahead, 1.6 m to the left, min radius 1.1 m, heading held (8.6 s simulated)
@@ -677,9 +690,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.8 / 6.0 | 0.2 / 0.4 | 0.1 / 0.1 | 0.0 | 0.0 | 4.08 | 4.28 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 4.6 / 8.6 | 1.2 / 1.9 | 1.5 / 1.8 | 0.0 | 2.4 | 1.95 | 2.17 (10/10) | 48 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 5.1 / 10.3 | 2.0 / 3.7 | 0.1 / 0.1 | 0.0 | 0.0 | 2.02 | 2.28 (10/10) | 26 | 5.77 |
-| Ours v2 (as shipped) | 1.2 / 3.0 | 1.0 / 2.0 | 0.0 / 0.1 | 0.0 | 0.1 | 2.04 | 2.18 (10/10) | 19 | 0.76 |
-| Ours v2 (as shipped, adaptive grip off) | 1.2 / 3.0 | 1.0 / 2.0 | 0.0 / 0.1 | 0.0 | 0.1 | 2.04 | 2.18 (10/10) | 19 | 0.83 |
-| Ours v2 (tuned) | 1.2 / 3.0 | 1.0 / 2.0 | 0.0 / 0.1 | 0.0 | 0.1 | 2.04 | 2.18 (10/10) | 19 | 1.05 |
+| Ours v2 (as shipped) | 1.2 / 3.0 | 1.0 / 2.0 | 0.0 / 0.1 | 0.0 | 0.1 | 2.04 | 2.18 (10/10) | 19 | 0.87 |
+| Ours v2 (as shipped, adaptive grip off) | 1.2 / 3.0 | 1.0 / 2.0 | 0.0 / 0.1 | 0.0 | 0.1 | 2.04 | 2.18 (10/10) | 19 | 1.04 |
+| Ours v2 (tuned) | 1.2 / 3.0 | 1.0 / 2.0 | 0.0 / 0.1 | 0.0 | 0.1 | 2.04 | 2.18 (10/10) | 19 | 1.18 |
 
 **hairpin**: 2 m out, 180 deg turn on a 1 m radius (0.75 m at the joins), 2 m back; heading held (9.9 s simulated)
 
@@ -698,9 +711,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 1.2 / 3.2 | 0.1 / 0.3 | 0.1 / 0.1 | 0.0 | 0.0 | 7.74 | 7.95 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 1.4 / 2.4 | 1.2 / 2.0 | 1.4 / 1.6 | 0.0 | 2.5 | 2.84 | 3.07 (10/10) | 138 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 2.5 / 4.2 | 2.3 / 3.9 | 0.1 / 0.1 | 0.1 | 0.0 | 2.93 | 3.19 (10/10) | 35 | 6.95 |
-| Ours v2 (as shipped) | 1.5 / 3.0 | 1.4 / 2.5 | 0.1 / 0.1 | 0.0 | 0.1 | 2.83 | 2.97 (10/10) | 19 | 1.02 |
-| Ours v2 (as shipped, adaptive grip off) | 1.5 / 3.0 | 1.4 / 2.5 | 0.1 / 0.1 | 0.0 | 0.1 | 2.83 | 2.97 (10/10) | 19 | 1.05 |
-| Ours v2 (tuned) | 1.5 / 3.0 | 1.4 / 2.5 | 0.1 / 0.1 | 0.0 | 0.1 | 2.83 | 2.97 (10/10) | 19 | 0.94 |
+| Ours v2 (as shipped) | 1.5 / 3.0 | 1.4 / 2.5 | 0.1 / 0.1 | 0.0 | 0.1 | 2.83 | 2.97 (10/10) | 19 | 0.92 |
+| Ours v2 (as shipped, adaptive grip off) | 1.5 / 3.0 | 1.4 / 2.5 | 0.1 / 0.1 | 0.0 | 0.1 | 2.83 | 2.97 (10/10) | 19 | 1.10 |
+| Ours v2 (tuned) | 1.5 / 3.0 | 1.4 / 2.5 | 0.1 / 0.1 | 0.0 | 0.1 | 2.83 | 2.97 (10/10) | 19 | 1.20 |
 
 **slalom**: through 3 gate centres at x = 1.75 / 3.5 / 5.25 m, y = +0.4 / -0.4 / +0.4 m (10.3 s simulated)
 
@@ -719,9 +732,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 4.2 / 8.7 | 0.3 / 0.7 | 0.1 / 0.1 | 0.0 | 0.0 | 4.74 | 4.94 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 8.4 / 17.0 | 1.4 / 2.0 | 1.5 / 1.5 | 0.0 | 2.2 | 2.77 | 2.99 (10/10) | 261 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 9.0 / 18.4 | 2.4 / 3.8 | 0.1 / 0.1 | 0.2 | 0.0 | 2.85 | 3.10 (10/10) | 16 | 5.29 |
-| Ours v2 (as shipped) | 1.4 / 3.0 | 1.3 / 2.2 | 0.1 / 0.1 | 0.0 | 0.1 | 2.80 | 2.94 (10/10) | 21 | 0.97 |
-| Ours v2 (as shipped, adaptive grip off) | 1.4 / 3.0 | 1.3 / 2.2 | 0.1 / 0.1 | 0.0 | 0.1 | 2.80 | 2.94 (10/10) | 21 | 0.98 |
-| Ours v2 (tuned) | 1.4 / 3.0 | 1.3 / 2.2 | 0.1 / 0.1 | 0.0 | 0.1 | 2.80 | 2.94 (10/10) | 21 | 0.92 |
+| Ours v2 (as shipped) | 1.4 / 3.0 | 1.3 / 2.2 | 0.1 / 0.1 | 0.0 | 0.1 | 2.80 | 2.94 (10/10) | 21 | 1.03 |
+| Ours v2 (as shipped, adaptive grip off) | 1.4 / 3.0 | 1.3 / 2.2 | 0.1 / 0.1 | 0.0 | 0.1 | 2.80 | 2.94 (10/10) | 21 | 9.33 |
+| Ours v2 (tuned) | 1.4 / 3.0 | 1.3 / 2.2 | 0.1 / 0.1 | 0.0 | 0.1 | 2.80 | 2.94 (10/10) | 21 | 0.97 |
 
 **long_auto**: auto-style route, heading 0 -> 90 deg at waypoint 2 -> 180 deg at the end (14.1 s simulated)
 
@@ -740,9 +753,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 6.9 / 21.3 | 1.1 / 3.3 | 0.1 / 0.4 | 0.2 | 0.4 | 6.40 | 6.55 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 7.3 / 21.8 | 1.5 / 2.9 | 1.5 / 1.7 | 1.1 | 2.3 | 3.75 | 3.98 (7/10) | 214 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 8.0 / 22.1 | 2.8 / 5.7 | 0.1 / 0.2 | 0.3 | 0.0 | 3.84 | 4.10 (10/10) | 179 | 6.23 |
-| Ours v2 (as shipped) | 3.9 / 12.3 | 1.6 / 6.0 | 0.1 / 0.1 | 0.3 | 0.1 | 3.87 | 4.01 (10/10) | 265 | 1.18 |
-| Ours v2 (as shipped, adaptive grip off) | 3.9 / 12.3 | 1.6 / 6.0 | 0.1 / 0.1 | 0.3 | 0.1 | 3.87 | 4.01 (10/10) | 265 | 1.02 |
-| Ours v2 (tuned) | 3.9 / 12.3 | 1.6 / 6.0 | 0.1 / 0.1 | 0.3 | 0.1 | 3.87 | 4.01 (10/10) | 265 | 2.01 |
+| Ours v2 (as shipped) | 3.9 / 12.3 | 1.6 / 6.0 | 0.1 / 0.1 | 0.3 | 0.1 | 3.87 | 4.01 (10/10) | 265 | 1.33 |
+| Ours v2 (as shipped, adaptive grip off) | 3.9 / 12.3 | 1.6 / 6.0 | 0.1 / 0.1 | 0.3 | 0.1 | 3.87 | 4.01 (10/10) | 265 | 1.11 |
+| Ours v2 (tuned) | 3.9 / 12.3 | 1.6 / 6.0 | 0.1 / 0.1 | 0.3 | 0.1 | 3.87 | 4.01 (10/10) | 265 | 1.25 |
 
 **moving_start**: starts moving 2 m/s sideways (+y), path heads +x then curves left (7.9 s simulated)
 
@@ -761,9 +774,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 21.5 / 58.6 | 19.9 / 54.7 | 0.1 / 0.1 | 0.0 | 0.0 | 3.70 | 3.90 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 10.6 / 24.7 | 10.5 / 25.6 | 1.5 / 1.8 | 0.0 | 2.4 | 1.72 | 1.93 (10/10) | 4562 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 11.7 / 28.1 | 11.7 / 29.5 | 0.1 / 0.1 | 0.3 | 0.0 | 1.85 | 2.11 (10/10) | 1957 | 3.46 |
-| Ours v2 (as shipped) | 11.8 / 30.1 | 11.9 / 30.2 | 0.1 / 0.1 | 0.0 | 0.1 | 1.85 | 1.99 (10/10) | 1363 | 0.79 |
-| Ours v2 (as shipped, adaptive grip off) | 11.2 / 28.1 | 11.3 / 28.1 | 0.1 / 0.1 | 0.0 | 0.1 | 1.81 | 1.95 (10/10) | 1782 | 0.87 |
-| Ours v2 (tuned) | 11.8 / 30.1 | 11.9 / 30.2 | 0.1 / 0.1 | 0.0 | 0.1 | 1.85 | 1.99 (10/10) | 1363 | 0.87 |
+| Ours v2 (as shipped) | 11.5 / 28.6 | 11.6 / 28.6 | 0.1 / 0.1 | 0.0 | 0.1 | 1.84 | 1.98 (10/10) | 1515 | 1.01 |
+| Ours v2 (as shipped, adaptive grip off) | 11.2 / 28.1 | 11.3 / 28.1 | 0.1 / 0.1 | 0.0 | 0.1 | 1.81 | 1.95 (10/10) | 1782 | 1.03 |
+| Ours v2 (tuned) | 11.5 / 28.6 | 11.6 / 28.6 | 0.1 / 0.1 | 0.0 | 0.1 | 1.84 | 1.98 (10/10) | 1515 | 1.31 |
 
 **hit_mid_path**: the S-curve with a 0.3 s lateral shove (to the left of travel) at half distance (8.6 s simulated)
 
@@ -782,9 +795,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 8.2 / 29.2 | 8.8 / 31.5 | 0.1 / 0.1 | 0.0 | 0.0 | 4.18 | 4.39 (10/10) | 2293 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 49.1 / 97.6 | 47.6 / 95.3 | 39.0 / 41.3 | 0.2 | 24.1 | never | never | 5688 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 48.3 / 103.4 | 46.8 / 99.3 | 0.1 / 0.1 | 0.2 | 62.6 | 2.94 | 3.20 (10/10) | 7141 | 3.10 |
-| Ours v2 (as shipped) | 16.1 / 38.6 | 16.4 / 39.7 | 0.1 / 0.1 | 0.0 | 6.0 | 2.03 | 2.36 (10/10) | 4234 | 0.85 |
-| Ours v2 (as shipped, adaptive grip off) | 16.0 / 37.8 | 16.3 / 38.9 | 0.1 / 0.1 | 0.0 | 0.1 | 2.08 | 2.22 (10/10) | 3675 | 0.91 |
-| Ours v2 (tuned) | 16.1 / 38.6 | 16.4 / 39.7 | 0.1 / 0.1 | 0.0 | 6.0 | 2.03 | 2.36 (10/10) | 4234 | 0.98 |
+| Ours v2 (as shipped) | 15.1 / 36.4 | 15.4 / 37.5 | 0.1 / 0.3 | 0.0 | 0.3 | 2.08 | 2.22 (10/10) | 3771 | 0.94 |
+| Ours v2 (as shipped, adaptive grip off) | 16.0 / 37.8 | 16.3 / 38.9 | 0.1 / 0.1 | 0.0 | 0.1 | 2.08 | 2.22 (10/10) | 3675 | 0.99 |
+| Ours v2 (tuned) | 15.1 / 36.4 | 15.4 / 37.5 | 0.1 / 0.3 | 0.0 | 0.3 | 2.08 | 2.22 (10/10) | 3771 | 0.74 |
 
 **low_grip_s_curve**: the S-curve on mu 0.70 static / 0.61 kinetic (8.6 s simulated)
 
@@ -803,9 +816,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.7 / 6.0 | 0.6 / 1.4 | 1.6 / 1.7 | 0.0 | 1.7 | 3.80 | 3.94 (10/10) | 13094 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 24.3 / 68.9 | 22.6 / 66.4 | 113.8 / 114.1 | 0.3 | 103.7 | never | never | 9624 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 10.2 / 22.2 | 7.9 / 17.8 | 0.1 / 0.1 | 0.2 | 32.8 | 2.66 | 2.92 (10/10) | 10082 | 3.06 |
-| Ours v2 (as shipped) | 1.3 / 3.3 | 1.1 / 2.3 | 0.1 / 0.2 | 0.0 | 0.2 | 2.53 | 2.68 (10/10) | 258 | 1.17 |
-| Ours v2 (as shipped, adaptive grip off) | 1.0 / 2.2 | 1.1 / 3.0 | 0.1 / 0.2 | 0.0 | 6.7 | 2.04 | 2.46 (10/10) | 8034 | 0.83 |
-| Ours v2 (tuned) | 1.3 / 3.3 | 1.1 / 2.3 | 0.1 / 0.2 | 0.0 | 0.2 | 2.53 | 2.68 (10/10) | 258 | 0.95 |
+| Ours v2 (as shipped) | 1.3 / 3.3 | 1.1 / 2.3 | 0.1 / 0.2 | 0.0 | 0.2 | 2.54 | 2.68 (10/10) | 296 | 0.99 |
+| Ours v2 (as shipped, adaptive grip off) | 1.0 / 2.2 | 1.1 / 3.0 | 0.1 / 0.2 | 0.0 | 6.7 | 2.04 | 2.46 (10/10) | 8034 | 1.02 |
+| Ours v2 (tuned) | 1.3 / 3.3 | 1.1 / 2.3 | 0.1 / 0.2 | 0.0 | 0.2 | 2.54 | 2.68 (10/10) | 296 | 0.77 |
 
 **grip_drop_s_curve**: the S-curve; halfway along, the floor drops from mu 1.15 / 1.0 to 0.70 / 0.61 (a worn carpet seam) (8.6 s simulated)
 
@@ -824,9 +837,9 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 2.7 / 6.0 | 0.4 / 1.4 | 1.5 / 1.6 | 0.0 | 1.6 | 3.98 | 4.12 (10/10) | 6486 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 8.5 / 18.7 | 6.1 / 14.4 | 42.5 / 43.1 | 0.2 | 41.8 | never | never | 4576 | 0.01 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 8.3 / 17.0 | 5.7 / 12.5 | 0.1 / 0.1 | 0.1 | 25.2 | 2.53 | 2.78 (10/10) | 5131 | 7.48 |
-| Ours v2 (as shipped) | 3.9 / 21.9 | 4.1 / 22.7 | 0.1 / 0.2 | 0.0 | 24.9 | 2.30 | 2.59 (10/10) | 2202 | 1.17 |
-| Ours v2 (as shipped, adaptive grip off) | 0.9 / 1.8 | 1.1 / 2.8 | 0.1 / 0.2 | 0.0 | 6.2 | 1.99 | 2.39 (10/10) | 4059 | 0.91 |
-| Ours v2 (tuned) | 3.9 / 21.9 | 4.1 / 22.7 | 0.1 / 0.2 | 0.0 | 24.9 | 2.30 | 2.59 (10/10) | 2202 | 1.00 |
+| Ours v2 (as shipped) | 1.2 / 4.3 | 1.4 / 5.4 | 0.1 / 0.3 | 0.0 | 0.4 | 2.08 | 2.25 (10/10) | 2995 | 0.81 |
+| Ours v2 (as shipped, adaptive grip off) | 0.9 / 1.8 | 1.1 / 2.8 | 0.1 / 0.2 | 0.0 | 6.2 | 1.99 | 2.39 (10/10) | 4059 | 0.72 |
+| Ours v2 (tuned) | 1.2 / 4.3 | 1.4 / 5.4 | 0.1 / 0.3 | 0.0 | 0.4 | 2.08 | 2.25 (10/10) | 2995 | 0.91 |
 
 ## Pathfinding course
 
