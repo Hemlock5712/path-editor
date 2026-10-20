@@ -193,6 +193,9 @@ zone.
 | Second build in that JVM (still interpreted) | 1.7-4.6 ms | |
 | `Path.sample(s)` | 0.14-0.47 µs | 1.0 µs |
 | Windowed projection (±0.5 m) | 0.95-1.6 µs | |
+| `PathFollower.step()`, warm (16 m route, red) | 2.2 µs mean, 260 µs worst in 8,300 steps (GC/JIT) | |
+| `PathFollower.start()`: warm / first call in a fresh JVM | 12 µs / 1.4 ms (class loading, no path work) | |
+| Tail rebuild for a moved goal (8.8 m tail), warm | 186-265 µs mean, 109-116 µs best | |
 
 The cold number is mostly the JVM loading and linking classes, which every path after the first
 shares. See the notes below for what that means for the boot budget.

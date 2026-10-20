@@ -1,6 +1,6 @@
-# Path-following bench: results (phase 1 baseline, pass 2)
+# Path-following bench: results (phase 1 baseline, pass 2, ours v2 added in phase 3)
 
-How to run: `python bench/run.py --both` (about 7.5 minutes on 15 processes; results in `bench/out/results.json`,
+How to run: build our jar first (`lib/gradlew -p lib jar`), then `python bench/run.py --both` (about 8.5 minutes on 15 processes; results in `bench/out/results.json`,
 gitignored). `--quick` is a 2-seed smoke test on 3 courses, `--perfect-pose` runs the true pose only,
 `--md-only` rebuilds the generated part of this file from `results.json`. Tests: `python -m pytest -q bench/tests`.
 Choreo trajectories: `python bench/choreo/make_project.py --cli <choreo-cli.exe>` (they are committed).
@@ -10,7 +10,7 @@ steering lag, 250 Hz odometry thread, 50 Hz loop with 1 ms jitter, 2 ms actuatio
 seeds each. Each seed draws a wheel-radius error (1 % sigma) and a gyro scale error (0.2 % sigma). Every method gets
 the same limits: 4.0 m/s, 6 m/s^2, 540 deg/s, 720 deg/s^2. Two pose sources: wheel odometry + gyro (no vision) and
 the perfect pose (the control law alone). All accuracy numbers are against the TRUE plant pose. There is also a
-pathfinding course. "Ours v2" is not built yet (slot in `bench/followers/ours_v2.py`).
+pathfinding course. "Ours v2" is lib/'s Java `PathFollower`, driven through `BenchServer` (`bench/followers/ours_v2.py`).
 
 ## Summary
 
@@ -51,11 +51,53 @@ becomes odometry error:
 - With odometry the worst run touches an obstacle for 4 ms: the 0.6 m navgrid buffer leaves only centimetres
   after corner smoothing.
 
-**For ours v2:** match the hybrid prototype's ending (0.1 cm, no overshoot, recovers from shoves and low grip) at
-Choreo's speed, without an offline solver.
+**The bar for ours v2 was:** match the hybrid prototype's ending (0.1 cm, no overshoot, recovers from shoves and
+low grip) at Choreo's speed, without an offline solver.
+
+**Ours v2 (phase 3).** This is lib/'s Java `PathFollower` on our own quintic spline and profile. It plans with grip
+mu 0.7, follows by position, brakes with DriveToPose's law and finishes with it. "As shipped" is the library's
+defaults; "tuned" is the sweep's pick on the tuning seeds.
+- **Perfect pose, as shipped:** it settles in all 80 runs, 0.1 cm off, with no overshoot on every course but low
+  grip. Against the hybrid it ties on the straight (1.58 s) and the moving start (2.10 s vs 2.11 s), is ahead on
+  the hairpin (3.11 s vs 3.19 s) and slalom (3.08 s vs 3.10 s), and is behind on the S-curve (2.32 s vs 2.28 s)
+  and 12 m route (4.16 s vs 4.10 s). It is 0.04-0.18 s behind Choreo on the six clean courses. After the shove it
+  settles in 2.34 s (hybrid 3.20 s, PathPlanner tuned 2.67 s, Choreo never), with no overshoot; the hybrid
+  overshoots 62.6 cm. At low grip it settles in 2.57 s (hybrid 2.92 s, PathPlanner tuned 2.52 s, Choreo never).
+- **Perfect pose, tuned** (ease-in 12/s, latency 0.05 s, planning mu 0.7, limiter mu 2.0): it again settles in all
+  80 runs, 0.1 cm off. On the clean courses it is level with Choreo, within -0.11 to +0.03 s: 1.43 s vs 1.48 s on
+  the straight, 2.18 s vs 2.17 s on the S-curve, 2.96 s vs 3.07 s on the hairpin, 2.94 s vs 2.99 s on the slalom,
+  4.01 s vs 3.98 s on the 12 m route and 1.94 s vs 1.93 s on the moving start. It is ahead of tuned PathPlanner
+  on every course, including the shove (2.23 s vs 2.67 s) and low grip (2.46 s vs 2.52 s).
+- **Where ours loses (perfect pose):**
+  - It authors its own curve, so against the authored (Catmull-Rom) path it is 1.2-1.5 cm RMS on the smooth
+    courses. PathPlanner follows those exact cubics at 0.5-0.9 cm.
+  - The 12 m route, with two 90-degree turns of heading, runs 3.9 cm RMS / 12.3 cm worst. PathPlanner manages
+    0.7 / 1.6 cm, and Choreo 7.3 / 21.8 cm.
+  - At low grip it plans at mu 0.7 on a 0.70 static / 0.61 kinetic floor, so it slides and overshoots 6.7 cm
+    before settling. Tuned PathPlanner (COF 0.5) overshoots 2.7 cm.
+- **Wheel odometry, as shipped:** it settles 17 of 80 runs (DriveToPose chain 30, tuned PathPlanner 23, Choreo 22,
+  hybrid 14). Its mean final error is 10.0 cm and its worst cross-track the lowest in the table, 41.0 cm (Choreo
+  100.7 cm, the hybrid 99.5 cm, mostly the shove). It slips about as much as the others where they all slip:
+  1.8 s summed on the moving start (Choreo 1.4 s, PathPlanner 1.7 s), 2.4 s after the shove.
+- **Wheel odometry, tuned:** worse than as shipped. It settles 13 of 80, and on the moving start it ends 19.8 cm
+  off and overshoots 16.5 cm, against 3.9 cm and 6.3 cm as shipped. Wheel slip on the clean courses roughly
+  doubles: 48-54 ms against 21 ms. A check on the tuning seeds pins this on the limiter's mu 2.0, not on the
+  faster ease-in. Ease-in 12 alone keeps clean-course slip at 16 ms and the moving start at 3.95 cm. Limiter mu
+  2.0 alone gives 48-59 ms and 19.8 cm. The sweep scores with a perfect pose, where a looser limiter costs nothing.
+  So the tuned row's limiter is not a setting to ship; ease-in 12 is.
+- **Sweep note:** the limiter mu was at the grid's edge (1.4) in the first run, so it was widened once, to 1.7
+  and 2.0, as pass 2 did for the others. It is still at the edge, but the score is flat: the best variant scores
+  2.974 s at limiter mu 1.0 and 2.956 s at 2.0. The ease-in optimum is inside the grid (best 2.96 s at 12 and at
+  16; 3.09 s at the shipped 6). The grid's ranges came from two exploratory sweeps on the same tuning seeds,
+  never the evaluation seeds.
+- **Cost:** Java build of a whole path 0.2-0.3 ms warm. The path prep column (0.4-1.3 ms) also includes the JSON
+  pipe. One follower step takes about 2 us warm in Java. Starting a path builds nothing (tested), and a moving
+  goal's tail rebuild takes 0.1-0.3 ms.
+- **Re-run:** this run re-ran every method on the same seeds. Every other method's accuracy and time numbers are
+  identical to pass 2; only the wall-clock path prep column moved.
 
 <!-- generated:start -->
-_Generated by `python bench/run.py --both` (10 seeds, 444 s wall)._
+_Generated by `python bench/run.py --both` (10 seeds, 515 s wall)._
 
 ## Tuning sweeps
 
@@ -97,6 +139,18 @@ Best variant at each `radius`: 0.3: 1.00 settled, 5.30 s; 0.45: 1.00 settled, 5.
 
 Best variant at each `cof`: 0.4: 1.00 settled, 3.43 s; 0.5: 1.00 settled, 3.23 s; 0.6: 1.00 settled, 3.33 s; 0.7: 1.00 settled, 3.41 s; 0.9: 1.00 settled, 3.48 s; 1.15: 1.00 settled, 3.82 s
 
+**Ours v2** (180 variants, perfect pose, seeds [100, 101, 102], all courses). Chosen: `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'mu': 0.7, 'limiterFrictionCoefficient': 2.0}`. Best five:
+
+| options | settled fraction | score s |
+|---|---|---|
+| `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'mu': 0.7, 'limiterFrictionCoefficient': 2.0}` | 1.00 | 2.96 |
+| `{'easeInPerSecond': 16.0, 'latencySeconds': 0.05, 'mu': 0.7, 'limiterFrictionCoefficient': 2.0}` | 1.00 | 2.96 |
+| `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'mu': 0.7, 'limiterFrictionCoefficient': 1.7}` | 1.00 | 2.96 |
+| `{'easeInPerSecond': 16.0, 'latencySeconds': 0.05, 'mu': 0.7, 'limiterFrictionCoefficient': 1.7}` | 1.00 | 2.96 |
+| `{'easeInPerSecond': 12.0, 'latencySeconds': 0.05, 'mu': 0.7, 'limiterFrictionCoefficient': 1.4}` | 1.00 | 2.96 |
+
+Best variant at each `easeInPerSecond`: 6: 1.00 settled, 3.09 s; 9: 1.00 settled, 2.98 s; 12: 1.00 settled, 2.96 s; 16: 1.00 settled, 2.96 s
+
 ## Per-course tables
 
 Accuracy is always against the TRUE plant pose. Cross-track is measured from the start until the robot first reaches the end of the path. Times are means over the runs that got there; 'settled' = within 2 cm and 1 deg of the end pose, true speed under 5 cm/s, held 0.25 s. Wheel slip = milliseconds of slip summed over the four wheels. Path prep = median wall-clock of the method's own preparation in Python (relative only; for Choreo it is only loading the .traj, its solver time is in the geometry section).
@@ -118,150 +172,168 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 30/80 | 0/8 | 7.1 | 58.7 | 7.9 | 1791 |
 | Choreo + ChoreoLib follower (as shipped) | 22/80 | 0/8 | 17.2 | 100.7 | 20.5 | 1716 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 14/80 | 0/8 | 16.0 | 99.5 | 16.7 | 1684 |
+| Ours v2 (as shipped) | 17/80 | 0/8 | 7.6 | 41.0 | 10.0 | 1471 |
+| Ours v2 (tuned) | 13/80 | 0/8 | 8.8 | 41.3 | 12.3 | 1479 |
 
 **straight_3m**: 3 m straight, heading held at 0 (6.5 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 0.1 / 0.3 | 0.1 / 0.3 | 4.1 / 8.7 | 0.1 | 8.7 | 1.36 | 1.53 (1/10) | 89 | 127.00 |
-| BLine (README gains, r 0.30) | 0.1 / 0.3 | 0.1 / 0.3 | 38.2 / 47.4 | 0.1 | 69.4 | 1.13 | 2.27 (1/10) | 954 | 0.02 |
-| BLine (README gains, r 0.45 default) | 0.1 / 0.3 | 0.1 / 0.3 | 38.2 / 47.4 | 0.1 | 69.4 | 1.13 | 2.27 (1/10) | 954 | 0.02 |
-| BLine (README gains, r 0.45 + BLine-Web corner caps) | 0.1 / 0.3 | 0.1 / 0.3 | 38.2 / 47.4 | 0.1 | 69.4 | 1.13 | 2.27 (1/10) | 954 | 0.02 |
-| BLine (tuned) | 0.1 / 0.3 | 0.1 / 0.3 | 2.5 / 6.8 | 0.1 | 4.5 | 2.18 (9/10) | 2.67 (7/10) | 0 | 0.02 |
-| BLine (tuned, with corner caps) | 0.1 / 0.3 | 0.1 / 0.3 | 2.5 / 6.8 | 0.1 | 4.5 | 2.18 (9/10) | 2.67 (7/10) | 0 | 0.02 |
-| PathPlanner (kP 5) | 0.1 / 0.3 | 0.1 / 0.3 | 3.9 / 8.3 | 0.1 | 8.5 | 1.26 | 1.46 (1/10) | 0 | 2.24 |
-| PathPlanner (kP 5) + hold | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.9 | 0.1 | 8.5 | 1.26 | 1.71 (4/10) | 0 | 2.12 |
-| PathPlanner (tuned) + hold | 0.1 / 0.3 | 0.1 / 0.3 | 2.7 / 6.5 | 0.1 | 6.6 | 1.42 | 1.71 (5/10) | 6 | 2.27 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.9 | 0.1 | 8.5 | 1.26 | 1.71 (4/10) | 0 | 2.17 |
+| Old path-editor FollowPath | 0.1 / 0.3 | 0.1 / 0.3 | 4.1 / 8.7 | 0.1 | 8.7 | 1.36 | 1.53 (1/10) | 89 | 159.16 |
+| BLine (README gains, r 0.30) | 0.1 / 0.3 | 0.1 / 0.3 | 38.2 / 47.4 | 0.1 | 69.4 | 1.13 | 2.27 (1/10) | 954 | 0.04 |
+| BLine (README gains, r 0.45 default) | 0.1 / 0.3 | 0.1 / 0.3 | 38.2 / 47.4 | 0.1 | 69.4 | 1.13 | 2.27 (1/10) | 954 | 0.04 |
+| BLine (README gains, r 0.45 + BLine-Web corner caps) | 0.1 / 0.3 | 0.1 / 0.3 | 38.2 / 47.4 | 0.1 | 69.4 | 1.13 | 2.27 (1/10) | 954 | 0.03 |
+| BLine (tuned) | 0.1 / 0.3 | 0.1 / 0.3 | 2.5 / 6.8 | 0.1 | 4.5 | 2.18 (9/10) | 2.67 (7/10) | 0 | 0.04 |
+| BLine (tuned, with corner caps) | 0.1 / 0.3 | 0.1 / 0.3 | 2.5 / 6.8 | 0.1 | 4.5 | 2.18 (9/10) | 2.67 (7/10) | 0 | 0.03 |
+| PathPlanner (kP 5) | 0.1 / 0.3 | 0.1 / 0.3 | 3.9 / 8.3 | 0.1 | 8.5 | 1.26 | 1.46 (1/10) | 0 | 2.55 |
+| PathPlanner (kP 5) + hold | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.9 | 0.1 | 8.5 | 1.26 | 1.71 (4/10) | 0 | 2.49 |
+| PathPlanner (tuned) + hold | 0.1 / 0.3 | 0.1 / 0.3 | 2.7 / 6.5 | 0.1 | 6.6 | 1.42 | 1.71 (5/10) | 6 | 2.74 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.9 | 0.1 | 8.5 | 1.26 | 1.71 (4/10) | 0 | 2.52 |
 | DriveToPose chain | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 5.9 | 0.0 | 5.2 | 1.33 (9/10) | 1.52 (5/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 0.3 / 1.1 | 0.1 / 0.4 | 3.0 / 6.9 | 0.0 | 7.8 | 1.26 | 1.48 (5/10) | 66 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 0.3 / 1.0 | 0.1 / 0.5 | 2.3 / 6.1 | 0.1 | 5.1 | 1.32 (9/10) | 1.58 (5/10) | 24 | 2.00 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 0.3 / 1.0 | 0.1 / 0.5 | 2.3 / 6.1 | 0.1 | 5.1 | 1.32 (9/10) | 1.58 (5/10) | 24 | 7.83 |
+| Ours v2 (as shipped) | 0.1 / 0.3 | 0.1 / 0.3 | 2.3 / 6.0 | 0.1 | 5.2 | 1.32 (9/10) | 1.58 (5/10) | 21 | 0.52 |
+| Ours v2 (tuned) | 0.1 / 0.3 | 0.1 / 0.3 | 2.4 / 5.9 | 0.1 | 5.4 | 1.29 (9/10) | 1.42 (4/10) | 54 | 0.43 |
 
 **s_curve**: S-curve (lane change): 5 m ahead, 1.6 m to the left, min radius 1.1 m, heading held (8.6 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 4.5 / 12.0 | 4.5 / 12.0 | 5.4 / 12.7 | 0.1 | 12.4 | 2.24 (9/10) | 2.42 (1/10) | 239 | 147.42 |
-| BLine (README gains, r 0.30) | 13.0 / 37.3 | 14.1 / 37.4 | 6.7 / 15.1 | 0.1 | 96.7 | 3.01 (8/10) | never | 346 | 0.04 |
-| BLine (README gains, r 0.45 default) | 8.2 / 27.0 | 9.0 / 27.0 | 5.9 / 13.2 | 0.1 | 91.5 | 2.93 (9/10) | never | 282 | 0.03 |
+| Old path-editor FollowPath | 4.5 / 12.0 | 4.5 / 12.0 | 5.4 / 12.7 | 0.1 | 12.4 | 2.24 (9/10) | 2.42 (1/10) | 239 | 193.50 |
+| BLine (README gains, r 0.30) | 13.0 / 37.3 | 14.1 / 37.4 | 6.7 / 15.1 | 0.1 | 96.7 | 3.01 (8/10) | never | 346 | 0.03 |
+| BLine (README gains, r 0.45 default) | 8.2 / 27.0 | 9.0 / 27.0 | 5.9 / 13.2 | 0.1 | 91.5 | 2.93 (9/10) | never | 282 | 0.04 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 4.4 / 9.7 | 1.8 / 7.1 | 12.5 / 21.0 | 0.1 | 20.9 | 2.22 | never | 523 | 0.03 |
-| BLine (tuned) | 6.6 / 16.6 | 4.4 / 15.9 | 4.2 / 11.3 | 0.1 | 8.2 | 2.61 (8/10) | 3.15 (3/10) | 0 | 0.05 |
-| BLine (tuned, with corner caps) | 2.9 / 7.2 | 3.2 / 10.5 | 4.2 / 11.2 | 0.1 | 8.2 | 2.71 (8/10) | 3.26 (3/10) | 0 | 0.04 |
-| PathPlanner (kP 5) | 1.6 / 3.9 | 1.6 / 3.8 | 5.8 / 13.1 | 0.1 | 12.8 | 1.88 (9/10) | 2.09 (1/10) | 1688 | 4.88 |
-| PathPlanner (kP 5) + hold | 1.6 / 3.9 | 1.6 / 3.8 | 4.3 / 10.1 | 0.1 | 12.8 | 1.88 (9/10) | 2.34 (4/10) | 1688 | 5.69 |
-| PathPlanner (tuned) + hold | 1.3 / 4.5 | 1.2 / 4.5 | 4.1 / 10.6 | 0.1 | 10.3 | 2.20 (9/10) | 2.44 (4/10) | 77 | 4.93 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.3 / 3.9 | 1.2 / 3.8 | 4.2 / 10.0 | 0.1 | 12.3 | 1.91 (9/10) | 2.37 (4/10) | 1411 | 5.10 |
+| BLine (tuned) | 6.6 / 16.6 | 4.4 / 15.9 | 4.2 / 11.3 | 0.1 | 8.2 | 2.61 (8/10) | 3.15 (3/10) | 0 | 0.04 |
+| BLine (tuned, with corner caps) | 2.9 / 7.2 | 3.2 / 10.5 | 4.2 / 11.2 | 0.1 | 8.2 | 2.71 (8/10) | 3.26 (3/10) | 0 | 0.03 |
+| PathPlanner (kP 5) | 1.6 / 3.9 | 1.6 / 3.8 | 5.8 / 13.1 | 0.1 | 12.8 | 1.88 (9/10) | 2.09 (1/10) | 1688 | 4.04 |
+| PathPlanner (kP 5) + hold | 1.6 / 3.9 | 1.6 / 3.8 | 4.3 / 10.1 | 0.1 | 12.8 | 1.88 (9/10) | 2.34 (4/10) | 1688 | 3.93 |
+| PathPlanner (tuned) + hold | 1.3 / 4.5 | 1.2 / 4.5 | 4.1 / 10.6 | 0.1 | 10.3 | 2.20 (9/10) | 2.44 (4/10) | 77 | 3.82 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.3 / 3.9 | 1.2 / 3.8 | 4.2 / 10.0 | 0.1 | 12.3 | 1.91 (9/10) | 2.37 (4/10) | 1411 | 4.03 |
 | DriveToPose chain | 2.9 / 8.7 | 0.8 / 3.3 | 4.1 / 10.5 | 0.0 | 8.9 | 4.04 (8/10) | 4.20 (4/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 4.6 / 11.2 | 2.0 / 5.6 | 4.5 / 10.8 | 0.1 | 11.3 | 1.95 (8/10) | 2.18 (4/10) | 0 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 4.9 / 12.7 | 2.9 / 6.8 | 4.1 / 10.5 | 0.1 | 8.8 | 2.01 (8/10) | 2.27 (4/10) | 18 | 4.63 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 4.9 / 12.7 | 2.9 / 6.8 | 4.1 / 10.5 | 0.1 | 8.8 | 2.01 (8/10) | 2.27 (4/10) | 18 | 3.53 |
+| Ours v2 (as shipped) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.6 | 0.1 | 8.8 | 2.05 (8/10) | 2.31 (4/10) | 21 | 0.88 |
+| Ours v2 (tuned) | 1.6 / 6.7 | 1.5 / 5.6 | 4.1 / 10.5 | 0.1 | 9.0 | 2.02 (8/10) | 2.16 (4/10) | 51 | 0.58 |
 
 **hairpin**: 2 m out, 180 deg turn on a 1 m radius (0.75 m at the joins), 2 m back; heading held (9.9 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 7.0 / 18.4 | 7.0 / 18.4 | 1.8 / 3.8 | 0.1 | 0.8 | 2.85 | 3.01 (7/10) | 1395 | 205.47 |
-| BLine (README gains, r 0.30) | 45.5 / 104.3 | 45.9 / 107.5 | 7.8 / 9.9 | 0.1 | 8.8 | 6.54 (9/10) | never | 451 | 0.07 |
-| BLine (README gains, r 0.45 default) | 47.0 / 104.2 | 47.3 / 107.4 | 1.7 / 4.5 | 0.1 | 53.7 | 5.02 | 5.44 (7/10) | 0 | 0.07 |
-| BLine (README gains, r 0.45 + BLine-Web corner caps) | 47.0 / 104.2 | 47.3 / 107.4 | 1.7 / 4.5 | 0.1 | 53.7 | 5.02 | 5.44 (7/10) | 0 | 0.05 |
-| BLine (tuned) | 40.0 / 101.8 | 40.9 / 104.5 | 3.8 / 5.8 | 0.1 | 0.0 | 4.33 (9/10) | never | 0 | 0.05 |
-| BLine (tuned, with corner caps) | 40.6 / 103.4 | 41.5 / 106.6 | 3.3 / 5.3 | 0.1 | 0.0 | 4.14 (9/10) | never | 0 | 0.04 |
-| PathPlanner (kP 5) | 13.5 / 24.1 | 13.5 / 24.6 | 49.7 / 55.1 | 0.1 | 0.0 | never | never | 4220 | 4.81 |
-| PathPlanner (kP 5) + hold | 13.5 / 24.1 | 13.5 / 24.6 | 52.7 / 57.8 | 0.1 | 0.0 | never | never | 4220 | 4.84 |
-| PathPlanner (tuned) + hold | 1.6 / 7.1 | 1.6 / 7.1 | 2.3 / 4.1 | 0.1 | 0.0 | 3.16 | 3.28 (4/10) | 77 | 5.02 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.8 / 7.0 | 1.9 / 6.9 | 5.7 / 6.8 | 0.1 | 0.0 | 2.65 | never | 3500 | 4.88 |
-| DriveToPose chain | 2.1 / 9.2 | 1.6 / 6.2 | 1.7 / 3.8 | 0.0 | 0.0 | 7.61 | 7.81 (8/10) | 0 | 0.00 |
+| Old path-editor FollowPath | 7.0 / 18.4 | 7.0 / 18.4 | 1.8 / 3.8 | 0.1 | 0.8 | 2.85 | 3.01 (7/10) | 1395 | 102.20 |
+| BLine (README gains, r 0.30) | 45.5 / 104.3 | 45.9 / 107.5 | 7.8 / 9.9 | 0.1 | 8.8 | 6.54 (9/10) | never | 451 | 0.05 |
+| BLine (README gains, r 0.45 default) | 47.0 / 104.2 | 47.3 / 107.4 | 1.7 / 4.5 | 0.1 | 53.7 | 5.02 | 5.44 (7/10) | 0 | 0.04 |
+| BLine (README gains, r 0.45 + BLine-Web corner caps) | 47.0 / 104.2 | 47.3 / 107.4 | 1.7 / 4.5 | 0.1 | 53.7 | 5.02 | 5.44 (7/10) | 0 | 0.04 |
+| BLine (tuned) | 40.0 / 101.8 | 40.9 / 104.5 | 3.8 / 5.8 | 0.1 | 0.0 | 4.33 (9/10) | never | 0 | 0.04 |
+| BLine (tuned, with corner caps) | 40.6 / 103.4 | 41.5 / 106.6 | 3.3 / 5.3 | 0.1 | 0.0 | 4.14 (9/10) | never | 0 | 0.05 |
+| PathPlanner (kP 5) | 13.5 / 24.1 | 13.5 / 24.6 | 49.7 / 55.1 | 0.1 | 0.0 | never | never | 4220 | 5.10 |
+| PathPlanner (kP 5) + hold | 13.5 / 24.1 | 13.5 / 24.6 | 52.7 / 57.8 | 0.1 | 0.0 | never | never | 4220 | 5.15 |
+| PathPlanner (tuned) + hold | 1.6 / 7.1 | 1.6 / 7.1 | 2.3 / 4.1 | 0.1 | 0.0 | 3.16 | 3.28 (4/10) | 77 | 5.20 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.8 / 7.0 | 1.9 / 6.9 | 5.7 / 6.8 | 0.1 | 0.0 | 2.65 | never | 3500 | 5.44 |
+| DriveToPose chain | 2.1 / 9.2 | 1.6 / 6.2 | 1.7 / 3.8 | 0.0 | 0.0 | 7.61 | 7.81 (8/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 2.4 / 8.8 | 2.3 / 8.7 | 1.9 / 4.0 | 0.1 | 0.4 | 2.88 | 3.07 (7/10) | 258 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 3.1 / 10.2 | 3.0 / 10.1 | 3.1 / 4.6 | 0.1 | 0.0 | 3.02 | never | 19 | 4.11 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 3.1 / 10.2 | 3.0 / 10.1 | 3.1 / 4.6 | 0.1 | 0.0 | 3.02 | never | 19 | 5.54 |
+| Ours v2 (as shipped) | 2.0 / 8.2 | 1.8 / 8.2 | 3.1 / 4.7 | 0.1 | 0.0 | 2.95 | never | 22 | 0.76 |
+| Ours v2 (tuned) | 2.0 / 8.2 | 1.8 / 8.3 | 3.0 / 4.6 | 0.1 | 0.0 | 2.87 | never | 51 | 0.86 |
 
 **slalom**: through 3 gate centres at x = 1.75 / 3.5 / 5.25 m, y = +0.4 / -0.4 / +0.4 m (10.3 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 5.2 / 13.3 | 5.2 / 13.3 | 6.5 / 15.7 | 0.1 | 15.4 | 3.09 (9/10) | 3.26 (1/10) | 146 | 338.70 |
-| BLine (README gains, r 0.30) | 37.0 / 82.5 | 36.2 / 78.7 | 28.7 / 43.0 | 0.1 | 42.2 | 4.06 | 4.61 (1/10) | 778 | 0.03 |
-| BLine (README gains, r 0.45 default) | 29.7 / 69.0 | 29.8 / 64.4 | 28.8 / 40.4 | 0.1 | 38.8 | 3.85 | never | 762 | 0.03 |
+| Old path-editor FollowPath | 5.2 / 13.3 | 5.2 / 13.3 | 6.5 / 15.7 | 0.1 | 15.4 | 3.09 (9/10) | 3.26 (1/10) | 146 | 113.47 |
+| BLine (README gains, r 0.30) | 37.0 / 82.5 | 36.2 / 78.7 | 28.7 / 43.0 | 0.1 | 42.2 | 4.06 | 4.61 (1/10) | 778 | 0.04 |
+| BLine (README gains, r 0.45 default) | 29.7 / 69.0 | 29.8 / 64.4 | 28.8 / 40.4 | 0.1 | 38.8 | 3.85 | never | 762 | 0.04 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 6.6 / 14.1 | 2.6 / 10.5 | 9.6 / 20.8 | 0.1 | 20.6 | 3.30 (9/10) | never | 437 | 0.04 |
 | BLine (tuned) | 10.3 / 28.4 | 7.1 / 25.6 | 5.6 / 14.8 | 0.1 | 11.2 | 3.10 (8/10) | 3.65 (2/10) | 0 | 0.04 |
 | BLine (tuned, with corner caps) | 4.3 / 10.4 | 2.4 / 9.3 | 5.7 / 14.8 | 0.1 | 11.2 | 3.78 (8/10) | 4.33 (2/10) | 0 | 0.04 |
-| PathPlanner (kP 5) | 4.1 / 11.8 | 4.1 / 11.8 | 7.3 / 16.1 | 0.1 | 16.1 | 2.46 (9/10) | never | 3810 | 5.20 |
-| PathPlanner (kP 5) + hold | 4.1 / 11.8 | 4.1 / 11.8 | 5.9 / 13.1 | 0.1 | 16.1 | 2.46 (9/10) | 2.92 (2/10) | 3810 | 5.36 |
-| PathPlanner (tuned) + hold | 1.5 / 5.0 | 1.4 / 5.0 | 5.9 / 13.7 | 0.1 | 13.5 | 3.07 (8/10) | 3.39 (3/10) | 581 | 5.23 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.9 / 6.9 | 1.8 / 6.9 | 5.8 / 14.0 | 0.1 | 16.8 | 2.55 (9/10) | 3.02 (4/10) | 3657 | 5.19 |
+| PathPlanner (kP 5) | 4.1 / 11.8 | 4.1 / 11.8 | 7.3 / 16.1 | 0.1 | 16.1 | 2.46 (9/10) | never | 3810 | 6.21 |
+| PathPlanner (kP 5) + hold | 4.1 / 11.8 | 4.1 / 11.8 | 5.9 / 13.1 | 0.1 | 16.1 | 2.46 (9/10) | 2.92 (2/10) | 3810 | 6.52 |
+| PathPlanner (tuned) + hold | 1.5 / 5.0 | 1.4 / 5.0 | 5.9 / 13.7 | 0.1 | 13.5 | 3.07 (8/10) | 3.39 (3/10) | 581 | 5.86 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.9 / 6.9 | 1.8 / 6.9 | 5.8 / 14.0 | 0.1 | 16.8 | 2.55 (9/10) | 3.02 (4/10) | 3657 | 5.35 |
 | DriveToPose chain | 4.2 / 11.3 | 1.2 / 4.0 | 5.4 / 14.0 | 0.0 | 12.1 | 4.68 (8/10) | 4.84 (3/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 8.5 / 22.1 | 2.7 / 8.9 | 5.8 / 13.7 | 0.1 | 14.1 | 2.79 (6/10) | 3.00 (4/10) | 196 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 8.7 / 23.3 | 3.6 / 9.6 | 6.0 / 14.1 | 0.3 | 11.7 | 2.89 (7/10) | 3.10 (1/10) | 22 | 5.06 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 8.7 / 23.3 | 3.6 / 9.6 | 6.0 / 14.1 | 0.3 | 11.7 | 2.89 (7/10) | 3.10 (1/10) | 22 | 5.00 |
+| Ours v2 (as shipped) | 1.6 / 7.4 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 11.9 | 2.82 (8/10) | 3.08 (3/10) | 21 | 0.75 |
+| Ours v2 (tuned) | 1.6 / 7.5 | 1.6 / 6.9 | 5.6 / 14.1 | 0.1 | 12.0 | 2.79 (8/10) | 2.93 (3/10) | 48 | 1.02 |
 
 **long_auto**: auto-style route, heading 0 -> 90 deg at waypoint 2 -> 180 deg at the end (14.1 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 6.1 / 25.4 | 6.1 / 25.4 | 8.4 / 18.9 | 3.0 | 5.8 | 4.11 (4/10) | never | 452 | 304.99 |
-| BLine (README gains, r 0.30) | 33.0 / 99.5 | 37.3 / 111.8 | 17.8 / 37.7 | 1.8 | 62.9 | 5.73 (5/10) | 6.62 (1/10) | 465 | 0.06 |
+| Old path-editor FollowPath | 6.1 / 25.4 | 6.1 / 25.4 | 8.4 / 18.9 | 3.0 | 5.8 | 4.11 (4/10) | never | 452 | 207.99 |
+| BLine (README gains, r 0.30) | 33.0 / 99.5 | 37.3 / 111.8 | 17.8 / 37.7 | 1.8 | 62.9 | 5.73 (5/10) | 6.62 (1/10) | 465 | 0.04 |
 | BLine (README gains, r 0.45 default) | 31.7 / 90.8 | 34.8 / 101.9 | 8.7 / 20.0 | 1.2 | 51.8 | 5.71 (4/10) | 5.98 (1/10) | 149 | 0.06 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 10.8 / 34.0 | 4.8 / 24.1 | 8.7 / 19.1 | 2.4 | 5.9 | 4.93 (4/10) | never | 387 | 0.05 |
 | BLine (tuned) | 23.4 / 70.3 | 25.8 / 79.9 | 8.5 / 20.0 | 1.5 | 0.9 | 3.93 (4/10) | never | 27 | 0.05 |
-| BLine (tuned, with corner caps) | 10.0 / 32.8 | 5.9 / 22.6 | 8.1 / 19.0 | 1.2 | 1.6 | 5.29 (4/10) | 5.72 (2/10) | 0 | 0.05 |
-| PathPlanner (kP 5) | 5.8 / 21.7 | 5.8 / 21.7 | 9.8 / 22.1 | 0.9 | 1.1 | 3.74 (4/10) | 3.80 (1/10) | 2330 | 10.94 |
-| PathPlanner (kP 5) + hold | 5.8 / 21.7 | 5.8 / 21.7 | 11.6 / 22.9 | 0.9 | 1.1 | 3.74 (4/10) | never | 2330 | 15.38 |
-| PathPlanner (tuned) + hold | 4.7 / 19.3 | 4.7 / 19.3 | 8.2 / 19.2 | 0.9 | 4.3 | 4.17 (4/10) | 4.45 (3/10) | 13 | 12.05 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 4.8 / 20.8 | 4.8 / 20.8 | 8.7 / 20.7 | 0.9 | 5.8 | 3.72 (4/10) | 4.15 (1/10) | 1715 | 9.05 |
-| DriveToPose chain | 8.1 / 31.5 | 4.6 / 18.9 | 8.0 / 17.8 | 0.9 | 5.0 | 6.54 (4/10) | 6.64 (3/10) | 2 | 0.00 |
-| Choreo + ChoreoLib follower (as shipped) | 9.2 / 27.8 | 5.3 / 20.5 | 8.0 / 18.7 | 1.8 | 5.7 | 3.76 (4/10) | 3.98 (2/10) | 182 | 0.00 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 9.8 / 29.1 | 6.1 / 22.8 | 8.3 / 19.3 | 1.0 | 3.2 | 3.85 (4/10) | 4.09 (2/10) | 176 | 8.03 |
+| BLine (tuned, with corner caps) | 10.0 / 32.8 | 5.9 / 22.6 | 8.1 / 19.0 | 1.2 | 1.6 | 5.29 (4/10) | 5.72 (2/10) | 0 | 0.04 |
+| PathPlanner (kP 5) | 5.8 / 21.7 | 5.8 / 21.7 | 9.8 / 22.1 | 0.9 | 1.1 | 3.74 (4/10) | 3.80 (1/10) | 2330 | 10.62 |
+| PathPlanner (kP 5) + hold | 5.8 / 21.7 | 5.8 / 21.7 | 11.6 / 22.9 | 0.9 | 1.1 | 3.74 (4/10) | never | 2330 | 12.54 |
+| PathPlanner (tuned) + hold | 4.7 / 19.3 | 4.7 / 19.3 | 8.2 / 19.2 | 0.9 | 4.3 | 4.17 (4/10) | 4.45 (3/10) | 13 | 11.36 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 4.8 / 20.8 | 4.8 / 20.8 | 8.7 / 20.7 | 0.9 | 5.8 | 3.72 (4/10) | 4.15 (1/10) | 1715 | 13.32 |
+| DriveToPose chain | 8.1 / 31.5 | 4.6 / 18.9 | 8.0 / 17.8 | 0.9 | 5.0 | 6.54 (4/10) | 6.64 (3/10) | 2 | 0.01 |
+| Choreo + ChoreoLib follower (as shipped) | 9.2 / 27.8 | 5.3 / 20.5 | 8.0 / 18.7 | 1.8 | 5.7 | 3.76 (4/10) | 3.98 (2/10) | 182 | 0.01 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 9.8 / 29.1 | 6.1 / 22.8 | 8.3 / 19.3 | 1.0 | 3.2 | 3.85 (4/10) | 4.09 (2/10) | 176 | 6.87 |
+| Ours v2 (as shipped) | 6.2 / 22.1 | 5.1 / 19.9 | 8.2 / 19.7 | 1.0 | 2.7 | 3.92 (4/10) | 4.14 (2/10) | 275 | 1.09 |
+| Ours v2 (tuned) | 6.2 / 21.9 | 5.2 / 19.9 | 8.3 / 19.8 | 1.0 | 2.7 | 3.88 (4/10) | 4.00 (2/10) | 320 | 0.82 |
 
 **moving_start**: starts moving 2 m/s sideways (+y), path heads +x then curves left (7.9 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 13.0 / 27.7 | 13.0 / 27.7 | 5.9 / 11.3 | 0.1 | 10.7 | 1.88 (9/10) | never | 1544 | 95.66 |
+| Old path-editor FollowPath | 13.0 / 27.7 | 13.0 / 27.7 | 5.9 / 11.3 | 0.1 | 10.7 | 1.88 (9/10) | never | 1544 | 73.38 |
 | BLine (README gains, r 0.30) | 30.8 / 59.4 | 31.9 / 66.2 | 29.4 / 35.3 | 0.1 | 35.2 | 3.44 | never | 840 | 0.04 |
-| BLine (README gains, r 0.45 default) | 33.1 / 54.8 | 34.2 / 51.5 | 23.7 / 39.3 | 0.1 | 55.8 | 2.14 | never | 587 | 0.03 |
-| BLine (README gains, r 0.45 + BLine-Web corner caps) | 24.3 / 49.6 | 24.9 / 47.1 | 11.0 / 16.4 | 0.1 | 15.9 | 2.17 | never | 510 | 0.03 |
+| BLine (README gains, r 0.45 default) | 33.1 / 54.8 | 34.2 / 51.5 | 23.7 / 39.3 | 0.1 | 55.8 | 2.14 | never | 587 | 0.05 |
+| BLine (README gains, r 0.45 + BLine-Web corner caps) | 24.3 / 49.6 | 24.9 / 47.1 | 11.0 / 16.4 | 0.1 | 15.9 | 2.17 | never | 510 | 0.04 |
 | BLine (tuned) | 34.9 / 56.2 | 33.7 / 52.2 | 3.7 / 8.5 | 0.1 | 6.0 | 2.09 (9/10) | 2.37 (4/10) | 0 | 0.03 |
 | BLine (tuned, with corner caps) | 18.7 / 47.6 | 19.5 / 45.6 | 3.7 / 9.5 | 0.1 | 5.0 | 3.07 (8/10) | 3.56 (3/10) | 0 | 0.03 |
-| PathPlanner (kP 5) | 46.8 / 60.7 | 46.8 / 60.7 | 56.8 / 59.8 | 0.1 | 12.0 | never | never | 2514 | 3.78 |
-| PathPlanner (kP 5) + hold | 46.8 / 60.7 | 46.8 / 60.7 | 56.5 / 59.9 | 0.1 | 12.0 | never | never | 2514 | 3.35 |
-| PathPlanner (tuned) + hold | 45.4 / 57.7 | 45.3 / 57.6 | 54.2 / 56.5 | 0.1 | 16.6 | never | never | 1656 | 3.29 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 46.8 / 60.7 | 46.8 / 60.6 | 56.5 / 59.9 | 0.1 | 12.1 | never | never | 2506 | 3.20 |
+| PathPlanner (kP 5) | 46.8 / 60.7 | 46.8 / 60.7 | 56.8 / 59.8 | 0.1 | 12.0 | never | never | 2514 | 4.18 |
+| PathPlanner (kP 5) + hold | 46.8 / 60.7 | 46.8 / 60.7 | 56.5 / 59.9 | 0.1 | 12.0 | never | never | 2514 | 3.34 |
+| PathPlanner (tuned) + hold | 45.4 / 57.7 | 45.3 / 57.6 | 54.2 / 56.5 | 0.1 | 16.6 | never | never | 1656 | 3.36 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 46.8 / 60.7 | 46.8 / 60.6 | 56.5 / 59.9 | 0.1 | 12.1 | never | never | 2506 | 3.37 |
 | DriveToPose chain | 21.1 / 58.7 | 19.5 / 54.8 | 3.8 / 8.3 | 0.0 | 7.6 | 3.65 (9/10) | 3.86 (4/10) | 0 | 0.00 |
 | Choreo + ChoreoLib follower (as shipped) | 20.4 / 27.0 | 21.8 / 26.8 | 27.3 / 30.6 | 0.0 | 28.4 | never | never | 1412 | 0.00 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 11.3 / 28.1 | 11.7 / 29.5 | 3.8 / 9.6 | 0.3 | 6.2 | 1.82 (8/10) | 2.09 (2/10) | 1922 | 2.46 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 11.3 / 28.1 | 11.7 / 29.5 | 3.8 / 9.6 | 0.3 | 6.2 | 1.82 (8/10) | 2.09 (2/10) | 1922 | 3.14 |
+| Ours v2 (as shipped) | 11.4 / 28.1 | 11.5 / 28.1 | 3.9 / 9.7 | 0.1 | 6.3 | 1.81 (8/10) | 2.08 (2/10) | 1812 | 0.60 |
+| Ours v2 (tuned) | 20.1 / 26.1 | 20.3 / 25.3 | 19.8 / 21.7 | 0.1 | 16.5 | never | never | 1535 | 0.57 |
 
 **hit_mid_path**: the S-curve with a 0.3 s lateral shove (to the left of travel) at half distance (8.6 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 31.2 / 43.4 | 31.2 / 43.4 | 41.8 / 48.6 | 0.1 | 1.7 | never | never | 2182 | 78.52 |
-| BLine (README gains, r 0.30) | 32.0 / 80.7 | 33.8 / 81.9 | 55.6 / 65.4 | 0.1 | 72.7 | never | never | 2989 | 0.03 |
-| BLine (README gains, r 0.45 default) | 25.2 / 64.9 | 26.9 / 65.8 | 49.1 / 55.4 | 0.1 | 70.1 | never | never | 2838 | 0.03 |
+| Old path-editor FollowPath | 31.2 / 43.4 | 31.2 / 43.4 | 41.8 / 48.6 | 0.1 | 1.7 | never | never | 2182 | 110.26 |
+| BLine (README gains, r 0.30) | 32.0 / 80.7 | 33.8 / 81.9 | 55.6 / 65.4 | 0.1 | 72.7 | never | never | 2989 | 0.04 |
+| BLine (README gains, r 0.45 default) | 25.2 / 64.9 | 26.9 / 65.8 | 49.1 / 55.4 | 0.1 | 70.1 | never | never | 2838 | 0.05 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 10.3 / 21.4 | 11.7 / 22.9 | 20.1 / 23.2 | 0.1 | 8.6 | never | never | 2313 | 0.04 |
-| BLine (tuned) | 38.7 / 44.5 | 39.4 / 44.9 | 46.0 / 48.8 | 0.1 | 0.0 | never | never | 2373 | 0.03 |
+| BLine (tuned) | 38.7 / 44.5 | 39.4 / 44.9 | 46.0 / 48.8 | 0.1 | 0.0 | never | never | 2373 | 0.04 |
 | BLine (tuned, with corner caps) | 19.9 / 26.0 | 20.9 / 31.7 | 27.0 / 32.4 | 0.1 | 0.0 | never | never | 1992 | 0.04 |
-| PathPlanner (kP 5) | 41.6 / 51.7 | 41.6 / 51.7 | 51.8 / 53.6 | 0.1 | 1.3 | never | never | 3722 | 4.26 |
-| PathPlanner (kP 5) + hold | 41.5 / 51.7 | 41.5 / 51.7 | 52.4 / 54.9 | 0.1 | 1.3 | never | never | 3722 | 4.25 |
-| PathPlanner (tuned) + hold | 30.1 / 41.5 | 30.1 / 41.5 | 41.3 / 42.3 | 0.1 | 3.3 | never | never | 2408 | 3.92 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 40.2 / 50.1 | 40.1 / 50.1 | 50.7 / 52.8 | 0.1 | 1.0 | never | never | 3491 | 3.81 |
-| DriveToPose chain | 15.0 / 29.8 | 16.8 / 32.8 | 33.3 / 41.6 | 0.0 | 0.0 | never | never | 1931 | 0.00 |
-| Choreo + ChoreoLib follower (as shipped) | 87.5 / 100.7 | 83.6 / 97.4 | 103.1 / 106.2 | 0.1 | 0.0 | never | never | 3316 | 0.00 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 84.1 / 99.5 | 80.1 / 96.7 | 98.8 / 105.9 | 0.2 | 0.0 | never | never | 3212 | 3.03 |
+| PathPlanner (kP 5) | 41.6 / 51.7 | 41.6 / 51.7 | 51.8 / 53.6 | 0.1 | 1.3 | never | never | 3722 | 5.01 |
+| PathPlanner (kP 5) + hold | 41.5 / 51.7 | 41.5 / 51.7 | 52.4 / 54.9 | 0.1 | 1.3 | never | never | 3722 | 5.58 |
+| PathPlanner (tuned) + hold | 30.1 / 41.5 | 30.1 / 41.5 | 41.3 / 42.3 | 0.1 | 3.3 | never | never | 2408 | 4.16 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 40.2 / 50.1 | 40.1 / 50.1 | 50.7 / 52.8 | 0.1 | 1.0 | never | never | 3491 | 4.64 |
+| DriveToPose chain | 15.0 / 29.8 | 16.8 / 32.8 | 33.3 / 41.6 | 0.0 | 0.0 | never | never | 1931 | 0.01 |
+| Choreo + ChoreoLib follower (as shipped) | 87.5 / 100.7 | 83.6 / 97.4 | 103.1 / 106.2 | 0.1 | 0.0 | never | never | 3316 | 0.01 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 84.1 / 99.5 | 80.1 / 96.7 | 98.8 / 105.9 | 0.2 | 0.0 | never | never | 3212 | 3.88 |
+| Ours v2 (as shipped) | 34.2 / 41.0 | 34.4 / 41.5 | 41.7 / 48.3 | 0.1 | 0.0 | never | never | 2432 | 0.65 |
+| Ours v2 (tuned) | 34.0 / 41.3 | 34.2 / 41.7 | 41.6 / 48.6 | 0.1 | 0.0 | never | never | 2469 | 0.61 |
 
 **low_grip_s_curve**: the S-curve on mu 0.70 static / 0.61 kinetic (8.6 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 4.6 / 11.6 | 4.6 / 11.6 | 12.0 / 20.2 | 0.1 | 20.0 | 2.23 | never | 4626 | 96.20 |
+| Old path-editor FollowPath | 4.6 / 11.6 | 4.6 / 11.6 | 12.0 / 20.2 | 0.1 | 20.0 | 2.23 | never | 4626 | 91.72 |
 | BLine (README gains, r 0.30) | 12.2 / 36.6 | 13.4 / 36.6 | 6.4 / 15.6 | 0.1 | 97.2 | 3.06 (8/10) | never | 11148 | 0.04 |
-| BLine (README gains, r 0.45 default) | 7.5 / 25.4 | 8.3 / 25.5 | 5.0 / 13.0 | 0.1 | 92.1 | 3.01 (8/10) | 3.14 (1/10) | 10434 | 0.03 |
+| BLine (README gains, r 0.45 default) | 7.5 / 25.4 | 8.3 / 25.5 | 5.0 / 13.0 | 0.1 | 92.1 | 3.01 (8/10) | 3.14 (1/10) | 10434 | 0.04 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 4.4 / 9.7 | 1.8 / 7.5 | 19.9 / 28.8 | 0.1 | 28.6 | 2.23 | never | 5260 | 0.05 |
-| BLine (tuned) | 7.1 / 17.7 | 5.0 / 16.9 | 5.0 / 14.0 | 0.1 | 5.6 | 2.77 (7/10) | 3.19 (3/10) | 5220 | 0.05 |
-| BLine (tuned, with corner caps) | 2.7 / 6.0 | 2.9 / 10.5 | 4.3 / 12.1 | 0.1 | 6.9 | 2.77 (8/10) | 3.26 (2/10) | 6199 | 0.05 |
-| PathPlanner (kP 5) | 10.1 / 19.8 | 10.0 / 19.7 | 30.5 / 39.4 | 0.1 | 39.3 | 1.83 (8/10) | never | 6984 | 5.19 |
-| PathPlanner (kP 5) + hold | 10.1 / 19.8 | 10.0 / 19.7 | 27.4 / 36.5 | 0.1 | 39.2 | 1.83 (8/10) | never | 7102 | 4.36 |
+| BLine (tuned) | 7.1 / 17.7 | 5.0 / 16.9 | 5.0 / 14.0 | 0.1 | 5.6 | 2.77 (7/10) | 3.19 (3/10) | 5220 | 0.04 |
+| BLine (tuned, with corner caps) | 2.7 / 6.0 | 2.9 / 10.5 | 4.3 / 12.1 | 0.1 | 6.9 | 2.77 (8/10) | 3.26 (2/10) | 6199 | 0.03 |
+| PathPlanner (kP 5) | 10.1 / 19.8 | 10.0 / 19.7 | 30.5 / 39.4 | 0.1 | 39.3 | 1.83 (8/10) | never | 6984 | 3.83 |
+| PathPlanner (kP 5) + hold | 10.1 / 19.8 | 10.0 / 19.7 | 27.4 / 36.5 | 0.1 | 39.2 | 1.83 (8/10) | never | 7102 | 3.72 |
 | PathPlanner (tuned) + hold | 1.4 / 4.2 | 1.4 / 4.2 | 4.4 / 10.0 | 0.1 | 9.3 | 2.22 (9/10) | 2.43 (4/10) | 6278 | 4.21 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 7.7 / 15.8 | 7.6 / 15.6 | 16.1 / 24.8 | 0.1 | 27.5 | 1.89 (9/10) | never | 7003 | 3.81 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 7.7 / 15.8 | 7.6 / 15.6 | 16.1 / 24.8 | 0.1 | 27.5 | 1.89 (9/10) | never | 7003 | 3.99 |
 | DriveToPose chain | 3.1 / 9.6 | 1.1 / 4.1 | 4.8 / 13.2 | 0.0 | 4.8 | 4.00 (7/10) | 4.13 (3/10) | 12394 | 0.00 |
 | Choreo + ChoreoLib follower (as shipped) | 4.5 / 13.9 | 3.2 / 9.0 | 10.7 / 19.3 | 0.1 | 19.0 | 1.94 (9/10) | never | 8298 | 0.00 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 5.5 / 12.1 | 4.8 / 12.9 | 7.2 / 14.9 | 0.0 | 4.7 | 2.03 (4/10) | never | 8080 | 2.66 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 5.5 / 12.1 | 4.8 / 12.9 | 7.2 / 14.9 | 0.0 | 4.7 | 2.03 (4/10) | never | 8080 | 3.73 |
+| Ours v2 (as shipped) | 4.1 / 11.4 | 4.0 / 10.3 | 11.2 / 22.4 | 0.1 | 0.0 | 2.12 (1/10) | 2.34 (1/10) | 7162 | 0.87 |
+| Ours v2 (tuned) | 4.5 / 11.8 | 4.3 / 10.7 | 13.6 / 25.1 | 0.1 | 0.0 | 2.14 (1/10) | never | 7300 | 1.01 |
 
 ### Perfect pose (the control law alone)
 
@@ -280,150 +352,168 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 | DriveToPose chain | 80/80 | 8/8 | 5.9 | 58.6 | 0.3 | 1923 |
 | Choreo + ChoreoLib follower (as shipped) | 57/80 | 5/8 | 13.2 | 97.6 | 20.2 | 2571 |
 | Choreo geometry + DriveToPose finish (hybrid prototype) | 80/80 | 8/8 | 11.9 | 103.4 | 0.1 | 2434 |
+| Ours v2 (as shipped) | 80/80 | 8/8 | 4.5 | 37.8 | 0.1 | 1739 |
+| Ours v2 (tuned) | 80/80 | 8/8 | 4.4 | 37.6 | 0.1 | 1718 |
 
 **straight_3m**: 3 m straight, heading held at 0 (6.5 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 0.0 / 0.1 | 0.0 / 0.0 | 3.4 / 3.5 | 0.0 | 3.5 | 1.35 | never | 83 | 57.81 |
+| Old path-editor FollowPath | 0.0 / 0.1 | 0.0 / 0.0 | 3.4 / 3.5 | 0.0 | 3.5 | 1.35 | never | 83 | 129.62 |
 | BLine (README gains, r 0.30) | 0.0 / 0.1 | 0.0 / 0.1 | 41.5 / 42.8 | 0.0 | 42.8 | 1.13 | never | 1059 | 0.04 |
-| BLine (README gains, r 0.45 default) | 0.0 / 0.1 | 0.0 / 0.1 | 41.5 / 42.8 | 0.0 | 42.8 | 1.13 | never | 1059 | 0.04 |
+| BLine (README gains, r 0.45 default) | 0.0 / 0.1 | 0.0 / 0.1 | 41.5 / 42.8 | 0.0 | 42.8 | 1.13 | never | 1059 | 0.03 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 0.0 / 0.1 | 0.0 / 0.1 | 41.5 / 42.8 | 0.0 | 42.8 | 1.13 | never | 1059 | 0.03 |
 | BLine (tuned) | 0.0 / 0.1 | 0.0 / 0.1 | 0.8 / 0.9 | 0.0 | 0.0 | 2.20 | 2.67 (10/10) | 0 | 0.03 |
 | BLine (tuned, with corner caps) | 0.0 / 0.1 | 0.0 / 0.1 | 0.8 / 0.9 | 0.0 | 0.0 | 2.20 | 2.67 (10/10) | 0 | 0.03 |
-| PathPlanner (kP 5) | 0.0 / 0.1 | 0.0 / 0.1 | 3.2 / 3.4 | 0.0 | 3.4 | 1.26 | never | 0 | 2.69 |
-| PathPlanner (kP 5) + hold | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 3.4 | 1.26 | 1.71 (10/10) | 0 | 2.81 |
-| PathPlanner (tuned) + hold | 0.0 / 0.1 | 0.0 / 0.0 | 0.4 / 1.1 | 0.0 | 1.3 | 1.42 | 1.67 (10/10) | 0 | 2.99 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 3.4 | 1.26 | 1.71 (10/10) | 0 | 2.36 |
-| DriveToPose chain | 0.1 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 0.0 | 1.34 | 1.55 (10/10) | 0 | 0.00 |
+| PathPlanner (kP 5) | 0.0 / 0.1 | 0.0 / 0.1 | 3.2 / 3.4 | 0.0 | 3.4 | 1.26 | never | 0 | 2.59 |
+| PathPlanner (kP 5) + hold | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 3.4 | 1.26 | 1.71 (10/10) | 0 | 3.12 |
+| PathPlanner (tuned) + hold | 0.0 / 0.1 | 0.0 / 0.0 | 0.4 / 1.1 | 0.0 | 1.3 | 1.42 | 1.67 (10/10) | 0 | 2.57 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 3.4 | 1.26 | 1.71 (10/10) | 0 | 2.52 |
+| DriveToPose chain | 0.1 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 0.0 | 1.34 | 1.55 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 0.3 / 1.0 | 0.1 / 0.3 | 1.5 / 1.7 | 0.0 | 2.5 | 1.26 | 1.48 (10/10) | 30 | 0.00 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 0.3 / 1.0 | 0.1 / 0.3 | 0.1 / 0.1 | 0.0 | 0.0 | 1.33 | 1.58 (10/10) | 37 | 1.78 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 0.3 / 1.0 | 0.1 / 0.3 | 0.1 / 0.1 | 0.0 | 0.0 | 1.33 | 1.58 (10/10) | 37 | 2.35 |
+| Ours v2 (as shipped) | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 0.0 | 1.32 | 1.58 (10/10) | 27 | 0.45 |
+| Ours v2 (tuned) | 0.0 / 0.1 | 0.0 / 0.1 | 0.1 / 0.1 | 0.0 | 0.1 | 1.29 | 1.43 (10/10) | 40 | 0.55 |
 
 **s_curve**: S-curve (lane change): 5 m ahead, 1.6 m to the left, min radius 1.1 m, heading held (8.6 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 4.6 / 9.1 | 4.6 / 9.1 | 3.3 / 3.4 | 0.0 | 3.4 | 2.24 | never | 254 | 84.37 |
-| BLine (README gains, r 0.30) | 12.8 / 37.6 | 14.0 / 37.7 | 5.7 / 6.3 | 0.0 | 89.9 | 2.99 | never | 365 | 0.03 |
+| Old path-editor FollowPath | 4.6 / 9.1 | 4.6 / 9.1 | 3.3 / 3.4 | 0.0 | 3.4 | 2.24 | never | 254 | 86.53 |
+| BLine (README gains, r 0.30) | 12.8 / 37.6 | 14.0 / 37.7 | 5.7 / 6.3 | 0.0 | 89.9 | 2.99 | never | 365 | 0.04 |
 | BLine (README gains, r 0.45 default) | 8.4 / 26.6 | 9.4 / 26.6 | 4.2 / 4.5 | 0.0 | 84.9 | 2.93 | never | 299 | 0.03 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 4.1 / 7.5 | 1.4 / 6.2 | 11.6 / 12.6 | 0.0 | 12.6 | 2.22 | never | 528 | 0.03 |
-| BLine (tuned) | 6.8 / 15.6 | 4.4 / 15.0 | 0.8 / 0.9 | 0.0 | 0.0 | 2.70 | 3.17 (10/10) | 0 | 0.03 |
-| BLine (tuned, with corner caps) | 2.5 / 5.9 | 3.0 / 9.5 | 0.8 / 0.9 | 0.0 | 0.0 | 2.79 | 3.25 (10/10) | 0 | 0.03 |
-| PathPlanner (kP 5) | 0.8 / 2.5 | 0.8 / 2.6 | 3.3 / 3.5 | 0.0 | 3.6 | 1.89 | never | 1938 | 4.30 |
-| PathPlanner (kP 5) + hold | 0.8 / 2.5 | 0.8 / 2.6 | 0.1 / 0.1 | 0.0 | 3.6 | 1.89 | 2.34 (10/10) | 1938 | 4.02 |
-| PathPlanner (tuned) + hold | 0.5 / 1.1 | 0.4 / 1.1 | 0.4 / 1.2 | 0.0 | 1.3 | 2.21 | 2.46 (10/10) | 0 | 4.47 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 0.7 / 1.8 | 0.6 / 1.8 | 0.1 / 0.1 | 0.0 | 3.5 | 1.92 | 2.36 (10/10) | 1544 | 4.59 |
-| DriveToPose chain | 2.8 / 6.0 | 0.2 / 0.4 | 0.1 / 0.1 | 0.0 | 0.0 | 4.08 | 4.28 (10/10) | 0 | 0.00 |
+| BLine (tuned) | 6.8 / 15.6 | 4.4 / 15.0 | 0.8 / 0.9 | 0.0 | 0.0 | 2.70 | 3.17 (10/10) | 0 | 0.04 |
+| BLine (tuned, with corner caps) | 2.5 / 5.9 | 3.0 / 9.5 | 0.8 / 0.9 | 0.0 | 0.0 | 2.79 | 3.25 (10/10) | 0 | 0.04 |
+| PathPlanner (kP 5) | 0.8 / 2.5 | 0.8 / 2.6 | 3.3 / 3.5 | 0.0 | 3.6 | 1.89 | never | 1938 | 4.43 |
+| PathPlanner (kP 5) + hold | 0.8 / 2.5 | 0.8 / 2.6 | 0.1 / 0.1 | 0.0 | 3.6 | 1.89 | 2.34 (10/10) | 1938 | 4.57 |
+| PathPlanner (tuned) + hold | 0.5 / 1.1 | 0.4 / 1.1 | 0.4 / 1.2 | 0.0 | 1.3 | 2.21 | 2.46 (10/10) | 0 | 4.39 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 0.7 / 1.8 | 0.6 / 1.8 | 0.1 / 0.1 | 0.0 | 3.5 | 1.92 | 2.36 (10/10) | 1544 | 3.91 |
+| DriveToPose chain | 2.8 / 6.0 | 0.2 / 0.4 | 0.1 / 0.1 | 0.0 | 0.0 | 4.08 | 4.28 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 4.6 / 8.6 | 1.2 / 1.9 | 1.5 / 1.8 | 0.0 | 2.4 | 1.95 | 2.17 (10/10) | 48 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 5.1 / 10.3 | 2.0 / 3.7 | 0.1 / 0.1 | 0.0 | 0.0 | 2.02 | 2.28 (10/10) | 26 | 3.93 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 5.1 / 10.3 | 2.0 / 3.7 | 0.1 / 0.1 | 0.0 | 0.0 | 2.02 | 2.28 (10/10) | 26 | 3.80 |
+| Ours v2 (as shipped) | 1.2 / 3.0 | 1.0 / 2.0 | 0.1 / 0.1 | 0.0 | 0.0 | 2.07 | 2.32 (10/10) | 21 | 0.50 |
+| Ours v2 (tuned) | 1.2 / 3.0 | 1.0 / 2.0 | 0.1 / 0.1 | 0.0 | 0.1 | 2.04 | 2.18 (10/10) | 40 | 0.66 |
 
 **hairpin**: 2 m out, 180 deg turn on a 1 m radius (0.75 m at the joins), 2 m back; heading held (9.9 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 7.3 / 13.3 | 7.3 / 13.3 | 3.4 / 3.5 | 0.0 | 3.5 | 2.82 | never | 1429 | 154.62 |
-| BLine (README gains, r 0.30) | 45.4 / 98.9 | 45.8 / 102.1 | 9.8 / 11.5 | 0.0 | 11.5 | 6.57 | never | 472 | 0.07 |
-| BLine (README gains, r 0.45 default) | 47.2 / 98.7 | 47.4 / 101.8 | 2.3 / 2.4 | 0.0 | 54.7 | 5.40 | never | 0 | 0.05 |
+| Old path-editor FollowPath | 7.3 / 13.3 | 7.3 / 13.3 | 3.4 / 3.5 | 0.0 | 3.5 | 2.82 | never | 1429 | 109.08 |
+| BLine (README gains, r 0.30) | 45.4 / 98.9 | 45.8 / 102.1 | 9.8 / 11.5 | 0.0 | 11.5 | 6.57 | never | 472 | 0.05 |
+| BLine (README gains, r 0.45 default) | 47.2 / 98.7 | 47.4 / 101.8 | 2.3 / 2.4 | 0.0 | 54.7 | 5.40 | never | 0 | 0.04 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 47.2 / 98.7 | 47.4 / 101.8 | 2.3 / 2.4 | 0.0 | 54.7 | 5.40 | never | 0 | 0.05 |
 | BLine (tuned) | 40.9 / 96.8 | 41.8 / 99.3 | 0.8 / 0.9 | 0.0 | 0.0 | 4.06 | 4.53 (10/10) | 0 | 0.05 |
 | BLine (tuned, with corner caps) | 41.0 / 98.0 | 42.0 / 101.2 | 0.8 / 0.9 | 0.0 | 0.0 | 3.89 | 4.36 (10/10) | 0 | 0.05 |
-| PathPlanner (kP 5) | 18.7 / 40.8 | 18.8 / 40.9 | 21.2 / 22.1 | 0.0 | 21.9 | 2.44 | never | 6552 | 6.95 |
-| PathPlanner (kP 5) + hold | 18.7 / 40.8 | 18.8 / 40.9 | 0.1 / 0.1 | 0.0 | 21.6 | 2.44 | 3.26 (10/10) | 6950 | 5.20 |
-| PathPlanner (tuned) + hold | 0.9 / 1.5 | 0.7 / 1.5 | 0.9 / 1.2 | 0.0 | 1.3 | 3.12 | 3.30 (10/10) | 29 | 5.84 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 0.8 / 1.9 | 0.7 / 1.8 | 0.1 / 0.1 | 0.0 | 3.4 | 2.57 | 3.02 (10/10) | 3560 | 5.63 |
-| DriveToPose chain | 1.2 / 3.2 | 0.1 / 0.3 | 0.1 / 0.1 | 0.0 | 0.0 | 7.74 | 7.95 (10/10) | 0 | 0.00 |
+| PathPlanner (kP 5) | 18.7 / 40.8 | 18.8 / 40.9 | 21.2 / 22.1 | 0.0 | 21.9 | 2.44 | never | 6552 | 9.18 |
+| PathPlanner (kP 5) + hold | 18.7 / 40.8 | 18.8 / 40.9 | 0.1 / 0.1 | 0.0 | 21.6 | 2.44 | 3.26 (10/10) | 6950 | 9.46 |
+| PathPlanner (tuned) + hold | 0.9 / 1.5 | 0.7 / 1.5 | 0.9 / 1.2 | 0.0 | 1.3 | 3.12 | 3.30 (10/10) | 29 | 9.05 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 0.8 / 1.9 | 0.7 / 1.8 | 0.1 / 0.1 | 0.0 | 3.4 | 2.57 | 3.02 (10/10) | 3560 | 8.25 |
+| DriveToPose chain | 1.2 / 3.2 | 0.1 / 0.3 | 0.1 / 0.1 | 0.0 | 0.0 | 7.74 | 7.95 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 1.4 / 2.4 | 1.2 / 2.0 | 1.4 / 1.6 | 0.0 | 2.5 | 2.84 | 3.07 (10/10) | 138 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 2.5 / 4.2 | 2.3 / 3.9 | 0.1 / 0.1 | 0.1 | 0.0 | 2.93 | 3.19 (10/10) | 35 | 4.49 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 2.5 / 4.2 | 2.3 / 3.9 | 0.1 / 0.1 | 0.1 | 0.0 | 2.93 | 3.19 (10/10) | 35 | 6.23 |
+| Ours v2 (as shipped) | 1.5 / 3.0 | 1.4 / 2.5 | 0.1 / 0.1 | 0.0 | 0.0 | 2.86 | 3.11 (10/10) | 19 | 1.13 |
+| Ours v2 (tuned) | 1.5 / 3.0 | 1.4 / 2.5 | 0.1 / 0.1 | 0.0 | 0.1 | 2.82 | 2.96 (10/10) | 42 | 1.55 |
 
 **slalom**: through 3 gate centres at x = 1.75 / 3.5 / 5.25 m, y = +0.4 / -0.4 / +0.4 m (10.3 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 5.5 / 10.2 | 5.5 / 10.2 | 3.3 / 3.5 | 0.0 | 3.5 | 3.08 | 3.26 (1/10) | 168 | 151.77 |
-| BLine (README gains, r 0.30) | 40.3 / 83.4 | 40.9 / 80.8 | 13.3 / 31.0 | 0.0 | 40.9 | 4.29 | 4.57 (3/10) | 362 | 0.04 |
+| Old path-editor FollowPath | 5.5 / 10.2 | 5.5 / 10.2 | 3.3 / 3.5 | 0.0 | 3.5 | 3.08 | 3.26 (1/10) | 168 | 137.69 |
+| BLine (README gains, r 0.30) | 40.3 / 83.4 | 40.9 / 80.8 | 13.3 / 31.0 | 0.0 | 40.9 | 4.29 | 4.57 (3/10) | 362 | 0.05 |
 | BLine (README gains, r 0.45 default) | 30.0 / 67.8 | 30.0 / 63.2 | 29.0 / 30.6 | 0.0 | 28.9 | 3.87 | never | 854 | 0.04 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 6.4 / 11.9 | 2.3 / 9.0 | 8.1 / 8.6 | 0.0 | 8.6 | 3.30 | never | 432 | 0.04 |
-| BLine (tuned) | 11.0 / 28.7 | 7.5 / 25.8 | 0.8 / 0.9 | 0.0 | 0.0 | 3.19 | 3.66 (10/10) | 0 | 0.03 |
-| BLine (tuned, with corner caps) | 4.2 / 9.5 | 2.0 / 8.5 | 0.8 / 0.9 | 0.0 | 0.0 | 3.87 | 4.33 (10/10) | 0 | 0.03 |
-| PathPlanner (kP 5) | 5.3 / 12.3 | 5.3 / 12.4 | 3.4 / 3.6 | 0.0 | 3.6 | 2.47 | never | 5242 | 5.00 |
-| PathPlanner (kP 5) + hold | 5.3 / 12.3 | 5.3 / 12.4 | 0.1 / 0.1 | 0.0 | 3.6 | 2.47 | 2.93 (10/10) | 5242 | 5.09 |
-| PathPlanner (tuned) + hold | 0.7 / 1.6 | 0.5 / 1.5 | 0.6 / 1.2 | 0.0 | 1.3 | 3.10 | 3.32 (10/10) | 328 | 5.14 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.0 / 3.1 | 1.1 / 3.4 | 0.1 / 0.1 | 0.0 | 3.4 | 2.57 | 3.02 (10/10) | 4203 | 5.10 |
-| DriveToPose chain | 4.2 / 8.7 | 0.3 / 0.7 | 0.1 / 0.1 | 0.0 | 0.0 | 4.74 | 4.94 (10/10) | 0 | 0.00 |
+| BLine (tuned) | 11.0 / 28.7 | 7.5 / 25.8 | 0.8 / 0.9 | 0.0 | 0.0 | 3.19 | 3.66 (10/10) | 0 | 0.04 |
+| BLine (tuned, with corner caps) | 4.2 / 9.5 | 2.0 / 8.5 | 0.8 / 0.9 | 0.0 | 0.0 | 3.87 | 4.33 (10/10) | 0 | 0.04 |
+| PathPlanner (kP 5) | 5.3 / 12.3 | 5.3 / 12.4 | 3.4 / 3.6 | 0.0 | 3.6 | 2.47 | never | 5242 | 6.33 |
+| PathPlanner (kP 5) + hold | 5.3 / 12.3 | 5.3 / 12.4 | 0.1 / 0.1 | 0.0 | 3.6 | 2.47 | 2.93 (10/10) | 5242 | 6.49 |
+| PathPlanner (tuned) + hold | 0.7 / 1.6 | 0.5 / 1.5 | 0.6 / 1.2 | 0.0 | 1.3 | 3.10 | 3.32 (10/10) | 328 | 7.10 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.0 / 3.1 | 1.1 / 3.4 | 0.1 / 0.1 | 0.0 | 3.4 | 2.57 | 3.02 (10/10) | 4203 | 6.19 |
+| DriveToPose chain | 4.2 / 8.7 | 0.3 / 0.7 | 0.1 / 0.1 | 0.0 | 0.0 | 4.74 | 4.94 (10/10) | 0 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 8.4 / 17.0 | 1.4 / 2.0 | 1.5 / 1.5 | 0.0 | 2.2 | 2.77 | 2.99 (10/10) | 261 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 9.0 / 18.4 | 2.4 / 3.8 | 0.1 / 0.1 | 0.2 | 0.0 | 2.85 | 3.10 (10/10) | 16 | 5.69 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 9.0 / 18.4 | 2.4 / 3.8 | 0.1 / 0.1 | 0.2 | 0.0 | 2.85 | 3.10 (10/10) | 16 | 4.32 |
+| Ours v2 (as shipped) | 1.4 / 3.0 | 1.3 / 2.2 | 0.1 / 0.1 | 0.0 | 0.0 | 2.83 | 3.08 (10/10) | 22 | 0.96 |
+| Ours v2 (tuned) | 1.4 / 3.0 | 1.3 / 2.2 | 0.1 / 0.2 | 0.0 | 0.2 | 2.80 | 2.94 (10/10) | 40 | 1.46 |
 
 **long_auto**: auto-style route, heading 0 -> 90 deg at waypoint 2 -> 180 deg at the end (14.1 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 5.0 / 10.8 | 5.0 / 10.8 | 3.0 / 3.2 | 2.3 | 3.2 | 4.11 | never | 466 | 281.69 |
-| BLine (README gains, r 0.30) | 32.2 / 86.2 | 36.5 / 100.5 | 1.8 / 2.4 | 0.4 | 64.0 | 5.55 | 6.65 (7/10) | 630 | 0.04 |
-| BLine (README gains, r 0.45 default) | 31.2 / 76.8 | 34.3 / 89.8 | 2.2 / 2.4 | 0.5 | 51.4 | 5.10 | never | 206 | 0.04 |
-| BLine (README gains, r 0.45 + BLine-Web corner caps) | 10.2 / 24.7 | 2.4 / 11.9 | 2.5 / 2.9 | 1.8 | 4.1 | 4.94 | never | 454 | 0.04 |
-| BLine (tuned) | 23.1 / 56.0 | 25.7 / 65.2 | 0.9 / 0.9 | 1.7 | 0.0 | 3.93 | 4.46 (5/10) | 50 | 0.04 |
+| Old path-editor FollowPath | 5.0 / 10.8 | 5.0 / 10.8 | 3.0 / 3.2 | 2.3 | 3.2 | 4.11 | never | 466 | 268.87 |
+| BLine (README gains, r 0.30) | 32.2 / 86.2 | 36.5 / 100.5 | 1.8 / 2.4 | 0.4 | 64.0 | 5.55 | 6.65 (7/10) | 630 | 0.06 |
+| BLine (README gains, r 0.45 default) | 31.2 / 76.8 | 34.3 / 89.8 | 2.2 / 2.4 | 0.5 | 51.4 | 5.10 | never | 206 | 0.05 |
+| BLine (README gains, r 0.45 + BLine-Web corner caps) | 10.2 / 24.7 | 2.4 / 11.9 | 2.5 / 2.9 | 1.8 | 4.1 | 4.94 | never | 454 | 0.05 |
+| BLine (tuned) | 23.1 / 56.0 | 25.7 / 65.2 | 0.9 / 0.9 | 1.7 | 0.0 | 3.93 | 4.46 (5/10) | 50 | 0.05 |
 | BLine (tuned, with corner caps) | 8.6 / 22.4 | 2.2 / 13.4 | 0.8 / 0.9 | 0.4 | 0.0 | 5.24 | 5.70 (10/10) | 0 | 0.04 |
-| PathPlanner (kP 5) | 1.8 / 5.2 | 1.9 / 5.4 | 3.1 / 3.3 | 0.0 | 3.3 | 3.63 | never | 2550 | 9.80 |
-| PathPlanner (kP 5) + hold | 1.8 / 5.2 | 1.9 / 5.4 | 0.1 / 0.1 | 0.0 | 3.3 | 3.63 | 4.07 (10/10) | 2550 | 13.58 |
-| PathPlanner (tuned) + hold | 0.7 / 1.6 | 0.6 / 1.6 | 0.6 / 1.1 | 0.0 | 1.2 | 4.16 | 4.38 (10/10) | 0 | 8.65 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.3 / 2.9 | 1.3 / 2.9 | 0.1 / 0.1 | 0.0 | 3.4 | 3.70 | 4.14 (10/10) | 1817 | 9.29 |
+| PathPlanner (kP 5) | 1.8 / 5.2 | 1.9 / 5.4 | 3.1 / 3.3 | 0.0 | 3.3 | 3.63 | never | 2550 | 11.84 |
+| PathPlanner (kP 5) + hold | 1.8 / 5.2 | 1.9 / 5.4 | 0.1 / 0.1 | 0.0 | 3.3 | 3.63 | 4.07 (10/10) | 2550 | 10.34 |
+| PathPlanner (tuned) + hold | 0.7 / 1.6 | 0.6 / 1.6 | 0.6 / 1.1 | 0.0 | 1.2 | 4.16 | 4.38 (10/10) | 0 | 14.16 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 1.3 / 2.9 | 1.3 / 2.9 | 0.1 / 0.1 | 0.0 | 3.4 | 3.70 | 4.14 (10/10) | 1817 | 21.17 |
 | DriveToPose chain | 6.9 / 21.3 | 1.1 / 3.3 | 0.1 / 0.4 | 0.2 | 0.4 | 6.40 | 6.55 (10/10) | 0 | 0.01 |
-| Choreo + ChoreoLib follower (as shipped) | 7.3 / 21.8 | 1.5 / 2.9 | 1.5 / 1.7 | 1.1 | 2.3 | 3.75 | 3.98 (7/10) | 214 | 0.00 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 8.0 / 22.1 | 2.8 / 5.7 | 0.1 / 0.2 | 0.3 | 0.0 | 3.84 | 4.10 (10/10) | 179 | 6.42 |
+| Choreo + ChoreoLib follower (as shipped) | 7.3 / 21.8 | 1.5 / 2.9 | 1.5 / 1.7 | 1.1 | 2.3 | 3.75 | 3.98 (7/10) | 214 | 0.01 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 8.0 / 22.1 | 2.8 / 5.7 | 0.1 / 0.2 | 0.3 | 0.0 | 3.84 | 4.10 (10/10) | 179 | 8.32 |
+| Ours v2 (as shipped) | 3.9 / 12.3 | 1.6 / 6.0 | 0.1 / 0.1 | 0.3 | 0.0 | 3.90 | 4.16 (10/10) | 268 | 1.25 |
+| Ours v2 (tuned) | 3.9 / 12.3 | 1.6 / 5.7 | 0.1 / 0.1 | 0.3 | 0.1 | 3.87 | 4.01 (10/10) | 312 | 1.05 |
 
 **moving_start**: starts moving 2 m/s sideways (+y), path heads +x then curves left (7.9 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 12.0 / 27.7 | 12.0 / 27.7 | 3.4 / 3.5 | 0.0 | 3.5 | 1.90 | never | 1584 | 75.12 |
-| BLine (README gains, r 0.30) | 31.3 / 58.4 | 32.4 / 66.0 | 28.5 / 30.3 | 0.0 | 30.1 | 3.48 | never | 866 | 0.04 |
-| BLine (README gains, r 0.45 default) | 33.4 / 54.6 | 34.5 / 51.3 | 18.5 / 36.2 | 0.0 | 54.3 | 2.08 | 3.06 (5/10) | 514 | 0.03 |
-| BLine (README gains, r 0.45 + BLine-Web corner caps) | 24.6 / 49.4 | 25.3 / 47.0 | 11.0 / 11.8 | 0.0 | 11.8 | 2.18 | never | 504 | 0.03 |
+| Old path-editor FollowPath | 12.0 / 27.7 | 12.0 / 27.7 | 3.4 / 3.5 | 0.0 | 3.5 | 1.90 | never | 1584 | 137.56 |
+| BLine (README gains, r 0.30) | 31.3 / 58.4 | 32.4 / 66.0 | 28.5 / 30.3 | 0.0 | 30.1 | 3.48 | never | 866 | 0.05 |
+| BLine (README gains, r 0.45 default) | 33.4 / 54.6 | 34.5 / 51.3 | 18.5 / 36.2 | 0.0 | 54.3 | 2.08 | 3.06 (5/10) | 514 | 0.04 |
+| BLine (README gains, r 0.45 + BLine-Web corner caps) | 24.6 / 49.4 | 25.3 / 47.0 | 11.0 / 11.8 | 0.0 | 11.8 | 2.18 | never | 504 | 0.04 |
 | BLine (tuned) | 35.1 / 55.9 | 33.9 / 51.9 | 0.8 / 0.8 | 0.0 | 4.3 | 2.06 | 2.44 (10/10) | 0 | 0.03 |
-| BLine (tuned, with corner caps) | 20.2 / 47.5 | 21.1 / 45.5 | 0.8 / 0.9 | 0.0 | 0.0 | 3.10 | 3.57 (10/10) | 0 | 0.03 |
-| PathPlanner (kP 5) | 20.0 / 33.5 | 20.0 / 33.5 | 3.2 / 3.4 | 0.0 | 3.5 | 1.44 | never | 4275 | 4.07 |
-| PathPlanner (kP 5) + hold | 20.0 / 33.5 | 20.0 / 33.5 | 0.1 / 0.1 | 0.0 | 3.5 | 1.44 | 1.89 (10/10) | 4275 | 3.69 |
-| PathPlanner (tuned) + hold | 14.5 / 31.3 | 14.5 / 31.3 | 0.3 / 1.1 | 0.0 | 1.3 | 1.65 | 1.92 (10/10) | 4646 | 3.41 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 20.0 / 33.5 | 20.0 / 33.5 | 0.1 / 0.1 | 0.0 | 3.5 | 1.45 | 1.89 (10/10) | 4224 | 3.72 |
-| DriveToPose chain | 21.5 / 58.6 | 19.9 / 54.7 | 0.1 / 0.1 | 0.0 | 0.0 | 3.70 | 3.90 (10/10) | 0 | 0.00 |
-| Choreo + ChoreoLib follower (as shipped) | 10.6 / 24.7 | 10.5 / 25.6 | 1.5 / 1.8 | 0.0 | 2.4 | 1.72 | 1.93 (10/10) | 4562 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 11.7 / 28.1 | 11.7 / 29.5 | 0.1 / 0.1 | 0.3 | 0.0 | 1.85 | 2.11 (10/10) | 1957 | 3.13 |
+| BLine (tuned, with corner caps) | 20.2 / 47.5 | 21.1 / 45.5 | 0.8 / 0.9 | 0.0 | 0.0 | 3.10 | 3.57 (10/10) | 0 | 0.04 |
+| PathPlanner (kP 5) | 20.0 / 33.5 | 20.0 / 33.5 | 3.2 / 3.4 | 0.0 | 3.5 | 1.44 | never | 4275 | 5.14 |
+| PathPlanner (kP 5) + hold | 20.0 / 33.5 | 20.0 / 33.5 | 0.1 / 0.1 | 0.0 | 3.5 | 1.44 | 1.89 (10/10) | 4275 | 8.43 |
+| PathPlanner (tuned) + hold | 14.5 / 31.3 | 14.5 / 31.3 | 0.3 / 1.1 | 0.0 | 1.3 | 1.65 | 1.92 (10/10) | 4646 | 3.93 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 20.0 / 33.5 | 20.0 / 33.5 | 0.1 / 0.1 | 0.0 | 3.5 | 1.45 | 1.89 (10/10) | 4224 | 4.88 |
+| DriveToPose chain | 21.5 / 58.6 | 19.9 / 54.7 | 0.1 / 0.1 | 0.0 | 0.0 | 3.70 | 3.90 (10/10) | 0 | 0.01 |
+| Choreo + ChoreoLib follower (as shipped) | 10.6 / 24.7 | 10.5 / 25.6 | 1.5 / 1.8 | 0.0 | 2.4 | 1.72 | 1.93 (10/10) | 4562 | 0.00 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 11.7 / 28.1 | 11.7 / 29.5 | 0.1 / 0.1 | 0.3 | 0.0 | 1.85 | 2.11 (10/10) | 1957 | 3.09 |
+| Ours v2 (as shipped) | 11.1 / 28.1 | 11.2 / 28.1 | 0.1 / 0.1 | 0.0 | 0.0 | 1.84 | 2.10 (10/10) | 1787 | 1.10 |
+| Ours v2 (tuned) | 9.9 / 25.1 | 10.0 / 25.1 | 0.1 / 0.1 | 0.0 | 0.1 | 1.80 | 1.94 (10/10) | 1661 | 1.02 |
 
 **hit_mid_path**: the S-curve with a 0.3 s lateral shove (to the left of travel) at half distance (8.6 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 14.2 / 37.4 | 14.2 / 37.4 | 1.6 / 2.0 | 0.0 | 1.8 | 2.31 | 2.49 (10/10) | 3178 | 105.12 |
-| BLine (README gains, r 0.30) | 34.5 / 74.5 | 36.4 / 78.1 | 37.1 / 42.6 | 0.0 | 67.3 | 4.32 | 5.46 (1/10) | 4037 | 0.03 |
-| BLine (README gains, r 0.45 default) | 25.1 / 63.0 | 26.9 / 66.0 | 2.1 / 2.3 | 0.0 | 80.8 | 3.12 | 3.73 (1/10) | 3318 | 0.03 |
-| BLine (README gains, r 0.45 + BLine-Web corner caps) | 6.6 / 17.9 | 7.7 / 22.5 | 12.0 / 12.8 | 0.0 | 12.7 | 2.28 | never | 2938 | 0.04 |
-| BLine (tuned) | 17.5 / 38.2 | 18.9 / 43.4 | 0.8 / 0.8 | 0.0 | 1.6 | 2.08 | 2.30 (10/10) | 2978 | 0.03 |
+| Old path-editor FollowPath | 14.2 / 37.4 | 14.2 / 37.4 | 1.6 / 2.0 | 0.0 | 1.8 | 2.31 | 2.49 (10/10) | 3178 | 139.88 |
+| BLine (README gains, r 0.30) | 34.5 / 74.5 | 36.4 / 78.1 | 37.1 / 42.6 | 0.0 | 67.3 | 4.32 | 5.46 (1/10) | 4037 | 0.07 |
+| BLine (README gains, r 0.45 default) | 25.1 / 63.0 | 26.9 / 66.0 | 2.1 / 2.3 | 0.0 | 80.8 | 3.12 | 3.73 (1/10) | 3318 | 0.05 |
+| BLine (README gains, r 0.45 + BLine-Web corner caps) | 6.6 / 17.9 | 7.7 / 22.5 | 12.0 / 12.8 | 0.0 | 12.7 | 2.28 | never | 2938 | 0.03 |
+| BLine (tuned) | 17.5 / 38.2 | 18.9 / 43.4 | 0.8 / 0.8 | 0.0 | 1.6 | 2.08 | 2.30 (10/10) | 2978 | 0.04 |
 | BLine (tuned, with corner caps) | 9.1 / 22.2 | 10.8 / 26.2 | 0.8 / 0.9 | 0.0 | 0.0 | 2.39 | 2.74 (10/10) | 2848 | 0.03 |
-| PathPlanner (kP 5) | 22.4 / 53.4 | 22.5 / 53.4 | 32.0 / 32.5 | 0.0 | 32.6 | never | never | 5517 | 4.00 |
-| PathPlanner (kP 5) + hold | 22.4 / 53.4 | 22.5 / 53.4 | 0.1 / 0.1 | 0.0 | 31.1 | 2.49 | 2.79 (10/10) | 5856 | 5.60 |
-| PathPlanner (tuned) + hold | 16.6 / 40.1 | 16.7 / 40.2 | 0.2 / 0.2 | 0.0 | 11.6 | 2.53 | 2.67 (10/10) | 5157 | 4.14 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 21.5 / 50.0 | 21.5 / 50.0 | 0.1 / 0.1 | 0.0 | 24.4 | 2.44 | 2.75 (10/10) | 5578 | 4.03 |
-| DriveToPose chain | 8.2 / 29.2 | 8.8 / 31.5 | 0.1 / 0.1 | 0.0 | 0.0 | 4.18 | 4.39 (10/10) | 2293 | 0.01 |
+| PathPlanner (kP 5) | 22.4 / 53.4 | 22.5 / 53.4 | 32.0 / 32.5 | 0.0 | 32.6 | never | never | 5517 | 4.30 |
+| PathPlanner (kP 5) + hold | 22.4 / 53.4 | 22.5 / 53.4 | 0.1 / 0.1 | 0.0 | 31.1 | 2.49 | 2.79 (10/10) | 5856 | 4.35 |
+| PathPlanner (tuned) + hold | 16.6 / 40.1 | 16.7 / 40.2 | 0.2 / 0.2 | 0.0 | 11.6 | 2.53 | 2.67 (10/10) | 5157 | 4.05 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 21.5 / 50.0 | 21.5 / 50.0 | 0.1 / 0.1 | 0.0 | 24.4 | 2.44 | 2.75 (10/10) | 5578 | 4.46 |
+| DriveToPose chain | 8.2 / 29.2 | 8.8 / 31.5 | 0.1 / 0.1 | 0.0 | 0.0 | 4.18 | 4.39 (10/10) | 2293 | 0.00 |
 | Choreo + ChoreoLib follower (as shipped) | 49.1 / 97.6 | 47.6 / 95.3 | 39.0 / 41.3 | 0.2 | 24.1 | never | never | 5688 | 0.00 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 48.3 / 103.4 | 46.8 / 99.3 | 0.1 / 0.1 | 0.2 | 62.6 | 2.94 | 3.20 (10/10) | 7141 | 3.48 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 48.3 / 103.4 | 46.8 / 99.3 | 0.1 / 0.1 | 0.2 | 62.6 | 2.94 | 3.20 (10/10) | 7141 | 7.55 |
+| Ours v2 (as shipped) | 16.0 / 37.8 | 16.3 / 38.9 | 0.1 / 0.1 | 0.0 | 0.0 | 2.09 | 2.34 (10/10) | 3882 | 0.74 |
+| Ours v2 (tuned) | 16.0 / 37.6 | 16.2 / 38.7 | 0.0 / 0.1 | 0.0 | 0.1 | 2.10 | 2.23 (10/10) | 3560 | 0.60 |
 
 **low_grip_s_curve**: the S-curve on mu 0.70 static / 0.61 kinetic (8.6 s simulated)
 
 | method | cross-track vs authored path, RMS / max cm | vs own geometry RMS / max cm | final error cm, mean / worst | final yaw worst deg | overshoot worst cm | t to 5 cm s | t settled s (n/N) | wheel slip ms | path prep ms |
 |---|---|---|---|---|---|---|---|---|---|
-| Old path-editor FollowPath | 4.5 / 8.8 | 4.5 / 8.8 | 10.7 / 10.9 | 0.0 | 10.9 | 2.23 | never | 4717 | 98.54 |
-| BLine (README gains, r 0.30) | 14.0 / 39.9 | 15.2 / 39.9 | 18.5 / 19.3 | 0.0 | 96.5 | 3.06 | never | 11706 | 0.04 |
+| Old path-editor FollowPath | 4.5 / 8.8 | 4.5 / 8.8 | 10.7 / 10.9 | 0.0 | 10.9 | 2.23 | never | 4717 | 101.55 |
+| BLine (README gains, r 0.30) | 14.0 / 39.9 | 15.2 / 39.9 | 18.5 / 19.3 | 0.0 | 96.5 | 3.06 | never | 11706 | 0.03 |
 | BLine (README gains, r 0.45 default) | 9.3 / 28.6 | 10.3 / 28.6 | 15.1 / 15.6 | 0.0 | 91.7 | 2.99 | never | 11048 | 0.03 |
 | BLine (README gains, r 0.45 + BLine-Web corner caps) | 3.8 / 7.0 | 1.2 / 5.9 | 22.5 / 24.4 | 0.0 | 24.4 | 2.23 | never | 5354 | 0.03 |
-| BLine (tuned) | 6.5 / 15.5 | 4.3 / 14.8 | 0.8 / 0.8 | 0.0 | 0.0 | 2.66 | 3.13 (10/10) | 5515 | 0.04 |
+| BLine (tuned) | 6.5 / 15.5 | 4.3 / 14.8 | 0.8 / 0.8 | 0.0 | 0.0 | 2.66 | 3.13 (10/10) | 5515 | 0.03 |
 | BLine (tuned, with corner caps) | 2.7 / 6.1 | 3.5 / 10.9 | 0.8 / 0.8 | 0.0 | 0.0 | 2.70 | 3.16 (10/10) | 6779 | 0.03 |
-| PathPlanner (kP 5) | 13.5 / 36.8 | 13.6 / 36.8 | 88.0 / 88.5 | 0.0 | 84.8 | never | never | 8528 | 4.72 |
-| PathPlanner (kP 5) + hold | 13.5 / 36.8 | 13.6 / 36.8 | 0.1 / 0.1 | 0.0 | 83.5 | 2.91 | 3.35 (10/10) | 11646 | 7.05 |
-| PathPlanner (tuned) + hold | 1.0 / 3.3 | 1.1 / 3.5 | 0.1 / 0.2 | 0.0 | 2.7 | 2.18 | 2.52 (10/10) | 7259 | 4.14 |
-| PathPlanner (kP 5) + hold, wheel COF 0.9 | 12.8 / 33.3 | 12.8 / 33.3 | 0.1 / 0.1 | 0.0 | 61.7 | 2.84 | 3.14 (10/10) | 10456 | 9.69 |
+| PathPlanner (kP 5) | 13.5 / 36.8 | 13.6 / 36.8 | 88.0 / 88.5 | 0.0 | 84.8 | never | never | 8528 | 5.75 |
+| PathPlanner (kP 5) + hold | 13.5 / 36.8 | 13.6 / 36.8 | 0.1 / 0.1 | 0.0 | 83.5 | 2.91 | 3.35 (10/10) | 11646 | 13.34 |
+| PathPlanner (tuned) + hold | 1.0 / 3.3 | 1.1 / 3.5 | 0.1 / 0.2 | 0.0 | 2.7 | 2.18 | 2.52 (10/10) | 7259 | 9.64 |
+| PathPlanner (kP 5) + hold, wheel COF 0.9 | 12.8 / 33.3 | 12.8 / 33.3 | 0.1 / 0.1 | 0.0 | 61.7 | 2.84 | 3.14 (10/10) | 10456 | 8.65 |
 | DriveToPose chain | 2.7 / 6.0 | 0.6 / 1.4 | 1.6 / 1.7 | 0.0 | 1.7 | 3.80 | 3.94 (10/10) | 13094 | 0.01 |
 | Choreo + ChoreoLib follower (as shipped) | 24.3 / 68.9 | 22.6 / 66.4 | 113.8 / 114.1 | 0.3 | 103.7 | never | never | 9624 | 0.01 |
-| Choreo geometry + DriveToPose finish (hybrid prototype) | 10.2 / 22.2 | 7.9 / 17.8 | 0.1 / 0.1 | 0.2 | 32.8 | 2.66 | 2.92 (10/10) | 10082 | 6.55 |
+| Choreo geometry + DriveToPose finish (hybrid prototype) | 10.2 / 22.2 | 7.9 / 17.8 | 0.1 / 0.1 | 0.2 | 32.8 | 2.66 | 2.92 (10/10) | 10082 | 4.64 |
+| Ours v2 (as shipped) | 1.0 / 2.2 | 1.1 / 3.0 | 0.1 / 0.1 | 0.0 | 6.7 | 2.04 | 2.57 (10/10) | 7885 | 0.62 |
+| Ours v2 (tuned) | 1.0 / 2.2 | 1.1 / 3.1 | 0.1 / 0.1 | 0.0 | 6.7 | 2.04 | 2.46 (10/10) | 8050 | 0.72 |
 
 ## Pathfinding course
 
@@ -433,24 +523,24 @@ AD* anytime steps (one planning request, Python wall-clock, relative only):
 
 | eps | planning ms | path points | route length m |
 |---|---|---|---|
-| 2.5 | 36.6 | 47 | 9.28 |
+| 2.5 | 9.0 | 47 | 9.28 |
 | 2 | 0.5 | 47 | 9.28 |
-| 1.5 | 0.5 | 47 | 9.28 |
-| 1 | 98.9 | 48 | 9.36 |
+| 1.5 | 0.4 | 47 | 9.28 |
+| 1 | 49.9 | 48 | 9.36 |
 
 **Wheel odometry + gyro**
 
 | method | route m (planned / driven) | plan ms (first path / all four, median) | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run / mean) | contact ms (worst run) | wheel slip ms |
 |---|---|---|---|---|---|---|---|---|
-| PathPlanner pathfinding (AD*, kP 5) | 9.36 / 9.37 | 13 / 144 | 3.28 (4/10) | never | 9.1 / 20.2 | 0.0 / 4.6 | 4 | 3192 |
-| PathPlanner pathfinding (AD*, kP 5) + hold | 9.36 / 9.38 | 12 / 105 | 3.28 (4/10) | never | 10.0 / 19.9 | 0.0 / 4.6 | 4 | 3192 |
+| PathPlanner pathfinding (AD*, kP 5) | 9.36 / 9.37 | 25 / 245 | 3.28 (4/10) | never | 9.1 / 20.2 | 0.0 / 4.6 | 4 | 3192 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 9.36 / 9.38 | 8 / 66 | 3.28 (4/10) | never | 10.0 / 19.9 | 0.0 / 4.6 | 4 | 3192 |
 
 **Perfect pose**
 
 | method | route m (planned / driven) | plan ms (first path / all four, median) | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run / mean) | contact ms (worst run) | wheel slip ms |
 |---|---|---|---|---|---|---|---|---|
-| PathPlanner pathfinding (AD*, kP 5) | 9.36 / 9.32 | 25 / 112 | 3.19 | never | 2.7 / 2.9 | 6.5 / 6.6 | 0 | 3597 |
-| PathPlanner pathfinding (AD*, kP 5) + hold | 9.36 / 9.32 | 10 / 115 | 3.19 | 3.60 (10/10) | 0.1 / 0.1 | 6.5 / 6.6 | 0 | 3597 |
+| PathPlanner pathfinding (AD*, kP 5) | 9.36 / 9.32 | 8 / 68 | 3.19 | never | 2.7 / 2.9 | 6.5 / 6.6 | 0 | 3597 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 9.36 / 9.32 | 8 / 66 | 3.19 | 3.60 (10/10) | 0.1 / 0.1 | 6.5 / 6.6 | 0 | 3597 |
 
 ## Geometry each method authored
 

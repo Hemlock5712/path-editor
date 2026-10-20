@@ -34,8 +34,8 @@ START, END = "<!-- generated:start -->", "<!-- generated:end -->"
 
 MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_caps", "bline_tuned", "bline_tuned_caps",
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
-                "drive_to_pose_chain", "choreo", "choreo_hybrid"]
-TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme"}
+                "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_tuned"]
+TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme", "ours_tuned": "ours_v2"}
 EXTRA = {  # registry entries that only exist in the bench driver
     "pathplanner_tuned": ("pathplanner", None, "PathPlanner (tuned) + hold"),
     "pathplanner_hold_cof09": ("pathplanner", {"hold": True, "cof": 0.9}, "PathPlanner (kP 5) + hold, wheel COF 0.9"),
@@ -62,6 +62,16 @@ def pp_grid(quick):
         return [{"kp": kp, "kp_rot": 5.0, "hold": True} for kp in (5.0, 10.0)]
     return [{"kp": kp, "kp_rot": kr, "hold": True, "cof": cof} for kp in (5.0, 7.0, 10.0, 15.0, 20.0)
             for kr in (5.0, 10.0) for cof in (0.4, 0.5, 0.6, 0.7, 0.9, 1.15)]
+
+
+def ours_grid(quick):
+    """Ours v2 (lib/ PathFollower): the end's ease-in line, the latency allowance, the planning grip and the
+    output limiter's grip. The other FollowerConfig gains stay at their defaults."""
+    if quick:
+        return [{"easeInPerSecond": e} for e in (6.0, 12.0)]
+    return [{"easeInPerSecond": e, "latencySeconds": lat, "mu": mu, "limiterFrictionCoefficient": lim}
+            for e in (6.0, 9.0, 12.0, 16.0) for lat in (0.03, 0.05, 0.07) for mu in (0.6, 0.7, 0.8)
+            for lim in (1.0, 1.2, 1.4, 1.7, 2.0)]
 
 
 def resolve(key, tuned):
@@ -189,6 +199,9 @@ def main():
         best, table = sweep(pool, "pathplanner", pp_grid(a.quick), courses)
         out["tuned"]["pathplanner_tuned"], out["sweeps"]["pathplanner"] = best, table
         print("PathPlanner tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
+        best, table = sweep(pool, "ours_v2", ours_grid(a.quick), courses)
+        out["tuned"]["ours_tuned"], out["sweeps"]["ours"] = best, table
+        print("Ours v2 tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
         for pose in poses:
             jobs, keys = [], []
             for c in courses:
@@ -337,7 +350,8 @@ def sweep_md(out):
     L = []
     for name, key, edge, title in (("bline", "bline_tuned", "radius", "BLine, no caps"),
                                    ("bline_caps", "bline_tuned_caps", "radius", "BLine with corner caps"),
-                                   ("pathplanner", "pathplanner_tuned", "cof", "PathPlanner + hold")):
+                                   ("pathplanner", "pathplanner_tuned", "cof", "PathPlanner + hold"),
+                                   ("ours", "ours_tuned", "easeInPerSecond", "Ours v2")):
         if name not in out["sweeps"]:
             continue
         tab = sorted(out["sweeps"][name], key=lambda e: (-e["settled_frac"], e["score"]))
