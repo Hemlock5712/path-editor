@@ -56,18 +56,12 @@ def make_robot(course, seed):
     return rp, rng
 
 
-def run_one(job, trace=False):
-    """job = (course name, method key, options dict or None, seed, pose source 'odom' | 'truth').
-    trace=True adds the true path every 40 ms as [[t, x, y, heading], ...]."""
-    cname, mkey, opts, seed, pose_src = job
-    course = COURSES[cname]
-    npath = NeutralPath(course)
-    rp, rng = make_robot(course, seed)
-    start = course.start_pose
-    v0 = course.start_velocity
-    plant = DisturbedPlant(rp, start, v0, rng)
-    if course.impulse is not None:
-        plant.arm(course.impulse, npath)
+def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None):
+    """Run one follower on its native path from `start` (pose) with field velocity v0 for T seconds
+    (reset is called here and timed). Returns a dict of 250 Hz traces
+    (t, x, y, unwrapped heading, true speed) and run facts."""
+    if plant is None:
+        plant = DisturbedPlant(rp, start, v0, rng)
     odo = SwerveOdometry(rp.module_positions, plant.read_gyro(), plant.read_modules(), start)
 
     def measure():
@@ -81,15 +75,11 @@ def run_one(job, trace=False):
         v = rot((vxr, vyr), pose[2])
         return pose, (v[0], v[1], wr / 4.0)
 
-    cls, kw = build(mkey, opts)
-    follower = cls(**kw)
-    native = follower.adapt(course)
     pose, vel = measure()
     t0 = time.perf_counter()
     follower.reset(native, Start(0.0, pose, vel))
     gen_ms = 1000 * (time.perf_counter() - t0)
 
-    T = t_end(course)
     dt = LP.sim_dt
     t, next_odom, next_main = 0.0, 0.0, LP.main_period
     requests, cur_req = [], (v0[0], v0[1], v0[2])
@@ -128,9 +118,15 @@ def run_one(job, trace=False):
                 requests.append((t + LP.actuation_delay, cmd if cmd == "idle" else tuple(cmd)))
         plant.step(dt)
         t += dt
-
     ts, xs, ys, ths, sp = map(np.array, (ts, xs, ys, ths, sp))
-    end = course.end_pose
+    return {"t": ts, "x": xs, "y": ys, "th": ths, "speed": sp, "t_done": t_done, "wheel_slip": wheel_slip,
+            "max_step_ms": max_step_ms, "gen_ms": gen_ms, "plant": plant,
+            "odo_err_cm": 100 * math.hypot(odo.pose[0] - plant.x, odo.pose[1] - plant.y)}
+
+
+def end_metrics(r, end):
+    """Time to within 5 cm of `end`, time settled (2 cm, 1 deg, < 5 cm/s, held 0.25 s), and distances."""
+    ts, xs, ys, ths, sp = r["t"], r["x"], r["y"], r["th"], r["speed"]
     dist = np.hypot(end[0] - xs, end[1] - ys)
     eth = np.abs(np.arctan2(np.sin(end[2] - ths), np.cos(end[2] - ths)))
     in5 = np.flatnonzero(dist < END_RADIUS)
@@ -143,6 +139,30 @@ def run_one(job, trace=False):
         if run >= hold:
             t_settle = float(ts[i - hold + 1])
             break
+    return dist, eth, t_5cm, t_settle
+
+
+def run_one(job, trace=False):
+    """job = (course name, method key, options dict or None, seed, pose source 'odom' | 'truth').
+    trace=True adds the true path every 40 ms as [[t, x, y, heading], ...]."""
+    cname, mkey, opts, seed, pose_src = job
+    course = COURSES[cname]
+    npath = NeutralPath(course)
+    rp, rng = make_robot(course, seed)
+    start = course.start_pose
+    v0 = course.start_velocity
+    plant = DisturbedPlant(rp, start, v0, rng)
+    if course.impulse is not None:
+        plant.arm(course.impulse, npath)
+    cls, kw = build(mkey, opts)
+    follower = cls(**kw)
+    native = follower.adapt(course)
+    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant)
+    ts, xs, ys, ths = r["t"], r["x"], r["y"], r["th"]
+    end = course.end_pose
+    dist, eth, t_5cm, t_settle = end_metrics(r, end)
+    t_done, wheel_slip, gen_ms, max_step_ms = r["t_done"], r["wheel_slip"], r["gen_ms"], r["max_step_ms"]
+    T = t_end(course)
     # cross-track: from the start until the robot first reaches the end of the path (within 5 cm of the
     # end point, or its closest point on the neutral path within 5 cm of the end); the whole run if never
     s_all, d_all = npath.project(np.column_stack([xs, ys]))
@@ -165,7 +185,7 @@ def run_one(job, trace=False):
         "t_settle": t_settle,
         "t_done": float("nan") if t_done is None else t_done,
         "wheel_slip_ms": 1000 * wheel_slip,
-        "odo_err_cm": 100 * math.hypot(odo.pose[0] - plant.x, odo.pose[1] - plant.y),
+        "odo_err_cm": r["odo_err_cm"],
         "gen_ms": gen_ms,
         "max_step_ms": max_step_ms,
         "hit_s": float("nan") if plant.fired_at is None else plant.fired_at[1],
