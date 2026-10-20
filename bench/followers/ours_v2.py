@@ -43,8 +43,9 @@ class _Server:
         java = os.path.join(os.environ["JAVA_HOME"], "bin", "java") if os.environ.get("JAVA_HOME") else "java"
         os.makedirs(LOG_DIR, exist_ok=True)
         self.log = open(os.path.join(LOG_DIR, f"benchserver-{os.getpid()}.log"), "a")
-        # small heap and the serial collector: one of these runs per bench worker
-        self.p = subprocess.Popen([java, "-Xmx256m", "-XX:+UseSerialGC", "-cp", JAR, MAIN],
+        # a small footprint: one of these runs per bench worker, next to its Python process
+        self.p = subprocess.Popen([java, "-Xmx96m", "-Xss512k", "-XX:+UseSerialGC", "-XX:ReservedCodeCacheSize=32m",
+                                   "-XX:MaxMetaspaceSize=48m", "-XX:CICompilerCount=2", "-cp", JAR, MAIN],
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log,
                                   text=True, encoding="utf-8", bufsize=1)
         atexit.register(self.close)
@@ -55,7 +56,11 @@ class _Server:
         line = self.p.stdout.readline()
         if not line:
             raise RuntimeError("BenchServer exited")
-        reply = json.loads(line)
+        try:
+            reply = json.loads(line)
+        except ValueError:  # a JVM that failed to start (out of memory) prints its error here
+            self.p.kill()
+            raise RuntimeError("BenchServer printed a non-JSON line: " + line[:200].strip())
         if "error" in reply:
             raise RuntimeError("BenchServer: " + reply["error"])
         return reply
@@ -136,6 +141,8 @@ class OursV2(Follower):
         self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
                         "brakeMetersPerSecondSquared": limits.max_accel}
         self.options.update(follower_options)
+        # adaptive grip (on by default) needs the slip detector fed every odometry tick (see slipsense.py)
+        self.wants_sensing = bool(self.options.get("adaptiveGrip", 1))
 
     @staticmethod
     def adapt(course):

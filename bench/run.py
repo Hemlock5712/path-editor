@@ -34,7 +34,7 @@ START, END = "<!-- generated:start -->", "<!-- generated:end -->"
 
 MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_caps", "bline_tuned", "bline_tuned_caps",
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
-                "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_tuned"]
+                "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_noadapt", "ours_tuned"]
 TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme", "ours_tuned": "ours_v2"}
 EXTRA = {  # registry entries that only exist in the bench driver
     "pathplanner_tuned": ("pathplanner", None, "PathPlanner (tuned) + hold"),
@@ -70,8 +70,8 @@ def ours_grid(quick):
     if quick:
         return [{"easeInPerSecond": e} for e in (6.0, 12.0)]
     return [{"easeInPerSecond": e, "latencySeconds": lat, "mu": mu, "limiterFrictionCoefficient": lim}
-            for e in (6.0, 9.0, 12.0, 16.0) for lat in (0.03, 0.05, 0.07) for mu in (0.6, 0.7, 0.8)
-            for lim in (1.0, 1.2, 1.4, 1.7, 2.0)]
+            for e in (9.0, 12.0, 16.0) for lat in (0.03, 0.05, 0.07) for mu in (0.6, 0.7, 0.8)
+            for lim in (1.0, 1.4, 2.0)]
 
 
 def resolve(key, tuned):
@@ -182,7 +182,7 @@ def main():
         return
     seeds = list(range(a.seeds if a.seeds else (2 if a.quick else 10)))
     courses = QUICK_COURSES if a.quick else list(COURSES)
-    poses = ["odom", "truth"] if a.both else (["truth"] if a.perfect_pose else ["odom"])
+    poses = ["odom", "slipodom", "truth"] if a.both else (["truth"] if a.perfect_pose else ["odom"])
     t0 = time.time()
     out = {"meta": {"seeds": seeds, "sweep_seeds": SWEEP_SEEDS, "courses": courses, "poses": poses,
                     "quick": a.quick, "t_sim": {c: t_end(COURSES[c]) for c in courses},
@@ -287,6 +287,7 @@ def overview(out, pose):
 def tables(out):
     L = []
     titles = {"odom": "Wheel odometry + gyro (no vision): the main condition",
+              "slipodom": "Slip-aware odometry + gyro + IMU (lib's SlipAwareOdometry, no vision)",
               "truth": "Perfect pose (the control law alone)"}
     for pose in out["runs"]:
         L.append(f"### {titles[pose]}\n")
@@ -388,7 +389,7 @@ def pathfind_md(out):
     hdr = ("| method | route m (planned / driven) | plan ms (first path / all four, median) | t to 5 cm s | "
            "t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run / mean) | "
            "contact ms (worst run) | wheel slip ms |\n|---|---|---|---|---|---|---|---|---|")
-    titles = {"odom": "Wheel odometry + gyro", "truth": "Perfect pose"}
+    titles = {"odom": "Wheel odometry + gyro", "slipodom": "Slip-aware odometry + IMU", "truth": "Perfect pose"}
     for pose, rows in pf["runs"].items():
         L.append(f"**{titles[pose]}**\n")
         L.append(hdr)

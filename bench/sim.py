@@ -33,11 +33,24 @@ class DisturbedPlant(SwervePlant):
 
     armed = None
     fired_at = None
+    grip_armed = None
+    grip_dropped_at = None
 
     def arm(self, impulse, npath: NeutralPath):
         self.armed = (impulse, npath)
 
+    def arm_grip_drop(self, drop, npath: NeutralPath):
+        """drop = (fraction of the path, mu static, mu kinetic): the floor changes once the TRUE position
+        passes that fraction of the neutral path (a worn carpet seam)."""
+        self.grip_armed = (drop, npath)
+
     def poll(self, xy):
+        if self.grip_armed is not None and self.grip_dropped_at is None:
+            (frac, mu_s, mu_k), npath = self.grip_armed
+            s, _ = npath.project(np.array([xy]))
+            if s[0] >= frac * npath.length:
+                self.rp = replace(self.rp, mu_static=mu_s, mu_kinetic=mu_k)
+                self.grip_dropped_at = (self.t, float(s[0]))
         if self.armed is None or self.fired_at is not None:
             return
         imp, npath = self.armed
@@ -56,13 +69,18 @@ def make_robot(course, seed):
     return rp, rng
 
 
-def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None):
+def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_rng=None):
     """Run one follower on its native path from `start` (pose) with field velocity v0 for T seconds
     (reset is called here and timed). Returns a dict of 250 Hz traces
-    (t, x, y, unwrapped heading, true speed) and run facts."""
+    (t, x, y, unwrapped heading, true speed) and run facts.
+
+    pose_src: 'truth', 'odom' (WPILib wheel odometry + gyro) or 'slipodom' (lib's SlipAwareOdometry with
+    the bench IMU, see slipsense.py). Slip sensing also runs for any follower with `wants_sensing`."""
     if plant is None:
         plant = DisturbedPlant(rp, start, v0, rng)
-    odo = SwerveOdometry(rp.module_positions, plant.read_gyro(), plant.read_modules(), start)
+    gyro0, modules0 = plant.read_gyro(), plant.read_modules()
+    odo = SwerveOdometry(rp.module_positions, gyro0, modules0, start)
+    sensing = None
 
     def measure():
         mods = plant.module_velocities()
@@ -71,7 +89,12 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None):
         wr = 0.0
         for (s, a), (mx, my) in zip(mods, plant.mods):
             wr += (-my * s * math.cos(a) + mx * s * math.sin(a)) / (mx * mx + my * my)
-        pose = plant.pose() if pose_src == "truth" else odo.pose
+        if pose_src == "truth":
+            pose = plant.pose()
+        elif pose_src == "slipodom" and sensing is not None:
+            pose = sensing.pose
+        else:
+            pose = odo.pose
         v = rot((vxr, vyr), pose[2])
         return pose, (v[0], v[1], wr / 4.0)
 
@@ -79,6 +102,11 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None):
     t0 = time.perf_counter()
     follower.reset(native, Start(0.0, pose, vel))
     gen_ms = 1000 * (time.perf_counter() - t0)
+    if pose_src == "slipodom" or getattr(follower, "wants_sensing", False):
+        from imu import Imu
+        from slipsense import Sensing
+
+        sensing = Sensing(plant, Imu(plant, imu_rng or np.random.default_rng(0)), start, gyro0, modules0)
 
     dt = LP.sim_dt
     t, next_odom, next_main = 0.0, 0.0, LP.main_period
@@ -97,7 +125,10 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None):
             else:
                 vr = rot((cur_req[0], cur_req[1]), -odo.pose[2])
                 plant.set_chassis_robot(vr[0], vr[1], cur_req[2])
-            odo.update(plant.read_gyro(), plant.read_modules())
+            gyro, modules = plant.read_gyro(), plant.read_modules()
+            odo.update(gyro, modules)
+            if sensing is not None:
+                sensing.update(t, gyro, modules, cur_req, odo.pose[2])
             plant.poll((plant.x, plant.y))
             ts.append(t)
             xs.append(plant.x)
@@ -121,6 +152,7 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None):
     ts, xs, ys, ths, sp = map(np.array, (ts, xs, ys, ths, sp))
     return {"t": ts, "x": xs, "y": ys, "th": ths, "speed": sp, "t_done": t_done, "wheel_slip": wheel_slip,
             "max_step_ms": max_step_ms, "gen_ms": gen_ms, "plant": plant,
+            "slip_metrics": sensing.metrics() if sensing is not None else (float("nan"), float("nan")),
             "odo_err_cm": 100 * math.hypot(odo.pose[0] - plant.x, odo.pose[1] - plant.y)}
 
 
@@ -154,10 +186,13 @@ def run_one(job, trace=False):
     plant = DisturbedPlant(rp, start, v0, rng)
     if course.impulse is not None:
         plant.arm(course.impulse, npath)
+    if course.grip_drop is not None:
+        plant.arm_grip_drop(course.grip_drop, npath)
     cls, kw = build(mkey, opts)
     follower = cls(**kw)
     native = follower.adapt(course)
-    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant)
+    imu_rng = np.random.default_rng([seed, 7919])  # its own stream: the IMU changes no other number
+    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant, imu_rng)
     ts, xs, ys, ths = r["t"], r["x"], r["y"], r["th"]
     end = course.end_pose
     dist, eth, t_5cm, t_settle = end_metrics(r, end)
@@ -190,6 +225,8 @@ def run_one(job, trace=False):
         "max_step_ms": max_step_ms,
         "hit_s": float("nan") if plant.fired_at is None else plant.fired_at[1],
         "t_sim": T,
+        "slip_fp": r["slip_metrics"][0],
+        "slip_recall": r["slip_metrics"][1],
     }
     if trace:
         k = max(1, int(round(0.04 / LP.odom_period)))

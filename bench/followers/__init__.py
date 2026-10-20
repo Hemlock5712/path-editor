@@ -20,6 +20,7 @@ METHODS = {
     "bline_tuned_caps": ("followers.bline", "BLine", None),  # filled from the sweep (run.py)
     "ours_v2": ("followers.ours_v2", "OursV2", {}),  # as shipped: the Java FollowerConfig defaults
     "ours_tuned": ("followers.ours_v2", "OursV2", None),  # filled from the sweep (run.py)
+    "ours_noadapt": ("followers.ours_v2", "OursV2", {"adaptiveGrip": 0}),  # as shipped, adaptive grip off
 }
 
 LABELS = {
@@ -36,6 +37,7 @@ LABELS = {
     "bline_caps": "BLine (README gains, r 0.45 + BLine-Web corner caps)",
     "bline_tuned_caps": "BLine (tuned, with corner caps)",
     "ours_v2": "Ours v2 (as shipped)",
+    "ours_noadapt": "Ours v2 (as shipped, adaptive grip off)",
     "ours_tuned": "Ours v2 (tuned)",
 }
 

@@ -58,6 +58,7 @@ class Course:
     limits: Limits = field(default_factory=Limits)
     impulse: Impulse | None = None
     grip: tuple | None = None  # (mu static, mu kinetic); None = the plant default
+    grip_drop: tuple | None = None  # (path fraction, mu static, mu kinetic): the floor changes mid-run
     description: str = ""
 
     @property
@@ -425,13 +426,16 @@ COURSES = {
     "low_grip_s_curve": Course(
         "low_grip_s_curve", S_CURVE, grip=(0.70, 0.61),
         description="the S-curve on mu 0.70 static / 0.61 kinetic"),
+    "grip_drop_s_curve": Course(
+        "grip_drop_s_curve", S_CURVE, grip_drop=(0.5, 0.70, 0.61),
+        description="the S-curve; halfway along, the floor drops from mu 1.15 / 1.0 to 0.70 / 0.61 (a worn carpet seam)"),
 }
 
 QUICK_COURSES = ["straight_3m", "s_curve", "moving_start"]
 
 # course -> Choreo trajectory (bench/choreo/*.traj); courses that only change the plant reuse the S-curve's
 CHOREO_TRAJ = {c: c for c in ("straight_3m", "s_curve", "hairpin", "slalom", "long_auto", "moving_start")}
-CHOREO_TRAJ.update({"hit_mid_path": "s_curve", "low_grip_s_curve": "s_curve"})
+CHOREO_TRAJ.update({"hit_mid_path": "s_curve", "low_grip_s_curve": "s_curve", "grip_drop_s_curve": "s_curve"})
 
 
 def t_end(course: Course):
