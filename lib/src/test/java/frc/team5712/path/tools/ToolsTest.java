@@ -56,6 +56,31 @@ class ToolsTest {
     assertThrows(IllegalArgumentException.class, () -> ProfileCli.run(new String[] {"a", "--grid", "0"}));
   }
 
+  @Test
+  void benchServerSpeaksTheProtocol() {
+    BenchServer server = new BenchServer();
+    Map<String, Object> path = PathFile.toJson(FixturePaths.straight());
+    Map<?, ?> loaded = (Map<?, ?>) Json.parse(server.handle(Map.of(
+        "op", "load", "path", path, "options", Map.of("crossTrackKp", 4.0))));
+    assertEquals(3.0, (Double) loaded.get("lengthMeters"), 1e-9);
+    assertThrows(IllegalArgumentException.class,
+        () -> server.handle(Map.of("op", "load", "path", path, "options", Map.of("noSuchGain", 1.0))));
+    server.handle(Map.of("op", "load", "path", path));
+    server.handle(Map.of("op", "reset", "t", 0.0, "pose", List.of(-1.5, 0.0, 0.0), "vel", List.of(0.0, 0.0, 0.0)));
+    Map<?, ?> step = (Map<?, ?>) Json.parse(server.handle(Map.of(
+        "op", "step", "t", 0.02, "pose", List.of(-1.5, 0.0, 0.0), "vel", List.of(0.0, 0.0, 0.0))));
+    List<?> cmd = (List<?>) step.get("cmd");
+    assertTrue((Double) cmd.get(0) > 0.0);
+    assertEquals(Boolean.FALSE, step.get("done"));
+    assertEquals("TRACKING", step.get("phase"));
+    assertEquals("{\"ok\":true}", server.handle(Map.of("op", "goal", "pose", List.of(1.5, 0.1, 0.0))));
+    Map<?, ?> geometry = (Map<?, ?>) Json.parse(server.handle(Map.of("op", "geometry", "step", 0.5)));
+    assertEquals(7, ((List<?>) geometry.get("x")).size());
+    assertThrows(IllegalArgumentException.class, () -> server.handle(Map.of("op", "dance")));
+    assertThrows(IllegalStateException.class,
+        () -> new BenchServer().handle(Map.of("op", "step", "t", 0.0, "pose", List.of(0.0, 0.0, 0.0), "vel", List.of(0.0, 0.0, 0.0))));
+  }
+
   /** The committed golden vectors must be what this code writes; run `fixtures` if this fails. */
   @Test
   void committedFixturesAreUpToDate() throws IOException {
