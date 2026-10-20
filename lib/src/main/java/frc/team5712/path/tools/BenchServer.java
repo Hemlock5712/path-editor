@@ -11,6 +11,10 @@ import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.core.RobotFile;
 import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.follow.PathFollower;
+import frc.team5712.path.plan.FieldMap;
+import frc.team5712.path.plan.Pathfinder;
+import frc.team5712.path.plan.PlanResult;
+import frc.team5712.path.plan.PlannerConfig;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -34,6 +38,8 @@ public final class BenchServer {
   private Path path;
   private PathFollower follower;
   private Optional<Pose> goal = Optional.empty();
+  private Pathfinder pathfinder;
+  private String pathfinderKey;
 
   public static void main(String[] args) throws IOException {
     BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -69,6 +75,7 @@ public final class BenchServer {
     }
     return switch (op.toString()) {
       case "load" -> load(msg);
+      case "pathfind" -> pathfind(msg);
       case "reset" -> reset(msg);
       case "step" -> step(msg);
       case "goal" -> goal(msg);
@@ -102,6 +109,77 @@ public final class BenchServer {
     r.put("totalTimeSeconds", path.totalTimeSeconds());
     r.put("buildMs", buildMs);
     return line(r);
+  }
+
+  /**
+   * Plans with our pathfinder from the given start state and loads the result like {@code load}. The
+   * pathfinder (grown obstacles and the visibility graph) is built once per field, robot and margin and
+   * kept, as it would be at boot.
+   */
+  private String pathfind(Map<String, Object> msg) {
+    Map<String, Object> fieldTree = PathFile.asMap(msg.get("field"), "field");
+    RobotConfig robot = msg.get("robot") == null
+        ? RobotConfig.DEFAULT
+        : RobotFile.fromJson(PathFile.asMap(msg.get("robot"), "robot"));
+    PlannerConfig pc = PlannerConfig.DEFAULT;
+    if (msg.get("margin") != null) {
+      pc = pc.withMargin(number(msg, "margin"));
+    }
+    if (msg.get("maxSpeed") != null) {
+      pc = pc.withLimits(number(msg, "maxSpeed"), number(msg, "maxAccel"));
+    }
+    FollowerConfig.Builder b = FollowerConfig.builder(robot);
+    if (msg.get("options") != null) {
+      for (Map.Entry<String, Object> e : PathFile.asMap(msg.get("options"), "options").entrySet()) {
+        if (!(e.getValue() instanceof Number n) || !b.set(e.getKey(), n.doubleValue())) {
+          throw new IllegalArgumentException("bad option " + e.getKey());
+        }
+      }
+    }
+    String key = line(fieldTree) + "|" + robot + "|" + pc;
+    Map<String, Object> r = new LinkedHashMap<>();
+    r.put("ok", Boolean.TRUE);
+    if (!key.equals(pathfinderKey)) {
+      pathfinder = new Pathfinder(FieldMap.fromJson(fieldTree), robot, pc);
+      pathfinderKey = key;
+      r.put("bootMs", pathfinder.bootMicros() / 1e3);
+    }
+    PlanResult plan = pathfinder.plan(pose(msg.get("start")), speeds(msg.get("vel")), pose(msg.get("goal")));
+    if (!plan.ok()) {
+      throw new IllegalStateException(plan.failure());
+    }
+    path = plan.path();
+    follower = new PathFollower(path, b.build());
+    goal = Optional.empty();
+    follower.bindGoal(() -> goal);
+    describe(plan, r);
+    return line(r);
+  }
+
+  /** The plan's numbers as reply fields (also used by PlanCli). */
+  static void describe(PlanResult plan, Map<String, Object> r) {
+    if (plan.ok()) {
+      r.put("lengthMeters", plan.path().lengthMeters());
+      r.put("totalTimeSeconds", plan.path().totalTimeSeconds());
+    } else {
+      r.put("failure", plan.failure());
+    }
+    r.put("planMs", plan.totalMicros() / 1e3);
+    r.put("searchMs", plan.searchMicros() / 1e3);
+    r.put("smoothMs", plan.smoothMicros() / 1e3);
+    r.put("profileMs", plan.profileMicros() / 1e3);
+    r.put("routeLengthMeters", plan.routeLengthMeters());
+    r.put("straightLineMeters", plan.straightLineMeters());
+    r.put("startSnapMeters", plan.startSnapMeters());
+    r.put("goalSnapMeters", plan.goalSnapMeters());
+    r.put("refits", (double) plan.refits());
+    r.put("clear", plan.clear());
+    r.put("minClearanceMeters", plan.minClearanceMeters());
+    List<Object> wps = new ArrayList<>();
+    for (double[] w : plan.waypoints()) {
+      wps.add(List.of(w[0], w[1]));
+    }
+    r.put("waypoints", wps);
   }
 
   private String reset(Map<String, Object> msg) {
