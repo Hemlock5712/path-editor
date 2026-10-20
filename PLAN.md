@@ -166,6 +166,10 @@ There are three layers, from the most to the least preferred.
   - BLine (port of the `wpilib-2027` follower)
   - PathPlanner (port of `PathPlannerTrajectory` and `PPHolonomicDriveController` from the `2027` branch)
   - Choreo (trajectories from its solver, followed time-sampled)
+  - Choreo geometry with our follower: the `.traj` resampled by distance along the path, with Choreo's speed as
+    the profile cap, followed by position and finished with the DriveToPose law. If it wins on time and keeps our
+    accuracy, importing Choreo paths becomes a supported option for offline autos. Paths built during a match
+    always use our own planner, because Choreo's solver can take seconds and doesn't always converge.
   - CTRE LinearPath (point-to-point courses only)
 - `reference/race_drive_to_pose.py` is the earlier point-to-point race. It's kept for its BLine, PathPlanner and
   CTRE ports and as a sanity check.
