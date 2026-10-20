@@ -3,7 +3,8 @@
 | Package | What | Depends on |
 | --- | --- | --- |
 | `frc.team5712.path.core` (phase 2) | geometry, heading and velocity profiles, frame flips, path files | nothing |
-| `frc.team5712.path.follow` (phase 3) | `PathFollower`: one controller from path to pose | core |
+| `frc.team5712.path.follow` (phase 3) | `PathFollower`: one controller from path to pose | core, slip |
+| `frc.team5712.path.slip` | `SlipDetector`, `SlipAwareOdometry` (optional), `SlipSignal` | core |
 | `frc.team5712.path.tools` | `FixtureGen`, `ProfileCli`, `BenchServer` (the bench bridge) | core, follow |
 | `frc.team5712.path.wpilib` (source set `src/wpilib`) | Commands v3 and v2 adapters, `PathLibrary`, telemetry | WPILib 2027 |
 
@@ -111,12 +112,17 @@ Each loop, in the blue frame:
 4. **Across the path.** PD on the cross-track error (P 5/s, D 0), pushing along the normal at `s`.
 5. **Heading.** Feed-forward `v·dθ/ds` at `s⁺`, plus P 5/s on the planned heading at `s`.
 6. **Near the end** (0.3 m to go), the reference becomes the goal pose and DriveToPose's law takes
-   over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. Both
+   over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. The
+   ease-in line `k` is 12/s, against DriveToPose's 6/s. The bench sweep picked that value on its
+   tuning seeds, and it sits inside the swept range. Both
    laws brake on the same distance with the same 6 m/s², so the hand-over has no seam.
 7. **One limiter.** Every output goes through `OutputLimiter`. It caps spin acceleration, then caps
    the motors' push at the fastest wheel's speed when speeding up. Then `|a| + c·|α| ≤ μ·g`
    (c = I/(m·r), the profile's grip model), scaling translation and spin together. Its μ defaults
-   to 1.0, above the plan's 0.7, so feedback has room.
+   to 1.0, above the plan's 0.7, so feedback has room. The phase 3 sweep preferred 2.0, which
+   effectively switches the grip check off. With a perfect pose that saved 0.02 s per run. With
+   wheel odometry it doubled wheel slip and left the moving start 19.8 cm off instead of 3.9 cm,
+   because the robot outran its grip and the odometry over-read. So 1.0 ships.
 8. **Finished.** Within 2 cm and 1°, measured slower than 5 cm/s, held 0.1 s. A rolling end (end
    speed above 0) never stops: it finishes as the robot passes the end, and `endCommand()` is the
    velocity to hand to the next follower (`start(..., handedCommand)`).
@@ -143,6 +149,35 @@ The other pieces:
 All gains are in `FollowerConfig` (defaults from DriveToPose and the hybrid prototype).
 `FollowerConfig.Builder.set(name, value)` sets a field by its name, which is how the bench passes
 options.
+
+### Slip: detection, adaptive grip and slip-aware odometry (`frc.team5712.path.slip`)
+
+- **`SlipDetector`** takes one sample per odometry update: wheel speeds and angles, the gyro
+  heading, optionally the accelerometer and the command. It weighs three kinds of evidence:
+  - each module's residual against the rigid-body fit (median chassis velocity, with the gyro's yaw
+    rate known);
+  - a wheel turning faster than its commanded module speed;
+  - the gap between the wheels' implied acceleration and the accelerometer's (both low-passed,
+    30 ms).
+
+  The output is a flag per module and a chassis confidence, which rises at once and decays over
+  0.15 s. On the bench the IMU gap is what finds slip. In that plant all four wheels tend to slip
+  together, so the per-module residuals rarely stand out.
+- **Adaptive grip** in `PathFollower` (`withSlipSignal`, on by default; `adaptiveGrip(false)` turns
+  it off). Once the confidence reaches 0.3, it takes the acceleration achieved, less 10 %, as the
+  floor's μ (never below 0.3). The limiter's budget, the brake's deceleration and the planned
+  speed (× sqrt(μ_slip / μ_plan)) all follow it. Afterwards it climbs back at 0.05 μ/s, but never
+  in the terminal phase. The profile is not rebuilt.
+- **`SlipAwareOdometry`** is optional and replaces `SwerveDriveOdometry`:
+  - The wheels' least-squares step down-weights slipping modules (weight 0.01).
+  - On a clean run it equals WPILib's odometry exactly (tested to 1e-9).
+  - While slipping, an IMU-driven velocity carries the pose. The IMU's bias is learnt while
+    gripping. Each spell starts by rewinding the detection lag (60 ms) and replaying the stored IMU
+    samples. A spell lasts at most 0.1 s with no bias learnt, growing to 1.5 s as the bias is
+    learnt; after that the wheels take over again.
+- **Tuning.** All thresholds were tuned on the bench's tuning seeds only: IMU gap 2.5 m/s²,
+  follower confidence 0.3, recovery 0.05 μ/s. The IMU-gap threshold and the spell limits are where
+  the sweep scored best after widening the grid once.
 
 ### WPILib adapters (`src/wpilib`)
 
@@ -238,6 +273,8 @@ shares. See the notes below for what that means for the boot budget.
 - **A rebuilt tail drops the zones in that stretch.** Its heading blends from the planned heading to
   the goal's starting at zero spin rate, so ω can kink at the join if the old plan was mid-turn.
 - **Events are set in code (`addEvent`), not yet in the path file.**
+- **Slip handling is not in PLAN.md.** The detector, adaptive grip and slip-aware odometry were
+  added after the phase 3 bench showed the low-grip weakness with odometry.
 - **Commands v3 events are forked children,** so they end with the path command unless they finish
   first. v2 schedules them independently.
 - **The first `start()` in a fresh JVM takes about 1.4 ms of class loading,** but no path work. One
