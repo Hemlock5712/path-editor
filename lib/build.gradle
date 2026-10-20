@@ -1,0 +1,48 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'frc.team5712'
+version = '2.0.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.13.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-Xlint:all', '-Werror']
+}
+
+// A dependency-free jar with a fixed name, for the bench: java -cp lib/build/libs/pathcore.jar ...
+tasks.named('jar') {
+    archiveFileName = 'pathcore.jar'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // The fixture test compares against ../fixtures; the performance test prints its timings
+    systemProperty 'fixtures.dir', file('../fixtures').absolutePath
+    testLogging {
+        events 'failed'
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
+}
+
+// Regenerates the golden vectors in ../fixtures (commit the result)
+tasks.register('fixtures', JavaExec) {
+    group = 'verification'
+    description = 'Writes fixtures/*.json, the vectors the TypeScript port must reproduce.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'frc.team5712.path.tools.FixtureGen'
+    args file('../fixtures').absolutePath
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@team5712/path-core",
+  "version": "2.0.0",
+  "private": true,
+  "description": "TypeScript port of lib/'s path maths: spline, arc length, heading and velocity profiles, path files.",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.7",
+    "@types/node": "22.20.5"
+  }
+}

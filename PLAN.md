@@ -131,7 +131,9 @@ There are three layers, from the most to the least preferred.
 - **Editor metadata:** an editor-only `.pathproject.json` next to them.
 - **Field obstacles:** `deploy/paths/field.json`.
 - **Code generation:** only a `PathName` enum.
-- **On the robot:** everything loads and precomputes at boot.
+- **On the robot:** everything loads and precomputes at boot, plainly, in robot init (no background thread). Boot
+  has plenty of time (the robot, cameras and field link take far longer); the rule is that pressing go does zero
+  path work.
 
 ### One maths library, two languages
 - The Java library (`lib/`) is the reference version. The editor uses a TypeScript port of it.
@@ -141,7 +143,8 @@ There are three layers, from the most to the least preferred.
 | | Target |
 |---|---|
 | Flipping for red | 0 ms |
-| Loading and precomputing every path at boot | < 50 ms |
+| Path work when auto starts (all paths prebuilt, flip is a transform) | 0 ms |
+| Loading and precomputing every path at boot | no hard limit; done before the match starts |
 | Rebuilding the tail when the goal moves | < 1 ms |
 | Pathfinding plus spline plus profile | < 5 ms |
 | Follower per loop | < 0.2 ms |
