@@ -38,6 +38,99 @@ tasks.named('test') {
     }
 }
 
+// ---------------------------------------------------------------------------------- WPILib adapters
+// src/wpilib/java: Pose2d/ChassisVelocities conversion, Commands v2 and v3 adapters, PathLibrary and
+// telemetry. Built against WPILib 2027 from the installer's offline maven repo (override with
+// -PwpilibMaven=<dir>). The core above never depends on it. Skipped, with a warning, if the repo is missing.
+def wpilibVersion = '2027.0.0-alpha-7'
+def wpilibMaven = file(project.findProperty('wpilibMaven') ?: 'C:/Users/Public/wpilib/2027_alpha7/maven')
+
+sourceSets {
+    wpilib {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+    wpilibTest {
+        compileClasspath += sourceSets.main.output + sourceSets.wpilib.output
+        runtimeClasspath += sourceSets.main.output + sourceSets.wpilib.output
+    }
+}
+
+configurations {
+    wpilibTestImplementation.extendsFrom wpilibImplementation, testImplementation
+    wpilibTestRuntimeOnly.extendsFrom wpilibRuntimeOnly, testRuntimeOnly
+}
+
+if (wpilibMaven.isDirectory()) {
+    repositories {
+        maven { url = wpilibMaven.toURI() }
+    }
+    dependencies {
+        // WPILib's poms list no dependencies, so every jar the adapters touch is named here
+        wpilibImplementation "org.wpilib.wpimath:wpimath-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.wpiutil:wpiutil-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.wpiunits:wpiunits-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.wpilibj:wpilibj-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.hal:hal-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.ntcore:ntcore-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.datalog:datalog-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.telemetry:telemetry-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.tunables:tunables-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib:annotations-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib:commandsv3-java:$wpilibVersion"
+        wpilibImplementation "org.wpilib.commandsv2:commandsv2-java:$wpilibVersion"
+        // third-party jars WPILib loads at run time (versions as shipped in the installer)
+        wpilibRuntimeOnly "us.hebi.quickbuf:quickbuf-runtime:1.4"
+        wpilibRuntimeOnly "org.ejml:ejml-simple:0.46.0"
+        wpilibRuntimeOnly "org.ejml:ejml-core:0.46.0"
+        wpilibRuntimeOnly "org.ejml:ejml-ddense:0.46.0"
+    }
+    // Desktop (simulation) natives for the adapter tests: the v3 scheduler asks the HAL for the op mode
+    configurations { wpilibNatives }
+    def nativeClassifier = 'windowsx86-64'
+    ['org.wpilib.hal:hal-cpp', 'org.wpilib.wpiutil:wpiutil-cpp', 'org.wpilib.wpinet:wpinet-cpp',
+     'org.wpilib.ntcore:ntcore-cpp', 'org.wpilib.datalog:datalog-cpp', 'org.wpilib.wpimath:wpimath-cpp'].each { lib ->
+        dependencies.add('wpilibNatives', "$lib:$wpilibVersion:$nativeClassifier@zip")
+    }
+    def nativesDir = layout.buildDirectory.dir('wpilibNatives')
+    tasks.register('extractWpilibNatives', Sync) {
+        from { configurations.wpilibNatives.collect { zipTree(it) } }
+        include '**/shared/*.dll', '**/shared/*.so', '**/shared/*.dylib'
+        eachFile { path = name }
+        includeEmptyDirs = false
+        into nativesDir
+    }
+    tasks.register('wpilibTest', Test) {
+        dependsOn 'extractWpilibNatives'
+        systemProperty 'java.library.path', nativesDir.get().asFile.absolutePath
+        group = 'verification'
+        description = 'Tests the WPILib adapters.'
+        testClassesDirs = sourceSets.wpilibTest.output.classesDirs
+        classpath = sourceSets.wpilibTest.runtimeClasspath
+        useJUnitPlatform()
+        // Commands v3 runs commands as JDK continuations, which the robot JVM opens up the same way
+        jvmArgs '--add-opens=java.base/jdk.internal.vm=ALL-UNNAMED', '--add-exports=java.base/jdk.internal.vm=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang=ALL-UNNAMED'
+
+        testLogging {
+            events 'failed'
+            showStandardStreams = true
+            exceptionFormat = 'full'
+        }
+    }
+    tasks.named('check') { dependsOn 'wpilibTest' }
+    tasks.register('wpilibJar', Jar) {
+        description = 'The WPILib adapters, for a robot project that also depends on pathcore.jar.'
+        archiveFileName = 'pathcore-wpilib.jar'
+        from sourceSets.wpilib.output
+    }
+} else {
+    logger.warn("WPILib maven repo not found at $wpilibMaven: the WPILib adapters are not compiled. " +
+        "Pass -PwpilibMaven=<WPILib install>/maven.")
+    tasks.named('compileWpilibJava') { enabled = false }
+    tasks.named('compileWpilibTestJava') { enabled = false }
+}
+
 // Regenerates the golden vectors in ../fixtures (commit the result)
 tasks.register('fixtures', JavaExec) {
     group = 'verification'

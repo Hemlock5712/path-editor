@@ -527,4 +527,14 @@ public final class PathFollower {
   public FieldFrame frame() {
     return frame;
   }
+
+  /** True when the path ends moving (end speed above zero): it finishes as it passes the end. */
+  public boolean rollingEnd() {
+    return rollingEnd;
+  }
+
+  /** The path this follower was built for (before any tail rebuild). */
+  public Path path() {
+    return basePath;
+  }
 }
