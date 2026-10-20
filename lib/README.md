@@ -225,3 +225,20 @@ shares. See the notes below for what that means for the boot budget.
   and about 2 ms each after that until the JIT warms up. The robot waits far longer than that for
   cameras and the field link, so paths are simply built in robot init. The real rule is
   that starting auto does no path work at all.
+
+### Phase 3 departures from PLAN.md
+
+- **The v²κ feed-forward is the look-ahead tangent.** The drivetrain takes velocity commands, so the
+  curvature term is applied by pointing the speed along the tangent one latency ahead. That adds
+  `v²κτ` sideways, rather than a separate acceleration feed-forward.
+- **Cross-track is PD with D = 0 by default.** The bench sweeps didn't need the D term.
+- **The limiter's grip (1.0) is above the plan's (0.7) on purpose,** so feedback has room. The bench
+  sweep prefers it even looser, but that costs odometry accuracy (see bench/RESULTS.md), so the
+  default stays 1.0.
+- **A rebuilt tail drops the zones in that stretch.** Its heading blends from the planned heading to
+  the goal's starting at zero spin rate, so ω can kink at the join if the old plan was mid-turn.
+- **Events are set in code (`addEvent`), not yet in the path file.**
+- **Commands v3 events are forked children,** so they end with the path command unless they finish
+  first. v2 schedules them independently.
+- **The first `start()` in a fresh JVM takes about 1.4 ms of class loading,** but no path work. One
+  throwaway start/step in robot init would remove it.
