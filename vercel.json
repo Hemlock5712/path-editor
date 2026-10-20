@@ -1,3 +1,0 @@
-{
-  "rewrites": [{ "source": "/((?!java/).*)", "destination": "/index.html" }]
-}
