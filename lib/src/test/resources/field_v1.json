@@ -1,0 +1,161 @@
+{
+ "description": "Pathfinding course v1: about 8 m across a field with six convex obstacles. Polygons in metres, counter-clockwise, WPILib 2027 field coordinates (origin at the field centre, +x toward the red wall).",
+ "field": {
+  "length_m": 16.54,
+  "width_m": 8.02,
+  "origin": "centre"
+ },
+ "robot": {
+  "bumper_length_m": 0.85,
+  "bumper_width_m": 0.85
+ },
+ "route": {
+  "start": [
+   -4.0,
+   -1.5,
+   0.0
+  ],
+  "goal": [
+   3.8,
+   1.4,
+   0.0
+  ],
+  "start_velocity": [
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "obstacles": [
+  {
+   "name": "pillar_a",
+   "polygon": [
+    [
+     -2.8,
+     -1.3
+    ],
+    [
+     -2.0,
+     -1.3
+    ],
+    [
+     -2.0,
+     -0.5
+    ],
+    [
+     -2.8,
+     -0.5
+    ]
+   ]
+  },
+  {
+   "name": "wall_b",
+   "polygon": [
+    [
+     -1.2,
+     -0.4
+    ],
+    [
+     -0.8,
+     -0.4
+    ],
+    [
+     -0.8,
+     2.6
+    ],
+    [
+     -1.2,
+     2.6
+    ]
+   ]
+  },
+  {
+   "name": "hex_c",
+   "polygon": [
+    [
+     1.2,
+     0.2
+    ],
+    [
+     0.9,
+     0.72
+    ],
+    [
+     0.3,
+     0.72
+    ],
+    [
+     0.0,
+     0.2
+    ],
+    [
+     0.3,
+     -0.32
+    ],
+    [
+     0.9,
+     -0.32
+    ]
+   ]
+  },
+  {
+   "name": "triangle_d",
+   "polygon": [
+    [
+     1.6,
+     -2.2
+    ],
+    [
+     2.8,
+     -2.2
+    ],
+    [
+     2.2,
+     -1.0
+    ]
+   ]
+  },
+  {
+   "name": "rect_e",
+   "polygon": [
+    [
+     2.0,
+     0.6
+    ],
+    [
+     2.8,
+     0.6
+    ],
+    [
+     2.8,
+     1.2
+    ],
+    [
+     2.0,
+     1.2
+    ]
+   ]
+  },
+  {
+   "name": "rect_f",
+   "polygon": [
+    [
+     -3.2,
+     1.2
+    ],
+    [
+     -2.6,
+     1.2
+    ],
+    [
+     -2.6,
+     2.4
+    ],
+    [
+     -3.2,
+     2.4
+    ]
+   ]
+  }
+ ]
+}
