@@ -168,6 +168,24 @@ class QuinticSplineTest {
   }
 
   @Test
+  void aFixedStartCurvatureIsKeptAndTheRestStaysContinuous() {
+    List<Waypoint> w = FixturePaths.slalom().waypoints();
+    QuinticSpline spline = QuinticSpline.through(w, 0.37);
+    double[] d = new double[8];
+    spline.evaluate(0, 0.0, d);
+    assertEquals(0.37, curvature(d), 1e-9);
+    assertEquals(0.37, spline.knotCurvature(0), 0.0);
+    for (int k = 1; k < spline.segmentCount(); k++) {
+      spline.evaluate(k - 1, 1.0, d);
+      double before = curvature(d);
+      spline.evaluate(k, 0.0, d);
+      assertEquals(before, curvature(d), 1e-6);
+    }
+    // NaN means free: the same as the plain build
+    assertEquals(QuinticSpline.through(w).knotCurvature(2), QuinticSpline.through(w, Double.NaN).knotCurvature(2), 0.0);
+  }
+
+  @Test
   void rejectsRepeatedWaypointsAndTooFewPoints() {
     assertThrows(
         IllegalArgumentException.class,

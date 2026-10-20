@@ -23,7 +23,15 @@ public final class Path {
   }
 
   public static Path build(PathSpec spec, RobotConfig robot, double gridMeters) {
-    PathGeometry geometry = PathGeometry.build(spec.waypoints());
+    return build(spec, robot, gridMeters, Double.NaN);
+  }
+
+  /**
+   * Builds with the curvature at the first waypoint fixed (NaN = free), for tails that must join an
+   * existing path smoothly.
+   */
+  public static Path build(PathSpec spec, RobotConfig robot, double gridMeters, double startCurvature) {
+    PathGeometry geometry = PathGeometry.build(spec.waypoints(), startCurvature);
     HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones());
     VelocityProfile profile = VelocityProfile.build(geometry, heading, spec, robot, gridMeters);
     return new Path(spec, geometry, heading, profile);

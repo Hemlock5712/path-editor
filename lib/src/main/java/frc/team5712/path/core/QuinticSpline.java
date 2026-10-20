@@ -54,6 +54,14 @@ public final class QuinticSpline {
 
   /** Builds the spline through these waypoints. */
   public static QuinticSpline through(List<Waypoint> waypoints) {
+    return through(waypoints, Double.NaN);
+  }
+
+  /**
+   * Builds the spline with the curvature at the first waypoint fixed (NaN = chosen like the rest).
+   * A rebuilt tail uses this to join the old path with matching position, tangent and curvature.
+   */
+  public static QuinticSpline through(List<Waypoint> waypoints, double startCurvature) {
     int n = waypoints.size() - 1;
     if (n < 1) {
       throw new IllegalArgumentException("a spline needs at least two waypoints");
@@ -180,6 +188,13 @@ public final class QuinticSpline {
       upper[k] += weight * -3.0 * a0sq * a1sq * (n0x * n1x + n0y * n1y);
       rhs[k] -= weight * a0sq * (-60.0 * chordDotN0 + 24.0 * v1DotN0);
       rhs[k + 1] -= weight * a1sq * (60.0 * chordDotN1 - 24.0 * v0DotN1);
+    }
+    if (!Double.isNaN(startCurvature)) {
+      // A fixed κ0: move its column to the right-hand side and make row 0 say κ0 = startCurvature
+      rhs[1] -= upper[0] * startCurvature;
+      diag[0] = 1.0;
+      upper[0] = 0.0;
+      rhs[0] = startCurvature;
     }
     // Thomas algorithm (the matrix is a sum of positive-definite 2×2 blocks, so no pivoting needed)
     for (int i = 1; i <= n; i++) {

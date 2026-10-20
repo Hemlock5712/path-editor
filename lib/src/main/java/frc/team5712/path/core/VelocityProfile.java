@@ -55,7 +55,16 @@ public final class VelocityProfile {
   private final double[] accel; // m/s² in each cell, constant across it
   private final double[] time; // s at each grid point
 
+  private static final java.util.concurrent.atomic.AtomicLong BUILDS =
+      new java.util.concurrent.atomic.AtomicLong();
+
+  /** How many profiles this JVM has built (a diagnostic, like {@link PathGeometry#buildCount}). */
+  public static long buildCount() {
+    return BUILDS.get();
+  }
+
   private VelocityProfile(double lengthMeters, double ds, double[] velocity, double[] accel, double[] time) {
+    BUILDS.incrementAndGet();
     this.lengthMeters = lengthMeters;
     this.ds = ds;
     this.cells = accel.length;

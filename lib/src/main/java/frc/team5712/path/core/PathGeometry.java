@@ -48,7 +48,19 @@ public final class PathGeometry {
   private final double[] pieceC2;
   private final double[] pieceC3;
 
+  private static final java.util.concurrent.atomic.AtomicLong BUILDS =
+      new java.util.concurrent.atomic.AtomicLong();
+
+  /**
+   * How many geometries this JVM has built. A diagnostic for the rule that starting a path does no
+   * path work: read it before and after.
+   */
+  public static long buildCount() {
+    return BUILDS.get();
+  }
+
   private PathGeometry(QuinticSpline spline, TableBuilder table, double[] waypointS) {
+    BUILDS.incrementAndGet();
     this.spline = spline;
     this.waypointS = waypointS;
     this.lengthMeters = waypointS[waypointS.length - 1];
@@ -65,6 +77,11 @@ public final class PathGeometry {
   /** Builds the spline through these waypoints and its arc-length table. */
   public static PathGeometry build(List<Waypoint> waypoints) {
     return build(QuinticSpline.through(waypoints));
+  }
+
+  /** The same, with the curvature at the first waypoint fixed (see {@link QuinticSpline}). */
+  public static PathGeometry build(List<Waypoint> waypoints, double startCurvature) {
+    return build(QuinticSpline.through(waypoints, startCurvature));
   }
 
   /** Builds the arc-length table for a spline. */
