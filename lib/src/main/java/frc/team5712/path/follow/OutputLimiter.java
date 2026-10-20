@@ -22,6 +22,7 @@ final class OutputLimiter {
   private final RobotConfig robot;
   private final double nominalGrip;
   private double grip;
+  private double brakeGrip;
   private final double lever;
   private final double maxAlpha;
   private double vx;
@@ -32,6 +33,7 @@ final class OutputLimiter {
     this.robot = robot;
     this.nominalGrip = frictionCoefficient * RobotConfig.GRAVITY;
     this.grip = nominalGrip;
+    this.brakeGrip = nominalGrip;
     this.lever = robot.spinLeverMeters();
     this.maxAlpha = maxAlphaRadPerSecSquared;
   }
@@ -42,9 +44,22 @@ final class OutputLimiter {
     omega = omegaRadPerSec;
   }
 
-  /** Lowers (or restores) the grip budget: μ·g with μ capped at the configured one. */
+  /**
+   * Lowers (or restores) the grip budget for steps that speed the robot up: μ·g, with μ capped at
+   * the configured one. Braking has its own budget ({@link #setBrakeFrictionCoefficient}).
+   */
   void setFrictionCoefficient(double mu) {
     grip = Math.min(nominalGrip, mu * RobotConfig.GRAVITY);
+  }
+
+  /**
+   * The budget for steps that slow the robot down. It is kept above the speeding-up one on purpose.
+   * A cap below what the floor still gives stops the robot using that grip exactly when it must stop:
+   * on a slick floor a sliding tread still brakes at kinetic friction. The brake law plans with the
+   * low μ, so the robot starts braking early instead.
+   */
+  void setBrakeFrictionCoefficient(double mu) {
+    brakeGrip = Math.min(nominalGrip, mu * RobotConfig.GRAVITY);
   }
 
   /** Steps the command toward the wanted velocity over {@code dt} seconds. */
@@ -54,7 +69,8 @@ final class OutputLimiter {
     double alpha = (wantOmega - omega) / dt;
     alpha = Math.max(-maxAlpha, Math.min(maxAlpha, alpha));
 
-    if (ax * vx + ay * vy > 0.0) { // speeding up: the motors' push falls with wheel speed
+    boolean speedingUp = ax * vx + ay * vy > 0.0;
+    if (speedingUp) { // the motors' push falls with wheel speed
       double wheel = Math.sqrt(vx * vx + vy * vy) + Math.abs(omega) * robot.moduleRadiusMeters();
       double motor = robot.driveAccelMetersPerSecondSquared(wheel);
       double a = Math.sqrt(ax * ax + ay * ay);
@@ -65,8 +81,9 @@ final class OutputLimiter {
     }
 
     double total = Math.sqrt(ax * ax + ay * ay) + lever * Math.abs(alpha);
-    if (total > grip) {
-      double k = grip / total;
+    double budget = speedingUp ? grip : brakeGrip;
+    if (total > budget) {
+      double k = budget / total;
       ax *= k;
       ay *= k;
       alpha *= k;

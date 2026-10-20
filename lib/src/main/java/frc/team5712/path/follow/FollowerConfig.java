@@ -38,6 +38,9 @@ import frc.team5712.path.core.RobotConfig;
  * @param slipMargin take this share off the acceleration achieved when slip began
  * @param slipRecoveryPerSecond how fast the lowered μ climbs back, μ per second
  * @param minSlipFriction never plan below this μ
+ * @param slipBrakeFriction while slip has lowered the grip, the limiter still lets braking use at
+ *     least this μ: the brake law plans with the lowered μ (braking early), and the limiter does not
+ *     forbid the robot from braking harder if it must
  */
 public record FollowerConfig(
     RobotConfig robot,
@@ -66,7 +69,8 @@ public record FollowerConfig(
     double slipConfidence,
     double slipMargin,
     double slipRecoveryPerSecond,
-    double minSlipFriction) {
+    double minSlipFriction,
+    double slipBrakeFriction) {
 
   /** The defaults for a robot. */
   public static FollowerConfig defaults(RobotConfig robot) {
@@ -105,6 +109,7 @@ public record FollowerConfig(
     b.slipMargin = slipMargin;
     b.slipRecoveryPerSecond = slipRecoveryPerSecond;
     b.minSlipFriction = minSlipFriction;
+    b.slipBrakeFriction = slipBrakeFriction;
     return b;
   }
 
@@ -137,6 +142,7 @@ public record FollowerConfig(
     private double slipMargin = 0.1;
     private double slipRecoveryPerSecond = 0.05;
     private double minSlipFriction = 0.3;
+    private double slipBrakeFriction = 0.85;
 
     private Builder(RobotConfig robot) {
       this.robot = robot;
@@ -168,6 +174,7 @@ public record FollowerConfig(
     public Builder slipMargin(double v) { slipMargin = v; return this; }
     public Builder slipRecoveryPerSecond(double v) { slipRecoveryPerSecond = v; return this; }
     public Builder minSlipFriction(double v) { minSlipFriction = v; return this; }
+    public Builder slipBrakeFriction(double v) { slipBrakeFriction = v; return this; }
 
     /**
      * Sets a field by its name (the record component's name), for option maps such as the bench's.
@@ -201,6 +208,7 @@ public record FollowerConfig(
         case "slipMargin" -> slipMargin = v;
         case "slipRecoveryPerSecond" -> slipRecoveryPerSecond = v;
         case "minSlipFriction" -> minSlipFriction = v;
+        case "slipBrakeFriction" -> slipBrakeFriction = v;
         default -> {
           return false;
         }
@@ -215,7 +223,7 @@ public record FollowerConfig(
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
           headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,
           goalMoveRadians, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
-          minSlipFriction);
+          minSlipFriction, slipBrakeFriction);
     }
   }
 }

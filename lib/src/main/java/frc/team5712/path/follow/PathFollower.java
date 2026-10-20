@@ -49,7 +49,9 @@ import java.util.function.Supplier;
  *
  * <p><b>Adaptive grip</b> (with a {@link SlipSignal} attached and {@code adaptiveGrip} on): when slip
  * starts, the follower takes the acceleration the robot achieves, less a margin, as the floor's grip
- * μ_slip (the best value seen during the spell, since the filtered IMU lags the onset). The limiter's budget becomes μ_slip·g, the brake's deceleration at most
+ * μ_slip (the best value seen during the spell, since the filtered IMU lags the onset). The limiter's
+ * budget for speeding up becomes μ_slip·g (braking keeps at least {@code slipBrakeFriction}), the
+ * brake law's deceleration at most
  * μ_slip·g, and the planned speed is scaled by sqrt(μ_slip / μ_plan), since speed on a curve goes
  * as the square root of grip. Once the slip stops, μ_slip climbs back at {@code slipRecoveryPerSecond},
  * except in the terminal phase, where the robot stops on the grip it has measured.
@@ -246,6 +248,7 @@ public final class PathFollower {
     slipMu = Double.POSITIVE_INFINITY;
     wasSlipping = false;
     limiter.setFrictionCoefficient(Double.POSITIVE_INFINITY);
+    limiter.setBrakeFrictionCoefficient(Double.POSITIVE_INFINITY);
     System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
     java.util.Arrays.fill(eventFired, false);
   }
@@ -401,6 +404,7 @@ public final class PathFollower {
     }
     wasSlipping = slipping;
     limiter.setFrictionCoefficient(slipMu);
+    limiter.setBrakeFrictionCoefficient(Math.max(slipMu, cfg.slipBrakeFriction()));
   }
 
   private void updateProgress(Pose pose) {

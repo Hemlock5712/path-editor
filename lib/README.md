@@ -167,9 +167,14 @@ options.
   together, so the per-module residuals rarely stand out.
 - **Adaptive grip** in `PathFollower` (`withSlipSignal`, on by default; `adaptiveGrip(false)` turns
   it off). Once the confidence reaches 0.3, it takes the acceleration achieved, less 10 %, as the
-  floor's μ (never below 0.3). The limiter's budget, the brake's deceleration and the planned
-  speed (× sqrt(μ_slip / μ_plan)) all follow it. Afterwards it climbs back at 0.05 μ/s, but never
-  in the terminal phase. The profile is not rebuilt.
+  floor's μ (never below 0.3). The limiter's budget for speeding up, the brake law's deceleration
+  and the planned speed (× sqrt(μ_slip / μ_plan)) all follow it. Braking keeps a limiter budget of
+  at least μ 0.85 (`slipBrakeFriction`): the brake law plans with the low μ, so the robot starts
+  braking early, but the limiter never forbids it to brake harder. Capping braking at the measured
+  μ made the robot overshoot when the floor turned slick mid-run (up to 24.9 cm on the bench's grip
+  drop). The μ it measured was below what a sliding tread still gives, so it braked too gently.
+  Afterwards μ_slip climbs back at 0.05 μ/s, but never in the terminal phase. The profile is not
+  rebuilt.
 - **`SlipAwareOdometry`** is optional and replaces `SwerveDriveOdometry`:
   - The wheels' least-squares step down-weights slipping modules (weight 0.01).
   - On a clean run it equals WPILib's odometry exactly (tested to 1e-9).

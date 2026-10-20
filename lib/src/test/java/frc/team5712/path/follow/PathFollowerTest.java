@@ -497,7 +497,8 @@ class PathFollowerTest {
     });
     double expected = 3.5 / RobotConfig.GRAVITY * (1 - CFG.slipMargin());
     assertEquals(expected, muDuring[0], 1e-9);
-    assertTrue(worstAccel[0] <= expected * RobotConfig.GRAVITY + 1e-6, "accel " + worstAccel[0]);
+    // speeding up is held to the lowered grip; braking may still use slipBrakeFriction
+    assertTrue(worstAccel[0] <= CFG.slipBrakeFriction() * RobotConfig.GRAVITY + 1e-6, "accel " + worstAccel[0]);
     assertTrue(r.finished());
     assertTrue(Double.isInfinite(f.slipFrictionCoefficient()) || f.slipFrictionCoefficient() > muDuring[0],
         "climbs back after the slip");
