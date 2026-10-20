@@ -1,7 +1,5 @@
 package frc.team5712.path.core;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -53,19 +51,26 @@ public final class HeadingProfile {
 
   public static HeadingProfile build(
       PathGeometry geometry, List<RotationTarget> targets, List<FacePointZone> zones) {
-    record Resolved(double s, double radians) {}
-    List<Resolved> resolved = new ArrayList<>();
-    for (RotationTarget t : targets) {
+    // Resolve to metres and insertion-sort by s (a handful of targets; stable, so ties keep the
+    // authored order; and no lambdas, whose first use costs tens of milliseconds at boot)
+    int nt = targets.size();
+    double[] ts = new double[nt];
+    double[] heading = new double[nt];
+    for (int j = 0; j < nt; j++) {
+      RotationTarget t = targets.get(j);
       double s = t.byWaypoint() ? geometry.sAtWaypoint(t.waypoint()) : clamp(t.meters(), geometry);
-      resolved.add(new Resolved(s, t.headingRadians()));
+      int at = j;
+      while (at > 0 && ts[at - 1] > s) {
+        ts[at] = ts[at - 1];
+        heading[at] = heading[at - 1];
+        at--;
+      }
+      ts[at] = s;
+      heading[at] = t.headingRadians();
     }
-    resolved.sort(Comparator.comparingDouble(Resolved::s)); // stable: ties keep authored order
-    double[] ts = new double[resolved.size()];
-    double[] tr = new double[resolved.size()];
-    for (int j = 0; j < ts.length; j++) {
-      ts[j] = resolved.get(j).s();
-      double h = resolved.get(j).radians();
-      tr[j] = j == 0 ? h : tr[j - 1] + Angles.wrap(h - tr[j - 1]);
+    double[] tr = new double[nt];
+    for (int j = 0; j < nt; j++) {
+      tr[j] = j == 0 ? heading[0] : tr[j - 1] + Angles.wrap(heading[j] - tr[j - 1]);
     }
 
     int nz = zones.size();
