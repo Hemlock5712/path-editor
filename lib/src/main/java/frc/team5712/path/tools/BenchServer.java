@@ -11,6 +11,9 @@ import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.core.RobotFile;
 import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.follow.PathFollower;
+import frc.team5712.path.slip.SlipAwareOdometry;
+import frc.team5712.path.slip.SlipConfig;
+import frc.team5712.path.slip.SlipSignal;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -34,6 +37,20 @@ public final class BenchServer {
   private Path path;
   private PathFollower follower;
   private Optional<Pose> goal = Optional.empty();
+  private SlipAwareOdometry sensing;
+
+  /** The follower's slip signal: whatever the current sensing session's detector says. */
+  private final SlipSignal slipSignal = new SlipSignal() {
+    @Override
+    public double confidence() {
+      return sensing == null ? 0.0 : sensing.detector().confidence();
+    }
+
+    @Override
+    public double achievedAccelMetersPerSecondSquared() {
+      return sensing == null ? 0.0 : sensing.detector().achievedAccelMetersPerSecondSquared();
+    }
+  };
 
   public static void main(String[] args) throws IOException {
     BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -73,6 +90,8 @@ public final class BenchServer {
       case "step" -> step(msg);
       case "goal" -> goal(msg);
       case "geometry" -> geometry(msg);
+      case "sense_reset" -> senseReset(msg);
+      case "sense" -> sense(msg);
       default -> throw new IllegalArgumentException("unknown op " + op);
     };
   }
@@ -95,7 +114,9 @@ public final class BenchServer {
     double buildMs = (System.nanoTime() - t0) / 1e6;
     follower = new PathFollower(path, b.build());
     goal = Optional.empty();
+    sensing = null; // a run's sensing session starts after its load (sense_reset)
     follower.bindGoal(() -> goal);
+    follower.withSlipSignal(slipSignal);
     Map<String, Object> r = new LinkedHashMap<>();
     r.put("ok", Boolean.TRUE);
     r.put("lengthMeters", path.lengthMeters());
@@ -127,6 +148,9 @@ public final class BenchServer {
     r.put("s", follower.progressMeters());
     r.put("crossTrack", follower.crossTrackMeters());
     r.put("micros", micros);
+    if (Double.isFinite(follower.slipFrictionCoefficient())) {
+      r.put("slipMu", follower.slipFrictionCoefficient());
+    }
     if (!Double.isNaN(follower.lastTailRebuildMicros())) {
       r.put("rebuilds", (double) follower.tailRebuildCount());
       r.put("rebuildMicros", follower.lastTailRebuildMicros());
@@ -139,6 +163,72 @@ public final class BenchServer {
     Object p = msg.get("pose");
     goal = p == null ? Optional.empty() : Optional.of(pose(p));
     return "{\"ok\":true}";
+  }
+
+  /**
+   * Starts a slip-sensing session: slip-aware odometry (with its detector) for a robot whose
+   * modules sit at {@code modules}. Options are {@link SlipConfig} fields by name.
+   */
+  private String senseReset(Map<String, Object> msg) {
+    List<?> mods = (List<?>) msg.get("modules");
+    double[][] positions = new double[mods.size()][];
+    for (int i = 0; i < positions.length; i++) {
+      List<?> m = (List<?>) mods.get(i);
+      positions[i] = new double[] {((Number) m.get(0)).doubleValue(), ((Number) m.get(1)).doubleValue()};
+    }
+    SlipConfig c = SlipConfig.DEFAULT;
+    if (msg.get("options") != null) {
+      for (Map.Entry<String, Object> e : PathFile.asMap(msg.get("options"), "options").entrySet()) {
+        c = c.with(e.getKey(), ((Number) e.getValue()).doubleValue());
+      }
+    }
+    sensing = new SlipAwareOdometry(positions, c);
+    sensing.reset(pose(msg.get("pose")), number(msg, "gyro"), array(msg.get("dist"), positions.length));
+    return "{\"ok\":true}";
+  }
+
+  /** One odometry tick: returns the slip-aware pose and the detector's verdict. */
+  private String sense(Map<String, Object> msg) {
+    if (sensing == null) {
+      throw new IllegalStateException("sense_reset first");
+    }
+    int n = sensing.detector().moduleCount();
+    double[] imu = msg.get("imu") == null ? new double[] {Double.NaN, Double.NaN} : array(msg.get("imu"), 2);
+    double[] cmd = msg.get("cmd") == null ? new double[] {Double.NaN, Double.NaN, Double.NaN} : array(msg.get("cmd"), 3);
+    Pose p = sensing.update(number(msg, "t"), number(msg, "gyro"), array(msg.get("dist"), n),
+        array(msg.get("ang"), n), array(msg.get("spd"), n), imu[0], imu[1], cmd[0], cmd[1], cmd[2]);
+    StringBuilder slip = new StringBuilder("[");
+    for (int i = 0; i < n; i++) {
+      slip.append(i > 0 ? "," : "").append(sensing.detector().moduleSlipping(i));
+    }
+    slip.append(']');
+    return "{\"pose\":[" + Json.exact(p.xMeters()) + "," + Json.exact(p.yMeters()) + ","
+        + Json.exact(p.headingRadians()) + "],\"conf\":" + Json.exact(sensing.detector().confidence())
+        + ",\"achieved\":" + Json.exact(sensing.detector().achievedAccelMetersPerSecondSquared())
+        + ",\"slip\":" + slip + ",\"imuOnly\":" + sensing.usingImu()
+        + ",\"gap\":" + (Double.isNaN(sensing.detector().imuGapMetersPerSecondSquared()) ? "null"
+            : Json.exact(sensing.detector().imuGapMetersPerSecondSquared()))
+        + ",\"residual\":" + Json.exact(maxResidual())
+        + ",\"vel\":[" + Json.exact(sensing.fieldVx()) + "," + Json.exact(sensing.fieldVy()) + "]}";
+  }
+
+  private double maxResidual() {
+    double m = 0.0;
+    for (int i = 0; i < sensing.detector().moduleCount(); i++) {
+      m = Math.max(m, sensing.detector().moduleResidual(i));
+    }
+    return m;
+  }
+
+  private static double[] array(Object o, int n) {
+    if (!(o instanceof List<?> l) || l.size() != n) {
+      throw new IllegalArgumentException("expected a list of " + n + " numbers");
+    }
+    double[] v = new double[n];
+    for (int i = 0; i < n; i++) {
+      v[i] = ((Number) l.get(i)).doubleValue();
+    }
+    return v;
   }
 
   /** The built path sampled every {@code step} metres (default 0.02): x and y lists. */

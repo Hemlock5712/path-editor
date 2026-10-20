@@ -8,9 +8,11 @@ import frc.team5712.path.core.PathSample;
 import frc.team5712.path.core.PathSpec;
 import frc.team5712.path.core.Pose;
 import frc.team5712.path.core.Projection;
+import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.core.RotationTarget;
 import frc.team5712.path.core.VelocityProfile;
 import frc.team5712.path.core.Waypoint;
+import frc.team5712.path.slip.SlipSignal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -44,6 +46,14 @@ import java.util.function.Supplier;
  *   <li><b>Limiter:</b> every output goes through one {@link OutputLimiter} that shares the grip
  *       budget between translation and spin.
  * </ol>
+ *
+ * <p><b>Adaptive grip</b> (with a {@link SlipSignal} attached and {@code adaptiveGrip} on): when slip
+ * starts, the follower takes the acceleration the robot achieves, less a margin, as the floor's grip
+ * μ_slip (the best value seen during the spell, since the filtered IMU lags the onset). The limiter's budget becomes μ_slip·g, the brake's deceleration at most
+ * μ_slip·g, and the planned speed is scaled by sqrt(μ_slip / μ_plan), since speed on a curve goes
+ * as the square root of grip. Once the slip stops, μ_slip climbs back at {@code slipRecoveryPerSecond},
+ * except in the terminal phase, where the robot stops on the grip it has measured.
+ * The profile is never rebuilt; this is per-loop arithmetic.
  *
  * <p>Finished: within the position and heading tolerances and measured slower than the settled
  * speed, held for the debounce time. A path whose end speed is above zero (a rolling end) never stops:
@@ -93,6 +103,11 @@ public final class PathFollower {
 
   // Moving goal
   private Supplier<Optional<Pose>> goalSupplier;
+
+  // Adaptive grip
+  private SlipSignal slipSignal;
+  private double slipMu = Double.POSITIVE_INFINITY; // the floor's grip as measured; +∞ = no slip seen
+  private boolean wasSlipping;
 
   // Per-run state
   private FieldFrame frame = FieldFrame.BLUE;
@@ -166,6 +181,12 @@ public final class PathFollower {
     return this;
   }
 
+  /** Attaches a slip signal (e.g. {@code SlipAwareOdometry.detector()}) for adaptive grip. */
+  public PathFollower withSlipSignal(SlipSignal signal) {
+    this.slipSignal = signal;
+    return this;
+  }
+
   /** Shifts the reference sideways from the path, metres to the left of travel. */
   public PathFollower lateralOffset(DoubleSupplier meters) {
     this.lateralOffset = meters;
@@ -222,6 +243,9 @@ public final class PathFollower {
     lastTime = timeSeconds;
     settledSince = Double.NaN;
     phase = Phase.TRACKING;
+    slipMu = Double.POSITIVE_INFINITY;
+    wasSlipping = false;
+    limiter.setFrictionCoefficient(Double.POSITIVE_INFINITY);
     System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
     java.util.Arrays.fill(eventFired, false);
   }
@@ -245,6 +269,10 @@ public final class PathFollower {
     }
 
     pollGoal(pose);
+    updateGrip(dt);
+    double brakeDecel = Math.min(cfg.brakeMetersPerSecondSquared(), slipMu * RobotConfig.GRAVITY);
+    double planMu = cfg.robot().frictionCoefficient();
+    double gripScale = slipMu < planMu ? Math.sqrt(slipMu / planMu) : 1.0;
     updateProgress(pose);
     double remaining = active.lengthMeters() - s;
     if (phase == Phase.TRACKING && !rollingEnd && remaining < cfg.terminalRadiusMeters()) {
@@ -264,7 +292,7 @@ public final class PathFollower {
       double ex = gx - pose.xMeters();
       double ey = gy - pose.yMeters();
       double d = Math.sqrt(ex * ex + ey * ey);
-      double speed = scale * StoppingLaw.speed(d, limiter.speed(), cfg.brakeMetersPerSecondSquared(),
+      double speed = scale * StoppingLaw.speed(d, limiter.speed(), brakeDecel,
           cfg.latencySeconds(), active.spec().maxMetersPerSecond(), cfg.easeInPerSecond(),
           cfg.stopDeadbandMeters());
       wantVx = d > 1e-6 ? ex / d * speed : 0.0;
@@ -282,9 +310,8 @@ public final class PathFollower {
       double sAhead = profile.sAtTime(profile.timeAt(s) + cfg.latencySeconds());
       PathSample here = active.sample(s);
       PathSample ahead = active.sample(sAhead);
-      double brake = StoppingLaw.brake(remaining, limiter.speed(), cfg.brakeMetersPerSecondSquared(),
-          cfg.latencySeconds(), endSpeed);
-      double speed = scale * Math.min(ahead.metersPerSecond(), brake);
+      double brake = StoppingLaw.brake(remaining, limiter.speed(), brakeDecel, cfg.latencySeconds(), endSpeed);
+      double speed = scale * Math.min(gripScale * ahead.metersPerSecond(), brake);
       // Across: P and D along the normal at s (left of travel is positive)
       double nx = -here.tangentY();
       double ny = here.tangentX();
@@ -351,6 +378,30 @@ public final class PathFollower {
   }
 
   // ------------------------------------------------------------------------------ pieces
+
+  /** Adaptive grip: latch the achieved acceleration when slip begins, recover slowly after. */
+  private void updateGrip(double dt) {
+    if (slipSignal == null || !cfg.adaptiveGrip()) {
+      return;
+    }
+    boolean slipping = slipSignal.confidence() >= cfg.slipConfidence();
+    if (slipping) {
+      // what the floor is giving now, less the margin; during a spell the best of it counts, since a
+      // sliding tread still delivers kinetic friction and the filtered IMU lags the onset
+      double mu = Math.max(cfg.minSlipFriction(),
+          slipSignal.achievedAccelMetersPerSecondSquared() / RobotConfig.GRAVITY * (1.0 - cfg.slipMargin()));
+      slipMu = wasSlipping ? Math.max(slipMu, mu) : Math.min(slipMu, mu);
+      slipMu = Math.min(slipMu, Math.max(cfg.limiterFrictionCoefficient(), cfg.robot().frictionCoefficient()));
+    } else if (Double.isFinite(slipMu) && phase != Phase.TERMINAL) {
+      // recover, but not while stopping: a floor that slid on the way in still slides at the end
+      slipMu += cfg.slipRecoveryPerSecond() * dt;
+      if (slipMu >= Math.max(cfg.limiterFrictionCoefficient(), cfg.robot().frictionCoefficient())) {
+        slipMu = Double.POSITIVE_INFINITY;
+      }
+    }
+    wasSlipping = slipping;
+    limiter.setFrictionCoefficient(slipMu);
+  }
 
   private void updateProgress(Pose pose) {
     var geometry = active.geometry();
@@ -527,6 +578,11 @@ public final class PathFollower {
 
   public FieldFrame frame() {
     return frame;
+  }
+
+  /** The grip μ adaptive grip has measured (+∞ when no slip has lowered it). */
+  public double slipFrictionCoefficient() {
+    return slipMu;
   }
 
   /** True when the path ends moving (end speed above zero): it finishes as it passes the end. */

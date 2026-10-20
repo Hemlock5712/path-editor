@@ -439,4 +439,81 @@ class PathFollowerTest {
     });
     assertTrue(worst[0] < Math.toRadians(5), "worst heading lag " + Math.toDegrees(worst[0]) + " deg");
   }
+
+  // ------------------------------------------------------------------------------ adaptive grip
+
+  /** A scripted slip signal. */
+  static final class FakeSlip implements frc.team5712.path.slip.SlipSignal {
+    double confidence;
+    double achieved;
+
+    @Override
+    public double confidence() {
+      return confidence;
+    }
+
+    @Override
+    public double achievedAccelMetersPerSecondSquared() {
+      return achieved;
+    }
+  }
+
+  @Test
+  void quietSlipSignalChangesNothing() {
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    Run plain = run(path, new PathFollower(path, CFG), FieldFrame.BLUE, 20, NONE);
+    FakeSlip quiet = new FakeSlip();
+    quiet.confidence = 0.25; // below the threshold: noise, not slip
+    quiet.achieved = 3.0;
+    Run withSignal = run(path, new PathFollower(path, CFG).withSlipSignal(quiet), FieldFrame.BLUE, 20, NONE);
+    assertEquals(plain.trace().size(), withSignal.trace().size());
+    for (int i = 0; i < plain.trace().size(); i++) {
+      assertEquals(plain.trace().get(i), withSignal.trace().get(i));
+    }
+  }
+
+  @Test
+  void slipLowersTheGripThenItRecovers() {
+    Path path = Path.build(FixturePaths.autoRoute().withEndSpeeds(0, 0), ROBOT);
+    FakeSlip slip = new FakeSlip();
+    PathFollower f = new PathFollower(path, CFG).withSlipSignal(slip);
+    double[] muDuring = {Double.NaN};
+    double[] worstAccel = {0};
+    FieldSpeeds[] last = {new FieldSpeeds(0, 0, 0)};
+    Run r = run(path, f, FieldFrame.BLUE, 30, (t, plant, ff) -> {
+      boolean slipping = t > 1.0 && t < 1.5;
+      slip.confidence = slipping ? 0.9 : 0.0;
+      slip.achieved = 3.5; // m/s²: what the slick floor gave
+      if (Math.abs(t - 1.4) < 1e-9) {
+        muDuring[0] = ff.slipFrictionCoefficient();
+      }
+      if (t > 1.1 && t < 1.5) {
+        FieldSpeeds v = plant.velocity();
+        double a = Math.hypot(v.vxMetersPerSecond() - last[0].vxMetersPerSecond(),
+            v.vyMetersPerSecond() - last[0].vyMetersPerSecond()) / DT;
+        worstAccel[0] = Math.max(worstAccel[0], a);
+      }
+      last[0] = plant.velocity();
+    });
+    double expected = 3.5 / RobotConfig.GRAVITY * (1 - CFG.slipMargin());
+    assertEquals(expected, muDuring[0], 1e-9);
+    assertTrue(worstAccel[0] <= expected * RobotConfig.GRAVITY + 1e-6, "accel " + worstAccel[0]);
+    assertTrue(r.finished());
+    assertTrue(Double.isInfinite(f.slipFrictionCoefficient()) || f.slipFrictionCoefficient() > muDuring[0],
+        "climbs back after the slip");
+  }
+
+  @Test
+  void slipSlowsTheRunAndCanBeTurnedOff() {
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    FakeSlip slip = new FakeSlip();
+    slip.confidence = 1.0;
+    slip.achieved = 3.0;
+    double plain = run(path, new PathFollower(path, CFG), FieldFrame.BLUE, 20, NONE).seconds();
+    double slowed = run(path, new PathFollower(path, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, NONE).seconds();
+    FollowerConfig off = CFG.toBuilder().adaptiveGrip(false).build();
+    double ignored = run(path, new PathFollower(path, off).withSlipSignal(slip), FieldFrame.BLUE, 20, NONE).seconds();
+    assertTrue(slowed > plain + 0.2, plain + " s vs " + slowed + " s on a slippery floor");
+    assertEquals(plain, ignored, 1e-12);
+  }
 }

@@ -20,7 +20,8 @@ import frc.team5712.path.core.RobotConfig;
  */
 final class OutputLimiter {
   private final RobotConfig robot;
-  private final double grip;
+  private final double nominalGrip;
+  private double grip;
   private final double lever;
   private final double maxAlpha;
   private double vx;
@@ -29,7 +30,8 @@ final class OutputLimiter {
 
   OutputLimiter(RobotConfig robot, double frictionCoefficient, double maxAlphaRadPerSecSquared) {
     this.robot = robot;
-    this.grip = frictionCoefficient * RobotConfig.GRAVITY;
+    this.nominalGrip = frictionCoefficient * RobotConfig.GRAVITY;
+    this.grip = nominalGrip;
     this.lever = robot.spinLeverMeters();
     this.maxAlpha = maxAlphaRadPerSecSquared;
   }
@@ -38,6 +40,11 @@ final class OutputLimiter {
     vx = vxMetersPerSecond;
     vy = vyMetersPerSecond;
     omega = omegaRadPerSec;
+  }
+
+  /** Lowers (or restores) the grip budget: μ·g with μ capped at the configured one. */
+  void setFrictionCoefficient(double mu) {
+    grip = Math.min(nominalGrip, mu * RobotConfig.GRAVITY);
   }
 
   /** Steps the command toward the wanted velocity over {@code dt} seconds. */

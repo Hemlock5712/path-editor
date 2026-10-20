@@ -5,7 +5,8 @@ import frc.team5712.path.core.RobotConfig;
 /**
  * Gains and limits for {@link PathFollower}. Defaults follow DriveToPose and the hybrid prototype in
  * the bench: 50 ms latency allowance, P 5 across the path and on heading, a 6 m/s² stopping law, and
- * a 1 deg / 2 cm finish.
+ * a 1 deg / 2 cm finish. The ease-in line is 12/s (DriveToPose's is 6/s): the bench sweep's interior
+ * optimum on its tuning seeds. The limiter's μ stays at 1.0; see lib/README.md.
  *
  * @param robot the robot model: the output limiter's motor curve and spin lever, and tail rebuilds
  * @param latencySeconds how far ahead (in plan time) the reference is read, and the brake's
@@ -31,6 +32,12 @@ import frc.team5712.path.core.RobotConfig;
  * @param debounceSeconds finish: all three held this long
  * @param goalMoveMeters a bound goal that moves further than this rebuilds the tail
  * @param goalMoveRadians ... or turns further than this
+ * @param adaptiveGrip when a {@link frc.team5712.path.slip.SlipSignal} is attached: on slip, lower
+ *     the grip the limiter, the brake and the speed plan use to what the floor gave, then recover
+ * @param slipConfidence the slip signal's confidence that counts as slipping
+ * @param slipMargin take this share off the acceleration achieved when slip began
+ * @param slipRecoveryPerSecond how fast the lowered μ climbs back, μ per second
+ * @param minSlipFriction never plan below this μ
  */
 public record FollowerConfig(
     RobotConfig robot,
@@ -54,7 +61,12 @@ public record FollowerConfig(
     double settledMetersPerSecond,
     double debounceSeconds,
     double goalMoveMeters,
-    double goalMoveRadians) {
+    double goalMoveRadians,
+    boolean adaptiveGrip,
+    double slipConfidence,
+    double slipMargin,
+    double slipRecoveryPerSecond,
+    double minSlipFriction) {
 
   /** The defaults for a robot. */
   public static FollowerConfig defaults(RobotConfig robot) {
@@ -88,6 +100,11 @@ public record FollowerConfig(
     b.debounceSeconds = debounceSeconds;
     b.goalMoveMeters = goalMoveMeters;
     b.goalMoveRadians = goalMoveRadians;
+    b.adaptiveGrip = adaptiveGrip;
+    b.slipConfidence = slipConfidence;
+    b.slipMargin = slipMargin;
+    b.slipRecoveryPerSecond = slipRecoveryPerSecond;
+    b.minSlipFriction = minSlipFriction;
     return b;
   }
 
@@ -102,7 +119,7 @@ public record FollowerConfig(
     private double headingKp = 5.0;
     private double terminalRadiusMeters = 0.3;
     private double brakeMetersPerSecondSquared = 6.0;
-    private double easeInPerSecond = 6.0;
+    private double easeInPerSecond = 12.0; // DriveToPose ships 6; the bench sweep's pick (tuning seeds)
     private double stopDeadbandMeters = 0.003;
     private double maxOmegaRadPerSec = Math.toRadians(540.0);
     private double maxAlphaRadPerSecSquared = Math.toRadians(720.0);
@@ -115,6 +132,11 @@ public record FollowerConfig(
     private double debounceSeconds = 0.1;
     private double goalMoveMeters = 0.02;
     private double goalMoveRadians = Math.toRadians(2.0);
+    private boolean adaptiveGrip = true;
+    private double slipConfidence = 0.3;
+    private double slipMargin = 0.1;
+    private double slipRecoveryPerSecond = 0.05;
+    private double minSlipFriction = 0.3;
 
     private Builder(RobotConfig robot) {
       this.robot = robot;
@@ -141,6 +163,11 @@ public record FollowerConfig(
     public Builder debounceSeconds(double v) { debounceSeconds = v; return this; }
     public Builder goalMoveMeters(double v) { goalMoveMeters = v; return this; }
     public Builder goalMoveRadians(double v) { goalMoveRadians = v; return this; }
+    public Builder adaptiveGrip(boolean v) { adaptiveGrip = v; return this; }
+    public Builder slipConfidence(double v) { slipConfidence = v; return this; }
+    public Builder slipMargin(double v) { slipMargin = v; return this; }
+    public Builder slipRecoveryPerSecond(double v) { slipRecoveryPerSecond = v; return this; }
+    public Builder minSlipFriction(double v) { minSlipFriction = v; return this; }
 
     /**
      * Sets a field by its name (the record component's name), for option maps such as the bench's.
@@ -169,6 +196,11 @@ public record FollowerConfig(
         case "debounceSeconds" -> debounceSeconds = v;
         case "goalMoveMeters" -> goalMoveMeters = v;
         case "goalMoveRadians" -> goalMoveRadians = v;
+        case "adaptiveGrip" -> adaptiveGrip = v != 0.0;
+        case "slipConfidence" -> slipConfidence = v;
+        case "slipMargin" -> slipMargin = v;
+        case "slipRecoveryPerSecond" -> slipRecoveryPerSecond = v;
+        case "minSlipFriction" -> minSlipFriction = v;
         default -> {
           return false;
         }
@@ -182,7 +214,8 @@ public record FollowerConfig(
           stopDeadbandMeters, maxOmegaRadPerSec, maxAlphaRadPerSecSquared, headingEaseInPerSecond,
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
           headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,
-          goalMoveRadians);
+          goalMoveRadians, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
+          minSlipFriction);
     }
   }
 }
