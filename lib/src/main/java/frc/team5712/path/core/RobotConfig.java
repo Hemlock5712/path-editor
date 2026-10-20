@@ -16,6 +16,9 @@ package frc.team5712.path.core;
  * @param frictionCoefficient grip: the robot can accelerate at most μ·g, all directions combined
  * @param maxWheelMetersPerSecond fastest any wheel may be asked to roll; NaN = the motor's free speed
  * @param maxAngularRadPerSec spin cap for the planned heading (+∞ = only the wheel-speed cap)
+ * @param maxAngularRadPerSecSquared spin acceleration cap for the planned heading (+∞ = only grip and
+ *     motors). With a cap, a fast turn over a short distance slows the plan down instead of asking
+ *     for more spin than the follower will give.
  */
 public record RobotConfig(
     double massKg,
@@ -28,7 +31,8 @@ public record RobotConfig(
     double statorCurrentLimitAmps,
     double frictionCoefficient,
     double maxWheelMetersPerSecond,
-    double maxAngularRadPerSec) {
+    double maxAngularRadPerSec,
+    double maxAngularRadPerSecSquared) {
 
   public static final double GRAVITY = 9.81; // m/s²
 
@@ -44,13 +48,14 @@ public record RobotConfig(
           120.0,
           0.7,
           Double.NaN,
+          Double.POSITIVE_INFINITY,
           Double.POSITIVE_INFINITY);
 
   public RobotConfig {
     if (!(massKg > 0.0) || !(momentOfInertiaKgM2 > 0.0) || !(moduleRadiusMeters > 0.0)
         || !(wheelRadiusMeters > 0.0) || !(driveGearRatio > 0.0) || driveMotorCount < 1
         || !(statorCurrentLimitAmps > 0.0) || !(frictionCoefficient > 0.0)
-        || !(maxAngularRadPerSec > 0.0)) {
+        || !(maxAngularRadPerSec > 0.0) || !(maxAngularRadPerSecSquared > 0.0)) {
       throw new IllegalArgumentException("robot parameters must be positive");
     }
     if (!Double.isNaN(maxWheelMetersPerSecond) && !(maxWheelMetersPerSecond > 0.0)) {
@@ -58,22 +63,38 @@ public record RobotConfig(
     }
   }
 
+  /** Without a spin acceleration cap (the record before it had one). */
+  public RobotConfig(double massKg, double momentOfInertiaKgM2, double moduleRadiusMeters,
+      double wheelRadiusMeters, double driveGearRatio, Motor driveMotor, int driveMotorCount,
+      double statorCurrentLimitAmps, double frictionCoefficient, double maxWheelMetersPerSecond,
+      double maxAngularRadPerSec) {
+    this(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters, driveGearRatio, driveMotor,
+        driveMotorCount, statorCurrentLimitAmps, frictionCoefficient, maxWheelMetersPerSecond,
+        maxAngularRadPerSec, Double.POSITIVE_INFINITY);
+  }
+
   public RobotConfig withFrictionCoefficient(double mu) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, mu,
-        maxWheelMetersPerSecond, maxAngularRadPerSec);
+        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared);
   }
 
   public RobotConfig withMaxWheelMetersPerSecond(double speed) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        speed, maxAngularRadPerSec);
+        speed, maxAngularRadPerSec, maxAngularRadPerSecSquared);
   }
 
   public RobotConfig withMaxAngularRadPerSec(double omega) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        maxWheelMetersPerSecond, omega);
+        maxWheelMetersPerSecond, omega, maxAngularRadPerSecSquared);
+  }
+
+  public RobotConfig withMaxAngularRadPerSecSquared(double alpha) {
+    return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
+        driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
+        maxWheelMetersPerSecond, maxAngularRadPerSec, alpha);
   }
 
   /** Grip budget μ·g, m/s². */

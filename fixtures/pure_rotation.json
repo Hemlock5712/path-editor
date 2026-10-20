@@ -1,0 +1,52 @@
+{
+  "inputs": {
+    "path": {
+      "schema": 1,
+      "waypoints": [
+        { "x": 1, "y": -0.5 },
+        { "x": 1, "y": -0.5 }
+      ],
+      "rotationTargets": [
+        { "waypoint": 0, "degrees": 0 },
+        { "waypoint": 1, "degrees": 90 }
+      ],
+      "facePointZones": [],
+      "constraintZones": [],
+      "maxMetersPerSecond": 4,
+      "maxMetersPerSecondSquared": 6,
+      "startMetersPerSecond": 0,
+      "endMetersPerSecond": 0
+    },
+    "robot": {
+      "massKg": 60,
+      "momentOfInertiaKgM2": 6,
+      "moduleRadiusMeters": 0.41012193308819755,
+      "wheelRadiusMeters": 0.0508,
+      "driveGearRatio": 6.75,
+      "driveMotorCount": 4,
+      "statorCurrentLimitAmps": 120,
+      "frictionCoefficient": 0.7,
+      "maxAngularRadPerSec": 9.42477796076938,
+      "maxAngularRadPerSecSquared": 12.566370614359172,
+      "motor": { "nominalVolts": 12, "stallTorqueNewtonMeters": 9.362, "stallCurrentAmps": 476.1, "freeSpeedRadPerSec": 605.8037833672317 }
+    },
+    "gridMeters": 0.03,
+    "stepMeters": 0.05
+  },
+  "lengthMeters": 0.0010000000000000009,
+  "totalTimeSeconds": 0.8954273420422783,
+  "samples": {
+    "s": [0, 0.0010000000000000009],
+    "x": [1, 1],
+    "y": [-0.501, -0.5],
+    "tangentX": [6.123233995736766E-17, 6.123233995736761E-17],
+    "tangentY": [1, 1],
+    "curvature": [3.0616169978683807E-13, -3.0616169978683777E-13],
+    "dCurvatureDs": [-5.777789833161692E-25, 1.9259299443872306E-25],
+    "heading": [0, 1.5707963267948966],
+    "headingPerMeter": [0, 0],
+    "velocity": [0, 0],
+    "acceleration": [0.014289202860631447, -0.014289202860631447],
+    "time": [0, 0.8954273420422783]
+  }
+}

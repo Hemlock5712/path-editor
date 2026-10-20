@@ -96,5 +96,10 @@ class ToolsTest {
       String committed = Files.readString(dir.resolve(e.getKey() + ".json"), StandardCharsets.UTF_8);
       assertEquals(expected, committed.replace("\r\n", "\n"), e.getKey() + ".json is stale: run lib/gradlew -p lib fixtures");
     }
+    for (var e : FixturePaths.spinLimited().entrySet()) {
+      String committed = Files.readString(dir.resolve(e.getKey() + ".json"), StandardCharsets.UTF_8);
+      assertEquals(FixtureGen.fixture(e.getValue(), FixturePaths.SPIN_LIMITED_ROBOT), committed.replace("\r\n", "\n"),
+          e.getKey() + ".json is stale: run lib/gradlew -p lib fixtures");
+    }
   }
 }

@@ -3,6 +3,7 @@ package frc.team5712.path.tools;
 import frc.team5712.path.core.ConstraintZone;
 import frc.team5712.path.core.FacePointZone;
 import frc.team5712.path.core.PathSpec;
+import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.core.RotationTarget;
 import frc.team5712.path.core.Vec2;
 import frc.team5712.path.core.Waypoint;
@@ -108,6 +109,35 @@ public final class FixturePaths {
                 Waypoint.at(0.5, 2.5)))
         .withEndSpeeds(1.2, 0.0)
         .withLimits(3.5, 5.0);
+  }
+
+  /**
+   * The robot for the spin-limited fixtures: the default with the bench's shared spin limits, 540°/s and
+   * 720°/s².
+   */
+  public static final RobotConfig SPIN_LIMITED_ROBOT =
+      RobotConfig.DEFAULT.withMaxAngularRadPerSec(deg(540)).withMaxAngularRadPerSecSquared(deg(720));
+
+  /** A 0.2 m hop that turns 80°: the turn, not the distance, sets the time. */
+  public static PathSpec shortHop() {
+    return PathSpec.of(List.of(Waypoint.at(0.0, 0.0), Waypoint.at(0.2, 0.0)))
+        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, 0.0), RotationTarget.atWaypoint(1, deg(80))))
+        .withLimits(4.0, 6.0);
+  }
+
+  /** A 90° turn on the spot (both waypoints at the same place). */
+  public static PathSpec pureRotation() {
+    return PathSpec.of(List.of(Waypoint.at(1.0, -0.5), Waypoint.at(1.0, -0.5)))
+        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, 0.0), RotationTarget.atWaypoint(1, deg(90))))
+        .withLimits(4.0, 6.0);
+  }
+
+  /** Fixtures planned with {@link #SPIN_LIMITED_ROBOT}, by name. */
+  public static Map<String, PathSpec> spinLimited() {
+    Map<String, PathSpec> m = new LinkedHashMap<>();
+    m.put("short_hop", shortHop());
+    m.put("pure_rotation", pureRotation());
+    return m;
   }
 
   /** All fixture paths by name, in a fixed order. */

@@ -19,6 +19,7 @@ export const KRAKEN_X60_FOC: Motor = {
 export const GRAVITY = 9.81; // m/s²
 
 /**
+ * maxAngularRadPerSecSquared: Infinity = only grip and motors cap the planned spin acceleration.
  * maxWheelMetersPerSecond: NaN = the motor's free speed. maxAngularRadPerSec: Infinity = only the
  * wheel-speed cap. Defaults match the bench plant with grip μ = 0.7.
  */
@@ -34,6 +35,7 @@ export interface RobotConfig {
   readonly frictionCoefficient: number;
   readonly maxWheelMetersPerSecond: number;
   readonly maxAngularRadPerSec: number;
+  readonly maxAngularRadPerSecSquared: number;
 }
 
 export const DEFAULT_ROBOT: RobotConfig = {
@@ -48,6 +50,7 @@ export const DEFAULT_ROBOT: RobotConfig = {
   frictionCoefficient: 0.7,
   maxWheelMetersPerSecond: Number.NaN,
   maxAngularRadPerSec: Infinity,
+  maxAngularRadPerSecSquared: Infinity,
 };
 
 /** Checks a config the way RobotConfig's constructor does. */
@@ -55,7 +58,8 @@ export function checkRobot(r: RobotConfig): RobotConfig {
   if (
     !(r.massKg > 0.0) || !(r.momentOfInertiaKgM2 > 0.0) || !(r.moduleRadiusMeters > 0.0) ||
     !(r.wheelRadiusMeters > 0.0) || !(r.driveGearRatio > 0.0) || r.driveMotorCount < 1 ||
-    !(r.statorCurrentLimitAmps > 0.0) || !(r.frictionCoefficient > 0.0) || !(r.maxAngularRadPerSec > 0.0)
+    !(r.statorCurrentLimitAmps > 0.0) || !(r.frictionCoefficient > 0.0) || !(r.maxAngularRadPerSec > 0.0) ||
+    !(r.maxAngularRadPerSecSquared > 0.0)
   ) {
     throw new RangeError("robot parameters must be positive");
   }
