@@ -185,7 +185,7 @@ public final class Pathfinder {
     Sweep sweep;
     PathSpec spec;
     while (true) {
-      spec = spec(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians());
+      spec = Path.pureRotation(spec(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians()));
       PathGeometry geometry = PathGeometry.build(spec.waypoints());
       HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones());
       double skipStart = startSnap > 1e-9 ? geometry.waypointS(1) : 0.0;
@@ -221,14 +221,7 @@ public final class Pathfinder {
       }
     }
     long t2 = System.nanoTime();
-    Path path;
-    try {
-      path = Path.build(spec, robot);
-    } catch (IllegalStateException e) {
-      // the core profile ties heading to distance: a short hop with a big turn cannot be planned
-      return PlanResult.failed("the velocity profile failed (" + e.getMessage() + "); for a short hop with a "
-          + "big turn, drive to the pose directly", startSnap, goalSnap, straight, (System.nanoTime() - t0) / 1e3);
-    }
+    Path path = Path.build(spec, robot);
     long t3 = System.nanoTime();
     return new PlanResult(path, List.copyOf(pts), routeLength, straight, startSnap, goalSnap, refits,
         sweep.violations.isEmpty(), sweep.minClearance, (t1 - t0) / 1e3, (t2 - t1) / 1e3, (t3 - t2) / 1e3,

@@ -214,10 +214,6 @@ class PathfinderTest {
     for (int i = 0; i < 300; i++) {
       double[] s = freePoint(pf, rnd);
       double[] g = freePoint(pf, rnd);
-      if (Math.hypot(g[0] - s[0], g[1] - s[1]) < 1.0) {
-        i--; // pathfinding is for crossing the field; short hops are DriveToPose's job
-        continue;
-      }
       double hs = (rnd.nextDouble() * 2 - 1) * Math.PI;
       double hg = (rnd.nextDouble() * 2 - 1) * Math.PI;
       FieldSpeeds v = i % 3 == 0 ? new FieldSpeeds(rnd.nextDouble() * 4 - 2, rnd.nextDouble() * 4 - 2, 0) : STOPPED;
@@ -248,11 +244,16 @@ class PathfinderTest {
   }
 
   @Test
-  void shortHopWithABigTurnFailsWithAReason() {
+  void shortHopsAndTurnsOnTheSpotPlan() {
     Pathfinder pf = planner(fieldV1());
-    PlanResult r = pf.plan(new Pose(-0.94, -1.33, -2.84), STOPPED, new Pose(-1.0, -1.53, 2.05));
-    assertFalse(r.ok());
-    assertTrue(r.failure().contains("drive to the pose directly"), r.failure());
+    // 0.2 m with an 80 deg turn (this used to stall the profile)
+    PlanResult hop = pf.plan(new Pose(-0.94, -1.33, -2.84), STOPPED, new Pose(-1.0, -1.53, 2.05));
+    assertTrue(hop.ok() && hop.path().totalTimeSeconds() < 3.0);
+    // a 90 deg turn without moving
+    PlanResult spin = pf.plan(new Pose(-5, 0, 0), STOPPED, new Pose(-5, 0, Math.PI / 2));
+    assertTrue(spin.ok());
+    assertEquals(Path.PURE_ROTATION_METERS, spin.path().lengthMeters(), 1e-6);
+    assertEquals(Math.PI / 2, spin.path().sample(spin.path().lengthMeters()).headingRadians(), 1e-9);
   }
 
   @Test
