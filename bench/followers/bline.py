@@ -4,8 +4,9 @@ TranslationGuidance, HolonomicController, HolonomicRateLimiter; path/PreparedPat
 waypoint expansion (`getPathElementsWithConstraintsNoWaypoints`).
 
 Swerve only. Not ported: events, rotation override, flipping/mirroring, tank drive, rolling ends
-(every course ends at rest, so min velocity is 0), per-element constraint ranges (every element gets
-the same shared limits), BLine-Web's automatic velocity constraints and auto handoff radii.
+(every course ends at rest, so min velocity is 0), per-element acceleration and rotation ranges (every
+element gets the shared limits). Per-target max velocity IS supported: caps=True authors BLine-Web's
+corner-seeded caps (courses.bline_corner_caps); the rest of BLine-Web's velocity solver is not ported.
 PID controllers are P-only (as in the README), so WPILib PIDController reduces to kP * error, with
 continuous input on the heading controller.
 """
@@ -247,18 +248,25 @@ class BLine(Follower):
     (BLine-Web project defaults)."""
 
     def __init__(self, kp=5.0, kp_rot=3.0, kp_ct=2.0, tol=0.03, tol_deg=2.0, radius=None, curve=False,
-                 limits: Limits = Limits()):
+                 caps=False, limits: Limits = Limits()):
         self.kp, self.kp_rot, self.kp_ct = kp, kp_rot, kp_ct
-        self.curve = curve
+        self.curve, self.caps = curve, caps
         self.tol, self.tol_rad = tol, math.radians(tol_deg)
         self.radius = radius
         self.lim = limits
 
     def adapt(self, course):
-        """curve=False: a polyline through the course waypoints; curve=True: BLine-Web's curve-to-targets."""
-        from courses import to_bline, to_bline_curve
+        """curve=False: a polyline through the course waypoints; curve=True: BLine-Web's curve-to-targets.
+        radius overrides every handoff radius; caps=True adds BLine-Web's corner-seeded max velocities."""
+        from courses import bline_corner_caps, to_bline, to_bline_curve
 
-        return to_bline_curve(course) if self.curve else to_bline(course)
+        native = to_bline_curve(course) if self.curve else to_bline(course)
+        els = native["elements"]
+        if self.radius is not None:
+            els = [dict(e, radius=self.radius) if e["kind"] == "T" else e for e in els]
+        if self.caps:
+            els = bline_corner_caps(els, self.lim.max_speed, self.lim.max_accel)
+        return dict(native, elements=els)
 
     @staticmethod
     def geometry(native):
@@ -266,8 +274,6 @@ class BLine(Follower):
 
     def reset(self, native, start):
         els = native["elements"]
-        if self.radius is not None:
-            els = [dict(e, radius=self.radius) if e["kind"] == "T" else e for e in els]
         self.els = els
         pose = start.pose
         self.last_t = start.t
@@ -293,7 +299,8 @@ class BLine(Follower):
         # TranslationGuidance.calculate
         bearing = math.atan2(target[1] - p[1], target[0] - p[0])
         raw = self.kp * remaining
-        speed = clamp(raw, -lim.max_speed, lim.max_speed)  # min velocity 0: minimumMagnitude is a no-op
+        vmax = self.els[tp.index].get("vmax", lim.max_speed)  # TranslationLimits of the active target
+        speed = clamp(raw, -vmax, vmax)  # min velocity 0: minimumMagnitude is a no-op
         err, n = tp.cross_track(p)
         corr = self.kp_ct * err if (n[0] or n[1]) else 0.0
         vx = speed * math.cos(bearing) - corr * n[0]
@@ -307,7 +314,7 @@ class BLine(Follower):
         if final_reached and at_heading:
             omega = 0.0
         # HolonomicController.limit
-        out = rate_limit((vx, vy, omega), self.cmd, dt, lim.max_accel, lim.max_alpha, lim.max_speed, lim.max_omega)
+        out = rate_limit((vx, vy, omega), self.cmd, dt, lim.max_accel, lim.max_alpha, vmax, lim.max_omega)
         if final_reached:
             out = (0.0, 0.0, 0.0 if at_heading else out[2])
         self.cmd = out

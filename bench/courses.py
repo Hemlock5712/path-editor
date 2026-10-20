@@ -232,6 +232,51 @@ def to_bline(course: Course, handoff_radius=BLINE_RADIUS):
     return {"elements": els, "radius": handoff_radius}
 
 
+def bline_corner_caps(elements, max_speed, max_accel, velocity_safety=1.0, accel_safety=1.0):
+    """BLine-Web's corner seeding (core/constraints/autoVelocityConstraints.ts: createAutoVelocitySolveSetup,
+    buildCorners, seedCapsFromCorners, segmentCapsFromSolvedCaps, roundConstraintValue).
+
+    For each interior translation target with turn angle theta and handoff distance d, the effective radius is
+    max(d, d / tan(theta / 2)) and the lateral cap is sqrt(a * r * f), clamped to [max(0.05, 0.05 vmax), vmax],
+    with f = 0.85 for paths of at most 7 targets and 1.6 otherwise. The cap goes on the target before and after
+    the corner (a cap on target k limits the approach to k). Target 1 gets min(0.5 vmax, vmax). Caps are
+    floored to 0.01 m/s. BLine-Web uses these only as the starting point of its simulation-based solver (and
+    skips the seeding on paths with rotation keyframes); here they are the final caps."""
+    vmax, amax = max_speed * velocity_safety, max_accel * accel_safety
+    idx = [i for i, e in enumerate(elements) if e["kind"] == "T"]
+    pts = [elements[i]["xy"] for i in idx]
+    caps = {k: vmax for k in range(2, len(pts) + 1)}
+    factor = 0.85 if len(pts) <= 7 else 1.6
+    min_cap = max(0.05, vmax * 0.05)
+    for a in range(1, len(pts) - 1):
+        (x0, y0), (x1, y1), (x2, y2) = pts[a - 1], pts[a], pts[a + 1]
+        l0, l1 = math.hypot(x1 - x0, y1 - y0), math.hypot(x2 - x1, y2 - y1)
+        if l0 <= 1e-9 or l1 <= 1e-9:
+            continue
+        dot = max(-1.0, min(1.0, ((x1 - x0) * (x2 - x1) + (y1 - y0) * (y2 - y1)) / (l0 * l1)))
+        turn = math.acos(dot)
+        if turn < 1e-4:
+            continue
+        d = elements[idx[a]]["radius"]
+        tan_half = math.tan(turn / 2)
+        if d <= 1e-9 or not math.isfinite(tan_half) or tan_half <= 1e-9:
+            continue
+        r = max(d, d / tan_half, 1e-4)
+        cap = max(min_cap, min(vmax, math.sqrt(max(0.0, amax * r * factor))))
+        ordinal = a + 1  # 1-based ordinal of the corner target
+        caps[ordinal] = min(caps[ordinal], cap)
+        caps[ordinal + 1] = min(caps[ordinal + 1], cap)
+
+    def rnd(v):
+        return max(0.01, math.floor(v * 100) / 100)
+
+    caps[1] = min(max_speed * 0.5, vmax)
+    out = [dict(e) for e in elements]
+    for k, i in enumerate(idx, start=1):
+        out[i]["vmax"] = rnd(min(vmax, caps[k]))
+    return out
+
+
 def _rdp(points, tol):
     """BLine-Web simplifyPolylineRdp (iterative instead of recursive; same kept set)."""
     def seg_dist(p, a, b):
@@ -383,6 +428,10 @@ COURSES = {
 }
 
 QUICK_COURSES = ["straight_3m", "s_curve", "moving_start"]
+
+# course -> Choreo trajectory (bench/choreo/*.traj); courses that only change the plant reuse the S-curve's
+CHOREO_TRAJ = {c: c for c in ("straight_3m", "s_curve", "hairpin", "slalom", "long_auto", "moving_start")}
+CHOREO_TRAJ.update({"hit_mid_path": "s_curve", "low_grip_s_curve": "s_curve"})
 
 
 def t_end(course: Course):
