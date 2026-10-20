@@ -123,5 +123,5 @@ shares. See the notes below for what that means for the boot budget.
   it and maybe default to a longer blend.
 - **Boot time is not a constraint.** The first path costs 23-65 ms in a fresh JVM on this PC
   and about 2 ms each after that until the JIT warms up. The robot waits far longer than that for
-  cameras and the field link, so paths are built on a background thread at boot. The real rule is
+  cameras and the field link, so paths are simply built in robot init. The real rule is
   that starting auto does no path work at all.

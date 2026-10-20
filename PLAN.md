@@ -131,8 +131,9 @@ There are three layers, from the most to the least preferred.
 - **Editor metadata:** an editor-only `.pathproject.json` next to them.
 - **Field obstacles:** `deploy/paths/field.json`.
 - **Code generation:** only a `PathName` enum.
-- **On the robot:** everything loads and precomputes at boot, on a background thread. Boot has plenty of time
-  (the robot, cameras and field link take far longer); the rule is that pressing go does zero path work.
+- **On the robot:** everything loads and precomputes at boot, plainly, in robot init (no background thread). Boot
+  has plenty of time (the robot, cameras and field link take far longer); the rule is that pressing go does zero
+  path work.
 
 ### One maths library, two languages
 - The Java library (`lib/`) is the reference version. The editor uses a TypeScript port of it.
