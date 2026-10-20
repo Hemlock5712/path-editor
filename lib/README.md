@@ -306,9 +306,37 @@ been measured.
   A heading-aware grow would allow tighter gaps but needs a configuration-space search.
 - **Smoothing adds waypoints only.** Tangent magnitudes stay at the core's defaults. Inserting the route point under
   a violation always converges here because the corner-to-corner route itself keeps the margin.
-- **A short hop with a big turn can fail.** The core profile ties heading to distance, so near-in-place turns can't
-  be planned. The planner returns a failure that says so ("drive to the pose directly") instead of throwing. Random
-  tests use pairs at least 1 m apart.
+- **Short hops and turns on the spot** plan in the core, not as a special case in the planner (see below).
 - **Concave obstacles become their convex hulls,** which is conservative.
 - **Not done yet:** dynamic obstacles, a WPILib command wrapper, and loading `deploy/paths/field.json` in
   `PathLibrary` (callers use `FieldMap.read`).
+- **The margin stays 0.05 m by default.** On the bench's four routes with wheel odometry, 0.10 m and 0.15 m
+  shut gaps and forced detours up to three times longer, and still touched once the odometry drifted (see
+  bench/RESULTS.md). Vision fixes the contacts; a wider berth doesn't.
+
+### Short hops with big turns (core)
+
+The heading is tied to s, so a turn that needs more time than the translation slows the translation down. Two
+changes make that work for any hop:
+
+- **Bisection in the step.** The velocity profile's step used to solve `v = f(v)` with two fixed-point rounds kept
+  from below. Where the budget falls steeply with speed (a fast turn over a few centimetres) the rounds never closed
+  and the plan stalled: 0.2 m with an 80° turn could not be built. Now, when the rounds leave a gap, the step
+  bisects inside their bracket. It stays O(N); other paths move by about 1e-5.
+- **Spin acceleration cap.** `RobotConfig.maxAngularRadPerSecSquared` (optional; +∞ by default, and
+  `"maxAngularRadPerSecSquared"` in the robot file) adds `|a·θ' + v²·θ''| ≤ α_max` to the budget and
+  `v ≤ √(α_max/|θ''|)` to the ceiling, next to the existing `v·|θ'| ≤ ω_max`.
+
+Every path also gets at least 16 grid cells. Two waypoints at the same place are a turn on the spot, planned on a
+1 mm segment (`Path.PURE_ROTATION_METERS`) that ends exactly on the point along the final heading.
+
+With 540°/s and 720°/s² (`ShortHopTest`):
+
+| Hop | Time | Minimum-jerk floor |
+| --- | --- | --- |
+| 0.2 m, 80° | 0.84 s | 0.80 s |
+| 0.05 m, 180° | 1.27 s | 1.20 s |
+| 0 m, 90° | 0.90 s | 0.85 s |
+
+Peak spin acceleration is within 1 % of the cap. The TS port matches, with new `short_hop` and `pure_rotation`
+fixtures; parity is still exact.

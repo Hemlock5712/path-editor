@@ -44,10 +44,11 @@ becomes odometry error:
   furthest, about 1 m.
 
 **Pathfinding (four start/goal pairs; `python bench/run.py --pathfind-only`):**
-- Our planner (`lib/`, `frc.team5712.path.plan`) takes 0.47-2.30 ms per query in Java on this PC, warm medians.
-  The 95th percentile reaches 8.1 ms on the 9 m route. The first query in a fresh JVM takes 17-21 ms, and boot
-  (growing the obstacles and building the 83-node graph) 32-50 ms. PathPlanner's AD* port needs 5-14 ms in Python
-  for its first path.
+- Our planner (`lib/`, `frc.team5712.path.plan`) takes 0.52-2.49 ms per query in Java on this PC (warm medians,
+  95th percentile up to 5.7 ms). The first query in a fresh JVM takes 26-58 ms, and boot (growing the obstacles
+  and building the 83-node graph) 36-84 ms. This run shared the PC with another bench, so its timings are noisier
+  than the first pathfinding run's. PathPlanner's AD* port needs 5-25 ms in Python for its first path on three
+  routes, and 267 ms on across in this run.
 - With a perfect pose both settle in every run:
   - ours first on the 9 m route (3.47 s vs 3.60 s for PathPlanner + hold);
   - level on turn_at_goal (2.39 s);
@@ -57,6 +58,25 @@ becomes odometry error:
 - With odometry both robots touch obstacles briefly: ours for 20 ms (across) and 12 ms (behind_wall), PathPlanner
   for 4 ms on both. The odometry drifts 4-7 cm, more than the 5 cm margin. Ours ends 4.0-7.4 cm off on average,
   PathPlanner 7.4-14.9 cm.
+- **A bigger bumper margin doesn't fix odometry drift; it closes gaps** (table "Ours: bumper margin"). On wheel
+  odometry, the runs with contact over the four routes were 2 of 40 at 0.05 m, 2 of 40 at 0.10 m and 1 of 40 at
+  0.15 m. But 0.10 m and 0.15 m shut the gaps on three routes and force detours:
+  - behind_wall: 6.25 m becomes 16.15-19.05 m;
+  - moving_start: 9.58 m becomes 13.75-16.54 m;
+  - across at 0.15 m: 9.25 m becomes 12.05 m.
+  With a perfect pose, time to 5 cm rises 1.7-2.4 times on behind_wall and moving_start (behind_wall 2.74 s to
+  6.00-6.45 s), and by 23 % on across at 0.15 m. The longer detours drift further, so behind_wall still touches at
+  every margin. The default stays 0.05 m (a parameter,
+  `PlannerConfig.marginMeters`); the fix for the contacts is a better pose (vision), not a wider berth.
+- **Short hops with big turns now plan in the core.** The velocity profile's step used to stall when a fast turn
+  over a short distance made the budget fall steeply with speed: 0.2 m with an 80° turn could not be built. With the
+  bench's 540 deg/s and 720 deg/s^2 spin limits, it now takes:
+  - 0.2 m with 80°: 0.84 s;
+  - 0.05 m with 180°: 1.27 s;
+  - 0 m with 90° (a turn on the spot, planned on a 1 mm segment): 0.90 s.
+  Peak spin acceleration is within 1 % of the cap, and the times are 5 % above the minimum-jerk floor. The fixed
+  core moves every other path by about 1e-5 (the old step was slightly conservative). Re-running ours' rows on all
+  eight courses with both pose sources gave the same printed numbers as the main tables (32 of 32 rows).
 
 **The bar for ours v2 was:** match the hybrid prototype's ending (0.1 cm, no overshoot, recovers from shoves and
 low grip) at Choreo's speed, without an offline solver.
@@ -643,10 +663,10 @@ Field `bench/fields/obstacles_v1.json` (six convex obstacles, centre origin), ro
 
 | route | ours cold ms | ours warm median / p95 ms | ours boot ms | ours in bench: Java / round trip ms | PathPlanner (Python) first / all ms |
 |---|---|---|---|---|---|
-| across | 19.5 | 2.30 / 8.11 | 37 | 4.19 / 10.0 | 8 / 67 |
-| behind_wall | 18.6 | 0.62 / 1.93 | 46 | 2.03 / 4.4 | 6 / 16 |
-| moving_start | 16.9 | 0.93 / 1.90 | 32 | 3.12 / 5.8 | 14 / 51 |
-| turn_at_goal | 21.2 | 0.47 / 0.83 | 50 | 1.51 / 3.4 | 5 / 22 |
+| across | 58.3 | 2.49 / 5.67 | 43 | 4.19 / 14.8 | 267 / 1142 |
+| behind_wall | 25.5 | 0.71 / 1.80 | 36 | 1.61 / 5.2 | 11 / 30 |
+| moving_start | 40.7 | 1.03 / 3.75 | 66 | 2.23 / 5.1 | 25 / 79 |
+| turn_at_goal | 40.5 | 0.52 / 1.52 | 84 | 1.08 / 3.3 | 5 / 20 |
 
 ### Perfect pose
 
@@ -715,6 +735,37 @@ Field `bench/fields/obstacles_v1.json` (six convex obstacles, centre origin), ro
 | PathPlanner pathfinding (AD*, kP 5) | 4.97 | never | never | 7.4 / 12.3 | 15.8 | 0 | 1746 |
 | PathPlanner pathfinding (AD*, kP 5) + hold | 4.97 | never | never | 8.4 / 11.8 | 15.8 | 0 | 1746 |
 | Ours (visibility graph + A* + quintic, our follower) | 4.91 (corners 4.82) | 2.16 (7/10) | 2.38 (3/10) | 4.0 / 9.3 | 16.3 | 0 | 21 |
+
+### Ours: bumper margin
+
+The margin is how far beyond the bumpers' half-diagonal the obstacles are grown, and what the swept check demands of the planned path. Contact runs = runs (of the seeds) where the TRUE bumper square touched an obstacle or wall.
+
+| route | pose | margin m | path m | t to 5 cm s | t settled s (n/N) | min clearance cm (worst run) | contact runs | contact ms (worst run) |
+|---|---|---|---|---|---|---|---|---|
+| across | Perfect pose | 0.05 | 9.25 | 3.21 | 3.47 (10/10) | 4.4 | 0/10 | 0 |
+| across | Perfect pose | 0.10 | 9.40 | 3.52 | 3.78 (10/10) | 10.3 | 0/10 | 0 |
+| across | Perfect pose | 0.15 | 12.05 | 3.94 | 4.20 (10/10) | 15.7 | 0/10 | 0 |
+| across | Wheel odometry + gyro | 0.05 | 9.25 | 3.29 (4/10) | never | 0.0 | 1/10 | 20 |
+| across | Wheel odometry + gyro | 0.10 | 9.40 | 3.60 (4/10) | never | 2.7 | 0/10 | 0 |
+| across | Wheel odometry + gyro | 0.15 | 12.05 | 4.01 (4/10) | never | 4.0 | 0/10 | 0 |
+| behind_wall | Perfect pose | 0.05 | 6.25 | 2.74 | 2.99 (10/10) | 5.4 | 0/10 | 0 |
+| behind_wall | Perfect pose | 0.10 | 16.15 | 6.00 | 6.25 (10/10) | 10.5 | 0/10 | 0 |
+| behind_wall | Perfect pose | 0.15 | 19.05 | 6.45 | 6.71 (10/10) | 15.7 | 0/10 | 0 |
+| behind_wall | Wheel odometry + gyro | 0.05 | 6.25 | 2.82 (8/10) | never | 0.0 | 1/10 | 12 |
+| behind_wall | Wheel odometry + gyro | 0.10 | 16.15 | 6.04 (9/10) | 6.24 (4/10) | 0.0 | 1/10 | 48 |
+| behind_wall | Wheel odometry + gyro | 0.15 | 19.05 | 6.49 (9/10) | 6.68 (4/10) | 0.0 | 1/10 | 8 |
+| moving_start | Perfect pose | 0.05 | 9.58 | 3.02 | 3.28 (10/10) | 6.1 | 0/10 | 0 |
+| moving_start | Perfect pose | 0.10 | 13.75 | 5.17 | 5.43 (10/10) | 10.5 | 0/10 | 0 |
+| moving_start | Perfect pose | 0.15 | 16.54 | 5.60 | 5.85 (10/10) | 15.6 | 0/10 | 0 |
+| moving_start | Wheel odometry + gyro | 0.05 | 9.58 | 3.07 (7/10) | 3.39 (1/10) | 4.8 | 0/10 | 0 |
+| moving_start | Wheel odometry + gyro | 0.10 | 13.75 | 5.20 (4/10) | 5.41 (1/10) | 0.0 | 1/10 | 24 |
+| moving_start | Wheel odometry + gyro | 0.15 | 16.54 | 5.62 (4/10) | 5.82 (1/10) | 0.1 | 0/10 | 0 |
+| turn_at_goal | Perfect pose | 0.05 | 4.91 | 2.13 | 2.39 (10/10) | 16.9 | 0/10 | 0 |
+| turn_at_goal | Perfect pose | 0.10 | 4.97 | 2.13 | 2.38 (10/10) | 21.9 | 0/10 | 0 |
+| turn_at_goal | Perfect pose | 0.15 | 5.02 | 2.13 | 2.38 (10/10) | 26.8 | 0/10 | 0 |
+| turn_at_goal | Wheel odometry + gyro | 0.05 | 4.91 | 2.16 (7/10) | 2.38 (3/10) | 16.3 | 0/10 | 0 |
+| turn_at_goal | Wheel odometry + gyro | 0.10 | 4.97 | 2.15 (7/10) | 2.37 (2/10) | 21.2 | 0/10 | 0 |
+| turn_at_goal | Wheel odometry + gyro | 0.15 | 5.02 | 2.16 (7/10) | 2.37 (2/10) | 26.1 | 0/10 | 0 |
 
 <!-- pathfind:end -->
 
@@ -809,8 +860,9 @@ Field `bench/fields/obstacles_v1.json` (six convex obstacles, centre origin), ro
     `SwerveSample.interpolate`) and command lifecycle (`AutoTrajectory`), with the PID example from ChoreoLib's
     getting-started docs (x/y kP 10, heading kP 7.5). After the trajectory ends the bench applies zero speeds, as a
     drivetrain default command would.
-  - Generation time is in the geometry section: wall-clock of choreo-cli per trajectory on this PC, nothing else
-    running.
+  - Generation time is rough. Wall-clock of choreo-cli per trajectory was 19-336 s (straight 19 s, S-curve
+    105 s, slalom 73 s, moving start 20 s, hairpin 256 s, 12 m route 336 s), measured on this PC with other work
+    running. These figures are not in `bench/choreo/`.
 - **Choreo geometry + DriveToPose finish (prototype, not ours v2).**
   - Choreo's path is resampled every 2 cm of arc length and followed by projection. Speed is min(Choreo's speed
     50 ms ahead, DriveToPose's brake on the remaining arc length), with P 5 on cross-track and heading. DriveToPose
