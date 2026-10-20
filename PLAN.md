@@ -186,4 +186,12 @@ There are three layers, from the most to the least preferred.
    - Keep from master: the canvas, zones, charts and playback.
    - Add: obstacles, live robot over NT4, a sim preview using the shared core, an optimiser, and loading the
      bench comparison.
-6. **Robot runs** on the same courses, with vision on and off.
+   - Named events are authored in the editor at positions along the path and saved in the path file (today they
+     are set in code only).
+6. **End-to-end tests, every path start to finish:** author each path in the editor (including named events along
+   it), save the file, load it with `PathLibrary.loadAll()`, and run it with the real Java follower and the WPILib
+   adapters in simulation on blue and red. Check that it reaches the end within tolerance, that every named event
+   fires once, in order, at its authored position (within a few cm), that skipped events fire on completion,
+   that an interrupt cancels pending ones, and that what the editor previewed (time, speed, event times) matches
+   what the robot code did.
+7. **Robot runs** on the same courses, with vision on and off.
