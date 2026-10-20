@@ -1,7 +1,8 @@
 // The active path's settings, its waypoints, and the selected waypoint's details.
 
 import { round5, round5Radians } from "../../model/positions.ts";
-import { deleteWaypoint, moveWaypoint, setTangent, withSpec } from "../../model/edits.ts";
+import { appendWaypoint, deleteWaypoint, insertWaypoint, moveWaypoint, setTangent, withSpec } from "../../model/edits.ts";
+import { geometryOf } from "../../state/analysis.ts";
 import { isValidPathName } from "../../model/project.ts";
 import { linkToPoint, moveNamedPoint } from "../../model/namedPoints.ts";
 import { editPath, editProject, select } from "../../state/editor.ts";
@@ -89,6 +90,21 @@ export function WaypointsPanel() {
     link
       ? editProject("Move point", (p) => moveNamedPoint(p, link, x, y))
       : editPath("Move waypoint", (p) => moveWaypoint(p, selected, x, y));
+  // keyboard routes to what the W tool does on the canvas
+  const appendPastEnd = () => {
+    const g = geometryOf(path.spec);
+    const end = g?.sample(g.lengthMeters);
+    const last = path.spec.waypoints.at(-1)!;
+    const [dx, dy] = end ? [end.tangentX, end.tangentY] : [1, 0];
+    const n = path.spec.waypoints.length;
+    editPath("Add waypoint", (p) => appendWaypoint(p, round5(last.xMeters + dx), round5(last.yMeters + dy)), { kind: "waypoint", index: n });
+  };
+  const insertAfter = (k: number) => {
+    const g = geometryOf(path.spec);
+    if (!g) return;
+    const mid = g.sample(g.sAtWaypoint(k + 0.5));
+    editPath("Insert waypoint", (p) => insertWaypoint(p, k, 0.5, round5(mid.xMeters), round5(mid.yMeters)), { kind: "waypoint", index: k + 1 });
+  };
   return (
     <Section title="Waypoints" open count={path.spec.waypoints.length}>
       <ol className="item-list" aria-label="Waypoints">
@@ -106,6 +122,9 @@ export function WaypointsPanel() {
           </li>
         ))}
       </ol>
+      <IconButton label="Add a waypoint 1 m past the end" onClick={appendPastEnd}>
+        + Waypoint at the end
+      </IconButton>
       {w && (
         <div className="detail" aria-label={`Waypoint ${selected}`}>
           <div className="grid2">
@@ -145,6 +164,11 @@ export function WaypointsPanel() {
             </span>
           </label>
           <div className="row">
+            {selected < path.spec.waypoints.length - 1 && (
+              <IconButton label={`Insert a waypoint after waypoint ${selected}`} onClick={() => insertAfter(selected)}>
+                Insert after
+              </IconButton>
+            )}
             <IconButton
               label="Delete waypoint"
               disabled={path.spec.waypoints.length <= 2}

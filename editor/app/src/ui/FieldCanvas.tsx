@@ -440,18 +440,7 @@ export function FieldCanvas() {
       if (!drag.moved && e.button === 0) select(null);
       return;
     }
-    const labels: Record<Drag["kind"], string> = {
-      pan: "",
-      waypoint: drag.kind === "waypoint" ? drag.label : "",
-      tangent: "Change tangent",
-      rotation: "Turn rotation target",
-      face: "Move face point",
-      point: "Move point",
-      event: "Move event",
-      vertex: "Move obstacle corner",
-      obstacle: "Move obstacle",
-    };
-    endGesture(labels[drag.kind]);
+    endGesture(dragLabel(drag));
   };
 
   const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -499,6 +488,28 @@ export function FieldCanvas() {
       />
     </div>
   );
+}
+
+/** The undo label for a finished drag. */
+function dragLabel(drag: Exclude<Drag, { kind: "pan" }>): string {
+  switch (drag.kind) {
+    case "waypoint":
+      return drag.label;
+    case "tangent":
+      return "Change tangent";
+    case "rotation":
+      return "Turn rotation target";
+    case "face":
+      return "Move face point";
+    case "point":
+      return "Move point";
+    case "event":
+      return "Move event";
+    case "vertex":
+      return "Move obstacle corner";
+    case "obstacle":
+      return "Move obstacle";
+  }
 }
 
 /** Metres, rounded to what the file holds; Shift snaps to 5 cm. */
