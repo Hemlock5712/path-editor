@@ -121,7 +121,7 @@ shares. See the notes below for what that means for the boot budget.
 - **Face-point blends can be fast.** In the auto route the default 0.5 m blend turns the robot by
   over 100° and the profile slows to 0.7 m/s for it. That is correct, but the editor should show
   it and maybe default to a longer blend.
-- **Boot budget risk.** PLAN.md allows < 50 ms to load and precompute every path at boot. On this
-  PC the first path costs 23-65 ms in a fresh JVM and each later one about 2 ms until the JIT
-  warms up, and the robot's CPU is slower. Ways to stay inside it: build the paths on a background
-  thread in `robotInit`, or build one throwaway path early to warm up.
+- **Boot time is not a constraint.** The first path costs 23-65 ms in a fresh JVM on this PC
+  and about 2 ms each after that until the JIT warms up. The robot waits far longer than that for
+  cameras and the field link, so paths are built on a background thread at boot. The real rule is
+  that starting auto does no path work at all.
