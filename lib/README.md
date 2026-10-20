@@ -1,17 +1,24 @@
-# lib: the path maths (phase 2)
+# lib: the path maths and the follower
 
-The reference implementation of the path geometry, heading profile, velocity profile, frame flips
-and path files. Package `frc.team5712.path.core` has no dependencies (no WPILib), so it tests in
-seconds and ports line for line to TypeScript (`editor/core/`). The follower (phase 3) will sit on
-top of it.
+| Package | What | Depends on |
+| --- | --- | --- |
+| `frc.team5712.path.core` (phase 2) | geometry, heading and velocity profiles, frame flips, path files | nothing |
+| `frc.team5712.path.follow` (phase 3) | `PathFollower`: one controller from path to pose | core |
+| `frc.team5712.path.tools` | `FixtureGen`, `ProfileCli`, `BenchServer` (the bench bridge) | core, follow |
+| `frc.team5712.path.wpilib` (source set `src/wpilib`) | Commands v3 and v2 adapters, `PathLibrary`, telemetry | WPILib 2027 |
+
+The core and the follower have no dependencies, so they test in seconds; the core ports line for
+line to TypeScript (`editor/core/`).
 
 ## Running it (from the repo root)
 
 | What | Command |
 | --- | --- |
 | Tests (prints timings) | `lib/gradlew -p lib test` |
+| WPILib adapter tests | `lib/gradlew -p lib wpilibTest` (or `check` for everything) |
 | Regenerate `fixtures/*.json` | `lib/gradlew -p lib fixtures` |
-| Build the jar for the bench | `lib/gradlew -p lib jar` |
+| Build the jar for the bench | `lib/gradlew -p lib jar` (core, follower and tools: `lib/build/libs/pathcore.jar`) |
+| Bench bridge | `java -cp lib/build/libs/pathcore.jar frc.team5712.path.tools.BenchServer` (protocol below) |
 | Profile a path for the bench | `java -cp lib/build/libs/pathcore.jar frc.team5712.path.tools.ProfileCli my.path.json [--robot robot.json] [--step 0.05] [--grid 0.03]` |
 | TS port tests | `cd editor/core && npm install && npm test` |
 
@@ -82,6 +89,96 @@ the 16 m auto route, tangent scales with a moving start) to `fixtures/`, each wi
 every quantity every 5 cm in shortest round-trip precision. A Java test fails if they are stale.
 **The TS port reproduces all six exactly: worst deviation 0** (the bound is 1e-9). Trig goes
 through `StrictMath` in Java and `Math` in V8, both fdlibm.
+
+## The follower (phase 3)
+
+`PathFollower` (`frc.team5712.path.follow`) is one controller from path to pose. Build the path in
+robot init, make the follower there too, then `start()` when the path begins, `step()` each loop and
+stop when `isFinished()`. `start()` does no path work: no building, no flipping, no copying (a test
+counts geometry and profile builds across `start()` and a second of steps, on both alliances).
+
+Each loop, in the blue frame:
+
+1. **Frame.** The measured pose and velocity go into the blue frame through `FieldFrame`; the output
+   comes back out. Overrides and goals are given in the robot's own frame and converted the same way.
+2. **Progress.** `s` is the closest point within ±0.5 m of the last `s`. If that point is more than
+   0.5 m away (a shove), the whole path is searched too and the nearer answer wins.
+3. **Along the path.** The plan is read one latency (50 ms) ahead *in plan time*:
+   `s⁺ = s_plan(t_plan(s) + τ)`. That is what gets a robot off a standing start, where the profile
+   says 0 m/s. The speed is `min(v_plan(s⁺), sqrt(v_end² + 2·a·(d − v·τ)))`, which is DriveToPose's
+   brake on the distance left `d`. The speed points along the tangent at `s⁺`, so the command turns
+   into a curve early by `v²κτ`: the curvature feed-forward.
+4. **Across the path.** PD on the cross-track error (P 5/s, D 0), pushing along the normal at `s`.
+5. **Heading.** Feed-forward `v·dθ/ds` at `s⁺`, plus P 5/s on the planned heading at `s`.
+6. **Near the end** (0.3 m to go), the reference becomes the goal pose and DriveToPose's law takes
+   over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. Both
+   laws brake on the same distance with the same 6 m/s², so the hand-over has no seam.
+7. **One limiter.** Every output goes through `OutputLimiter`. It caps spin acceleration, then caps
+   the motors' push at the fastest wheel's speed when speeding up. Then `|a| + c·|α| ≤ μ·g`
+   (c = I/(m·r), the profile's grip model), scaling translation and spin together. Its μ defaults
+   to 1.0, above the plan's 0.7, so feedback has room.
+8. **Finished.** Within 2 cm and 1°, measured slower than 5 cm/s, held 0.1 s. A rolling end (end
+   speed above 0) never stops: it finishes as the robot passes the end, and `endCommand()` is the
+   velocity to hand to the next follower (`start(..., handedCommand)`).
+
+The other pieces:
+
+- **Moving goal.** `bindGoal(Supplier<Optional<Pose>>)` binds the end of the path. When the goal
+  moves more than 2 cm or 2°, only the tail is rebuilt: one quintic piece from the robot's progress
+  to the goal. The piece's first curvature is fixed, so position, tangent and curvature all match at
+  the join. The heading blends from the planned heading there to the goal's, and the profile starts
+  at the planned speed. The approach direction turns with the goal (the old end tangent plus the
+  goal's turn). An empty value holds the last goal. In the terminal phase the DriveToPose law just
+  drives to the new goal. Latching estimates in the odometry frame is the supplier's job, as in
+  DriveToTag.
+- **Overrides.** `lateralOffset` (metres left of the path; it also moves the goal sideways) and
+  `alongTrackScale` (0..1). Raw `overrideX/Y/Omega` take a supplier (NaN = off) and an
+  `OverrideMode`: `RESPECT_LIMITS` replaces the wish before the limiter, `BYPASS` replaces the
+  output after it.
+- **Events.** `addEvent(name, s, action)` and `addEventAtWaypoint`. They fire in order as the robot
+  passes them; any that haven't fired by a normal finish fire then; `cancel()` drops them.
+  `onEvent(listener)` sees every name (the adapters map names to commands).
+- **Robustness.** A NaN pose brakes within the limits instead of throwing.
+
+All gains are in `FollowerConfig` (defaults from DriveToPose and the hybrid prototype).
+`FollowerConfig.Builder.set(name, value)` sets a field by its name, which is how the bench passes
+options.
+
+### WPILib adapters (`src/wpilib`)
+
+These are compiled against WPILib 2027.0.0-alpha-7 from the installer's offline maven repo
+(`C:/Users/Public/wpilib/2027_alpha7/maven`; `-PwpilibMaven=<dir>` points elsewhere). The build
+skips them with a warning if the repo is missing.
+
+- `PathLibrary.loadAll()` builds every `deploy/paths/*.path.json` (with `deploy/paths/robot.json` if
+  present) in robot init. A bad file fails at boot.
+- `FollowPathCommand` (Commands v3) runs the follower in its coroutine and forks event commands as
+  children. `FollowPathCommandV2` (Commands v2) schedules event commands independently. Both read
+  the alliance as a `FieldFrame` when the path starts, send zero at the end (except on a rolling
+  end), and chain rolling ends with `continuingFrom(previous)`.
+- `Conversions` covers `Pose2d` and `ChassisVelocities`, and the alliance as a frame.
+  `PathTelemetry` logs the phase, progress, cross-track, reference and goal.
+- `wpilibTest` runs both commands for real: v2 by hand, v3 under an independent scheduler, with the
+  desktop HAL natives extracted from the same repo. Commands v3 needs
+  `--add-opens java.base/jdk.internal.vm` and `java.base/java.lang`, which GradleRIO adds on a robot.
+
+### Bench bridge protocol (`BenchServer`)
+
+One JSON object per line on stdin, one reply per line on stdout. Errors reply
+`{"error": "..."}` and the server carries on. Poses are `[x, y, heading]` (m, rad) and velocities
+`[vx, vy, omega]` (m/s, rad/s, field-relative).
+
+| Request | Reply |
+| --- | --- |
+| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}`: builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs"}` |
+| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()` | `{"ok", "startMicros"}` |
+| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild |
+| `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
+| `{"op": "geometry", "step": 0.02}`: the built path, sampled | `{"x": [...], "y": [...]}` |
+| `{"op": "quit"}` | `{"ok": true}`, then exits |
+
+`bench/followers/ours_v2.py` starts one server per bench worker process and keeps it for all that
+worker's runs.
 
 ## Measured timings
 

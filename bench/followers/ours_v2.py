@@ -31,6 +31,7 @@ from followers.base import Follower
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 JAR = os.path.join(ROOT, "lib", "build", "libs", "pathcore.jar")
 MAIN = "frc.team5712.path.tools.BenchServer"
+LOG_DIR = os.path.join(ROOT, "bench", "out")  # BenchServer stderr, one file per worker (gitignored)
 
 _server = None
 
@@ -40,7 +41,11 @@ class _Server:
         if not os.path.exists(JAR):
             raise RuntimeError(f"{JAR} is missing: run `lib/gradlew -p lib jar` first")
         java = os.path.join(os.environ["JAVA_HOME"], "bin", "java") if os.environ.get("JAVA_HOME") else "java"
-        self.p = subprocess.Popen([java, "-cp", JAR, MAIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        os.makedirs(LOG_DIR, exist_ok=True)
+        self.log = open(os.path.join(LOG_DIR, f"benchserver-{os.getpid()}.log"), "a")
+        # small heap and the serial collector: one of these runs per bench worker
+        self.p = subprocess.Popen([java, "-Xmx256m", "-XX:+UseSerialGC", "-cp", JAR, MAIN],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log,
                                   text=True, encoding="utf-8", bufsize=1)
         atexit.register(self.close)
 
@@ -66,11 +71,23 @@ class _Server:
 
 
 def server():
-    """This process's BenchServer, started on first use."""
+    """This process's BenchServer, started on first use (and again if it has died)."""
     global _server
     if _server is None or _server.p.poll() is not None:
         _server = _Server()
     return _server
+
+
+def call_fresh(**msg):
+    """A call that may start a run: if the server has died, start a new one and try once more."""
+    try:
+        return server().call(**msg)
+    except (RuntimeError, OSError) as e:
+        if "BenchServer:" in str(e):  # an error reply, not a dead process
+            raise
+        global _server
+        _server = None
+        return server().call(**msg)
 
 
 def robot_json(mu):
@@ -123,9 +140,8 @@ class OursV2(Follower):
     @staticmethod
     def adapt(course):
         path = to_ours(course)
-        srv = server()
-        srv.call(op="load", path=path, robot=robot_json(0.7))
-        g = srv.call(op="geometry", step=0.02)
+        call_fresh(op="load", path=path, robot=robot_json(0.7))
+        g = server().call(op="geometry", step=0.02)
         return {"path": path, "geometry": np.column_stack([g["x"], g["y"]])}
 
     @staticmethod
@@ -133,8 +149,8 @@ class OursV2(Follower):
         return native["geometry"]
 
     def reset(self, native, start):
+        r = call_fresh(op="load", path=native["path"], robot=robot_json(self.mu), options=self.options)
         self.srv = server()
-        r = self.srv.call(op="load", path=native["path"], robot=robot_json(self.mu), options=self.options)
         self.build_ms = r["buildMs"]
         self.srv.call(op="reset", t=start.t, pose=[float(v) for v in start.pose],
                       vel=[float(v) for v in start.vel])
