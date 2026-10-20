@@ -217,7 +217,8 @@ public final class PathFollower {
     FieldSpeeds cmd = frame.toBlue(handedCommand);
     limiter.reset(cmd.vxMetersPerSecond(), cmd.vyMetersPerSecond(), cmd.omegaRadPerSec());
     Pose p = frame.toBlue(measuredPose);
-    s = basePath.geometry().projectGlobal(p.xMeters(), p.yMeters()).s();
+    s = 0.0; // near the start first (a loop that ends where it began must not start at the end)
+    updateProgress(p);
     lastTime = timeSeconds;
     settledSince = Double.NaN;
     phase = Phase.TRACKING;

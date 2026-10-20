@@ -129,6 +129,19 @@ class PathFollowerTest {
   }
 
   @Test
+  void aLoopStartsAtItsStartNotItsEnd() {
+    List<Waypoint> loop = new ArrayList<>();
+    for (int i = 0; i <= 8; i++) {
+      double a = i * Math.PI / 4;
+      loop.add(Waypoint.at(Math.cos(a) * 1.5, Math.sin(a) * 1.5));
+    }
+    Path path = Path.build(PathSpec.of(loop).withLimits(3, 5), ROBOT);
+    PathFollower f = new PathFollower(path, CFG);
+    f.start(0, new Pose(1.5, 0, 0), new FieldSpeeds(0, 0, 0), FieldFrame.BLUE);
+    assertTrue(f.progressMeters() < 0.1, "starts at s = " + f.progressMeters());
+  }
+
+  @Test
   void noPoseMeansBrakeNotCrash() {
     Path path = Path.build(FixturePaths.straight(), ROBOT);
     PathFollower f = new PathFollower(path, CFG);
