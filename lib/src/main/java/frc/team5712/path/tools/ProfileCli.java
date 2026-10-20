@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.util.Map;
 
 /**
@@ -21,7 +22,8 @@ import java.util.Map;
  *     [--robot robot.json] [--step 0.05] [--grid 0.03]
  * </pre>
  *
- * Exit code 2 and a message on stderr for bad arguments or a bad file.
+ * Exit code 2 and a message on stderr for bad arguments, a missing or bad file, or a path that
+ * can't be driven.
  */
 public final class ProfileCli {
   private ProfileCli() {}
@@ -29,7 +31,10 @@ public final class ProfileCli {
   public static void main(String[] args) {
     try {
       System.out.print(run(args));
-    } catch (IllegalArgumentException | IOException e) {
+    } catch (NoSuchFileException e) {
+      System.err.println("ProfileCli: no such file: " + e.getMessage());
+      System.exit(2);
+    } catch (IllegalArgumentException | IllegalStateException | IOException e) {
       System.err.println("ProfileCli: " + e.getMessage());
       System.exit(2);
     }
