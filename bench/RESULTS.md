@@ -43,13 +43,20 @@ becomes odometry error:
 - The shove is invisible to odometry, so every method ends 20-103 cm off on average. Choreo's at-the-limit S-curve slides
   furthest, about 1 m.
 
-**Pathfinding (PathPlanner AD*):**
-- The route is 9.36 m against an 8.32 m straight line.
-- In Python the first path takes 10-25 ms and all four anytime steps take 105-144 ms (medians).
-- With a perfect pose the robot reaches 5 cm in 3.19 s and settles in 3.60 s with the hold. The bumpers clear the
-  obstacles by 6.5 cm at the closest.
-- With odometry the worst run touches an obstacle for 4 ms: the 0.6 m navgrid buffer leaves only centimetres
-  after corner smoothing.
+**Pathfinding (four start/goal pairs; `python bench/run.py --pathfind-only`):**
+- Our planner (`lib/`, `frc.team5712.path.plan`) takes 0.47-2.30 ms per query in Java on this PC, warm medians.
+  The 95th percentile reaches 8.1 ms on the 9 m route. The first query in a fresh JVM takes 17-21 ms, and boot
+  (growing the obstacles and building the 83-node graph) 32-50 ms. PathPlanner's AD* port needs 5-14 ms in Python
+  for its first path.
+- With a perfect pose both settle in every run:
+  - ours first on the 9 m route (3.47 s vs 3.60 s for PathPlanner + hold);
+  - level on turn_at_goal (2.39 s);
+  - 0.07-0.08 s later on behind_wall and moving_start.
+- Ours keeps 4.4-16.9 cm of bumper clearance. PathPlanner's grid route grazes wall_b's end on behind_wall (0.0 cm,
+  no contact) and passes at 1.5 cm on the moving start. Ours slips 5-109 ms per run, PathPlanner 1.9-3.7 s.
+- With odometry both robots touch obstacles briefly: ours for 20 ms (across) and 12 ms (behind_wall), PathPlanner
+  for 4 ms on both. The odometry drifts 4-7 cm, more than the 5 cm margin. Ours ends 4.0-7.4 cm off on average,
+  PathPlanner 7.4-14.9 cm.
 
 **The bar for ours v2 was:** match the hybrid prototype's ending (0.1 cm, no overshoot, recovers from shoves and
 low grip) at Choreo's speed, without an offline solver.
@@ -517,30 +524,7 @@ Accuracy is always against the TRUE plant pose. Cross-track is measured from the
 
 ## Pathfinding course
 
-Field `bench/fields/obstacles_v1.json`: start (-4.0, -1.5) to goal (3.8, 1.4), 8.32 m apart in a straight line, six convex obstacles, robot 0.85 x 0.85 m with bumpers. Navgrid 0.2 m; a node is blocked when its centre is within 0.60 m (the bumpers' half-diagonal) of an obstacle.
-
-AD* anytime steps (one planning request, Python wall-clock, relative only):
-
-| eps | planning ms | path points | route length m |
-|---|---|---|---|
-| 2.5 | 9.0 | 47 | 9.28 |
-| 2 | 0.5 | 47 | 9.28 |
-| 1.5 | 0.4 | 47 | 9.28 |
-| 1 | 49.9 | 48 | 9.36 |
-
-**Wheel odometry + gyro**
-
-| method | route m (planned / driven) | plan ms (first path / all four, median) | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run / mean) | contact ms (worst run) | wheel slip ms |
-|---|---|---|---|---|---|---|---|---|
-| PathPlanner pathfinding (AD*, kP 5) | 9.36 / 9.37 | 25 / 245 | 3.28 (4/10) | never | 9.1 / 20.2 | 0.0 / 4.6 | 4 | 3192 |
-| PathPlanner pathfinding (AD*, kP 5) + hold | 9.36 / 9.38 | 8 / 66 | 3.28 (4/10) | never | 10.0 / 19.9 | 0.0 / 4.6 | 4 | 3192 |
-
-**Perfect pose**
-
-| method | route m (planned / driven) | plan ms (first path / all four, median) | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run / mean) | contact ms (worst run) | wheel slip ms |
-|---|---|---|---|---|---|---|---|---|
-| PathPlanner pathfinding (AD*, kP 5) | 9.36 / 9.32 | 8 / 68 | 3.19 | never | 2.7 / 2.9 | 6.5 / 6.6 | 0 | 3597 |
-| PathPlanner pathfinding (AD*, kP 5) + hold | 9.36 / 9.32 | 8 / 66 | 3.19 | 3.60 (10/10) | 0.1 / 0.1 | 6.5 / 6.6 | 0 | 3597 |
+The pathfinding course (PathPlanner AD* and ours, four start/goal pairs) has its own section below, written by `python bench/run.py --pathfind-only` (and by the full run).
 
 ## Geometry each method authored
 
@@ -628,6 +612,111 @@ AD* anytime steps (one planning request, Python wall-clock, relative only):
 - Neutral path length 5.50 m; old path-editor and PathPlanner author the same cubics (to_catmull / to_bezier); sampled geometry of every method is in results.json
 
 <!-- generated:end -->
+
+## Pathfinding: PathPlanner AD* and ours
+
+Ours (`lib/src/main/java/frc/team5712/path/plan`, details in lib/README.md):
+- each obstacle is grown by the bumpers' half-diagonal plus 5 cm, its corners rounded and approximated from
+  outside, and the walls are moved in by the same amount;
+- a visibility graph between the grown corners is built at boot, and A* finds the exact shortest route for those
+  shapes;
+- the route's corners become waypoints of the core quintic spline. The oriented bumper rectangle is swept along it
+  with the planned heading, and a route point is added and the spline refit wherever the 5 cm margin breaks;
+- the core velocity profile is built from the robot's current velocity.
+
+The follower is our PathFollower as shipped (the ours_v2 row's settings). No query on these four routes needed a
+refit. In 300 random JUnit pairs, 34 did and all ended clear, with the closest bumper 5.1 cm from an obstacle.
+
+<!-- pathfind:start -->
+_Generated by `python bench/run.py --pathfind-only` (10 seeds per cell)._
+
+Field `bench/fields/obstacles_v1.json` (six convex obstacles, centre origin), routes `bench/fields/routes_v1.json`, robot 0.85 x 0.85 m with bumpers, limits 4 m/s and 6 m/s^2.
+
+| route | start -> goal | straight line m | note |
+|---|---|---|---|
+| across | (-4, -1.5, 0 deg) -> (3.8, 1.4, 0 deg) | 8.32 | the original route: 8.3 m across the field through the obstacles |
+| behind_wall | (-4.2, 1.8, 0 deg) -> (0, 1.6, 0 deg) | 4.20 | the goal is hidden behind wall_b: the route must go round its end |
+| moving_start | (-5, 0, 0 deg), moving (0, 2) m/s -> (2.5, 3, 0 deg) | 8.08 | starts moving 2 m/s sideways (+y) |
+| turn_at_goal | (1, -3, 0 deg) -> (4.5, -0.5, 90 deg) | 4.30 | past the triangle, turning 90 deg on the way |
+
+**Planning time.** Ours in Java: the first query in a fresh JVM (cold) and the median / 95th percentile of 2,000 more (warm), from `PlanCli`; boot = growing the obstacles and building the visibility graph. In the bench: our Java time per query in the long-running BenchServer, and the whole round trip from Python through the pipe (both medians). PathPlanner's AD* is the bench's Python port: its first path and all four anytime paths (medians), relative only.
+
+| route | ours cold ms | ours warm median / p95 ms | ours boot ms | ours in bench: Java / round trip ms | PathPlanner (Python) first / all ms |
+|---|---|---|---|---|---|
+| across | 19.5 | 2.30 / 8.11 | 37 | 4.19 / 10.0 | 8 / 67 |
+| behind_wall | 18.6 | 0.62 / 1.93 | 46 | 2.03 / 4.4 | 6 / 16 |
+| moving_start | 16.9 | 0.93 / 1.90 | 32 | 3.12 / 5.8 | 14 / 51 |
+| turn_at_goal | 21.2 | 0.47 / 0.83 | 50 | 1.51 / 3.4 | 5 / 22 |
+
+### Perfect pose
+
+**across**
+
+| method | path m | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run) | contact ms (worst run) | wheel slip ms |
+|---|---|---|---|---|---|---|---|
+| PathPlanner pathfinding (AD*, kP 5) | 9.36 | 3.19 | never | 2.7 / 2.9 | 6.5 | 0 | 3597 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 9.36 | 3.19 | 3.60 (10/10) | 0.1 / 0.1 | 6.5 | 0 | 3597 |
+| Ours (visibility graph + A* + quintic, our follower) | 9.25 (corners 9.19) | 3.21 | 3.47 (10/10) | 0.1 / 0.1 | 4.4 | 0 | 19 |
+
+**behind_wall**
+
+| method | path m | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run) | contact ms (worst run) | wheel slip ms |
+|---|---|---|---|---|---|---|---|
+| PathPlanner pathfinding (AD*, kP 5) | 6.33 | 2.49 | never | 2.7 / 3.1 | 0.0 | 0 | 3678 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 6.33 | 2.49 | 2.91 (10/10) | 0.1 / 0.1 | 0.0 | 0 | 3678 |
+| Ours (visibility graph + A* + quintic, our follower) | 6.25 (corners 6.19) | 2.74 | 2.99 (10/10) | 0.1 / 0.1 | 5.4 | 0 | 5 |
+
+**moving_start**
+
+| method | path m | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run) | contact ms (worst run) | wheel slip ms |
+|---|---|---|---|---|---|---|---|
+| PathPlanner pathfinding (AD*, kP 5) | 9.48 | 2.76 | never | 3.2 / 3.5 | 1.5 | 0 | 3178 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 9.48 | 2.76 | 3.21 (10/10) | 0.1 / 0.1 | 1.5 | 0 | 3178 |
+| Ours (visibility graph + A* + quintic, our follower) | 9.58 (corners 9.41) | 3.02 | 3.28 (10/10) | 0.1 / 0.1 | 6.1 | 0 | 109 |
+
+**turn_at_goal**
+
+| method | path m | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run) | contact ms (worst run) | wheel slip ms |
+|---|---|---|---|---|---|---|---|
+| PathPlanner pathfinding (AD*, kP 5) | 4.97 | 1.96 | never | 3.0 / 3.2 | 16.2 | 0 | 1945 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 4.97 | 1.96 | 2.39 (10/10) | 0.1 / 0.1 | 16.2 | 0 | 1945 |
+| Ours (visibility graph + A* + quintic, our follower) | 4.91 (corners 4.82) | 2.13 | 2.39 (10/10) | 0.1 / 0.1 | 16.9 | 0 | 23 |
+
+### Wheel odometry + gyro
+
+**across**
+
+| method | path m | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run) | contact ms (worst run) | wheel slip ms |
+|---|---|---|---|---|---|---|---|
+| PathPlanner pathfinding (AD*, kP 5) | 9.36 | 3.28 (4/10) | never | 9.1 / 20.2 | 0.0 | 4 | 3192 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 9.36 | 3.28 (4/10) | never | 10.0 / 19.9 | 0.0 | 4 | 3192 |
+| Ours (visibility graph + A* + quintic, our follower) | 9.25 (corners 9.19) | 3.29 (4/10) | never | 7.4 / 16.7 | 0.0 | 20 | 26 |
+
+**behind_wall**
+
+| method | path m | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run) | contact ms (worst run) | wheel slip ms |
+|---|---|---|---|---|---|---|---|
+| PathPlanner pathfinding (AD*, kP 5) | 6.33 | never | never | 10.6 / 14.4 | 0.0 | 4 | 3208 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 6.33 | never | never | 13.1 / 16.2 | 0.0 | 4 | 3208 |
+| Ours (visibility graph + A* + quintic, our follower) | 6.25 (corners 6.19) | 2.82 (8/10) | never | 4.2 / 8.6 | 0.0 | 12 | 2 |
+
+**moving_start**
+
+| method | path m | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run) | contact ms (worst run) | wheel slip ms |
+|---|---|---|---|---|---|---|---|
+| PathPlanner pathfinding (AD*, kP 5) | 9.48 | never | never | 12.7 / 22.4 | 6.6 | 0 | 2590 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 9.48 | never | never | 14.9 / 25.8 | 6.6 | 0 | 2590 |
+| Ours (visibility graph + A* + quintic, our follower) | 9.58 (corners 9.41) | 3.07 (7/10) | 3.39 (1/10) | 6.8 / 17.1 | 4.8 | 0 | 94 |
+
+**turn_at_goal**
+
+| method | path m | t to 5 cm s | t settled s (n/N) | final error cm mean / worst | min bumper clearance cm (worst run) | contact ms (worst run) | wheel slip ms |
+|---|---|---|---|---|---|---|---|
+| PathPlanner pathfinding (AD*, kP 5) | 4.97 | never | never | 7.4 / 12.3 | 15.8 | 0 | 1746 |
+| PathPlanner pathfinding (AD*, kP 5) + hold | 4.97 | never | never | 8.4 / 11.8 | 15.8 | 0 | 1746 |
+| Ours (visibility graph + A* + quintic, our follower) | 4.91 (corners 4.82) | 2.16 (7/10) | 2.38 (3/10) | 4.0 / 9.3 | 16.3 | 0 | 21 |
+
+<!-- pathfind:end -->
 
 ## Fidelity caveats
 
@@ -739,11 +828,21 @@ AD* anytime steps (one planning request, Python wall-clock, relative only):
     different but equally short grid path.
   - PathPlanner's grid uses a corner origin. The field file is centre-origin, so the planner shifts by half the
     field.
-  - The navgrid is rasterised from the polygons: a node is blocked when its centre is within 0.60 m of an obstacle.
-    That is the 0.85 m bumpers' half-diagonal, following PathPlanner's rule that a free node must let the robot
-    centre pass. PathPlanner users paint this grid by hand in the GUI.
-  - Clearance is the distance between the rotated bumper square and each obstacle polygon at every 4 ms sample of
-    the TRUE pose. Planning times are Python wall-clock, relative only.
+  - The navgrid is rasterised from the polygons: a node is blocked when its centre is within 0.60 m of an obstacle
+    or (since phase 4) a field wall. That is the 0.85 m bumpers' half-diagonal, following PathPlanner's rule that a
+    free node must let the robot centre pass. PathPlanner users paint this grid by hand in the GUI.
+  - Clearance is the distance between the rotated bumper square and each obstacle polygon or wall at every 4 ms
+    sample of the TRUE pose. PathPlanner's planning times are Python wall-clock, relative only.
+- **Pathfinding (ours).**
+  - The planner is Java, called through BenchServer's `pathfind` op from the measured start state, as a command
+    would at its start. Each BenchServer plans once before its first timed query, as robot init would.
+  - The in-bench Java times are therefore only lightly warmed, and higher than PlanCli's warm figures, which come
+    after 2,000 queries. Round trip = Python wall-clock through the pipe.
+  - All timings are on this PC with other work running. The roboRIO is slower and has not been measured.
+  - Obstacles are convex hulls of the file's polygons. They are grown for any heading (half-diagonal), and the swept
+    check then uses the real heading.
+  - The 5 cm margin is checked against the planned path only. Tracking error and odometry drift come out of it,
+    hence the odometry contacts.
 - **Courses.** The neutral curve is the old editor's Catmull-Rom through the waypoints. PathPlanner gets Bezier
   handles that reproduce those exact cubics (checked in `tests/test_courses.py`). Catmull-Rom tightens the hairpin
   to 0.75 m at the joins.
