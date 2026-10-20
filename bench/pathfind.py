@@ -440,8 +440,9 @@ class OursPathfind(Follower):
     wall-clock of the whole round trip are kept. Each BenchServer plans once before its first timed query,
     as robot init would (see lib/README.md); cold timings come from PlanCli in a fresh JVM."""
 
-    def __init__(self, mu=0.7, limits: Limits = Limits(), **follower_options):
+    def __init__(self, mu=0.7, margin=0.05, limits: Limits = Limits(), **follower_options):
         self.mu = mu
+        self.margin = margin  # bumper margin the planner grows obstacles by and checks the sweep against
         self.lim = limits
         self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
                         "brakeMetersPerSecondSquared": limits.max_accel}
@@ -453,7 +454,7 @@ class OursPathfind(Follower):
         def plan(goal):
             return call_fresh(op="pathfind", field=native["field"], start=[float(v) for v in start.pose],
                               vel=[float(v) for v in start.vel], goal=[float(v) for v in goal],
-                              robot=robot_json(self.mu), options=self.options,
+                              robot=robot_json(self.mu), options=self.options, margin=self.margin,
                               maxSpeed=self.lim.max_speed, maxAccel=self.lim.max_accel)
 
         if _warmed_pid != os.getpid() or server() is not _warmed_server:
@@ -484,6 +485,8 @@ PATHFIND_METHODS = {
     "pp_pathfind": (PathfindingCommand, {}, "PathPlanner pathfinding (AD*, kP 5)"),
     "pp_pathfind_hold": (PathfindingCommand, {"hold": True}, "PathPlanner pathfinding (AD*, kP 5) + hold"),
     "ours_pathfind": (OursPathfind, {}, "Ours (visibility graph + A* + quintic, our follower)"),
+    "ours_pathfind_m10": (OursPathfind, {"margin": 0.10}, "Ours, bumper margin 0.10 m"),
+    "ours_pathfind_m15": (OursPathfind, {"margin": 0.15}, "Ours, bumper margin 0.15 m"),
 }
 
 
@@ -542,6 +545,7 @@ def run_pathfind(job):
         "yaw_end_deg": math.degrees(float(eth[-1])),
         "clearance_cm": 100 * clear,
         "contact_ms": 1000 * hits * LP.odom_period,
+        "contact_run": float(hits > 0),
         "wheel_slip_ms": 1000 * r["wheel_slip"],
         "odo_err_cm": r["odo_err_cm"],
     }

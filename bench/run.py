@@ -186,7 +186,7 @@ def main():
     path = os.path.join(OUT, "results_quick.json" if a.quick else "results.json")
     if a.pathfind_only:
         seeds = list(range(a.seeds if a.seeds else 10))
-        with mp.get_context("spawn").Pool(a.procs) as pool:
+        with mp.get_context("spawn").Pool(min(a.procs, 8)) as pool:  # one JVM per worker: keep memory in check
             pf = pathfind_grid(pool, seeds, ["truth", "odom"])
         os.makedirs(OUT, exist_ok=True)
         with open(os.path.join(OUT, "pathfind.json"), "w") as fh:
@@ -395,6 +395,8 @@ def pathfind_md(out):
 
 
 PF_START, PF_END = "<!-- pathfind:start -->", "<!-- pathfind:end -->"
+MARGINS = {"ours_pathfind": 0.05, "ours_pathfind_m10": 0.10, "ours_pathfind_m15": 0.15}
+MARGIN_ROWS = ["ours_pathfind_m10", "ours_pathfind_m15"]
 
 
 def pathfind_section_md(pf):
@@ -438,6 +440,8 @@ def pathfind_section_md(pf):
             L.append(f"**{name}**\n")
             L.append(hdr)
             for m, a in pf["runs"][pose][name].items():
+                if m in MARGIN_ROWS:
+                    continue
                 n, ns = a["n"], a["t_settle_nan"]
                 st = "never" if ns == n else f"{a['t_settle_mean']:.2f} ({n - ns}/{n})"
                 n5 = a["t_5cm_nan"]
@@ -447,6 +451,27 @@ def pathfind_section_md(pf):
                          f"{a['err_end_cm_mean']:.1f} / {a['err_end_cm_worst']:.1f} | {a['clearance_cm_min']:.1f} | "
                          f"{a['contact_ms_worst']:.0f} | {a['wheel_slip_ms_mean']:.0f} |")
             L.append("")
+    margins = [m for m in ["ours_pathfind", *MARGIN_ROWS] if all(m in r for r in pf["runs"][next(iter(pf["runs"]))].values())]
+    if len(margins) > 1:
+        L += ["### Ours: bumper margin\n",
+              "The margin is how far beyond the bumpers' half-diagonal the obstacles are grown, and what the swept check "
+              "demands of the planned path. Contact runs = runs (of the seeds) where the TRUE bumper square touched an "
+              "obstacle or wall.\n",
+              "| route | pose | margin m | path m | t to 5 cm s | t settled s (n/N) | min clearance cm (worst run) | "
+              "contact runs | contact ms (worst run) |\n|---|---|---|---|---|---|---|---|---|"]
+        for name in routes:
+            for pose in ("truth", "odom"):
+                if pose not in pf["runs"]:
+                    continue
+                for m in margins:
+                    a = pf["runs"][pose][name][m]
+                    n, ns, n5 = a["n"], a["t_settle_nan"], a["t_5cm_nan"]
+                    st = "never" if ns == n else f"{a['t_settle_mean']:.2f} ({n - ns}/{n})"
+                    t5 = "never" if n5 == n else f"{a['t_5cm_mean']:.2f}" + ("" if n5 == 0 else f" ({n - n5}/{n})")
+                    L.append(f"| {name} | {titles[pose]} | {MARGINS[m]:.2f} | {a['path_m_mean']:.2f} | {t5} | {st} | "
+                             f"{a['clearance_cm_min']:.1f} | {round(a['contact_run_mean'] * n)}/{n} | "
+                             f"{a['contact_ms_worst']:.0f} |")
+        L.append("")
     L.append(PF_END)
     return "\n".join(L)
 
