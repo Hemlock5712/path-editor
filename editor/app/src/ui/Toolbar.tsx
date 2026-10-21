@@ -5,6 +5,7 @@ import { canOpenFolders } from "../io/files.ts";
 import { duplicatePath, fitView, newPath, removeActivePath, stepPlayback, toggleAlliance, togglePlay } from "../state/actions.ts";
 import { analysis, playback } from "../state/analysis.ts";
 import { isDirty, redo, setActivePath, setTool, setView, undo, type Tool } from "../state/editor.ts";
+import { bench, toggleBench } from "../state/bench.ts";
 import { downloadZip, newProject, openFolder, openUpload, save, session } from "../state/session.ts";
 import { useStore } from "../state/store.ts";
 import { formatNumber } from "./controls.tsx";
@@ -28,6 +29,7 @@ export function Toolbar() {
   const files = useStore(session, (s) => s.files);
   const writable = useStore(session, (s) => s.writable);
   const upload = useRef<HTMLInputElement>(null);
+  const benchOpen = useStore(bench, (b) => b.open);
 
   return (
     <header className="toolbar" role="toolbar" aria-label="Editor">
@@ -74,6 +76,18 @@ export function Toolbar() {
         </button>
         <button type="button" onClick={redo} disabled={!canRedo} title={redoLabel ? `Redo ${redoLabel} (Ctrl+Y)` : "Redo (Ctrl+Y)"} data-testid="redo">
           Redo
+        </button>
+      </div>
+      <div className="group">
+        <button
+          type="button"
+          onClick={toggleBench}
+          aria-pressed={benchOpen}
+          className={benchOpen ? "tool active" : "tool"}
+          title="Compare followers from the bench's results (read-only)"
+          data-testid="bench-toggle"
+        >
+          Bench
         </button>
       </div>
       <div className="group" role="radiogroup" aria-label="Tool">

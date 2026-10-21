@@ -171,3 +171,69 @@ test("the layout holds at 1280 px and the checks see an obstacle", async ({ page
   await page.keyboard.press("Control+z");
   await expect(page.getByTestId("checks")).not.toContainText("Bumpers hit");
 });
+
+/** The plan's total time as the Path panel shows it ("…, 4.38 s, top …"). */
+async function planSeconds(page: Page): Promise<number> {
+  const text = (await page.getByTestId("path-stats").textContent()) ?? "";
+  return Number(/([\d.]+) s,/.exec(text)![1]);
+}
+
+test("the optimiser shortens a weave, and applying it is one undo step", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("path-stats")).toContainText(" s,"); // the app is up and planning
+  await page.keyboard.press("w");
+  for (const [x, y] of [
+    [-2, 0.2],
+    [0, -2],
+    [2, 0.5],
+    [4, -1],
+  ]) {
+    await clickField(page, x!, y!);
+  }
+  await page.keyboard.press("v");
+  await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("listitem")).toHaveCount(6);
+  await expect(page.getByTestId("path-stats")).toContainText(" s,");
+  const before = await planSeconds(page);
+
+  await page.locator("summary", { hasText: "Optimise waypoints" }).click();
+  await page.getByLabel("Time budget", { exact: true }).fill("3");
+  await page.getByLabel("Time budget", { exact: true }).press("Enter");
+  await page.getByTestId("optimise-start").click();
+  await expect(page.getByTestId("optimise-apply")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("optimise-status")).toContainText("faster");
+  await page.getByTestId("optimise-apply").click();
+  await expect.poll(() => planSeconds(page)).toBeLessThan(before * 0.95);
+
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => planSeconds(page)).toBe(before);
+});
+
+test("the bench view shows an export, read-only", async ({ page }) => {
+  await page.goto("/");
+  const stat = (mean: number) => ({ mean, worst: mean * 1.5, nan: 0 });
+  const metrics = { t_done: stat(2.1), t_settle: stat(2.3), ct_rms_cm: stat(0.4), ct_max_cm: stat(1), err_end_cm: stat(0.5), yaw_end_deg: stat(0.2), overshoot_cm: stat(0), wheel_slip_ms: stat(0) };
+  const exportJson = {
+    schema: 1,
+    source: "out/results.json",
+    meta: { seeds: [0, 1], courses: ["straight_3m"], poses: ["odom"], tracePose: "odom", traceSeeds: [0] },
+    metrics: [{ key: "t_done", label: "time to done", unit: "s" }],
+    methods: [
+      { key: "ours_v2", label: "Ours v2" },
+      { key: "choreo", label: "Choreo" },
+    ],
+    courses: [{ key: "straight_3m", description: "3 m straight" }],
+    runs: { odom: { straight_3m: { ours_v2: { n: 2, ...metrics }, choreo: { n: 2, ...metrics, t_done: stat(2.6) } } } },
+    geometry: { straight_3m: { neutral: [[0, 0], [3, 0]], ours_v2: [[0, 0], [3, 0]], choreo: [[0, 0], [3, 0]] } },
+    traces: { straight_3m: { "0": { ours_v2: [[0, 0, 0, 0], [1, 1.5, 0.01, 0], [2, 3, 0, 0]], choreo: [[0, 0, 0, 0], [2.6, 3, 0.02, 0]] } } },
+  };
+  await page.getByTestId("bench-toggle").click();
+  await page.getByTestId("bench-file").setInputFiles({ name: "editor_bench.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(exportJson)) });
+  const table = page.getByTestId("bench-table");
+  await expect(table).toContainText("Ours v2");
+  await expect(table.locator("td.best")).toHaveText("2.1 (3.15)");
+  // editing shortcuts are off while it's open, and nothing in the project changed
+  await page.keyboard.press("w");
+  await page.getByTestId("bench-toggle").click();
+  await expect(page.getByTestId("tool-select")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("undo")).toBeDisabled();
+});

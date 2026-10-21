@@ -3,6 +3,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { analysis, playback, startAnalysis } from "./state/analysis.ts";
+import { bench } from "./state/bench.ts";
+import { useStore } from "./state/store.ts";
+import { BenchView } from "./ui/BenchView.tsx";
 import { editor, isDirty } from "./state/editor.ts";
 import { Charts } from "./ui/Charts.tsx";
 import { FieldCanvas } from "./ui/FieldCanvas.tsx";
@@ -11,6 +14,7 @@ import { EventsPanel } from "./ui/panels/EventsPanel.tsx";
 import { ObstaclesPanel, PointsPanel, ProjectPanel, RobotPanel } from "./ui/panels/FieldPanels.tsx";
 import { RotationPanel, ZonesPanel } from "./ui/panels/HeadingPanel.tsx";
 import { LivePanel } from "./ui/panels/LivePanel.tsx";
+import { OptimisePanel } from "./ui/panels/OptimisePanel.tsx";
 import { PathPanel, WaypointsPanel } from "./ui/panels/PathPanel.tsx";
 import { onKeyDown, SHORTCUTS } from "./ui/shortcuts.ts";
 import { PathTabs, PlaybackBar, StatusLine, Toolbar } from "./ui/Toolbar.tsx";
@@ -75,12 +79,14 @@ function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
 export function App() {
   const [help, setHelp] = useState(false);
+  const benchOpen = useStore(bench, (b) => b.open);
   usePlaybackClock();
 
   useEffect(() => startAnalysis(), []);
 
   useEffect(() => {
-    const keys = (e: KeyboardEvent) => onKeyDown(e, () => setHelp(true));
+    // the Bench view is read-only: no editing shortcuts while it is open
+    const keys = (e: KeyboardEvent) => !bench.get().open && onKeyDown(e, () => setHelp(true));
     const leave = (e: BeforeUnloadEvent) => {
       if (isDirty(editor.get())) e.preventDefault();
     };
@@ -108,26 +114,31 @@ export function App() {
     <div className="app">
       <Toolbar />
       <PathTabs onHelp={() => setHelp(true)} />
-      <main className="workspace">
-        <section className="field-column" aria-label="Field">
-          <FieldCanvas />
-          <PlaybackBar />
-          <Charts />
-        </section>
-        <aside className="sidebar" aria-label="Path details">
-          <ChecksPanel />
-          <PathPanel />
-          <WaypointsPanel />
-          <EventsPanel />
-          <RotationPanel />
-          <ZonesPanel />
-          <PointsPanel />
-          <ObstaclesPanel />
-          <RobotPanel />
-          <ProjectPanel />
-          <LivePanel />
-        </aside>
-      </main>
+      {benchOpen ? (
+        <BenchView />
+      ) : (
+        <main className="workspace">
+          <section className="field-column" aria-label="Field">
+            <FieldCanvas />
+            <PlaybackBar />
+            <Charts />
+          </section>
+          <aside className="sidebar" aria-label="Path details">
+            <ChecksPanel />
+            <PathPanel />
+            <WaypointsPanel />
+            <EventsPanel />
+            <RotationPanel />
+            <ZonesPanel />
+            <OptimisePanel />
+            <PointsPanel />
+            <ObstaclesPanel />
+            <RobotPanel />
+            <ProjectPanel />
+            <LivePanel />
+          </aside>
+        </main>
+      )}
       <StatusLine />
       <HelpDialog open={help} onClose={() => setHelp(false)} />
     </div>

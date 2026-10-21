@@ -1,0 +1,135 @@
+// The editor's NT4 client against WPILib's real ntcore server: lib's Nt4TelemetryServer starts ntcore
+// (2027 alpha-7 jars and desktop natives) and runs a real PathFollower in FollowPathCommand on the
+// simulated drivetrain, in real time, publishing its telemetry, the robot's pose and the server's clock.
+// Run with: npm run test:nt4 (it starts the server through gradle).
+
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Nt4Client, poseOf, type Nt4Value } from "../../src/nt4/client.ts";
+import { LiveFeed } from "../../src/nt4/liveFeed.ts";
+import { live } from "../../src/state/live.ts";
+
+const REPO = join(import.meta.dirname, "..", "..", "..", "..");
+const PORT = 5897;
+const SERVER_SECONDS = 120;
+const windows = process.platform === "win32";
+
+let server: ChildProcess;
+let output = "";
+
+function startServer(): Promise<void> {
+  const gradlew = join(REPO, "lib", windows ? "gradlew.bat" : "gradlew");
+  server = spawn(gradlew, ["-p", "lib", "nt4Server", "--no-daemon", "-q", `-Pnt4Port=${PORT}`, `-Pnt4Seconds=${SERVER_SECONDS}`], {
+    cwd: REPO,
+    shell: windows,
+  });
+  return new Promise((resolve, reject) => {
+    const onData = (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.includes("NT4 READY")) resolve();
+    };
+    server.stdout!.on("data", onData);
+    server.stderr!.on("data", onData);
+    server.on("exit", (code) => reject(new Error(`the NT4 server exited (${String(code)}) before it was ready:\n${output}`)));
+  });
+}
+
+function stopServer(): void {
+  if (!server?.pid) return;
+  if (windows) spawnSync("taskkill", ["/pid", String(server.pid), "/T", "/F"]);
+  else server.kill("SIGTERM");
+}
+
+const until = async (what: string, ok: () => boolean, ms = 20_000) => {
+  const end = Date.now() + ms;
+  while (!ok()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+};
+
+describe("NT4 client against WPILib's ntcore", () => {
+  beforeAll(startServer);
+  afterAll(stopServer);
+
+  it("receives the follower's telemetry, with time sync, from a real server", async () => {
+    const received: { v: Nt4Value; serverNowAtArrival: number | null }[] = [];
+    const client: Nt4Client = new Nt4Client({
+      host: "127.0.0.1",
+      port: PORT,
+      prefixes: ["/Telemetry/"],
+      onValue: (v) => received.push({ v, serverNowAtArrival: client.serverNowUs() }),
+    });
+    client.connect();
+    try {
+      await until("the connection and time sync", () => client.serverOffsetUs !== null);
+      expect(client.protocol).toBe("v4.1.networktables.first.wpi.edu");
+      expect(client.roundTripUs).toBeLessThan(50_000); // localhost
+
+      // the follower runs the S-curve over and over: watch a whole run's events go by
+      const fired = () => received.filter((r) => r.v.topic.name === "/Telemetry/PathFollower/EventsFired").map((r) => r.v.value as string[]);
+      await until("every event of a run", () => fired().some((e) => e.length === 3), 30_000);
+      expect(fired().find((e) => e.length === 3)).toEqual(["intakeDown", "spinUp", "shoot"]);
+      expect(client.latest("/Telemetry/PathFollower/Active")?.value).toMatch(/^(SCurve|)$/);
+
+      // progress along the path rises through a run, inside the path's length
+      const progress = received.filter((r) => r.v.topic.name === "/Telemetry/Path/SCurve/Progress").map((r) => r.v.value as number);
+      let rises = 0;
+      for (let i = 1; i < progress.length; i++) if (progress[i]! > progress[i - 1]!) rises++;
+      expect(rises).toBeGreaterThan(30);
+      const length =
+        (client.latest("/Telemetry/Path/SCurve/Progress")!.value as number) + (client.latest("/Telemetry/Path/SCurve/Remaining")!.value as number);
+      expect(length).toBeGreaterThan(8); // the S-curve fixture is about 9.3 m
+      expect(Math.max(...progress)).toBeLessThanOrEqual(length + 1e-6);
+      expect(client.topic("/Telemetry/Path/SCurve/CrossTrack")?.type).toBe("double");
+
+      // the robot's pose and the follower's reference, as structs, close together on the field
+      const pose = poseOf("struct:Pose2d", client.latest("/Telemetry/Robot/Pose")!.value)!;
+      const reference = poseOf(client.topic("/Telemetry/Path/SCurve/Reference")!.type, client.latest("/Telemetry/Path/SCurve/Reference")!.value)!;
+      expect(Math.abs(pose.x)).toBeLessThan(8.3);
+      expect(Math.hypot(pose.x - reference.x, pose.y - reference.y)).toBeLessThan(0.5);
+
+      // time sync: the server publishes its own clock (ntcore's, in ns) every loop and flushes it at once.
+      // When a value arrives, the client's estimate of the server's time is that clock plus the transport
+      // time: never less than minus half a round trip (the sync's accuracy), and only a few ms more.
+      const clock = received.filter((r) => r.v.topic.name === "/Telemetry/Harness/ServerTimeNanos" && r.serverNowAtArrival !== null);
+      expect(clock.length).toBeGreaterThan(50);
+      const lags = clock.map((r) => (r.serverNowAtArrival! - (r.v.value as number) / 1000) / 1000);
+      const stamps = clock.map((r) => Math.abs(r.v.serverTimeUs - (r.v.value as number) / 1000) / 1000);
+      lags.sort((a, b) => a - b);
+      const median = lags[Math.floor(lags.length / 2)]!;
+      console.log(
+        `NT4: round trip ${(client.roundTripUs / 1000).toFixed(2)} ms; arrival lag median ${median.toFixed(1)} ms, ` +
+          `range ${lags[0]!.toFixed(1)} to ${lags.at(-1)!.toFixed(1)} ms over ${lags.length} values; worst stamp gap ${Math.max(...stamps).toFixed(2)} ms`,
+      );
+      expect(Math.max(...stamps)).toBeLessThan(5); // the value's NT timestamp is the clock it carries
+      expect(lags[0]!).toBeGreaterThan(-(client.roundTripUs / 1000) / 2 - 1);
+      const p95 = lags[Math.floor(lags.length * 0.95)]!;
+      console.log(`NT4: 95th percentile lag ${p95.toFixed(1)} ms`);
+      expect(median).toBeLessThan(15);
+      expect(p95).toBeLessThan(40); // the rest is the harness's own scheduling (JIT, GC) on a busy PC
+    } finally {
+      client.close();
+    }
+  });
+
+  it("drives the editor's live view", async () => {
+    const feed = new LiveFeed({ address: "127.0.0.1", port: PORT, poseTopic: "/Telemetry/Robot/Pose" });
+    feed.start();
+    try {
+      await until("the live view to fill in", () => {
+        const s = live.get();
+        return s.status === "connected" && s.synced && s.active === "SCurve" && Number.isFinite(s.progressMeters) && s.robot?.pose !== undefined;
+      });
+      await until("events in the live view", () => live.get().eventsFired.length > 0, 30_000);
+      const s = live.get();
+      expect(s.rttMs).toBeLessThan(50);
+      expect(s.poseAgeMs).toBeLessThan(100);
+      expect(s.robot?.reference).toBeDefined();
+      expect(["intakeDown", "spinUp", "shoot"]).toEqual(expect.arrayContaining([...s.eventsFired]));
+    } finally {
+      feed.stop();
+    }
+  });
+});

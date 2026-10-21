@@ -35,6 +35,7 @@ import {
   type Selection,
 } from "../state/editor.ts";
 import { live } from "../state/live.ts";
+import { optimiser } from "../state/optimiser.ts";
 import { drawField, headingAtS, rotationHandle, tangentHandle, TANGENT_HANDLE_METERS } from "./draw.ts";
 import { FieldView } from "./fieldView.ts";
 
@@ -110,7 +111,9 @@ export function FieldCanvas() {
       hoverS: pb.hoverS,
       draftObstacle: s.draftObstacle,
       live: live.get().robot,
+      liveProgress: live.get().active ? { pathName: live.get().active, progressMeters: live.get().progressMeters } : null,
       geometryOf,
+      ghost: optimiser.get().pathId === active.id ? optimiser.get().preview : null,
     });
   };
 
@@ -125,7 +128,7 @@ export function FieldCanvas() {
       schedule();
     };
     img.src = `${import.meta.env.BASE_URL}field-2026.png`;
-    const unsubs = [editor.subscribe(schedule), analysis.subscribe(schedule), playback.subscribe(schedule), live.subscribe(schedule)];
+    const unsubs = [editor.subscribe(schedule), analysis.subscribe(schedule), playback.subscribe(schedule), live.subscribe(schedule), optimiser.subscribe(schedule)];
     const wrap = wrapRef.current!;
     const observer = new ResizeObserver(() => {
       const rect = wrap.getBoundingClientRect();

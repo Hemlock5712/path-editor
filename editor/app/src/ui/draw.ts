@@ -48,6 +48,12 @@ export interface LiveRobot {
   readonly reference?: LivePose;
 }
 
+/** The follower's progress, drawn on the path when the editor shows the path the robot is running. */
+export interface LiveProgress {
+  readonly pathName: string;
+  readonly progressMeters: number;
+}
+
 export interface DrawModel {
   readonly view: FieldView;
   readonly image: HTMLImageElement | null;
@@ -62,8 +68,11 @@ export interface DrawModel {
   readonly hoverS: number;
   readonly draftObstacle: readonly (readonly [number, number])[] | null;
   readonly live: LiveRobot | null;
+  readonly liveProgress: LiveProgress | null;
   /** The main-thread geometry of any spec (the other tabs are drawn from it). */
   readonly geometryOf: (spec: EditorPath["spec"]) => PathGeometry | null;
+  /** The optimiser's proposal for the active path, drawn dashed with its waypoints. */
+  readonly ghost: EditorPath["spec"] | null;
 }
 
 /** Linear interpolation of a station column at s. */
@@ -116,6 +125,7 @@ export function drawField(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   drawZones(ctx, m);
   drawChecks(ctx, m);
   drawPath(ctx, m);
+  drawGhost(ctx, m);
   drawFootprints(ctx, m);
   drawRotationTargets(ctx, m);
   drawWaypoints(ctx, m);
@@ -128,7 +138,10 @@ export function drawField(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   drawLegend(ctx, m);
 }
 
-function drawFieldImage(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+/** What the field backdrop needs: the view, the image, and the field's size. */
+export type FieldBackdrop = Pick<DrawModel, "view" | "image"> & { readonly project: Pick<Project, "field"> };
+
+export function drawFieldImage(ctx: CanvasRenderingContext2D, m: FieldBackdrop): void {
   const { view } = m;
   const L = m.project.field.lengthMeters;
   const W = m.project.field.widthMeters;
@@ -160,7 +173,7 @@ function drawFieldImage(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   ctx.textAlign = "left";
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+export function drawGrid(ctx: CanvasRenderingContext2D, m: FieldBackdrop): void {
   const { view } = m;
   const L = m.project.field.lengthMeters / 2;
   const W = m.project.field.widthMeters / 2;
@@ -249,6 +262,25 @@ function drawOtherPath(ctx: CanvasRenderingContext2D, m: DrawModel, p: EditorPat
   pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
   ctx.stroke();
   ctx.globalAlpha = 1;
+}
+
+function drawGhost(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const g = m.ghost ? m.geometryOf(m.ghost) : null;
+  if (!g || !m.ghost) return;
+  const pts = polyline(m.view, g, 0, g.lengthMeters, 0.03);
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([7, 5]);
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (const w of m.ghost.waypoints) {
+    const [x, y] = m.view.toCanvas(w.xMeters, w.yMeters);
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x - 4, y - 4, 8, 8);
+  }
 }
 
 function drawPath(ctx: CanvasRenderingContext2D, m: DrawModel): void {
@@ -590,6 +622,16 @@ function drawLive(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   };
   if (live.reference) draw(live.reference, "rgba(244,114,182,0.6)", null);
   if (live.pose) draw(live.pose, COLOURS.live, "rgba(244,114,182,0.2)");
+  const progress = m.liveProgress;
+  if (progress && progress.pathName === m.active.name && m.geometry && Number.isFinite(progress.progressMeters)) {
+    const p = m.geometry.sample(progress.progressMeters);
+    const [x, y] = m.view.toCanvas(p.xMeters, p.yMeters);
+    ctx.strokeStyle = COLOURS.live;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 10, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
 }
 
 function drawLegend(ctx: CanvasRenderingContext2D, m: DrawModel): void {

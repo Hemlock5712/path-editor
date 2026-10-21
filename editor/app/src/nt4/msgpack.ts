@@ -120,3 +120,26 @@ export function decodeAll(bytes: Uint8Array): MsgValue[] {
   while (!r.done) out.push(r.read());
   return out;
 }
+
+/** Encodes integers and arrays of them: all NT4's binary messages from a client need (time sync pings). */
+export function encode(value: number | readonly number[]): Uint8Array {
+  const out: number[] = [];
+  const int = (n: number) => {
+    if (!Number.isInteger(n)) throw new RangeError(`not an integer: ${n}`);
+    if (n >= 0 && n <= 0x7f) out.push(n);
+    else if (n < 0 && n >= -32) out.push(0x100 + n);
+    else {
+      // int64, big-endian
+      const b = new DataView(new ArrayBuffer(8));
+      b.setBigInt64(0, BigInt(n));
+      out.push(0xd3, ...new Uint8Array(b.buffer));
+    }
+  };
+  if (typeof value === "number") int(value);
+  else {
+    if (value.length > 15) throw new RangeError("only short arrays");
+    out.push(0x90 | value.length);
+    for (const v of value) int(v);
+  }
+  return new Uint8Array(out);
+}

@@ -587,3 +587,79 @@ dialog.help th {
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.5);
 }
+
+/* ------------------------------------------------------------------ bench view */
+
+.bench-column {
+  grid-template-rows: minmax(200px, 1fr) minmax(120px, 38%);
+}
+
+.bench-table-wrap {
+  overflow: auto;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.bench-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+}
+
+.bench-table caption {
+  text-align: left;
+  padding: 6px 8px;
+  color: var(--muted);
+}
+
+.bench-table th,
+.bench-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.bench-table th[scope="row"],
+.bench-table thead th:nth-child(2) {
+  text-align: left;
+  font-weight: 400;
+}
+
+.bench-table td.best {
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.bench-table .worst {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bench-controls {
+  padding-top: 10px;
+}
+
+.locks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}

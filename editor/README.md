@@ -19,6 +19,7 @@ npm run dev          # http://localhost:5712
 | Typecheck only | `npm run typecheck` |
 | Unit tests (vitest) | `npm test` |
 | End-to-end test (Playwright) | `npm run e2e` |
+| The NT4 client against WPILib's real ntcore server (starts the Java harness through gradle) | `npm run test:nt4` |
 | Author the phase 6 suite into `e2e/out` (Playwright) | `npm run e2e:author` |
 | The whole phase 6 chain (author, then run every path on the simulated robot) | `npm run e2e:full` |
 | The core's tests | `cd ../core && npm install && npm test` |
@@ -146,18 +147,73 @@ Playwright to the file system). It reads each path's preview through `window.pat
 read-only hook that waits for the worker to plan the current document and returns the total time, the peak speed
 and each event's s and t(s). `E2E_ONLY=Straight,Hairpin` authors just those paths.
 
-## Stubbed or not done
+## Waypoint optimiser
 
-- **NT4 live robot: minimal and untested on a robot.** The client is read-only. It subscribes to a pose
-  topic (`struct:Pose2d`, or a Field2d-style `double[]` in degrees) and to `/Telemetry/Path/`: WPILib
-  2027's `Telemetry` publishes under `/Telemetry`, so `PathTelemetry("Path/<name>")` lands there. It
-  shows the pose, the follower's reference and its values. It ignores NT time sync and has only been
-  tested with hand-built frames.
-- **Not built:** these items are in PLAN.md's phase 5 but weren't in this round's brief.
-  - a follower sim preview;
-  - the optimiser;
-  - loading the bench comparison;
-  - freehand stroke to waypoints.
+The **Optimise waypoints** panel shortens the active path's planned time.
+
+- **What moves.** The free interior waypoints, each within a corridor (0.5 m by default), and their tangent
+  scales (half to double). Tangent directions don't change.
+- **What stays put.** The ends, any waypoint you lock, any linked to a named point, and any a zone starts or
+  ends on or between. Events, rotation targets and zones placed by waypoint keep their waypoint position;
+  those placed by metres keep the same fraction of the path's length.
+- **What it must keep.** A candidate counts only if it plans and its swept bumpers keep the clearance the path
+  had (up to the 5 cm margin). It also mustn't add heading warnings or errors.
+- **Method.** Nelder-Mead with adaptive coefficients, restarted around the best point as it converges, in
+  `compute/optimiser.ts`. It runs in a Web Worker in chunks, so **Cancel** stops it and keeps the best so far.
+  It is deterministic for a seed and evaluation budget; the time budget only cuts it short. Every number
+  comes from the core's plan.
+- **Results.** The field shows the best path so far, dashed. The panel gives before and after times.
+  **Apply** is one undo step; it refuses if the path changed meanwhile.
+
+## Bench comparison
+
+**Bench** in the toolbar swaps the workspace for a read-only view of the bench's results.
+
+- **Getting the data.** Export it with `python bench/run.py --export-editor`, which reads `bench/out/results.json`
+  and writes `bench/out/editor_bench.json`. Seed 0's traces come from `results.json`; add
+  `--trace-seeds 0,1,2` to simulate more. Then load the export.
+- **What it shows.** For the chosen course and pose source, a table of every method's mean (and worst) time to
+  done, time settled, cross-track, final error and yaw, overshoot and wheel slip. The lowest mean in each
+  column is bold.
+- **On the field.** Each method's authored path (dashed) and its true trace (solid) for the chosen seed: ours,
+  Choreo, PathPlanner, BLine, the old follower, and the variants. The course is moved to the middle of the
+  field.
+- **Editing.** Editing shortcuts are off while the view is open, and nothing in it touches the project.
+
+## Live robot (NT4)
+
+`nt4/client.ts` is an NT4 client following WPILib 2027's ntcore sources.
+
+- **Protocol.** WebSocket to `ws://<robot>:5810/nt/<name>` with the v4.1 subprotocol. It subscribes by prefix,
+  handles announce, unannounce and properties, and decodes MessagePack binary values.
+- **Time sync.** It sends `[-1, 0, int, its time]` and the server answers with its own clock. The client keeps
+  the shortest round trip's offset, as ntcore's client does.
+- **Connection.** It reconnects when the robot goes away. It is read-only.
+- **The panel.** The connect box takes a team number (5712 → 10.57.12.2) or an address (`localhost` for a
+  simulation) and the pose topic. The panel shows the active path, phase, progress s, the distance left,
+  cross-track, the reference, the robot's pose and its age, and the events fired.
+- **On the field.** The robot (pink), the reference, and the follower's progress, drawn on the path when the
+  editor shows the path the robot is running.
+- **Topics.** It reads what `PathTelemetry` publishes: `/Telemetry/PathFollower/{Active, EventsFired, LastEvent}`
+  and `/Telemetry/Path/<path>/{Phase, Progress, Remaining, CrossTrack, Reference, Goal}`.
+
+**Tested against the real thing.** `npm run test:nt4` starts lib's `Nt4TelemetryServer` with `gradlew nt4Server`.
+That is WPILib's ntcore as an NT4 server, from the alpha-7 jars and desktop natives, with a real `PathFollower` in
+`FollowPathCommand` running the S-curve on the simulated drivetrain in real time. The client connects and checks:
+
+- the v4.1 protocol is negotiated;
+- the telemetry arrives: the active path, progress rising inside the path's length, cross-track, and the
+  reference and robot pose as Pose2d structs;
+- a whole run's events arrive in order;
+- the time sync works. The harness publishes ntcore's own clock (ns) and flushes each loop. On arrival, the
+  client's estimate of server time sits at or just after that clock: measured median 0.8 ms, never earlier than
+  half a round trip, with about a 1 ms round trip.
+
+It hasn't been on a robot yet.
+
+## Not done
+
+- A follower sim preview (being built separately) and freehand stroke to waypoints.
 - **Motor presets other than the Kraken X60 FOC** use vendor datasheet figures (stall torque, stall
   current, free speed) and haven't been checked against dyno data. The FOC numbers are the core's.
 - **No tab reordering, no multi-select, and no numeric editing of obstacle corners** (drag them on the
