@@ -15,9 +15,11 @@ import java.util.ArrayDeque;
  *   <li>The chassis velocity follows it with a first-order lag of time constant {@code lagSeconds}.
  *   <li>Everything is integrated every {@code substepSeconds} (trapezoid on the velocity).
  *   <li>{@link #shove} adds a velocity at once: a hit, which the lag then pulls back to the command.
+ *   <li>Optionally the floor's grip caps how fast the translation can change ({@code grip}, m/s²;
+ *       +∞ = no cap, as in the end-to-end suite): a robot asked for more slides at that limit.
  * </ul>
  *
- * There is no slip: the follower's limiter keeps the commands inside the grip budget. Exponentials go
+ * With no grip cap there is no slip: the follower's limiter keeps the commands inside its budget. Exponentials go
  * through {@link StrictMath} (fdlibm, as V8's are).
  */
 public final class SimDrivetrain {
@@ -38,6 +40,7 @@ public final class SimDrivetrain {
   private final double lag;
   private final double substep;
   private final double kSubstep;
+  private final double grip;
   private final ArrayDeque<double[]> inFlight = new ArrayDeque<>(); // {time it takes effect, vx, vy, omega}
   private double[] target;
   private double t;
@@ -50,6 +53,13 @@ public final class SimDrivetrain {
 
   /** A robot at {@code pose} moving at {@code velocity} (field-relative), commanded to keep doing so. */
   public SimDrivetrain(Pose pose, FieldSpeeds velocity, double latencySeconds, double lagSeconds, double substepSeconds) {
+    this(pose, velocity, latencySeconds, lagSeconds, substepSeconds, Double.POSITIVE_INFINITY);
+  }
+
+  /** The same with the floor's grip capping the translational acceleration at {@code gripMetersPerSecondSquared}. */
+  public SimDrivetrain(Pose pose, FieldSpeeds velocity, double latencySeconds, double lagSeconds, double substepSeconds,
+      double gripMetersPerSecondSquared) {
+    grip = gripMetersPerSecondSquared;
     latency = latencySeconds;
     lag = lagSeconds;
     substep = substepSeconds;
@@ -85,8 +95,17 @@ public final class SimDrivetrain {
       double vx0 = vx;
       double vy0 = vy;
       double w0 = omega;
-      vx += (target[1] - vx) * k;
-      vy += (target[2] - vy) * k;
+      double dvx = (target[1] - vx) * k;
+      double dvy = (target[2] - vy) * k;
+      if (grip < Double.POSITIVE_INFINITY) {
+        double a = Math.sqrt(dvx * dvx + dvy * dvy) / dt;
+        if (a > grip) {
+          dvx *= grip / a;
+          dvy *= grip / a;
+        }
+      }
+      vx += dvx;
+      vy += dvy;
       omega += (target[3] - omega) * k;
       x += 0.5 * (vx0 + vx) * dt;
       y += 0.5 * (vy0 + vy) * dt;

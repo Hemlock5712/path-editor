@@ -7,11 +7,15 @@ import { flipPose, flipSpeeds, type FieldFrame, type FieldSpeeds, type Pose } fr
 import { PHASES, PathFollower, type FollowerConfig, type Phase } from "./follow.ts";
 import type { Path } from "./path.ts";
 
-/** The drivetrain's numbers: command latency, first-order velocity lag, integration step. */
+/**
+ * The drivetrain's numbers: command latency, first-order velocity lag, integration step, and the floor's
+ * grip capping the translational acceleration (m/s²; absent or Infinity = no cap, as in the e2e suite).
+ */
 export interface DriveSettings {
   readonly latencySeconds: number;
   readonly lagSeconds: number;
   readonly substepSeconds: number;
+  readonly gripMetersPerSecondSquared?: number;
 }
 
 /** The end-to-end suite's drivetrain. */
@@ -28,6 +32,7 @@ export class SimDrivetrain {
   private readonly lag: number;
   private readonly substep: number;
   private readonly kSubstep: number;
+  private readonly grip: number;
   private readonly inFlight: number[][] = [];
   private target: number[];
   private t = 0;
@@ -43,6 +48,7 @@ export class SimDrivetrain {
     this.lag = drive.lagSeconds;
     this.substep = drive.substepSeconds;
     this.kSubstep = 1.0 - Math.exp(-this.substep / this.lag);
+    this.grip = drive.gripMetersPerSecondSquared ?? Infinity;
     this.x = pose.xMeters;
     this.y = pose.yMeters;
     this.heading = pose.headingRadians;
@@ -73,8 +79,17 @@ export class SimDrivetrain {
       const vx0 = this.vx;
       const vy0 = this.vy;
       const w0 = this.omega;
-      this.vx += (this.target[1]! - this.vx) * k;
-      this.vy += (this.target[2]! - this.vy) * k;
+      let dvx = (this.target[1]! - this.vx) * k;
+      let dvy = (this.target[2]! - this.vy) * k;
+      if (this.grip < Infinity) {
+        const a = Math.sqrt(dvx * dvx + dvy * dvy) / dt;
+        if (a > this.grip) {
+          dvx *= this.grip / a;
+          dvy *= this.grip / a;
+        }
+      }
+      this.vx += dvx;
+      this.vy += dvy;
       this.omega += (this.target[3]! - this.omega) * k;
       this.x += 0.5 * (vx0 + this.vx) * dt;
       this.y += 0.5 * (vy0 + this.vy) * dt;

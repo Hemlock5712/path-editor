@@ -37,8 +37,12 @@ public final class FollowFixtureGen {
 
   private FollowFixtureGen() {}
 
-  /** One case: a path, its robot, the frame it runs in and an optional shove. */
-  public record Case(PathSpec spec, RobotConfig robot, FieldFrame frame, FollowerSim.Shove shove) {}
+  /** One case: a path, its robot, the frame it runs in, an optional shove and the drivetrain. */
+  public record Case(PathSpec spec, RobotConfig robot, FieldFrame frame, FollowerSim.Shove shove, FollowerSim.Drive drive) {
+    Case(PathSpec spec, RobotConfig robot, FieldFrame frame, FollowerSim.Shove shove) {
+      this(spec, robot, frame, shove, FollowerSim.Drive.DEFAULT);
+    }
+  }
 
   /** Every case, by name. */
   public static Map<String, Case> cases() {
@@ -56,6 +60,10 @@ public final class FollowFixtureGen {
         new FollowerSim.Shove(1.0, 0.0, 1.5)));
     m.put("auto_route_red", new Case(FixturePaths.autoRoute(), RobotConfig.DEFAULT, FieldFrame.RED_HALF_TURN, null));
     m.put("slalom_mirror", new Case(FixturePaths.slalom(), RobotConfig.DEFAULT, FieldFrame.RED_MIRROR, null));
+    // a slick floor under the drivetrain (half the plan's grip): the robot slides where it's asked for more
+    FollowerSim.Drive d = FollowerSim.Drive.DEFAULT;
+    m.put("s_curve_slick", new Case(FixturePaths.sCurve(), RobotConfig.DEFAULT, FieldFrame.BLUE, null,
+        new FollowerSim.Drive(d.latencySeconds(), d.lagSeconds(), d.substepSeconds(), 0.35 * RobotConfig.GRAVITY)));
     return m;
   }
 
@@ -68,7 +76,7 @@ public final class FollowFixtureGen {
 
   /** The fixture text for one case. */
   public static String fixture(Case c) {
-    FollowerSim.Drive drive = FollowerSim.Drive.DEFAULT;
+    FollowerSim.Drive drive = c.drive();
     Map<String, Object> pathTree =
         PathFile.asMap(Json.parse(Json.write(PathFile.toJson(c.spec()), Json::exact)), "path");
     Path path = Path.build(PathFile.fromJson(pathTree), c.robot());
@@ -88,6 +96,9 @@ public final class FollowFixtureGen {
     d.put("latencySeconds", drive.latencySeconds());
     d.put("lagSeconds", drive.lagSeconds());
     d.put("substepSeconds", drive.substepSeconds());
+    if (Double.isFinite(drive.gripMetersPerSecondSquared())) {
+      d.put("gripMetersPerSecondSquared", drive.gripMetersPerSecondSquared());
+    }
     inputs.put("drive", d);
     inputs.put("frame", c.frame().name());
     if (c.shove() != null) {

@@ -24,10 +24,10 @@ public final class FollowerSim {
   /** A hit during the run: at {@code atSeconds}, add (dvx, dvy) m/s, field frame. */
   public record Shove(double atSeconds, double dvxMetersPerSecond, double dvyMetersPerSecond) {}
 
-  /** The drivetrain's numbers. */
-  public record Drive(double latencySeconds, double lagSeconds, double substepSeconds) {
+  /** The drivetrain's numbers; grip caps the translational acceleration, m/s² (+∞ = no cap). */
+  public record Drive(double latencySeconds, double lagSeconds, double substepSeconds, double gripMetersPerSecondSquared) {
     public static final Drive DEFAULT = new Drive(SimDrivetrain.DEFAULT_LATENCY_SECONDS,
-        SimDrivetrain.DEFAULT_LAG_SECONDS, SimDrivetrain.DEFAULT_SUBSTEP_SECONDS);
+        SimDrivetrain.DEFAULT_LAG_SECONDS, SimDrivetrain.DEFAULT_SUBSTEP_SECONDS, Double.POSITIVE_INFINITY);
   }
 
   /** One event as it fired: its name and the loop it fired in. */
@@ -63,7 +63,7 @@ public final class FollowerSim {
     Pose startPose = frame.fromBlue(new Pose(start.xMeters(), start.yMeters(), start.headingRadians()));
     FieldSpeeds startVel = frame.fromBlue(new FieldSpeeds(v0 * start.tangentX(), v0 * start.tangentY(), 0.0));
     SimDrivetrain sim = new SimDrivetrain(startPose, startVel, drive.latencySeconds(), drive.lagSeconds(),
-        drive.substepSeconds());
+        drive.substepSeconds(), drive.gripMetersPerSecondSquared());
     PathFollower follower = new PathFollower(path, config);
     Trace trace = new Trace();
     int[] loop = {0};
