@@ -109,6 +109,11 @@ public final class Path {
     return geometry.lengthMeters();
   }
 
+  /** Where the path reverses, metres along it ({@link PathGeometry#cusps}); the profile stops the robot at each. */
+  public double[] cusps() {
+    return geometry.cusps();
+  }
+
   public double totalTimeSeconds() {
     return profile.totalTimeSeconds();
   }

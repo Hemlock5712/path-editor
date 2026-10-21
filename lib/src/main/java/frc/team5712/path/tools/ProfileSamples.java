@@ -84,6 +84,14 @@ public final class ProfileSamples {
     root.put("inputs", inputs);
     root.put("lengthMeters", path.lengthMeters());
     root.put("totalTimeSeconds", path.totalTimeSeconds());
+    double[] cusps = path.cusps();
+    if (cusps.length > 0) { // only paths that double back carry the key, so the others' fixtures stay as they were
+      List<Object> c = new ArrayList<>();
+      for (double s : cusps) {
+        c.add(s);
+      }
+      root.put("cusps", c);
+    }
     root.put("samples", samples);
     return root;
   }

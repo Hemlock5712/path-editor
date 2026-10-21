@@ -64,6 +64,8 @@ public final class FollowFixtureGen {
     FollowerSim.Drive d = FollowerSim.Drive.DEFAULT;
     m.put("s_curve_slick", new Case(FixturePaths.sCurve(), RobotConfig.DEFAULT, FieldFrame.BLUE, null,
         new FollowerSim.Drive(d.latencySeconds(), d.lagSeconds(), d.substepSeconds(), 0.35 * RobotConfig.GRAVITY)));
+    // a path that doubles back: the follower stops at the cusp and reverses
+    m.put("joe_auto_cusp", new Case(FixturePaths.joeAutoCusp(), RobotConfig.DEFAULT, FieldFrame.BLUE, null));
     return m;
   }
 
