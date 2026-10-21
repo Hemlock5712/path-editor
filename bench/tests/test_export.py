@@ -41,3 +41,9 @@ def test_the_committed_snapshot_is_small_and_parses():
     assert d["schema"] == run.EDITOR_SCHEMA
     assert len(d["meta"]["traceSeeds"]) == 1
     assert set(d["traces"]) == set(d["meta"]["courses"])
+
+
+def test_every_course_has_a_what_to_look_at_line():
+    from courses import COURSES
+
+    assert set(COURSES) <= set(run.EDITOR_LOOK)

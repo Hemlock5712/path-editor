@@ -1,6 +1,6 @@
 // The Bench view's state: the loaded export and what is chosen. Nothing here touches the project.
 
-import { DEFAULT_SHOWN, parseBench, type BenchData } from "../bench/benchData.ts";
+import { parseBench, PRIMARY_METHODS, type BenchData } from "../bench/benchData.ts";
 import { createStore } from "./store.ts";
 
 export interface BenchState {
@@ -14,6 +14,8 @@ export interface BenchState {
   readonly shown: readonly string[];
   /** Draw the true traces (else only each method's authored geometry). */
   readonly traces: boolean;
+  /** List every method, not just ours and each rival's best-tuned entry. */
+  readonly moreMethods: boolean;
   readonly loadingSnapshot: boolean;
 }
 
@@ -25,19 +27,14 @@ export const bench = createStore<BenchState>({
   pose: "",
   course: "",
   seed: "0",
-  shown: DEFAULT_SHOWN,
+  shown: PRIMARY_METHODS,
+  moreMethods: false,
   traces: true,
   loadingSnapshot: false,
 });
 
 /** The committed snapshot (bench/run.py --export-editor writes it): what the deployed editor opens with. */
 export const SNAPSHOT_URL = `${import.meta.env.BASE_URL}bench/results-lite.json`;
-
-export function toggleBench(): void {
-  bench.set((s) => ({ open: !s.open }));
-  const s = bench.get();
-  if (s.open && !s.data && !s.loadingSnapshot) void loadSnapshot();
-}
 
 /** Fetches the committed snapshot; a file loaded meanwhile wins. */
 export async function loadSnapshot(): Promise<void> {
@@ -54,19 +51,19 @@ export async function loadSnapshot(): Promise<void> {
   }
 }
 
-/** Loads an export; the choices reset to its first pose source, course and seed. */
+/** Loads an export; the choices reset to perfect pose (if it has it), its first course and seed, and the main methods. */
 export function loadBench(text: string, fileName: string): void {
   try {
     const data = parseBench(text);
-    const methods = new Set(data.methods.map((m) => m.key));
+    const methods = new Set([...data.methods, ...(data.ppcompare?.methods ?? [])].map((m) => m.key));
     bench.set({
       data,
       fileName,
       error: null,
-      pose: data.meta.poses[0] ?? "",
+      pose: data.meta.poses.includes("truth") ? "truth" : (data.meta.poses[0] ?? ""),
       course: data.meta.courses[0] ?? "",
       seed: String(data.meta.traceSeeds[0] ?? 0),
-      shown: DEFAULT_SHOWN.filter((m) => methods.has(m)),
+      shown: PRIMARY_METHODS.filter((m) => methods.has(m)),
     });
   } catch (e) {
     bench.set({ error: `${fileName}: ${(e as Error).message}` });

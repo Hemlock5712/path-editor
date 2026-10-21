@@ -1,5 +1,5 @@
 // Screenshots for review, at the window sizes the editor is built for: the empty editor (first run),
-// a drawn path, a selected waypoint, the settings page and the telemetry page. Saved to screenshots/.
+// a drawn path, a selected waypoint, the settings page, the telemetry page and the bench page. Saved to screenshots/.
 
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -63,5 +63,10 @@ for (const size of SIZES) {
     await page.getByTestId("page-telemetry").click();
     await settle(page);
     await shot("5-telemetry");
+
+    await page.getByTestId("page-bench").click();
+    await expect(page.getByTestId("bench-scoreboard")).toBeVisible();
+    await settle(page);
+    await shot("6-bench");
   });
 }

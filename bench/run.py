@@ -7,7 +7,8 @@
                                         # and stdout, leaves results.json and RESULTS.md alone
     python bench/run.py --md-only       # rebuild RESULTS.md's generated part from bench/out/results.json
     python bench/run.py --export-editor # bench/out/editor_bench.json for the editor's Bench view (from results.json;
-                                        # --trace-seeds 0,1,2 re-simulates traces for more seeds than seed 0), and
+                                        # --trace-seeds 0,1,2 for more seeds, --trace-pose for traces from another
+                                        # pose source than the default perfect pose), and
                                         # editor/app/public/bench/results-lite.json, the small committed snapshot
                                         # the deployed editor opens with
 
@@ -185,6 +186,8 @@ def main():
     ap.add_argument("--md-only", action="store_true")
     ap.add_argument("--export-editor", action="store_true",
                     help="write out/editor_bench.json (tables, geometry and traces) for the editor's Bench view")
+    ap.add_argument("--trace-pose", default="truth",
+                    help="with --export-editor: the pose source the traces are simulated with (perfect pose by default)")
     ap.add_argument("--trace-seeds", default="0",
                     help="with --export-editor: seeds to give traces for, e.g. 0,1,2 (seed 0 comes from results.json)")
     ap.add_argument("--pathfind-only", action="store_true",
@@ -206,7 +209,7 @@ def main():
         write_md(json.load(open(path)))
         return
     if a.export_editor:
-        export_editor(path, [int(x) for x in a.trace_seeds.split(",") if x != ""], min(a.procs, 4))
+        export_editor(path, [int(x) for x in a.trace_seeds.split(",") if x != ""], min(a.procs, 4), a.trace_pose)
         return
     seeds = list(range(a.seeds if a.seeds else (2 if a.quick else 10)))
     courses = QUICK_COURSES if a.quick else list(COURSES)
@@ -278,6 +281,20 @@ def main():
 # ============================================================================================ editor export
 EDITOR_EXPORT = os.path.join(OUT, "editor_bench.json")
 LITE_EXPORT = os.path.join(HERE, "..", "editor", "app", "public", "bench", "results-lite.json")
+PPCOMPARE = os.path.join(OUT, "ppcompare.json")
+
+# What each course shows, for the editor's Bench page: one line, what to look at.
+EDITOR_LOOK = {
+    "straight_3m": "the baseline: how fast each gets there and settles, with nothing to steer round",
+    "s_curve": "cross-track through the two bends, and whether the finish is clean",
+    "hairpin": "the 180° turn: who keeps to the line at speed, and who swings wide or slows to a crawl",
+    "slalom": "three gates in a row: cross-track at each gate, and the time it costs to hit them",
+    "long_auto": "a whole auto with heading changes: time, and the final pose after 9 m of driving",
+    "moving_start": "a rolling start (2 m/s sideways): how quickly each takes the path over",
+    "hit_mid_path": "how far each ends after a shove halfway, and how fast it recovers",
+    "low_grip_s_curve": "a slippery floor: who still settles, and how much wheel slip each causes",
+    "grip_drop_s_curve": "the grip drops halfway: who adapts, and who slides past the end",
+}
 LITE_TRACE_STEP = 5  # every 5th trace sample: 0.2 s apart
 EDITOR_SCHEMA = 1
 # what the editor's tables show: name in results.json -> (label, unit)
@@ -293,13 +310,53 @@ EDITOR_METRICS = {
 }
 
 
-def export_editor(results_path, trace_seeds, procs):
+def _ppcompare_block():
+    """The PathPlanner comparison (run.py --pp-compare, out/ppcompare.json) for the editor: its rows per
+    pose source and target, and the 2026 routes' waypoints on the field. None if it hasn't been run."""
+    if not os.path.exists(PPCOMPARE):
+        return None
+    d = json.load(open(PPCOMPARE))
+    try:
+        import ppcompare
+    except ImportError:
+        return None
+    keys = list(EDITOR_METRICS) + ["plan_s"]
+    runs = {}
+    for p, by_target in d["runs"].items():
+        runs[p] = {}
+        for t, by_method in by_target.items():
+            runs[p][t] = {}
+            for m, r in by_method.items():
+                row = {"n": r.get("n", 0)}
+                for k in keys:
+                    if k + "_mean" in r:
+                        row[k] = {"mean": r.get(k + "_mean"), "worst": r.get(k + "_worst"), "nan": r.get(k + "_nan", 0)}
+                runs[p][t][m] = row
+    targets = []
+    for t in d["meta"]["targets"]:
+        route = ppcompare.ROUTES.get(t)
+        legs = [[[round(w.x, 3), round(w.y, 3)] for w in leg.waypoints] for leg in route["legs"]] if route else []
+        targets.append({"key": t, "description": ppcompare.description(t), "onField": route is not None, "legs": legs,
+                        "look": EDITOR_LOOK.get(t, "planned time against settled time: does a faster plan still finish clean?")})
+    return {
+        "source": os.path.relpath(PPCOMPARE, HERE),
+        "meta": {"seeds": d["meta"]["seeds"], "poses": d["meta"]["poses"]},
+        "metrics": [{"key": "plan_s", "label": "planned time", "unit": "s"}]
+        + [{"key": k, "label": v[0], "unit": v[1]} for k, v in EDITOR_METRICS.items()],
+        "methods": [{"key": k, "label": v[1]} for k, v in ppcompare.METHODS.items() if k in d["meta"]["methods"]],
+        "targets": targets,
+        "runs": runs,
+    }
+
+
+def export_editor(results_path, trace_seeds, procs, trace_pose="truth"):
     """The editor's Bench view input: per pose source, course and method the mean and worst of a few metrics,
     each method's authored geometry, and true traces ([t, x, y, heading] every 40 ms) for the chosen seeds.
     Seed 0's traces come from results.json; other seeds are simulated again here (same plant, same pose source)."""
     d = json.load(open(results_path))
     meta = d["meta"]
-    pose = meta["poses"][0]
+    # results.json keeps seed 0's traces for its first pose source; any other is simulated again here
+    pose = trace_pose if trace_pose in meta["poses"] else meta["poses"][0]
     courses = meta["courses"]
     methods = [m for m in MAIN_METHODS if m in d["runs"][pose][courses[0]]]
     runs = {}
@@ -316,7 +373,7 @@ def export_editor(results_path, trace_seeds, procs):
     extra_jobs, extra_keys = [], []
     for c in courses:
         for s in trace_seeds:
-            if s == 0 and c in d["traces"]:
+            if s == 0 and c in d["traces"] and pose == meta["poses"][0]:
                 traces[c]["0"] = d["traces"][c]
                 continue
             for m in methods:
@@ -336,11 +393,14 @@ def export_editor(results_path, trace_seeds, procs):
                  "traceSeeds": sorted(int(k) for k in traces[courses[0]]), "tSim": meta["t_sim"]},
         "metrics": [{"key": k, "label": v[0], "unit": v[1]} for k, v in EDITOR_METRICS.items()],
         "methods": [{"key": m, "label": label(m)} for m in methods],
-        "courses": [{"key": c, "description": COURSES[c].description} for c in courses],
+        "courses": [{"key": c, "description": COURSES[c].description, "look": EDITOR_LOOK.get(c, "")} for c in courses],
         "runs": runs,
         "geometry": d["geometry"],
         "traces": traces,
     }
+    pp = _ppcompare_block()
+    if pp:
+        out["ppcompare"] = pp
     os.makedirs(OUT, exist_ok=True)
     with open(EDITOR_EXPORT, "w") as fh:
         json.dump(out, fh, separators=(",", ":"))
@@ -379,6 +439,8 @@ def lite_export(out):
     lite["runs"] = _round(out["runs"], 3)
     lite["geometry"] = _round(out["geometry"], 3)
     lite["traces"] = traces
+    if "ppcompare" in out:
+        lite["ppcompare"] = {**out["ppcompare"], "runs": _round(out["ppcompare"]["runs"], 3)}
     return lite
 
 

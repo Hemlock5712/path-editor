@@ -250,21 +250,25 @@ the in-browser optimiser byte for byte.
 
 ## Bench comparison
 
-The **Bench** page is a read-only view of the bench's results.
+The **Bench** page is a read-only view of the bench's results, set up so they can't mislead.
 
-- **Getting the data.** The view opens with a committed snapshot, `app/public/bench/results-lite.json`
-  (about 0.7 MB). It has the full tables, the geometry to the millimetre, and seed 0's traces every 0.2 s.
-  `python bench/run.py --export-editor` reads `bench/out/results.json` and writes both the snapshot and the
-  full export, `bench/out/editor_bench.json`; commit the snapshot to update the deployed site. To see the full
-  export, load it with the file picker. Seed 0's traces come from `results.json`; add `--trace-seeds 0,1,2` to
-  simulate more.
-- **What it shows.** For the chosen course and pose source, a table of every method's mean (and worst) time to
-  done, time settled, cross-track, final error and yaw, overshoot and wheel slip. The lowest mean in each
-  column is bold.
-- **On the field.** Each method's authored path (dashed) and its true trace (solid) for the chosen seed: ours,
-  Choreo, PathPlanner, BLine, the old follower, and the variants. The course is moved to the middle of the
-  field.
-- **Editing.** Editing shortcuts are off while the view is open, and nothing in it touches the project.
+- **Perfect pose first.** It opens on perfect pose (the follower alone), with a selector for wheel odometry and
+  slip-aware odometry. The traces on the field are perfect-pose runs too (`--trace-pose` picks another).
+- **A scoreboard leads.** It is ranked by time settled, then seeds settled (n/N), then final error.
+- **Only valid runs count.** A run counts only if every seed settled (2 cm and 1°, held 0.25 s) and it ended
+  within 5 cm. Other rows are greyed and marked ("never settled", "3/10 never settled", "38 cm off"). They get no
+  rank, their times are struck through, and they are never bold. Bold in the full table marks the best among
+  valid runs.
+- **Methods.** Ours is ticked first, then PathPlanner (tuned) + hold, Choreo and BLine (tuned). README gains
+  and as-shipped variants are under **More methods**. Each method has one colour everywhere, and ours is the
+  accent.
+- **Courses.** Every bench course is drawn at the same spot on the field, labelled "Bench course, not a field
+  route". Each has a "what to look at" line (`EDITOR_LOOK` in `bench/run.py`).
+- **PathPlanner comparison.** When `run.py --pp-compare` has been run, the export carries its rows and the 2026
+  routes. They are listed as extra courses, and each route's waypoints are drawn where it is on the field.
+- **Getting the data.** The page opens with the committed snapshot, `app/public/bench/results-lite.json`.
+  `python bench/run.py --export-editor` writes it and the full export, `bench/out/editor_bench.json`, which the
+  file picker loads.
 
 ## Live robot (NT4)
 

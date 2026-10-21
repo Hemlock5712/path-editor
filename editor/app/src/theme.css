@@ -1977,11 +1977,19 @@ dialog::backdrop {
 }
 
 /* the bench page */
-.bench-column {
-  display: grid;
-  grid-template-rows: minmax(200px, 1fr) minmax(120px, 38%);
+.bench-page {
+  display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+}
+
+.bench-column {
+  display: grid;
+  grid-template-rows: minmax(200px, 1fr) minmax(160px, 48%);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 .bench-column .field-wrap {
@@ -2207,4 +2215,77 @@ dialog::backdrop {
   .canvas-view {
     top: 58px;
   }
+}
+
+/* the bench page's scoreboard and tables: invalid runs greyed, their times void */
+.scoreboard {
+  padding-bottom: var(--s2);
+}
+
+.bench-table tr.invalid th,
+.bench-table tr.invalid td {
+  color: var(--faint);
+}
+
+.bench-table td.void,
+.bench-table .void {
+  color: var(--faint);
+  text-decoration: line-through;
+  font-weight: 400;
+}
+
+.bench-table td.rank {
+  text-align: center;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.bench-table tr:not(.invalid) td.rank {
+  color: var(--accent);
+}
+
+.tag.danger {
+  margin-left: var(--s2);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.bench-subhead {
+  margin: var(--s2) var(--s3) 0;
+}
+
+.scoreboard .hint {
+  padding: 0 var(--s3);
+}
+
+.look {
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+.method-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: 3px var(--s2);
+  border: 1px solid transparent;
+  border-radius: var(--r2);
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+
+.method-chip:hover {
+  background: var(--raised);
+}
+
+.method-chip[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.method-chip[aria-pressed="false"] .swatch {
+  opacity: 0.35;
 }

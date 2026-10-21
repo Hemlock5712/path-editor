@@ -277,6 +277,29 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
   // it opens with the committed snapshot; a file replaces it
   await expect(page.getByText(/results-lite\.json \(snapshot\): \d+ courses/)).toBeVisible();
   await expect(page.getByTestId("bench-table")).toContainText("Ours v2");
+  // read fairly: perfect pose, ours ticked first, a "what to look at" line, a ranked scoreboard
+  await expect(page.getByRole("radio", { name: "Perfect" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("show-ours_v2")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("bench-look")).toContainText("What to look at");
+  const board = page.getByTestId("bench-scoreboard");
+  await expect(board.locator("tbody tr").first()).toHaveAttribute("data-method", "ours_v2");
+  // every method listed: BLine's README gains is fast to "done" but never settles, so it is void
+  await page.getByTestId("bench-more-methods").click();
+  const bline = board.locator('tr[data-method="bline_readme"]');
+  await expect(bline).toHaveAttribute("data-valid", "false");
+  await expect(bline).toContainText("never settled");
+  await expect(bline.locator("td.rank")).toHaveText("-");
+  await expect(page.getByTestId("bench-table").locator('tr[data-method="bline_readme"] td.best')).toHaveCount(0);
+  await expect(page.getByTestId("bench-table").locator('tr[data-method="bline_readme"] td.void')).not.toHaveCount(0);
+  // the valid rows come first, ranked 1, 2, 3 by time settled
+  const order = await board.locator("tbody tr").evaluateAll((rows) =>
+    rows.map((r) => ({ valid: r.getAttribute("data-valid") === "true", rank: r.querySelector("td.rank")?.textContent ?? "", t: Number(r.children[2]?.textContent) })),
+  );
+  const firstInvalid = order.findIndex((r) => !r.valid);
+  expect(order.slice(firstInvalid).every((r) => !r.valid)).toBe(true);
+  expect(order.slice(0, firstInvalid).map((r) => r.rank)).toEqual(order.slice(0, firstInvalid).map((_, i) => String(i + 1)));
+  const times = order.slice(0, firstInvalid).map((r) => r.t);
+  expect(times).toEqual([...times].sort((a, b) => a - b));
   await page.getByTestId("bench-file").setInputFiles({ name: "editor_bench.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(exportJson)) });
   const table = page.getByTestId("bench-table");
   await expect(table).toContainText("Ours v2");
