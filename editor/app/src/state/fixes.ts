@@ -3,7 +3,7 @@
 
 import { makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../core/src/index.ts";
 import type { Check } from "../compute/analysis.ts";
-import { addConstraintZone, addFacePointZone, updateConstraintZone, updateEvent, updateFacePointZone, updateRotationTarget, withSpec } from "../model/edits.ts";
+import { addConstraintZone, addFacePointZone, setTangent, updateConstraintZone, updateEvent, updateFacePointZone, updateRotationTarget, withSpec } from "../model/edits.ts";
 import { round5, waypointAtS } from "../model/positions.ts";
 import { geometryOf } from "./analysis.ts";
 import { activePath, editPath, select } from "./editor.ts";
@@ -24,6 +24,18 @@ export function fixesFor(check: Check): Fix[] {
   const last = spec.waypoints.length - 1;
   const g = geometryOf(spec);
   switch (check.kind) {
+    case "cusp": {
+      const i = check.waypoint;
+      if (i === undefined || !spec.waypoints[i]) return [{ label: "Optimise", tip: "Reshape the curve without the reversal", run: () => startOptimise() }];
+      return [
+        {
+          label: `Reset waypoint ${i}'s curve to auto`,
+          tip: "Give it back its automatic tangent, which follows the way the path goes",
+          run: () => editPath("Reset curve to auto", (p) => setTangent(p, i, Number.NaN, 1), { kind: "waypoint", index: i }),
+        },
+        { label: "Optimise", tip: "Reshape the curve without the reversal (shown dashed until you Apply)", run: () => startOptimise() },
+      ];
+    }
     case "bumper":
       return [
         { label: "Route around", tip: "Plan a way round with the robot's pathfinder (shown dashed until you Apply)", run: startRouteAround },

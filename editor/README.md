@@ -232,6 +232,8 @@ optionally, a heading.
 
 **Live checks** (the badge on the field lists them, and they are marked on the path). All of them run on the
 core's plan, and each has its fix-it buttons in the list:
+- a cusp (the path doubles back, so the robot overshoots and comes back): **Reset waypoint n's curve to
+  auto** or **Optimise**;
 - a collision: **Route around** or **Optimise**;
 - a tight bend: **Slow to … m/s here** (a constraint zone over the bend at its cornering speed) or **Optimise**;
 - a turn too sharp for its distance: **Lengthen the blend** of the face-point zone that makes it (or **Edit
@@ -245,6 +247,12 @@ A zone's inspector also has **Split at the middle**.
 - **Turn too sharp for its distance.** The planned heading slows the plan to under 75 % of the same path
   planned without turning, and by at least 0.3 m/s. The message gives the turn, the distance, and both
   speeds. On lib's example route it reports "turns 128° over 1.54 m … slows to 0.77 m/s".
+- **Cusp** (an error). The path reverses direction somewhere: the spline's direction flips between two
+  samples 1 cm apart. A tangent set against the way the path goes makes one (as in an auto of Joe's, whose
+  end tangent pointed back against its approach); so can automatic tangents at very sharp zigzags. The
+  message gives where ("The path reverses direction at s = 11.67 m (a cusp): the robot will overshoot and
+  come back.") and the fix names the waypoint whose curve to reset. The core will report cusps itself
+  (`Path.cusps()`, from core-builder); the editor's scan stands in until then.
 - **Bumpers.** The bumper rectangle is swept along the plan every 2 cm, with the planned heading.
   Touching an obstacle or the field wall is an error, and the path turns red there with the bumpers drawn
   where they hit. Passing closer than 5 cm (the pathfinder's default margin) is a warning. The optimiser
@@ -319,6 +327,10 @@ inspector. It is enabled for any path with a start and an end.
   to one segment (the tangents at its two ends included). Events, rotation targets and zones placed by waypoint
   keep their waypoint position; those placed by metres keep the same fraction of the path's length. It never
   adds waypoints.
+- **Never doubles back.** A candidate with a tangent more than 100° from its local chord, or with a cusp
+  anywhere, is ruled out (the speed profile can't see a cusp, so a reversed tangent could look faster). A
+  tangent that already points backwards starts from its automatic direction, and a path with a reversal is
+  repaired first, like a collision, so running Optimise on one fixes it.
 - **What it must keep.** A candidate counts only if it plans, its swept bumpers clear every obstacle and the
   field wall by the 5 cm margin, and it adds no heading warnings or other errors. Clearance is a hard rule:
   a path that starts in collision (or under the margin) is first reshaped clear, by minimising its time plus a

@@ -20,6 +20,10 @@
 //   - tangents outside the segment (its two ends are in it);
 //   - events, rotation targets and zones by waypoint position keep that position (the same fraction of
 //     their stretch); those by metres keep the same fraction of the path's length.
+// No candidate may double back: a tangent more than 100° from its local chord, or a cusp anywhere in the
+// curve, rules it out (the profile can't see a cusp, so a reversed tangent can look "faster" while the
+// robot overshoots and comes back). A tangent that already points backwards starts from its automatic
+// direction instead, and a path with a reversal is repaired first, like a collision.
 // A candidate only counts if it plans, its swept bumpers clear every obstacle and the field wall by the
 // margin (5 cm), and it has no more heading warnings or errors than the path had. That is a hard rule:
 // a path that starts in collision is first pushed out (the search minimises time plus a large weight
@@ -38,6 +42,7 @@ import {
 } from "../../../core/src/index.ts";
 import { round5 } from "../model/positions.ts";
 import { analyse, CHECKS, type AnalysisInput } from "./analysis.ts";
+import { hasReversal, reversedTangents } from "./cusps.ts";
 import { bumperCorners, convexHull, insideRectMargin, signedClearance, type Pt } from "./polygons.ts";
 
 export interface OptimiseOptions {
@@ -307,6 +312,10 @@ export class Optimiser {
   readonly turned: readonly number[];
   /** Each waypoint's tangent direction as planned now (given, or the automatic one). */
   private readonly baseTangents: readonly number[];
+  /** Waypoints whose tangent pointed backwards: they start from their automatic tangent. */
+  private readonly reset: ReadonlySet<number>;
+  /** The path doubles back: the first job is a candidate that doesn't. */
+  private readonly repairing: boolean;
   readonly beforeSeconds: number;
   private readonly dims: number;
   private readonly baseClearance: number;
@@ -344,16 +353,20 @@ export class Optimiser {
     const spec = input.spec;
     const fixed = fixedWaypoints(spec, options.locked, options.segment);
     this.free = options.moveWaypoints ? spec.waypoints.map((_, i) => i).filter((i) => !fixed[i]) : [];
+    // a tangent set against the way the path goes starts over from automatic
+    this.reset = new Set(reversedTangents(spec));
+    const autoWaypoints = spec.waypoints.map((w, i) => (this.reset.has(i) ? makeWaypoint(w.xMeters, w.yMeters, Number.NaN, w.tangentScale, w.headingRadians) : w));
     let g: PathGeometry | null = null;
     try {
-      g = PathGeometry.build(spec.waypoints);
+      g = PathGeometry.build(autoWaypoints);
     } catch {
       g = null; // a turn on the spot: no curve to shape
     }
     this.turned = g ? turnableWaypoints(spec, options.segment) : [];
-    this.baseTangents = spec.waypoints.map((w, i) =>
+    this.baseTangents = autoWaypoints.map((w, i) =>
       Number.isNaN(w.tangentRadians) && g ? tangentRadians(g.sample(g.sAtWaypoint(i))) : w.tangentRadians,
     );
+    this.repairing = hasReversal(spec);
     this.dims = this.free.length * 2 + this.turned.length * (options.optimiseScales ? 2 : 1);
     const base = analyse(input);
     if (!base.ok) throw new Error(`the path can't be planned: ${base.error}`);
@@ -363,13 +376,14 @@ export class Optimiser {
     this.clearMode = base.minClearanceMeters < this.margin - 1e-9;
     this.bestClearance = base.minClearanceMeters;
     this.baseHeading = base.checks.filter((c) => c.kind === "heading").length;
-    this.baseErrors = base.checks.filter((c) => c.severity === "error" && c.kind !== "bumper").length;
+    this.baseErrors = base.checks.filter((c) => c.severity === "error" && c.kind !== "bumper" && c.kind !== "cusp").length;
     this.baseLength = base.lengthMeters;
     this.rand = random(options.seed);
     this.bestX = new Array(this.dims).fill(0);
     this.leastX = this.bestX;
-    // a colliding path has no time to beat yet: any clear one is better
-    this.bestTime = this.clearMode ? Infinity : this.beforeSeconds;
+    // a colliding or doubling-back path has no time to beat yet: any clear, smooth one is better
+    this.bestTime = this.clearMode || this.repairing ? Infinity : this.beforeSeconds;
+    if (this.repairing && !this.clearMode) this.blockedBy = "the reversal";
     this.bestSpec = spec;
     if (this.clearMode) {
       const s0 = shortfall(Path.build(spec, input.robot), input, this.hulls, this.margin);
@@ -414,6 +428,10 @@ export class Optimiser {
       const w = spec.waypoints[wi]!;
       waypoints[wi] = makeWaypoint(round5(w.xMeters + r * u), round5(w.yMeters + r * v), w.tangentRadians, w.tangentScale, w.headingRadians);
     });
+    for (const wi of this.reset) {
+      const w = waypoints[wi]!;
+      waypoints[wi] = makeWaypoint(w.xMeters, w.yMeters, Number.NaN, w.tangentScale, w.headingRadians);
+    }
     const k = this.options.optimiseScales ? 2 : 1;
     const at = 2 * this.free.length;
     this.turned.forEach((wi, j) => {
@@ -457,6 +475,8 @@ export class Optimiser {
       return Infinity;
     }
     const time = path.totalTimeSeconds;
+    // never a path that doubles back
+    if (hasReversal(spec, path.geometry)) return Infinity;
     if (this.clearMode && !this.cleared) {
       const sf = shortfall(path, this.input, this.hulls, this.margin);
       if (sf.total < this.leastShortfall) {
@@ -485,8 +505,9 @@ export class Optimiser {
     if (!a.ok) return { ok: false, time: Infinity, clearance: Number.NaN };
     // clear by the margin is a hard rule, whatever the path started with
     const heading = a.checks.filter((c) => c.kind === "heading").length;
-    const errors = a.checks.filter((c) => c.severity === "error" && c.kind !== "bumper").length;
-    const ok = a.minClearanceMeters >= this.margin - 1e-9 && heading <= this.baseHeading && errors <= this.baseErrors;
+    const errors = a.checks.filter((c) => c.severity === "error" && c.kind !== "bumper" && c.kind !== "cusp").length;
+    const cusp = a.checks.some((c) => c.kind === "cusp");
+    const ok = !cusp && a.minClearanceMeters >= this.margin - 1e-9 && heading <= this.baseHeading && errors <= this.baseErrors;
     return { ok, time: a.totalTimeSeconds, clearance: a.minClearanceMeters };
   }
 
@@ -594,8 +615,8 @@ export class Optimiser {
 
   result(stoppedBy: OptimiseResult["stoppedBy"]): OptimiseResult {
     // a colliding path: any clear result is the answer, even a slower one; none found changes nothing
-    const improved = this.clearMode ? this.cleared : this.bestTime < this.beforeSeconds - 1e-9;
-    const clear = !this.clearMode || this.cleared;
+    const improved = this.clearMode || this.repairing ? this.cleared : this.bestTime < this.beforeSeconds - 1e-9;
+    const clear = !(this.clearMode || this.repairing) || this.cleared;
     return {
       spec: improved ? this.bestSpec : this.input.spec,
       beforeSeconds: this.beforeSeconds,

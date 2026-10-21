@@ -2,6 +2,7 @@
 // in time, event and target positions, and the live checks. Pure, so it runs in the worker and in
 // tests alike. No path maths is done here; every number comes from Path.build and its samples.
 
+import { cusps, cuspWaypoint } from "./cusps.ts";
 import {
   eventMeters,
   gripMetersPerSecondSquared,
@@ -57,7 +58,7 @@ export interface PlacedEvent {
   readonly y: number;
 }
 
-export type CheckKind = "curvature" | "heading" | "bumper" | "event" | "position" | "speed";
+export type CheckKind = "cusp" | "curvature" | "heading" | "bumper" | "event" | "position" | "speed";
 
 export interface Check {
   readonly kind: CheckKind;
@@ -70,6 +71,8 @@ export interface Check {
   readonly ref?: { readonly kind: "event" | "rotation" | "face" | "constraint"; readonly index: number };
   readonly capMetersPerSecond?: number;
   readonly end?: "start" | "end";
+  /** A cusp's waypoint: the one whose curve to reset. */
+  readonly waypoint?: number;
 }
 
 export interface Analysis {
@@ -126,6 +129,7 @@ export function analyse(input: AnalysisInput): Analysis | AnalysisFailure {
   });
   const bumpers = bumperChecks(input, stations);
   const checks = [
+    ...cuspChecks(input, path),
     ...speedChecks(input, path, stations),
     ...curvatureChecks(input, path, stations),
     ...headingChecks(input, stations),
@@ -223,6 +227,18 @@ function runs(n: number, pred: (i: number) => boolean): [number, number][] {
 
 const f2 = (x: number) => x.toFixed(2);
 const deg = (r: number) => Math.round((r * 180) / Math.PI);
+
+/** Where the path doubles back on itself: the robot overshoots and comes back. */
+function cuspChecks(input: AnalysisInput, path: Path): Check[] {
+  return cusps(path.geometry).map((s) => ({
+    kind: "cusp",
+    severity: "error",
+    message: `The path reverses direction at s = ${f2(s)} m (a cusp): the robot will overshoot and come back.`,
+    waypoint: cuspWaypoint(input.spec, path.geometry, s),
+    sFrom: s,
+    sTo: s,
+  }));
+}
 
 /** The plan can't start or end at the authored speed (a bend or a turn caps it there). */
 function speedChecks(input: AnalysisInput, path: Path, st: Stations): Check[] {

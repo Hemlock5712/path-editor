@@ -2,6 +2,8 @@
 // event on the canvas, save, reload, open the folder again, and save the path afresh: the file must
 // come back byte for byte. The mock folder lives in localStorage, so it survives the reload.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const PATH_FILE = "src/main/deploy/paths/Path1.path.json";
@@ -235,6 +237,44 @@ test("add waypoints and an event, save, reload, and get the same file back", asy
   await expect(page.getByTestId("status")).toContainText("2 written");
   expect(await folderFile(page, PATH_FILE)).toBe(saved);
   expect(await folderFile(page, "src/main/deploy/paths/.pathproject.json")).toContain('"alliance": "red"');
+});
+
+test("Joe's auto: the cusp at its end is an error on the field, and resetting the curve ends the sim cleanly", async ({ page }) => {
+  // the file as Joe had it, in a robot project folder
+  const text = readFileSync(join(import.meta.dirname, "..", "test", "fixtures", "joe_cusp.path.json"), "utf8");
+  await page.addInitScript(installMockFolder);
+  await page.addInitScript((t) => {
+    if (!localStorage.getItem("mockFolder")) localStorage.setItem("mockFolder", JSON.stringify({ "src/main/deploy/paths/JoeAuto.path.json": t }));
+  }, text);
+  await page.goto("/");
+  await page.getByTestId("open-folder").click();
+  await expect(page.getByTestId("status")).toContainText("Opened robot-project: 1 path");
+  await expect(page.getByTestId("checks-badge")).toHaveClass(/error/);
+  // the sim: the robot runs past the end and comes back
+  type Sim = { finishSeconds: number; x: number[]; y: number[] } | null;
+  const sim = (): Promise<Sim> => page.evaluate(() => (window as unknown as { pathEditorTest: { doc(): { sim: Sim } } }).pathEditorTest.doc().sim);
+  const goal = [-3.91553, 3.39881];
+  const along = [-1, 0.022]; // the way it arrives (from waypoint 3), near enough -x
+  const overshoot = (r: NonNullable<Sim>) => Math.max(...r.x.map((x, i) => (x - goal[0]!) * along[0]! + (r.y[i]! - goal[1]!) * along[1]!));
+  await page.getByTestId("sim-toggle").click();
+  await expect.poll(async () => (await sim()) !== null, { timeout: 30_000 }).toBe(true);
+  const before = (await sim())!;
+  expect(overshoot(before)).toBeGreaterThan(0.08);
+  await page.getByTestId("checks-badge").click();
+  const checks = page.getByTestId("checks");
+  await expect(checks).toContainText(/The path reverses direction at s = 11\.6\d m \(a cusp\): the robot will overshoot and come back\./);
+  await page.screenshot({ path: "test-results/cusp-before.png" });
+  // the fix: waypoint 4's curve back to automatic
+  await checks.getByRole("button", { name: "Reset waypoint 4's curve to auto" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("checks-badge")).not.toHaveClass(/error/);
+  await expect.poll(async () => {
+    const r = await sim();
+    return r ? overshoot(r) : 1;
+  }, { timeout: 30_000 }).toBeLessThan(0.03);
+  expect(Number.isFinite((await sim())!.finishSeconds)).toBe(true);
+  await page.mouse.move(2, 2);
+  await page.screenshot({ path: "test-results/cusp-after.png" });
 });
 
 test("the layout holds at 1280 px and the checks see an obstacle", async ({ page }) => {

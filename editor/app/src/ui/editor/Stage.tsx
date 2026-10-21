@@ -62,6 +62,7 @@ const FLOW_ICONS: Record<FlowKind, typeof Spline> = {
 };
 
 const KIND_LABELS = {
+  cusp: "Cusp",
   curvature: "Bend",
   heading: "Turn",
   bumper: "Bumpers",

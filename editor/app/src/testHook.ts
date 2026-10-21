@@ -4,6 +4,15 @@
 import { writePath } from "../../core/src/index.ts";
 import { analysis, currentPreview, geometryOf } from "./state/analysis.ts";
 import { flow } from "./state/flow.ts";
+import { sim } from "./sim/state.ts";
+
+/** The sim preview's run of the active path, if it has one: when it finished, and the robot's track. */
+function simSummary() {
+  const r = sim.get().result;
+  const spec = activePath().spec;
+  if (!r || !r.ok || sim.get().input?.spec !== spec) return null;
+  return { finishSeconds: r.finishSeconds, settleSeconds: r.settleSeconds, endErrorMeters: r.endErrorMeters, x: r.x, y: r.y };
+}
 import { flowKnob } from "./ui/drawItems.ts";
 import { activePath, editor } from "./state/editor.ts";
 import { collisions, rotationHandle, rotationTargetS, waypointHandle, waypointPose } from "./ui/draw.ts";
@@ -79,6 +88,7 @@ export function currentDoc() {
     namedPoints: s.project.namedPoints.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, heading: p.heading ?? null, twin: p.twin?.id ?? null })),
     selection: s.selection,
     flow: { ...flow.get(), knob: flowKnob({ geometry: geometryOf(path.spec), project: s.project }, flow.get()) },
+    sim: simSummary(),
   };
 }
 
