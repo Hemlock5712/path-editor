@@ -6,6 +6,7 @@
     python bench/run.py --quick         # 2 seeds, 3 courses, tiny sweeps; prints a table to bench/out/results_quick.json
                                         # and stdout, leaves results.json and RESULTS.md alone
     python bench/run.py --md-only       # rebuild RESULTS.md's generated part from bench/out/results.json
+    python bench/run.py --pp-compare    # PathPlanner against ours on path speed (ppcompare.py), its own block
 
 Results: bench/out/results.json (gitignored). RESULTS.md keeps its hand-written text; only the part
 between the 'generated' markers is replaced.
@@ -182,7 +183,15 @@ def main():
     ap.add_argument("--pathfind-only", action="store_true",
                     help="run only the pathfinding course (both pose sources) into out/pathfind.json and its "
                          "RESULTS.md block")
+    ap.add_argument("--pp-compare", action="store_true",
+                    help="PathPlanner (2027 and the new-path branch's path2) against ours on path speed, over the 2026 "
+                         "routes and the courses, into out/ppcompare.json and its RESULTS.md block (ppcompare.py)")
     a = ap.parse_args()
+    if a.pp_compare:
+        import ppcompare
+
+        ppcompare.main(list(range(a.seeds if a.seeds else 10)), min(a.procs, 4))  # a JVM per worker: keep memory low
+        return
     path = os.path.join(OUT, "results_quick.json" if a.quick else "results.json")
     if a.pathfind_only:
         seeds = list(range(a.seeds if a.seeds else 10))
