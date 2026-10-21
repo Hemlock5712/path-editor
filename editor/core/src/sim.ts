@@ -4,7 +4,7 @@
 
 import { wrap } from "./angles.ts";
 import { flipPose, flipSpeeds, type FieldFrame, type FieldSpeeds, type Pose } from "./frame.ts";
-import { PHASES, PathFollower, type FollowerConfig, type Phase } from "./follow.ts";
+import { PathFollower, type FollowerConfig, type Phase } from "./follow.ts";
 import type { Path } from "./path.ts";
 
 /**
@@ -198,5 +198,3 @@ export function runFollowerSim(
     }
   }
 }
-
-
