@@ -49,11 +49,16 @@ export function NumberField({ label, value, onCommit, unit, blank, blankValue, d
 
   return (
     <label className="field" htmlFor={id} title={title}>
-      <span className="field-label">{label}</span>
+      <span className="field-label" id={`${id}-label`}>
+        {label}
+      </span>
       <span className="field-input">
         <input
           id={id}
           data-testid={testId}
+          // named by the label alone; the unit is its description
+          aria-labelledby={`${id}-label`}
+          aria-describedby={unit ? `${id}-unit` : undefined}
           inputMode="decimal"
           value={text}
           placeholder={blank}
@@ -67,7 +72,11 @@ export function NumberField({ label, value, onCommit, unit, blank, blankValue, d
             }
           }}
         />
-        {unit && <span className="unit">{unit}</span>}
+        {unit && (
+          <span className="unit" id={`${id}-unit`}>
+            {unit}
+          </span>
+        )}
       </span>
     </label>
   );

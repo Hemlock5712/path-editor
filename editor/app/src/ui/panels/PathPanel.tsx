@@ -126,7 +126,7 @@ export function WaypointsPanel() {
         + Waypoint at the end
       </IconButton>
       {w && (
-        <div className="detail" aria-label={`Waypoint ${selected}`}>
+        <div className="detail" role="group" aria-label={`Waypoint ${selected}`}>
           <div className="grid2">
             <NumberField label="x" unit="m" value={w.xMeters} onCommit={(v) => moveTo(round5(v), w.yMeters)} />
             <NumberField label="y" unit="m" value={w.yMeters} onCommit={(v) => moveTo(w.xMeters, round5(v))} />

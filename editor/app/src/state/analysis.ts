@@ -12,10 +12,13 @@ import { createStore } from "./store.ts";
 export interface AnalysisState {
   /** The spec the result is for (it may lag the document by a frame while dragging). */
   readonly spec: PathSpec | null;
+  /** The robot and field it was planned with. */
+  readonly robot: Project["robot"] | null;
+  readonly field: Project["field"] | null;
   readonly result: AnalysisResult | null;
 }
 
-export const analysis = createStore<AnalysisState>({ spec: null, result: null });
+export const analysis = createStore<AnalysisState>({ spec: null, robot: null, field: null, result: null });
 
 export interface PlaybackState {
   readonly playing: boolean;
@@ -46,8 +49,9 @@ export function startAnalysis(runner = new AnalysisRunner()): () => void {
     const s = editor.get();
     const spec = activePath(s).spec;
     if (last && last.spec === spec && last.robot === s.project.robot && last.field === s.project.field) return;
-    last = { spec, robot: s.project.robot, field: s.project.field };
-    runner.request(analysisInput(s.project, spec), (result) => analysis.set({ spec, result }));
+    const { robot, field } = s.project;
+    last = { spec, robot, field };
+    runner.request(analysisInput(s.project, spec), (result) => analysis.set({ spec, robot, field, result }));
   };
   update();
   const unsubscribe = editor.subscribe(update);
@@ -74,4 +78,46 @@ export function geometryOf(spec: PathSpec): PathGeometry | null {
     geometries.set(spec, g);
   }
   return g;
+}
+
+/** The preview's headline numbers for one path, as the end-to-end suite compares them with the robot. */
+export interface PreviewNumbers {
+  readonly name: string;
+  readonly lengthMeters: number;
+  readonly totalTimeSeconds: number;
+  readonly peakMetersPerSecond: number;
+  readonly startMetersPerSecond: number;
+  readonly endMetersPerSecond: number;
+  /** In file order: where each event is along the path and when the plan reaches it. */
+  readonly events: readonly { readonly name: string; readonly s: number; readonly t: number }[];
+}
+
+/** The active path's preview, once the worker has planned exactly what the document holds now. */
+export function currentPreview(): Promise<PreviewNumbers> {
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      const s = editor.get();
+      const path = activePath(s);
+      const a = analysis.get();
+      if (a.spec !== path.spec || a.robot !== s.project.robot || a.field !== s.project.field || !a.result) return false;
+      for (const u of unsubscribers) u();
+      if (!a.result.ok) {
+        reject(new Error(`${path.name} can't be planned: ${a.result.error}`));
+        return true;
+      }
+      const r = a.result;
+      resolve({
+        name: path.name,
+        lengthMeters: r.lengthMeters,
+        totalTimeSeconds: r.totalTimeSeconds,
+        peakMetersPerSecond: Math.max(...r.stations.v),
+        startMetersPerSecond: path.spec.startMetersPerSecond,
+        endMetersPerSecond: path.spec.endMetersPerSecond,
+        events: r.events.map((e) => ({ name: e.name, s: e.s, t: e.t })),
+      });
+      return true;
+    };
+    const unsubscribers = [analysis.subscribe(() => void check()), editor.subscribe(() => void check())];
+    check();
+  });
 }

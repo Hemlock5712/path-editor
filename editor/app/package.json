@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:author": "playwright test --config playwright.author.config.ts",
+    "e2e:full": "node ../../tools/e2e.mjs"
   },
   "dependencies": {
     "react": "19.1.1",
