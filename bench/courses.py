@@ -31,6 +31,7 @@ class Waypoint:
     x: float
     y: float
     heading_deg: float | None = None  # None = no heading set here
+    tangent_deg: float | None = None  # direction of travel here; None = the Catmull-Rom rule
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,9 @@ class Course:
     grip: tuple | None = None  # (mu static, mu kinetic); None = the plant default
     grip_drop: tuple | None = None  # (path fraction, mu static, mu kinetic): the floor changes mid-run
     description: str = ""
+    # one leg of a chain of paths (ppcompare.py): the speed the plan starts at and hands over at, m/s
+    plan_start_speed: float = 0.0
+    end_speed: float = 0.0
 
     @property
     def start_pose(self):
@@ -86,16 +90,29 @@ class Course:
 # ============================================================================================ neutral curve
 
 
-def catmull_rom_tangents(pts):
-    """SplinePath's tangents: per segment i, (m0, m1)."""
+def catmull_rom_tangents(pts, dirs=None):
+    """SplinePath's tangents: per segment i, (m0, m1). dirs[i] (radians, or None) sets the direction at
+    point i, keeping the rule's length (so a chain of paths can join without a kink)."""
     n = len(pts)
+
+    def at(i, m):
+        if dirs is None or dirs[i] is None:
+            return m
+        L = float(np.hypot(*m))
+        return np.array((L * math.cos(dirs[i]), L * math.sin(dirs[i])))
+
     tans = []
     for i in range(n - 1):
         p0, p1 = np.asarray(pts[i], float), np.asarray(pts[i + 1], float)
         m0 = p1 - p0 if i == 0 else 0.5 * (np.asarray(pts[i + 1]) - np.asarray(pts[i - 1]))
         m1 = p1 - p0 if i == n - 2 else 0.5 * (np.asarray(pts[i + 2]) - np.asarray(pts[i]))
-        tans.append((m0, m1))
+        tans.append((at(i, m0), at(i + 1, m1)))
     return tans
+
+
+def tangent_dirs(course):
+    """Each waypoint's set direction of travel (radians) or None."""
+    return [None if w.tangent_deg is None else math.radians(w.tangent_deg) for w in course.waypoints]
 
 
 def hermite(p0, p1, m0, m1, t):
@@ -112,7 +129,7 @@ class NeutralPath:
     def __init__(self, course: Course):
         self.course = course
         pts = [(w.x, w.y) for w in course.waypoints]
-        tans = catmull_rom_tangents(pts)
+        tans = catmull_rom_tangents(pts, tangent_dirs(course))
         chunks, pos = [], []
         for i, (m0, m1) in enumerate(tans):
             t = np.linspace(0.0, 1.0, self.PER_SEGMENT + 1)
@@ -187,7 +204,7 @@ def to_bezier(course: Course):
     """PathPlanner Waypoints (prevControl, anchor, nextControl) that reproduce the Catmull-Rom cubics, plus
     rotation targets at waypoint-relative positions and the goal end rotation."""
     pts = [np.array((w.x, w.y), float) for w in course.waypoints]
-    tans = catmull_rom_tangents(pts)
+    tans = catmull_rom_tangents(pts, tangent_dirs(course))
     wps = []
     for i, p in enumerate(pts):
         prev_c = None if i == 0 else tuple(p - tans[i - 1][1] / 3.0)
@@ -198,7 +215,8 @@ def to_bezier(course: Course):
     # interior rotation targets (the start heading is the robot's, the end one is the GoalEndState)
     targets = [(pos, h) for pos, h in hs if 0.0 < pos < n]
     return {"waypoints": wps, "rotation_targets": targets, "goal_rotation": course.end_pose[2],
-            "ideal_start_rotation": course.start_pose[2]}
+            "ideal_start_rotation": course.start_pose[2], "goal_velocity": course.end_speed,
+            "ideal_start_velocity": course.plan_start_speed}
 
 
 BLINE_RADIUS = 0.30  # m: the bench's chosen handoff radius (see RESULTS.md)

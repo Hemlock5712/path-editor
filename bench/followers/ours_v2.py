@@ -120,7 +120,9 @@ def to_ours(course):
     wps = []
     for i, p in enumerate(w):
         m = {"x": p.x, "y": p.y}
-        if i == 0 or i == n:
+        if p.tangent_deg is not None:
+            m["tangentDegrees"] = p.tangent_deg
+        elif i == 0 or i == n:
             a, b = (w[0], w[1]) if i == 0 else (w[n - 1], w[n])
             m["tangentDegrees"] = math.degrees(math.atan2(b.y - a.y, b.x - a.x))
         wps.append(m)
@@ -128,7 +130,8 @@ def to_ours(course):
     lim = course.limits
     return {"schema": 1, "waypoints": wps, "rotationTargets": targets, "facePointZones": [],
             "constraintZones": [], "maxMetersPerSecond": lim.max_speed,
-            "maxMetersPerSecondSquared": lim.max_accel, "startMetersPerSecond": 0.0, "endMetersPerSecond": 0.0}
+            "maxMetersPerSecondSquared": lim.max_accel, "startMetersPerSecond": course.plan_start_speed,
+            "endMetersPerSecond": course.end_speed}
 
 
 class OursV2(Follower):
