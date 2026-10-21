@@ -444,8 +444,8 @@ the WPILib adapters on the e2e `SimDrive`, with contact checked against the true
 | Scenario | Runs | Passed | Worst clearance |
 |---|---|---|---|
 | 50 seeded random routes, v3 and v2, blue and red | 200 | 200 | 5.4 cm |
-| Sideways shove a third of the way in; every run planned again | 20 | 20 | 3.9 cm |
-| Path hand-overs | 12 | 12 | 6.2 cm |
+| Sideways shove a third of the way in; every run planned again | 20 | 20 | 5.5 cm |
+| Path hand-overs | 12 | 12 | 6.0 cm |
 | Moving named-point goal | 2 | 2 | 7.5 cm |
 
 The shoves are placed where the robot has room to be pushed: a push into an obstacle is contact by the pusher,
