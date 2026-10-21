@@ -54,9 +54,9 @@ public final class PathLibrary {
 
   public static final String FIELD_FILE = "field.json";
   public static final String PROJECT_FILE = ".pathproject.json";
-  /** The 2026 field (WPILib's 2026-rebuilt layout), for a deploy folder without field.json. */
-  public static final double DEFAULT_FIELD_LENGTH = 16.541;
-  public static final double DEFAULT_FIELD_WIDTH = 8.069;
+  /** The 2026 field's size (the editor's default), for a deploy folder without field.json. */
+  public static final double DEFAULT_FIELD_LENGTH = 16.54;
+  public static final double DEFAULT_FIELD_WIDTH = 8.07;
 
   private final Map<String, Path> paths;
   private final RobotConfig robot;

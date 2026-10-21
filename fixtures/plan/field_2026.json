@@ -1,14 +1,77 @@
 {
-  "description": "The 2026 field (REBUILT) for on-the-fly paths: centre origin (WPILib 2027), both alliances, metres. From WPILib's 2026-rebuilt-welded AprilTag layout (allwpilib c610ffd17f, fields/src/generate/resources/org/wpilib/fields/apriltag/2026-rebuilt-welded.csv): each hub is the square its tags sit on (x 3.04 to 4.25 from the centre line, y -0.60 to 0.60); the bumps either side of each hub are 1.13 m deep (game manual: 44.4 in) and run from the hub to y +-2.46, where the trench begins; each tower stands at its alliance wall around its tags (y -0.29 and 0.14 on blue, half-turned on red), assumed 0.95 m deep and 1.1 m wide. The bumps are obstacles here (a robot that drives over them can delete them); the trenches are open (a robot under the trench arm's 22.25 in fits), so the routes between the alliance zones and the neutral zone run through them. Approximate: measure the real field before trusting the centimetres.",
-  "field": {"length_m": 16.541, "width_m": 8.069},
+  "field": { "length_m": 16.54, "width_m": 8.07 },
   "obstacles": [
-    {"name": "blue hub", "polygon": [[-4.25, -0.605], [-3.04, -0.605], [-3.04, 0.605], [-4.25, 0.605]]},
-    {"name": "blue bump left", "polygon": [[-4.209, 0.605], [-3.081, 0.605], [-3.081, 2.459], [-4.209, 2.459]]},
-    {"name": "blue bump right", "polygon": [[-4.209, -2.459], [-3.081, -2.459], [-3.081, -0.605], [-4.209, -0.605]]},
-    {"name": "blue tower", "polygon": [[-8.2705, -0.62], [-7.32, -0.62], [-7.32, 0.48], [-8.2705, 0.48]]},
-    {"name": "red hub", "polygon": [[3.04, -0.605], [4.25, -0.605], [4.25, 0.605], [3.04, 0.605]]},
-    {"name": "red bump left", "polygon": [[3.081, -2.459], [4.209, -2.459], [4.209, -0.605], [3.081, -0.605]]},
-    {"name": "red bump right", "polygon": [[3.081, 0.605], [4.209, 0.605], [4.209, 2.459], [3.081, 2.459]]},
-    {"name": "red tower", "polygon": [[7.32, -0.48], [8.2705, -0.48], [8.2705, 0.62], [7.32, 0.62]]}
+    {
+      "name": "blue hub",
+      "polygon": [
+        [-4.2419, -0.5969],
+        [-3.0481, -0.5969],
+        [-3.0481, 0.5969],
+        [-4.2419, 0.5969]
+      ]
+    },
+    {
+      "name": "red hub",
+      "polygon": [
+        [3.0481, -0.5969],
+        [4.2419, -0.5969],
+        [4.2419, 0.5969],
+        [3.0481, 0.5969]
+      ]
+    },
+    {
+      "name": "blue tower",
+      "polygon": [
+        [-8.27, -0.69847],
+        [-7.127, -0.69847],
+        [-7.127, 0.55248],
+        [-8.27, 0.55248]
+      ]
+    },
+    {
+      "name": "red tower",
+      "polygon": [
+        [7.127, -0.55248],
+        [8.27, -0.55248],
+        [8.27, 0.69848],
+        [7.127, 0.69848]
+      ]
+    },
+    {
+      "name": "blue trench, upper support",
+      "polygon": [
+        [-4.2419, 2.4511],
+        [-3.0481, 2.4511],
+        [-3.0481, 2.75636],
+        [-4.2419, 2.75636]
+      ]
+    },
+    {
+      "name": "blue trench, lower support",
+      "polygon": [
+        [-4.2419, -2.75636],
+        [-3.0481, -2.75636],
+        [-3.0481, -2.4511],
+        [-4.2419, -2.4511]
+      ]
+    },
+    {
+      "name": "red trench, upper support",
+      "polygon": [
+        [3.0481, 2.4511],
+        [4.2419, 2.4511],
+        [4.2419, 2.75636],
+        [3.0481, 2.75636]
+      ]
+    },
+    {
+      "name": "red trench, lower support",
+      "polygon": [
+        [3.0481, -2.75636],
+        [4.2419, -2.75636],
+        [4.2419, -2.4511],
+        [3.0481, -2.4511]
+      ]
+    }
   ]
 }

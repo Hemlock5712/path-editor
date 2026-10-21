@@ -49,7 +49,8 @@ public final class PlanFixtureGen {
     out.add(new Case("moving start", new Pose(-6.0, -1.5, 0.3), new FieldSpeeds(1.2, -1.5, 0.5),
         new Pose(1.0, -1.5, Math.PI / 2), 0.0, Double.NaN));
     out.add(new Case("start on the hub", new Pose(-3.4, 0.3, 0.0), still, new Pose(-6.0, 2.0, 0.0), 0.0, Double.NaN));
-    out.add(new Case("goal on a bump", new Pose(-6.5, -2.0, 0.0), still, new Pose(-3.6, 1.5, Math.PI), 0.0, Double.NaN));
+    out.add(new Case("goal on a trench support", new Pose(-6.5, -2.0, 0.0), still, new Pose(-3.6, 2.6, Math.PI), 0.0,
+        Double.NaN));
     out.add(new Case("hand-over", new Pose(-6.0, 2.5, 0.0), still, new Pose(-1.4, -2.2, Math.PI / 2), 1.5, Math.PI / 2));
     out.add(new Case("across the field", new Pose(-7.0, -3.0, 0.0), still, new Pose(7.0, 3.0, Math.PI), 0.0, Double.NaN));
     return out;

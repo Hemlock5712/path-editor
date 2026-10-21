@@ -389,7 +389,7 @@ been measured.
 
 - `field.json`, the editor's format (`{"field": {"length_m", "width_m"}, "obstacles": [{"name", "polygon"}]}`).
   It builds the `Pathfinder` (grown obstacles and visibility graph) once, then warms it up with 40 throwaway plans so
-  the JIT has compiled it before the first real one. On the desktop that's about 170 ms at boot, 135 ms of it the
+  the JIT has compiled it before the first real one. On the desktop that's about 100 ms at boot on the 2026 field, 80 ms of it the
   warm-up. A bad file throws at boot, naming the file. With no field.json the field is empty (walls only) at the
   2026 size.
 - The bumper size from `robot.json` (`bumperLengthMeters`, `bumperWidthMeters`).
@@ -431,22 +431,26 @@ The TS port (`editor/core/src/plan`) is bit-exact with this planner, for the edi
 check is `fixtures/plan/plans.json` (`PlanFixtureGen`): 13 starts and goals on the 2026 field, worst deviation 0.
 The planner's trig goes through `StrictMath` (fdlibm, as V8's does) for that.
 
-**The 2026 field** (`fixtures/plan/field_2026.json`) is built from WPILib's tag layout and is approximate:
+**The 2026 field** (`fixtures/plan/field_2026.json`) is the editor's default field.json, byte for byte, so the robot,
+the editor and the tests use one set of obstacles:
 
-- both hubs;
-- the four bumps, as obstacles (a robot that drives over them can delete them);
-- both towers;
-- the trenches are left open.
+- both hubs (47 in squares);
+- both towers (45 in deep, 49.25 in wide, against each alliance wall);
+- the four trench supports (the solid part of each trench, between the bump and the lane).
+
+The bumps are drivable (6.5 in ramps), so they aren't obstacles, and the trench lanes are open to robots up to
+22.25 in tall. A team whose robot avoids the bumps, or is too tall for the trench, adds them as obstacles in the
+editor.
 
 **End-to-end** (`lib/gradlew -p lib e2eTest --tests '*PathfindEndToEndTest'`, report in `e2e/PATHFIND.md`): through
 the WPILib adapters on the e2e `SimDrive`, with contact checked against the true pose every 5 ms.
 
 | Scenario | Runs | Passed | Worst clearance |
 |---|---|---|---|
-| 50 seeded random routes, v3 and v2, blue and red | 200 | 200 | 5.4 cm |
-| Sideways shove a third of the way in; every run planned again | 20 | 20 | 5.5 cm |
-| Path hand-overs | 12 | 12 | 6.0 cm |
-| Moving named-point goal | 2 | 2 | 7.5 cm |
+| 50 seeded random routes, v3 and v2, blue and red | 200 | 200 | 5.7 cm |
+| Sideways shove a third of the way in; every run planned again | 20 | 20 | 5.9 cm |
+| Path hand-overs | 12 | 12 | 7.8 cm |
+| Moving named-point goal | 2 | 2 | 6.8 cm |
 
 The shoves are placed where the robot has room to be pushed: a push into an obstacle is contact by the pusher,
 which no planner can prevent.
