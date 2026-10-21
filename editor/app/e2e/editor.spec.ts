@@ -277,6 +277,30 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
   // it opens with the committed snapshot; a file replaces it
   await expect(page.getByText(/results-lite\.json \(snapshot\): \d+ courses/)).toBeVisible();
   await expect(page.getByTestId("bench-table")).toContainText("Ours v2");
+  // the headline: a verdict from the data and one table across every target, perfect pose first
+  await expect(page.getByTestId("bench-verdict")).toContainText(/settles first on \d+ of \d+ targets/);
+  const head = page.getByTestId("bench-benchmark");
+  await expect(head.locator('tbody tr[data-row="straight_3m"] td.best')).toHaveAttribute("data-column", "ours");
+  // one bold cell per row at most, and never a run that doesn't count
+  for (const row of await head.locator("tbody tr").all()) expect(await row.locator("td.best").count()).toBeLessThanOrEqual(1);
+  await expect(head.locator("tbody td.best .void-cell")).toHaveCount(0);
+  await expect(head.locator('tfoot tr[data-row="wins"]')).toContainText("Targets won");
+  // the mean says which targets it covers; a cell that wasn't run says so, with a footnote
+  await expect(page.getByTestId("bench-mean-targets")).toHaveAttribute("data-tip", /straight_3m/);
+  await expect(head.locator('tbody tr[data-row="pp:start_to_shot"] td[data-column="choreo"] .na')).toHaveAttribute("data-tip", /Not run/);
+  await expect(page.getByTestId("bench-routes-note")).toContainText("ran only PathPlanner and ours");
+  // the charts: switch the metric, then one chart per target
+  await page.getByRole("radio", { name: "Final error" }).click();
+  await expect(page.getByTestId("bench-bars").locator("li").first()).toHaveAttribute("data-column", "ours");
+  await page.getByRole("radio", { name: "Per target" }).click();
+  await expect(page.getByTestId("bench-multiples").locator("figure")).toHaveCount(await head.locator("tbody tr").count());
+  await page.getByRole("radio", { name: "All targets" }).click();
+  // the pose switch drives the table and the verdict: on odometry nothing settles inside 2 cm of the true goal
+  await page.getByRole("radio", { name: "Odometry" }).click();
+  await expect(page.getByTestId("bench-pose-explain")).toContainText("odometry");
+  await expect(page.getByTestId("bench-verdict")).toContainText("No method settles");
+  await expect(head.locator("tbody td.best")).toHaveCount(0);
+  await page.getByRole("radio", { name: "Perfect" }).click();
   // read fairly: perfect pose, ours ticked first, a "what to look at" line, a ranked scoreboard
   await expect(page.getByRole("radio", { name: "Perfect" })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("show-ours_v2")).toHaveAttribute("aria-pressed", "true");
@@ -285,6 +309,9 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
   await expect(board.locator("tbody tr").first()).toHaveAttribute("data-method", "ours_v2");
   // every method listed: BLine's README gains is fast to "done" but never settles, so it is void
   await page.getByTestId("bench-more-methods").click();
+  const readme = head.locator('tbody tr[data-row="straight_3m"] td[data-column="bline-readme"]');
+  await expect(readme).toContainText("✕ never");
+  await expect(readme).not.toHaveClass(/best/);
   const bline = board.locator('tr[data-method="bline_readme"]');
   await expect(bline).toHaveAttribute("data-valid", "false");
   await expect(bline).toContainText("never settled");

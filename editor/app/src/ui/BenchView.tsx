@@ -1,364 +1,417 @@
-// The Bench page (read-only): the bench's results for one course, read fairly. It leads with a
-// scoreboard ranked by time settled, then reliability, then final error, and only runs that settled and
-// ended in tolerance can be ranked or bold. Below it is every metric. The course is on the field at a
-// fixed spot, with each method's authored path and true trace.
+// The Bench page (read-only), laid out like a model launch page: a verdict written from the data, one
+// benchmark table across every course and route (methods as columns, ours tinted, the best valid result
+// per row in bold), bar charts comparing the methods on one metric at a time, the optimised-paths table
+// from the PathPlanner comparison, and then the course detail (the field, the scoreboard, every metric).
 
-import { useEffect, useRef } from "react";
+import { ChevronDown } from "lucide-react";
+import { useMemo } from "react";
 import {
-  bestValidByMetric,
-  COURSE_ORIGIN,
-  methodColour,
+  aggregate,
+  cell,
+  commonRows,
+  COLUMNS,
+  COMPARE_METRICS,
+  END_TOLERANCE_CM,
+  OPTIMISED_COLUMNS,
+  perTarget,
   POSE_LABELS,
   PP_PREFIX,
-  PRIMARY_METHODS,
-  scoreboard,
+  rowWinner,
+  rows,
   tableFor,
   tableStat,
   validity,
-  VALID_RULE,
+  verdict,
+  type Bar,
   type BenchData,
-  type BenchTable,
+  type Column,
+  type CompareMetric,
+  type Row,
 } from "../bench/benchData.ts";
-import { bench, loadBench, toggleShown, type BenchState } from "../state/bench.ts";
-import { DEFAULT_VIEW, editor } from "../state/editor.ts";
+import { bench, loadBench } from "../state/bench.ts";
 import { useStore } from "../state/store.ts";
-import { Eye, EyeOff } from "lucide-react";
-import { formatNumber, IconButton, Segmented, SelectField, Switch } from "./controls.tsx";
-import { drawFieldImage, drawGrid } from "./draw.ts";
-import { FieldView } from "./fieldView.ts";
+import { formatNumber, Segmented, Switch } from "./controls.tsx";
+import { CourseDetail } from "./bench/CourseDetail.tsx";
 
-/** The methods listed: ours and each rival's best first, the rest when asked for. */
-function listedMethods(t: BenchTable, more: boolean): string[] {
-  const keys = t.methods.map((m) => m.key);
-  const primary = PRIMARY_METHODS.filter((m) => keys.includes(m));
-  return more ? [...primary, ...keys.filter((k) => !primary.includes(k))] : primary;
+const POSE_SHORT: Record<string, string> = { truth: "Perfect pose", odom: "Wheel odometry", slipodom: "Slip-aware" };
+
+const POSE_EXPLAIN: Record<string, string> = {
+  truth: "The follower alone: it is told exactly where the robot is, so these are the control law's own results.",
+  odom: "As on a robot without vision: wheel odometry and the gyro, which drift, so ends are judged against the true pose.",
+  slipodom: "Wheel odometry with lib's slip-aware correction (gyro and IMU), no vision.",
+};
+
+function shownColumns(more: boolean): Column[] {
+  return COLUMNS.filter((c) => more || !c.more);
 }
 
-function drawBench(ctx: CanvasRenderingContext2D, width: number, height: number, image: HTMLImageElement | null, s: BenchState): void {
-  const project = editor.get().project;
-  const view = new FieldView(width, height, project.field.lengthMeters, project.field.widthMeters, DEFAULT_VIEW, "RED_HALF_TURN");
-  ctx.fillStyle = "#0b0e13";
-  ctx.fillRect(0, 0, width, height);
-  drawFieldImage(ctx, { view, image, project });
-  drawGrid(ctx, { view, image, project });
-  const data = s.data;
-  if (!data) return;
-  const t = tableFor(data, s.course);
-  const target = t.targets.find((x) => x.key === s.course);
-  const label = (text: string, x: number, y: number) => {
-    const [px, py] = view.toCanvasRaw(x, y);
-    ctx.font = "600 12px system-ui, sans-serif";
-    const w = ctx.measureText(text).width;
-    ctx.fillStyle = "rgba(11,14,19,0.82)";
-    ctx.fillRect(px - 4, py - 14, w + 8, 20);
-    ctx.fillStyle = "#e6ebf2";
-    ctx.fillText(text, px, py);
-  };
-  const polyline = (pts: readonly (readonly number[])[], xi: number, dx: number, dy: number, colour: string, widthPx: number, dash: number[] = []) => {
-    if (pts.length < 2) return;
-    ctx.strokeStyle = colour;
-    ctx.lineWidth = widthPx;
-    ctx.setLineDash(dash);
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    pts.forEach((p, i) => {
-      const [px, py] = view.toCanvasRaw(p[xi]! + dx, p[xi + 1]! + dy);
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    });
-    ctx.stroke();
-    ctx.setLineDash([]);
-  };
+function fmt(v: number, unit: string): string {
+  if (!Number.isFinite(v)) return "-";
+  return v.toFixed(unit === "cm" ? 1 : unit === "ms" || unit === "%" ? 0 : 2);
+}
 
-  if (target?.onField) {
-    // a 2026 route, where it is on the field: its waypoints, leg by leg
-    for (const leg of target.legs ?? []) {
-      polyline(leg, 0, 0, 0, "rgba(255,255,255,0.55)", 4);
-      for (const [x, y] of leg) {
-        const [px, py] = view.toCanvasRaw(x!, y!);
-        ctx.fillStyle = "#fbbf24";
-        ctx.beginPath();
-        ctx.arc(px, py, 4, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-    }
-    const first = target.legs?.[0]?.[0];
-    if (first) label("2026 field route (waypoints; each method plans its own path through them)", first[0]!, first[1]! + 0.55);
-    return;
+/** A cell's text: the value, or why it doesn't count. */
+function CellText({ data, pose, c, r }: { data: BenchData; pose: string; c: Column; r: Row }) {
+  const x = cell(data, pose, c, r, "t_settle");
+  if (!x.method) return <span className="na" data-tip="Not run: the 2026 routes (run.py --pp-compare) ran only PathPlanner and ours">–</span>;
+  if (!x.validity?.valid) {
+    const v = x.validity!;
+    const text = v.reason === "never settled" ? "✕ never" : v.reason.endsWith("never settled") ? `✕ ${v.settled}/${v.n}` : v.reason;
+    return (
+      <span className="void-cell" data-tip={`${v.reason}${Number.isFinite(x.value) ? `; mean settle ${formatNumber(x.value, 2)} s where it did` : ""}`}>
+        {text}
+      </span>
+    );
   }
+  return <span>{x.value.toFixed(2)}</span>;
+}
 
-  // a bench course: always at the same spot, and labelled as what it is
-  const [dx, dy] = COURSE_ORIGIN;
-  const geometry = data.geometry[s.course] ?? {};
-  polyline(geometry.neutral ?? [], 0, dx, dy, "rgba(255,255,255,0.3)", 7);
-  for (const m of s.shown) {
-    polyline(geometry[m] ?? [], 0, dx, dy, methodColour(m), 1.5, [5, 4]);
-    if (s.traces) {
-      const trace = data.traces[s.course]?.[s.seed]?.[m] ?? [];
-      polyline(trace, 1, dx, dy, methodColour(m), 2.5);
-      const end = trace.at(-1);
-      if (end) {
-        const [px, py] = view.toCanvasRaw(end[1]! + dx, end[2]! + dy);
-        ctx.fillStyle = methodColour(m);
-        ctx.beginPath();
-        ctx.arc(px, py, 4.5, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-    }
+function BenchmarkTable({ data, pose, cols }: { data: BenchData; pose: string; cols: readonly Column[] }) {
+  const rs = rows(data);
+  const wins = new Map<string, number>();
+  for (const r of rs) {
+    const w = rowWinner(data, pose, cols, r, "t_settle");
+    if (w) wins.set(w, (wins.get(w) ?? 0) + 1);
   }
-  label("Bench course, not a field route", dx, dy - 0.45);
-}
-
-function BenchCanvas() {
-  const wrap = useRef<HTMLDivElement>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const image = useRef<HTMLImageElement | null>(null);
-  useEffect(() => {
-    const draw = () => {
-      const c = canvas.current;
-      const w = wrap.current;
-      if (!c || !w) return;
-      const rect = w.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      c.width = Math.max(1, Math.round(rect.width * dpr));
-      c.height = Math.max(1, Math.round(rect.height * dpr));
-      const ctx = c.getContext("2d")!;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawBench(ctx, rect.width, rect.height, image.current, bench.get());
-    };
-    const img = new Image();
-    img.onload = () => {
-      image.current = img;
-      draw();
-    };
-    img.src = `${import.meta.env.BASE_URL}field-2026.png`;
-    const observer = new ResizeObserver(draw);
-    observer.observe(wrap.current!);
-    const unsubscribe = bench.subscribe(draw);
-    return () => {
-      observer.disconnect();
-      unsubscribe();
-    };
-  }, []);
+  const common = commonRows(data, pose, cols, rs, "t_settle", true);
+  const mean = (c: Column) => {
+    const xs = common.map((r) => cell(data, pose, c, r, "t_settle").value);
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : Number.NaN;
+  };
+  const means = cols.map(mean);
+  const bestMean = Math.min(...means.filter(Number.isFinite));
   return (
-    <div ref={wrap} className="field-wrap">
-      <canvas ref={canvas} className="field-canvas" role="img" aria-label="The chosen course with each shown method's path and true trace" />
-    </div>
-  );
-}
-
-const num = (v: number | null | undefined, d = 2) => (v === null || v === undefined || Number.isNaN(v) ? "-" : formatNumber(v, d));
-
-function Swatch({ method }: { method: string }) {
-  return <span className="swatch" style={{ background: methodColour(method) }} aria-hidden="true" />;
-}
-
-function Scoreboard({ t, s }: { t: BenchTable; s: BenchState }) {
-  const rows = scoreboard(t, s.pose, s.course, listedMethods(t, s.moreMethods));
-  const planned = t.metrics.some((m) => m.key === "plan_s");
-  return (
-    <section className="scoreboard" aria-label="Scoreboard">
-      <table className="bench-table" data-testid="bench-scoreboard">
-        <caption>
-          Scoreboard: ranked by time settled, then seeds settled, then final error. {POSE_LABELS[s.pose] ?? s.pose}.
-        </caption>
+    <div className="bench-table-scroll">
+      <table className="benchmark" data-testid="bench-benchmark">
+        <caption className="sr-only">Time settled in seconds, by target and method</caption>
         <thead>
           <tr>
-            <th scope="col">#</th>
-            <th scope="col">Method</th>
-            {planned && <th scope="col">Planned s</th>}
-            <th scope="col">Time settled s</th>
-            <th scope="col">Settled</th>
-            <th scope="col">Final error cm</th>
-            <th scope="col">Cross-track RMS cm</th>
+            <th scope="col" className="target">
+              Time settled, s
+            </th>
+            {cols.map((c) => (
+              <th scope="col" key={c.id} className={c.id === "ours" ? "ours" : undefined} data-column={c.id}>
+                {c.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
-            const st = (key: string) => tableStat(t, s.pose, s.course, r.method, key);
+          {rs.map((r) => {
+            const winner = rowWinner(data, pose, cols, r, "t_settle");
             return (
-              <tr key={r.method} className={r.validity.valid ? undefined : "invalid"} data-method={r.method} data-valid={r.validity.valid}>
-                <td className="rank">{r.rank ?? "-"}</td>
-                <th scope="row">
-                  <Swatch method={r.method} /> {r.label}
-                  {!r.validity.valid && <span className="tag danger">{r.validity.reason}</span>}
+              <tr key={r.key} data-row={r.key}>
+                <th scope="row" className="target">
+                  <button
+                    type="button"
+                    className="link-row"
+                    onClick={() => {
+                      bench.set({ course: r.key });
+                      document.getElementById("bench-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    data-tip="Open this target in the course detail"
+                  >
+                    {r.label}
+                    {r.route && <span className="tag">2026 route</span>}
+                  </button>
                 </th>
-                {planned && <td>{num(st("plan_s")?.mean)}</td>}
-                <td className={r.rank === 1 ? "best" : undefined}>{r.validity.valid ? num(st("t_settle")?.mean) : <span className="void">{num(st("t_settle")?.mean)}</span>}</td>
-                <td>
-                  {r.validity.settled}/{r.validity.n}
-                </td>
-                <td>
-                  {num(st("err_end_cm")?.mean, 1)} <span className="worst">({num(st("err_end_cm")?.worst, 1)})</span>
-                </td>
-                <td>{num(st("ct_rms_cm")?.mean, 2)}</td>
+                {cols.map((c) => (
+                  <td key={c.id} className={[c.id === "ours" ? "ours" : "", winner === c.id ? "best" : ""].filter(Boolean).join(" ") || undefined} data-column={c.id}>
+                    <CellText data={data} pose={pose} c={c} r={r} />
+                  </td>
+                ))}
               </tr>
             );
           })}
         </tbody>
+        <tfoot>
+          <tr data-row="wins">
+            <th scope="row" className="target">
+              Targets won
+            </th>
+            {cols.map((c) => (
+              <td key={c.id} className={c.id === "ours" ? "ours" : undefined} data-column={c.id}>
+                {wins.get(c.id) ?? 0}
+              </td>
+            ))}
+          </tr>
+          <tr data-row="mean">
+            <th
+              scope="row"
+              className="target"
+              data-tip={`Over the targets every method shown settled on, so none is flattered by skipping the hard ones: ${common.map((r) => r.label).join(", ") || "none"}`}
+              data-testid="bench-mean-targets"
+            >
+              Mean time settled ({common.length} {common.length === 1 ? "target" : "targets"} all settled)
+            </th>
+            {cols.map((c, i) => (
+              <td key={c.id} className={[c.id === "ours" ? "ours" : "", means[i] === bestMean ? "best" : ""].filter(Boolean).join(" ") || undefined} data-column={c.id}>
+                {Number.isFinite(means[i]!) ? means[i]!.toFixed(2) : "-"}
+              </td>
+            ))}
+          </tr>
+        </tfoot>
       </table>
-      <p className="hint" data-testid="bench-valid-rule">
-        {VALID_RULE}
+    </div>
+  );
+}
+
+/** Horizontal bars, best first; ours in the accent, the others in one quiet grey; values at the tips. */
+function BarChart({ bars, unit, compact, testId }: { bars: readonly Bar[]; unit: string; compact?: boolean; testId?: string }) {
+  const lo = Math.min(0, ...bars.map((b) => b.value));
+  const hi = Math.max(0, ...bars.map((b) => b.value));
+  const span = hi - lo || 1;
+  const zero = ((0 - lo) / span) * 100;
+  return (
+    <ol className={compact ? "bars compact" : "bars"} data-testid={testId}>
+      {bars.map((b) => {
+        const left = ((Math.min(0, b.value) - lo) / span) * 100;
+        const width = (Math.abs(b.value) / span) * 100;
+        const ours = b.column.id === "ours";
+        return (
+          <li
+            key={b.column.id}
+            className={ours ? "ours" : undefined}
+            data-column={b.column.id}
+            tabIndex={0}
+            data-tip={`${b.column.label}: ${fmt(b.value, unit)} ${unit} (${b.over} ${b.over === 1 ? "target" : "targets"})`}
+          >
+            <span className="bar-label">{compact ? b.column.short : b.column.label}</span>
+            <span className="bar-track">
+              {lo < 0 && <span className="bar-zero" style={{ left: `${zero}%` }} />}
+              <span className={b.value < 0 ? "bar neg" : "bar"} style={{ left: `${left}%`, width: `max(2px, ${width}%)` }} />
+              <span className="bar-value" style={b.value < 0 ? { left: `calc(${left}% - 4px)`, transform: "translateX(-100%)" } : { left: `calc(${left + width}% + 6px)` }}>
+                {fmt(b.value, unit)}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function CompareCharts({ data, pose, cols }: { data: BenchData; pose: string; cols: readonly Column[] }) {
+  const metric = useStore(bench, (s) => s.compareMetric as CompareMetric);
+  const view = useStore(bench, (s) => s.compareView);
+  const m = COMPARE_METRICS.find((x) => x.id === metric) ?? COMPARE_METRICS[0]!;
+  const rs = rows(data);
+  const bars = useMemo(() => aggregate(data, pose, cols, rs, m.id), [data, pose, cols, rs, m.id]);
+  const better = m.higherIsBetter ? "higher is better" : "lower is better";
+  return (
+    <section className="bench-section" aria-labelledby="bench-compare-title" data-testid="bench-charts">
+      <div className="bench-section-head">
+        <h2 id="bench-compare-title">How we compare</h2>
+        <Segmented
+          label="Charts"
+          value={view}
+          options={[
+            { value: "aggregate", label: "All targets" },
+            { value: "per", label: "Per target" },
+          ]}
+          onChange={(compareView) => bench.set({ compareView })}
+        />
+      </div>
+      <div className="metric-switch" role="radiogroup" aria-label="Metric">
+        {COMPARE_METRICS.map((x) => (
+          <button key={x.id} type="button" role="radio" aria-checked={x.id === m.id} className="metric-pill" onClick={() => bench.set({ compareMetric: x.id })}>
+            {x.label}
+          </button>
+        ))}
+      </div>
+      <p className="hint">
+        {m.label} ({m.unit}, {better}): {view === "aggregate" ? m.note : "on each target, every method with a value there (for the times, runs that count)"}.{" "}
+        {POSE_SHORT[pose] ?? pose}.
       </p>
+      {view === "aggregate" ? (
+        bars.length ? (
+          <BarChart bars={bars} unit={m.unit} testId="bench-bars" />
+        ) : (
+          <p className="hint">No target has a value from every method shown for this metric with this pose source.</p>
+        )
+      ) : (
+        <div className="multiples" data-testid="bench-multiples">
+          {rs.map((r) => {
+            const b = perTarget(data, pose, cols, r, m.id);
+            const failed = cols.filter((c) => {
+              const x = cell(data, pose, c, r, "t_settle");
+              return x.method && !x.validity?.valid;
+            });
+            return (
+              <figure key={r.key} className="multiple">
+                <figcaption>{r.label}</figcaption>
+                {b.length ? <BarChart bars={b} unit={m.unit} compact /> : <p className="hint">No method shown has a value here.</p>}
+                {(m.id === "t_settle" || m.id === "t_5cm") && failed.length > 0 && (
+                  <p className="multiple-note">Left out (didn&apos;t settle or ended off): {failed.map((c) => c.label).join(", ")}</p>
+                )}
+                {r.route && <p className="multiple-note">2026 route: Choreo and BLine weren&apos;t run on the routes.</p>}
+              </figure>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
 
-/** Time columns: a run that didn't settle or ended out of tolerance has no time worth comparing. */
-const TIME_METRICS = new Set(["t_done", "t_settle", "plan_s"]);
-
-function ResultsTable({ t, s, seeds }: { t: BenchTable; s: BenchState; seeds: number }) {
-  const methods = listedMethods(t, s.moreMethods).filter((m) => t.runs[s.pose]?.[s.course]?.[m] !== undefined);
-  const best = bestValidByMetric(t, s.pose, s.course, methods);
+function OptimisedTable({ data, pose }: { data: BenchData; pose: string }) {
+  const pp = data.ppcompare;
+  if (!pp) return null;
+  const cols = OPTIMISED_COLUMNS.filter((c) => pp.methods.some((m) => m.key === c.method));
+  const t = (key: string) => tableFor(data, PP_PREFIX + key);
   return (
-    <table className="bench-table" data-testid="bench-table">
-      <caption>
-        Every metric: mean (worst) over {seeds} seeds. Bold: the lowest mean among valid runs. Greyed: a time that doesn&apos;t count.
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Show</th>
-          <th scope="col">Method</th>
-          {t.metrics.map((m) => (
-            <th scope="col" key={m.key}>
-              {m.label} <span className="unit">{m.unit}</span>
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {methods.map((key) => {
-          const label = t.methods.find((m) => m.key === key)?.label ?? key;
-          const v = validity(t, s.pose, s.course, key);
-          return (
-            <tr key={key} className={v.valid ? undefined : "invalid"} data-method={key}>
-              <td>
-                <IconButton label={`Show ${label} on the field`} pressed={s.shown.includes(key)} onClick={() => toggleShown(key)} className="small">
-                  {s.shown.includes(key) ? <Eye size={14} /> : <EyeOff size={14} />}
-                </IconButton>
-              </td>
-              <th scope="row">
-                <Swatch method={key} /> {label}
-                {!v.valid && <span className="tag danger">{v.reason}</span>}
+    <section className="bench-section" aria-labelledby="bench-opt-title">
+      <div className="bench-section-head">
+        <h2 id="bench-opt-title">Optimised paths</h2>
+      </div>
+      <p className="hint">
+        The PathPlanner comparison: the same waypoints as drawn, and after each one&apos;s own optimiser (ours with <code>tools/optimise.mjs</code>,
+        PathPlanner&apos;s control points with a port of the same search). Each cell: time settled, and the planned time under it.
+      </p>
+      {!pp.meta.poses.includes(pose) && <p className="check warning">The PathPlanner comparison wasn't run with {POSE_LABELS[pose] ?? pose}.</p>}
+      <div className="bench-table-scroll">
+        <table className="benchmark" data-testid="bench-optimised">
+          <thead>
+            <tr>
+              <th scope="col" className="target">
+                Time settled (plan), s
               </th>
-              {t.metrics.map((metric) => {
-                const st = tableStat(t, s.pose, s.course, key, metric.key);
-                const voided = !v.valid && TIME_METRICS.has(metric.key);
-                return (
-                  <td key={metric.key} className={best[metric.key] === key ? "best" : voided ? "void" : undefined} title={voided ? v.reason : undefined}>
-                    {num(st?.mean)}
-                    {st?.worst !== null && st?.worst !== undefined && <span className="worst"> ({formatNumber(st.worst, 2)})</span>}
-                    {st && st.nan > 0 && <span className="worst"> [{st.nan} n/a]</span>}
-                  </td>
-                );
-              })}
+              {cols.map((c) => (
+                <th scope="col" key={c.method} className={c.ours ? "ours" : undefined}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
+          </thead>
+          <tbody>
+            {pp.targets.map((target) => {
+              const key = PP_PREFIX + target.key;
+              const table = t(target.key);
+              let best: string | null = null;
+              let low = Infinity;
+              for (const c of cols) {
+                const v = tableStat(table, pose, key, c.method, "t_settle")?.mean;
+                if (table.runs[pose]?.[key]?.[c.method] && validity(table, pose, key, c.method).valid && typeof v === "number" && v < low) {
+                  low = v;
+                  best = c.method;
+                }
+              }
+              return (
+                <tr key={target.key}>
+                  <th scope="row" className="target">
+                    {target.key}
+                    {target.onField && <span className="tag">2026 route</span>}
+                  </th>
+                  {cols.map((c) => {
+                    const run = table.runs[pose]?.[key]?.[c.method];
+                    const settle = tableStat(table, pose, key, c.method, "t_settle")?.mean;
+                    const plan = tableStat(table, pose, key, c.method, "plan_s")?.mean;
+                    const v = run ? validity(table, pose, key, c.method) : null;
+                    return (
+                      <td key={c.method} className={[c.ours ? "ours" : "", best === c.method ? "best" : ""].filter(Boolean).join(" ") || undefined}>
+                        {!run ? (
+                          <span className="na">–</span>
+                        ) : v?.valid ? (
+                          (settle ?? Number.NaN).toFixed(2)
+                        ) : (
+                          <span className="void-cell" data-tip={v?.reason}>
+                            {v?.reason === "never settled" ? "✕ never" : v?.reason}
+                          </span>
+                        )}
+                        {run && typeof plan === "number" && <span className="plan">plan {plan.toFixed(2)}</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
-}
-
-function courseOptions(data: BenchData): { value: string; label: string }[] {
-  const courses = data.courses.map((c) => ({ value: c.key, label: `${c.key} (bench course)` }));
-  const routes = (data.ppcompare?.targets ?? []).map((t) => ({ value: PP_PREFIX + t.key, label: `${t.key} (${t.onField ? "2026 route" : "course"}, PathPlanner comparison)` }));
-  return [...courses, ...routes];
 }
 
 export function BenchView() {
   const s = useStore(bench, (b) => b);
   const data = s.data;
-  const t = data ? tableFor(data, s.course) : null;
-  const target = t?.targets.find((x) => x.key === s.course);
-  const isRoute = s.course.startsWith(PP_PREFIX);
+  const cols = useMemo(() => shownColumns(s.moreMethods), [s.moreMethods]);
+  const poses = data ? data.meta.poses : [];
   return (
     <main className="bench-page" aria-label="Bench comparison (read-only)">
-      <section className="bench-column" aria-label="The course on the field">
-        <BenchCanvas />
-        {data && t && (
-          <div className="bench-table-wrap">
-            <Scoreboard t={t} s={s} />
-            <h3 className="subhead bench-subhead">All metrics</h3>
-            <ResultsTable t={t} s={s} seeds={isRoute ? (data.ppcompare?.meta.seeds.length ?? 0) : data.meta.seeds.length} />
-          </div>
-        )}
-      </section>
-      <aside className="bench-side" aria-label="Bench choices">
-        <div className="bench-controls">
-          <h2 className="subhead">Bench comparison</h2>
+      <div className="bench-doc">
+        <header className="bench-hero">
+          <h1>How the followers compare</h1>
           {s.loadingSnapshot && <p className="stats">Loading the snapshot…</p>}
           {s.error && (
             <p className="check error" role="alert">
               {s.error}
             </p>
           )}
-          {data && t && (
+          {data && (
             <>
-              <SelectField
-                label="Course"
-                value={s.course}
-                options={courseOptions(data)}
-                onChange={(course) => {
-                  const poses = tableFor(data, course).poses;
-                  bench.set({ course, pose: poses.includes(s.pose) ? s.pose : poses.includes("truth") ? "truth" : (poses[0] ?? "") });
-                }}
-                testId="bench-course"
-              />
-              {target && (
-                <div className="bench-course-note">
-                  <p className="hint">{target.description}</p>
-                  {target.look && (
-                    <p className="look" data-testid="bench-look">
-                      <strong>What to look at:</strong> {target.look}
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="field">
-                <span className="field-label">Pose source</span>
-                <Segmented
-                  label="Pose source"
-                  value={s.pose}
-                  options={t.poses.map((p) => ({ value: p, label: p === "truth" ? "Perfect" : p === "odom" ? "Odometry" : p === "slipodom" ? "Slip-aware" : p, tip: POSE_LABELS[p] }))}
-                  onChange={(pose) => bench.set({ pose })}
-                />
-                <span className="hint">{POSE_LABELS[s.pose] ?? s.pose}</span>
-              </div>
-              {!isRoute && (
-                <>
-                  <SelectField
-                    label={`Trace seed (pose: ${POSE_LABELS[data.meta.tracePose] ?? data.meta.tracePose})`}
-                    value={s.seed}
-                    options={data.meta.traceSeeds.map((x) => ({ value: String(x), label: String(x) }))}
-                    onChange={(seed) => bench.set({ seed })}
+              <ul className="verdict" data-testid="bench-verdict">
+                {verdict(data, s.pose, cols).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <div className="bench-controls-row">
+                <div className="field">
+                  <span className="field-label">Pose source</span>
+                  <Segmented
+                    label="Pose source"
+                    value={s.pose}
+                    options={poses.map((p) => ({ value: p, label: p === "truth" ? "Perfect" : p === "odom" ? "Odometry" : p === "slipodom" ? "Slip-aware" : p, tip: POSE_LABELS[p] }))}
+                    onChange={(pose) => bench.set({ pose })}
                   />
-                  <Switch label="True traces (solid); authored paths dashed" checked={s.traces} onChange={(on) => bench.set({ traces: on })} />
-                </>
-              )}
-              <div className="field">
-                <span className="field-label">On the field</span>
-                <ul className="legend" aria-label="Methods">
-                  {listedMethods(t, s.moreMethods).map((m) => (
-                    <li key={m}>
-                      <button type="button" className="method-chip" aria-pressed={s.shown.includes(m)} onClick={() => toggleShown(m)} data-testid={`show-${m}`}>
-                        <Swatch method={m} /> {t.methods.find((x) => x.key === m)?.label ?? m}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <Switch
-                  label="More methods (README gains, as-shipped variants)"
-                  checked={s.moreMethods}
-                  onChange={(on) => bench.set({ moreMethods: on })}
-                  testId="bench-more-methods"
-                />
+                </div>
+                <p className="hint pose-explain" data-testid="bench-pose-explain">
+                  {POSE_EXPLAIN[s.pose] ?? POSE_LABELS[s.pose] ?? s.pose}
+                </p>
+                <Switch label="+ more methods (as shipped, README gains)" checked={s.moreMethods} onChange={(on) => bench.set({ moreMethods: on })} testId="bench-more-methods" />
+                <a
+                  className="link"
+                  href="#bench-detail"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById("bench-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                >
+                  Full tables <ChevronDown size={12} />
+                </a>
               </div>
-              <p className="stats">
-                {s.fileName}: {data.courses.length} courses, {data.methods.length} methods, {data.meta.seeds.length} seeds
-                {data.ppcompare ? `; PathPlanner comparison: ${data.ppcompare.targets.length} targets` : ""}
-              </p>
             </>
+          )}
+        </header>
+        {data && (
+          <>
+            <section className="bench-section" aria-labelledby="bench-table-title">
+              <div className="bench-section-head">
+                <h2 id="bench-table-title">Every course and route</h2>
+              </div>
+              <BenchmarkTable data={data} pose={s.pose} cols={cols} />
+              <p className="hint" data-testid="bench-valid-rule-top">
+                Bold: the fastest to settle among runs that count. A run counts if every seed settled (within 2 cm and 1°, held 0.25 s) and it
+                ended within {END_TOLERANCE_CM} cm; &quot;✕ never&quot; never settled, &quot;✕ 3/10&quot; settled on 3 of 10 seeds. Click a target for its detail.
+              </p>
+              {rows(data).some((r) => r.route) && (
+                <p className="hint" data-testid="bench-routes-note">
+                  – not run: the 2026 routes come from the PathPlanner comparison (<code>run.py --pp-compare</code>), which ran only PathPlanner and
+                  ours.
+                </p>
+              )}
+            </section>
+            <CompareCharts data={data} pose={s.pose} cols={cols} />
+            <OptimisedTable data={data} pose={s.pose} />
+            <CourseDetail data={data} />
+          </>
+        )}
+        <footer className="bench-section bench-data">
+          {data && (
+            <p className="stats">
+              {s.fileName}: {data.courses.length} courses, {data.methods.length} methods, {data.meta.seeds.length} seeds
+              {data.ppcompare ? `; PathPlanner comparison: ${data.ppcompare.targets.length} targets` : ""}.
+            </p>
           )}
           <p className="hint">
             Read-only. It opens with the committed snapshot. For the full export, run <code>python bench/run.py --export-editor</code> and load{" "}
@@ -378,8 +431,8 @@ export function BenchView() {
               }}
             />
           </label>
-        </div>
-      </aside>
+        </footer>
+      </div>
     </main>
   );
 }

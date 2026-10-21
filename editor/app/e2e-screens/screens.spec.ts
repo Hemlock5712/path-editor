@@ -80,8 +80,21 @@ for (const size of SIZES) {
     await shot("5-telemetry");
 
     await page.getByTestId("page-bench").click();
-    await expect(page.getByTestId("bench-scoreboard")).toBeVisible();
+    await expect(page.getByTestId("bench-benchmark")).toBeVisible();
     await settle(page);
     await shot("6-bench");
+    await page.getByTestId("bench-charts").scrollIntoViewIfNeeded();
+    await settle(page);
+    await shot("6b-bench-charts");
+    await page.getByRole("radio", { name: "Per target" }).click();
+    await settle(page);
+    await shot("6c-bench-per-target");
+    await page.getByRole("radio", { name: "All targets" }).click();
+    await page.getByTestId("bench-optimised").scrollIntoViewIfNeeded();
+    await settle(page);
+    await shot("6d-bench-optimised");
+    await page.locator("#bench-detail").scrollIntoViewIfNeeded();
+    await settle(page);
+    await shot("6e-bench-detail");
   });
 }

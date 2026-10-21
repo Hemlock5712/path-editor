@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bestValidByMetric, parseBench, scoreboard, tableFor, validity, type BenchData } from "../src/bench/benchData.ts";
+import { aggregate, bestValidByMetric, cell, COLUMNS, parseBench, rows, rowWinner, scoreboard, tableFor, validity, verdict, type BenchData } from "../src/bench/benchData.ts";
 
 const stat = (mean: number | null, worst = mean, nan = 0) => ({ mean, worst, nan });
 
@@ -81,5 +81,52 @@ describe("reading the bench fairly", () => {
     const t = tableFor(data, "straight_3m");
     expect(validity(t, "truth", "straight_3m", "bline_readme").valid).toBe(false);
     expect(validity(t, "truth", "straight_3m", "ours_v2").valid).toBe(true);
+  });
+});
+
+describe("the headline comparison", () => {
+  const data = parseBench(readFileSync(join(import.meta.dirname, "..", "public", "bench", "results-lite.json"), "utf8"));
+  const cols = COLUMNS.filter((c) => !c.more);
+
+  it("writes the verdict from the data", () => {
+    const lines = verdict(data, "truth", cols);
+    const wins = rows(data).filter((r) => rowWinner(data, "truth", cols, r, "t_settle") === "ours").length;
+    expect(lines[0]).toContain(`Ours settles first on ${wins} of ${rows(data).length} targets`);
+    // with odometry nothing settles inside 2 cm of the true goal, and it says so
+    expect(verdict(data, "odom", cols)[0]).toContain("No method settles");
+  });
+
+  it("never lets a run that doesn't count win a row", () => {
+    for (const pose of data.meta.poses)
+      for (const r of rows(data)) {
+        const w = rowWinner(data, pose, cols, r, "t_settle");
+        if (w) expect(cell(data, pose, cols.find((c) => c.id === w)!, r, "t_settle").validity?.valid).toBe(true);
+      }
+  });
+
+  it("compares the methods over the same targets, best first", () => {
+    const bars = aggregate(data, "truth", cols, rows(data), "t_settle");
+    expect(new Set(bars.map((b) => b.over)).size).toBe(1); // every bar over the same targets
+    const values = bars.map((b) => b.value);
+    expect(values).toEqual([...values].sort((a, b) => a - b));
+    const reliability = aggregate(data, "truth", cols, rows(data), "reliability").map((b) => b.value);
+    expect(reliability).toEqual([...reliability].sort((a, b) => b - a)); // higher is better: highest first
+  });
+});
+
+describe("new courses", () => {
+  it("flow into the table, the verdict and the charts from the data alone", () => {
+    const base = parseBench(readFileSync(join(import.meta.dirname, "..", "public", "bench", "results-lite.json"), "utf8"));
+    const extra = "new_course";
+    const data: BenchData = {
+      ...base,
+      meta: { ...base.meta, courses: [...base.meta.courses, extra] },
+      courses: [...base.courses, { key: extra, description: "a course added later", look: "" }],
+      runs: Object.fromEntries(Object.entries(base.runs).map(([pose, byCourse]) => [pose, { ...byCourse, [extra]: byCourse["straight_3m"]! }])),
+    };
+    const cols = COLUMNS.filter((c) => !c.more);
+    expect(rows(data).map((r) => r.key)).toContain(extra);
+    expect(verdict(data, "truth", cols)[0]).toMatch(new RegExp(`of ${rows(data).length} targets`));
+    expect(rowWinner(data, "truth", cols, rows(data).find((r) => r.key === extra)!, "t_settle")).toBe("ours");
   });
 });

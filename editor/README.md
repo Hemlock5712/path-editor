@@ -266,25 +266,40 @@ the in-browser optimiser byte for byte.
 
 ## Bench comparison
 
-The **Bench** page is a read-only view of the bench's results, set up so they can't mislead.
+The **Bench** page is a read-only view of the bench's results, laid out like a model launch page.
 
-- **Perfect pose first.** It opens on perfect pose (the follower alone), with a selector for wheel odometry and
-  slip-aware odometry. The traces on the field are perfect-pose runs too (`--trace-pose` picks another).
-- **A scoreboard leads.** It is ranked by time settled, then seeds settled (n/N), then final error.
-- **Only valid runs count.** A run counts only if every seed settled (2 cm and 1°, held 0.25 s) and it ended
-  within 5 cm. Other rows are greyed and marked ("never settled", "3/10 never settled", "38 cm off"). They get no
-  rank, their times are struck through, and they are never bold. Bold in the full table marks the best among
-  valid runs.
-- **Methods.** Ours is ticked first, then PathPlanner (tuned) + hold, Choreo and BLine (tuned). README gains
-  and as-shipped variants are under **More methods**. Each method has one colour everywhere, and ours is the
-  accent.
-- **Courses.** Every bench course is drawn at the same spot on the field, labelled "Bench course, not a field
-  route". Each has a "what to look at" line (`EDITOR_LOOK` in `bench/run.py`).
-- **PathPlanner comparison.** When `run.py --pp-compare` has been run, the export carries its rows and the 2026
-  routes. They are listed as extra courses, and each route's waypoints are drawn where it is on the field.
-- **Getting the data.** The page opens with the committed snapshot, `app/public/bench/results-lite.json`.
-  `python bench/run.py --export-editor` writes it and the full export, `bench/out/editor_bench.json`, which the
-  file picker loads.
+- **The verdict**, written from the data. For example: "Ours settles first on 11 of 14 targets; PathPlanner
+  (Bezier, tuned + hold) on 2. Ours gets within 5 cm first on 9. Didn't settle, or ended off: Choreo on 4,
+  BLine (tuned) on 1."
+- **The pose switch** (perfect pose, wheel odometry, slip-aware) drives everything on the page, with a line
+  saying what each means. It opens on perfect pose: the follower alone. On odometry no method settles inside
+  2 cm of the true goal, and the verdict says so.
+- **One table across every course and 2026 route.**
+  - The columns are Ours, PathPlanner (Bezier, tuned + hold), PathPlanner path2 (tuned), Choreo and BLine
+    (tuned). **+ more methods** adds the as-shipped variants.
+  - Each cell is the time settled. Ours' column is tinted, and the best valid cell in each row is bold.
+  - A run counts only if every seed settled (2 cm and 1°, held 0.25 s) and it ended within 5 cm. One that
+    doesn't shows "✕ never", "✕ 3/10" (seeds settled) or "38 cm off" in muted text, and can't be bold.
+  - Summary rows give the targets won and the mean time settled, over the targets every method settled on.
+  - Clicking a target opens it in the course detail.
+- **How we compare.** A horizontal bar chart per metric across the methods, best first, with ours in the
+  accent and values at the bar tips. The metrics are time settled, time to 5 cm, final error, cross-track
+  RMS, wheel slip, reliability, and plan time against actual. The bars are over the same targets for every
+  method, so none is flattered by skipping the hard ones. **Per target** shows one small chart per course and
+  route.
+- **Optimised paths.** The PathPlanner comparison (`run.py --pp-compare`): the same waypoints as drawn and after
+  each one's own optimiser. Each cell gives the time settled and the planned time.
+- **Course detail.** The field with each method's authored path (dashed) and true trace (solid), the
+  "what to look at" line, a scoreboard ranked by time settled, then seeds settled, then final error, and
+  every metric.
+  - Bench courses are drawn at one fixed spot, labelled "Bench course, not a field route".
+  - The 2026 routes are drawn where they are on the field.
+- **Colours.** The five headline methods take the documented categorical palette's first five slots, validated
+  for colour vision on this app's surface. Ours is slot 1, blue.
+- **Data.** The page opens with the committed snapshot, `app/public/bench/results-lite.json` (0.9 MB: every table,
+  the PathPlanner comparison, geometry to the millimetre, and perfect-pose traces every 0.2 s). Refresh it with
+  `python bench/run.py --export-editor`, which writes it and the full export (`bench/out/editor_bench.json`).
+  The file picker at the bottom of the page loads the full export.
 
 ## Live robot (NT4)
 

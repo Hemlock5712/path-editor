@@ -327,12 +327,19 @@ EDITOR_LOOK = {
     "hit_mid_path": "how far each ends after a shove halfway, and how fast it recovers",
     "low_grip_s_curve": "a slippery floor: who still settles, and how much wheel slip each causes",
     "grip_drop_s_curve": "the grip drops halfway: who adapts, and who slides past the end",
+    # the 2026 routes (run.py --pp-compare)
+    "start_to_shot": "a short hop that turns to face the hub: who settles on the scoring pose first",
+    "depot_and_back": "two legs with a stop at the depot: the total time, and how cleanly each stop lands",
+    "neutral_three_piece": "three legs with rolling handoffs at 2 m/s: smooth handoffs, and the final pose",
+    "around_hub_trench": "threading the trench round the hub: the time, and keeping to the line in the trench",
+    "shot_to_tower": "to the tower, facing the wall: the final pose for the climb",
 }
 LITE_TRACE_STEP = 5  # every 5th trace sample: 0.2 s apart
 EDITOR_SCHEMA = 1
 # what the editor's tables show: name in results.json -> (label, unit)
 EDITOR_METRICS = {
     "t_done": ("time to done", "s"),
+    "t_5cm": ("time to 5 cm", "s"),
     "t_settle": ("time settled", "s"),
     "ct_rms_cm": ("cross-track RMS", "cm"),
     "ct_max_cm": ("cross-track max", "cm"),
@@ -341,6 +348,13 @@ EDITOR_METRICS = {
     "overshoot_cm": ("overshoot", "cm"),
     "wheel_slip_ms": ("wheel slip", "ms"),
 }
+
+
+def look_line(name):
+    """The course's "what to look at" line; a course without one yet gets a line from its description."""
+    if name in EDITOR_LOOK:
+        return EDITOR_LOOK[name]
+    return f"how each copes with {COURSES[name].description}" if name in COURSES else ""
 
 
 def _ppcompare_block():
@@ -426,7 +440,7 @@ def export_editor(results_path, trace_seeds, procs, trace_pose="truth"):
                  "traceSeeds": sorted(int(k) for k in traces[courses[0]]), "tSim": meta["t_sim"]},
         "metrics": [{"key": k, "label": v[0], "unit": v[1]} for k, v in EDITOR_METRICS.items()],
         "methods": [{"key": m, "label": label(m)} for m in methods],
-        "courses": [{"key": c, "description": COURSES[c].description, "look": EDITOR_LOOK.get(c, "")} for c in courses],
+        "courses": [{"key": c, "description": COURSES[c].description, "look": look_line(c)} for c in courses],
         "runs": runs,
         "geometry": d["geometry"],
         "traces": traces,
