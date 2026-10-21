@@ -2171,6 +2171,19 @@ dialog::backdrop {
   gap: var(--s2);
 }
 
+.optimise span.block {
+  display: flex;
+  flex: 1;
+}
+
+.optimise .clearance {
+  margin: 0;
+}
+
+.optimise .clearance.bad {
+  color: var(--danger);
+}
+
 .position {
   display: flex;
   align-items: flex-end;

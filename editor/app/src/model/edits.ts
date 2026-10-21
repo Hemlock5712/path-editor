@@ -5,7 +5,6 @@ import {
   makeConstraintZone,
   makeFacePointZone,
   makePathEvent,
-  makePathSpec,
   makeRotationTarget,
   makeWaypoint,
   type ConstraintZone,
@@ -15,11 +14,11 @@ import {
   type RotationTarget,
   type Waypoint,
 } from "../../../core/src/index.ts";
-import type { EditorPath } from "./project.ts";
+import { draftSpec, type EditorPath } from "./project.ts";
 import { afterDelete, afterInsert } from "./positions.ts";
 
 export function withSpec(path: EditorPath, parts: Partial<PathSpec>): EditorPath {
-  return { ...path, spec: makePathSpec({ ...path.spec, ...parts }) };
+  return { ...path, spec: draftSpec({ ...path.spec, ...parts }) };
 }
 
 function replaceAt<T>(list: readonly T[], i: number, item: T): T[] {
@@ -111,6 +110,18 @@ export function appendWaypoint(path: EditorPath, x: number, y: number): EditorPa
   if (last > 0) waypoints[last] = changed(end, { headingRadians: Number.NaN });
   waypoints.push(makeWaypoint(x, y, Number.NaN, 1, end.headingRadians));
   return { ...withSpec(path, { waypoints }), links: [...path.links, null], pinned: [...path.pinned, false] };
+}
+
+/**
+ * Adds a waypoint at (x, y) right after waypoint i (a double-click with waypoint i selected). After the
+ * last one it becomes the new end; on an empty path it is the start, facing 0. Between two, f is where
+ * it lands on the old stretch (0 to 1), so things placed by waypoint position keep their place.
+ */
+export function addWaypointAfter(path: EditorPath, i: number, x: number, y: number, f = 0.5): EditorPath {
+  const n = path.spec.waypoints.length;
+  if (n === 0) return { ...withSpec(path, { waypoints: [makeWaypoint(x, y, Number.NaN, 1, 0)] }), links: [null], pinned: [false] };
+  if (i >= n - 1) return appendWaypoint(path, x, y);
+  return insertWaypoint(path, i, f, x, y);
 }
 
 /** Deletes waypoint i; if it was an end, the new end inherits its heading when it has none. */

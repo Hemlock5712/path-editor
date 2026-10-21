@@ -5,7 +5,7 @@ import { CornerDownRight, Lock, MapPin, Trash2 } from "lucide-react";
 import { DEFAULT_BLEND_METERS, makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../../core/src/index.ts";
 import {
   deleteWaypoint,
-  insertWaypoint,
+  addWaypointAfter,
   moveWaypoint,
   removeConstraintZone,
   removeEvent,
@@ -58,11 +58,20 @@ export function WaypointInspector({ index }: { index: number }) {
   // a linked waypoint follows its point, so moving it moves the point (and every waypoint on it)
   const moveTo = (x: number, y: number) =>
     link ? editProject("Move point", (p) => moveNamedPoint(p, link, x, y)) : editPath("Move waypoint", (p) => moveWaypoint(p, index, x, y));
+  // the keyboard's double-click: halfway to the next waypoint, or 1 m on past the end
   const insertAfter = () => {
     const g = geometryOf(path.spec);
-    if (!g) return;
-    const mid = g.sample(g.sAtWaypoint(index + 0.5));
-    editPath("Insert waypoint", (p) => insertWaypoint(p, index, 0.5, round5(mid.xMeters), round5(mid.yMeters)), { kind: "waypoint", index: index + 1 });
+    let at: [number, number];
+    if (g && index < n - 1) {
+      const mid = g.sample(g.sAtWaypoint(index + 0.5));
+      at = [mid.xMeters, mid.yMeters];
+    } else {
+      const end = g?.sample(g.lengthMeters);
+      const h = Number.isNaN(w.headingRadians) ? 0 : w.headingRadians;
+      const [dx, dy] = end ? [end.tangentX, end.tangentY] : [Math.cos(h), Math.sin(h)];
+      at = [w.xMeters + dx, w.yMeters + dy];
+    }
+    editPath("Add waypoint", (p) => addWaypointAfter(p, index, round5(at[0]), round5(at[1])), { kind: "waypoint", index: index + 1 });
   };
   return (
     <div className="inspector-body" role="group" aria-label={`Waypoint ${index}`}>
@@ -94,12 +103,12 @@ export function WaypointInspector({ index }: { index: number }) {
       <Switch
         label={
           <>
-            <Lock size={12} style={{ verticalAlign: -1 }} /> Pinned (the optimiser leaves it)
+            <Lock size={12} style={{ verticalAlign: -1 }} /> Locked (the optimiser never moves it)
           </>
         }
         checked={path.pinned[index] === true}
-        testId="waypoint-pin"
-        onChange={(on) => editPath(on ? "Pin" : "Unpin", (p) => setPinned(p, index, on))}
+        testId="waypoint-lock"
+        onChange={(on) => editPath(on ? "Lock" : "Unlock", (p) => setPinned(p, index, on))}
       />
       <div className="position">
         <SelectField
@@ -161,12 +170,10 @@ export function WaypointInspector({ index }: { index: number }) {
         </div>
       )}
       <div className="row">
-        {index < n - 1 && (
-          <Button onClick={insertAfter} label={`Insert a waypoint after waypoint ${index}`}>
-            <CornerDownRight size={14} />
-            Insert after
-          </Button>
-        )}
+        <Button onClick={insertAfter} label={`Add a waypoint after waypoint ${index}`} testId="add-after">
+          <CornerDownRight size={14} />
+          Add after
+        </Button>
       </div>
       <DeleteButton label="Delete waypoint" disabled={n <= 2} onClick={() => editPath("Delete waypoint", (p) => deleteWaypoint(p, index), null)} />
     </div>

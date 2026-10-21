@@ -19,7 +19,6 @@ export interface Command {
 
 export const TOOLS: readonly { readonly tool: Tool; readonly label: string; readonly key: string }[] = [
   { tool: "select", label: "Select", key: "V" },
-  { tool: "waypoint", label: "Draw waypoints", key: "W" },
   { tool: "rotation", label: "Heading along the path", key: "R" },
   { tool: "event", label: "Event", key: "E" },
   { tool: "obstacle", label: "Obstacle", key: "O" },

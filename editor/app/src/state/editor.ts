@@ -7,7 +7,7 @@ import { diff, type ProjectCommand } from "./commands.ts";
 import { History } from "./history.ts";
 import { createStore } from "./store.ts";
 
-export type Tool = "select" | "waypoint" | "event" | "rotation" | "obstacle";
+export type Tool = "select" | "event" | "rotation" | "obstacle";
 
 export type Selection =
   | { readonly kind: "waypoint"; readonly index: number }

@@ -25,6 +25,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { useRef, useState } from "react";
+import { isDrawn } from "../../model/project.ts";
 import { fitView, stepPlayback, toggleAlliance, togglePlay } from "../../state/actions.ts";
 import { analysis, playback } from "../../state/analysis.ts";
 import { redo, setTool, setView, undo, type Tool } from "../../state/editor.ts";
@@ -41,7 +42,6 @@ import { useActivePath, useAnalysis, useEditor } from "../panels/common.tsx";
 
 const TOOL_ICONS: Record<Tool, typeof Spline> = {
   select: MousePointer2,
-  waypoint: Spline,
   rotation: RotateCw,
   event: Flag,
   obstacle: Hexagon,
@@ -105,9 +105,12 @@ function ToolBar() {
 /** The plan's headline numbers: length, time, top speed. */
 function PathStats() {
   const a = useAnalysis();
+  const drawn = isDrawn(useActivePath().spec);
   return (
     <span className="path-stats" data-testid="path-stats">
-      {a ? (
+      {!drawn ? (
+        "no path yet"
+      ) : a ? (
         <>
           {formatNumber(a.lengthMeters, 2)} m, <strong>{formatNumber(a.totalTimeSeconds, 2)} s</strong>, top {formatNumber(Math.max(...a.stations.v), 2)} m/s
         </>
@@ -126,11 +129,12 @@ function ChecksBadge() {
   const pop = useRef<HTMLDivElement>(null);
   const style = usePopoverPosition(button, open, 360, true);
   useDismiss(open, () => setOpen(false), button, pop);
+  const drawn = isDrawn(useActivePath().spec);
   const checks = a?.checks ?? [];
   const errors = checks.filter((c) => c.severity === "error").length;
-  const level = failure || errors > 0 ? "error" : checks.length > 0 ? "warning" : "ok";
+  const level = drawn && (failure || errors > 0) ? "error" : drawn && checks.length > 0 ? "warning" : "ok";
   const Icon = level === "error" ? CircleAlert : level === "warning" ? TriangleAlert : CircleCheck;
-  const text = failure ? "Can't plan" : checks.length === 0 ? "No issues" : `${checks.length} ${checks.length === 1 ? "issue" : "issues"}`;
+  const text = !drawn ? "No path yet" : failure ? "Can't plan" : checks.length === 0 ? "No issues" : `${checks.length} ${checks.length === 1 ? "issue" : "issues"}`;
   return (
     <>
       <button
@@ -149,7 +153,8 @@ function ChecksBadge() {
       {open && (
         <Portal>
           <div ref={pop} className="popover checks-popover" style={style} role="dialog" aria-label="Checks">
-            {failure && (
+            {!drawn && <p className="hint">Double-click the field to place the start and the end.</p>}
+            {drawn && failure && (
               <p className="check error" role="alert">
                 The path can't be planned: {failure}
               </p>

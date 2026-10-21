@@ -344,11 +344,19 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   await name.press("Enter");
   await expect(page.getByRole("tab", { name: plan.name })).toHaveAttribute("aria-selected", "true");
 
-  // waypoints: the new path has two; the rest are added from the panel, then every one is typed in
-  for (let i = 2; i < plan.waypoints.length; i++) {
-    await openSection(page, "Waypoints");
-    await page.getByRole("button", { name: "Add a waypoint 1 m past the end" }).click();
+  // waypoints: a new project's path is empty, so two double-clicks make its start and end; a new path
+  // starts with just its start (selected), and Add after makes its end. Add after on the last one adds
+  // the rest, then every one is typed in
+  if (first) {
+    for (const x of [-1, 1]) {
+      const p = await fieldPoint(page, x, 0);
+      await page.mouse.dblclick(p.x, p.y);
+    }
+    await expect(waypointGroup(page, 1)).toBeVisible();
+  } else {
+    await waypointGroup(page, 0).getByTestId("add-after").click();
   }
+  for (let i = 2; i < plan.waypoints.length; i++) await waypointGroup(page, i - 1).getByTestId("add-after").click();
   for (let i = 0; i < plan.waypoints.length; i++) await setWaypoint(page, i, plan.waypoints[i]!, plan.headings.find((h) => h.wp === i)?.deg);
 
   if (plan.startSpeed !== undefined || plan.endSpeed !== undefined) await openSection(page, "Start and end state");

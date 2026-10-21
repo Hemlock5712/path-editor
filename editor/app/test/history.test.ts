@@ -19,6 +19,9 @@ import {
 } from "../src/state/editor.ts";
 import { composite, History, type Command } from "../src/state/history.ts";
 
+/** A new project with a short drawn path (a new one in the app starts empty). */
+const starterProject = () => ({ ...emptyProject(), paths: [makeEditorPath("Path1", starterSpec(), 0)] });
+
 describe("History", () => {
   const add = (n: number): Command<number> => ({ label: `+${n}`, apply: (d) => d + n, revert: (d) => d - n });
 
@@ -68,7 +71,7 @@ describe("History", () => {
 
 describe("project commands", () => {
   it("replace, insert and delete paths independently", () => {
-    const p0 = emptyProject();
+    const p0 = starterProject();
     const a = p0.paths[0]!;
     const b = makeEditorPath("B", starterSpec(), 1);
     const p1 = insertPath("add", b, 1).apply(p0);
@@ -85,7 +88,7 @@ describe("project commands", () => {
   });
 
   it("diff turns two project states into one command per changed part", () => {
-    const before = emptyProject();
+    const before = starterProject();
     const after = { ...before, paths: [appendWaypoint(before.paths[0]!, 1, 1)], field: { ...before.field, lengthMeters: 17 } };
     const cmd = diff("drag", before, after)!;
     expect(cmd.apply(before)).toEqual(after);
@@ -95,7 +98,7 @@ describe("project commands", () => {
 });
 
 describe("editor store", () => {
-  beforeEach(() => loadProject(emptyProject()));
+  beforeEach(() => loadProject(starterProject()));
 
   it("records each edit as an undo step and keeps the selection valid", () => {
     editPath("Add waypoint", (p) => appendWaypoint(p, 0, 0), { kind: "waypoint", index: 2 });

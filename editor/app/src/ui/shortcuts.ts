@@ -11,9 +11,10 @@ export const SHORTCUTS: [string, string][] = [
   ["Ctrl+K", "Command palette: every command, by name"],
   ["Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)", "Undo / redo"],
   ["Ctrl+S / Ctrl+O", "Save / open a folder"],
-  ["V W R E O", "Select, Draw (waypoints), Heading, Event and Obstacle tools"],
+  ["Double-click the field", "Add a waypoint after the selected one (an empty path: the start, then the end)"],
+  ["V R E O", "Select, Heading, Event and Obstacle tools"],
   ["Alt while turning", "Turn freely (headings snap to 15° otherwise)"],
-  ["Right-click a waypoint", "Set heading, pass-through, pin, delete"],
+  ["Right-click a waypoint", "Set heading, pass-through, lock, delete"],
   ["Delete", "Delete the selected item"],
   ["Arrows (Shift)", "Nudge the selected waypoint or point 1 cm (10 cm)"],
   ["Space", "Play or pause"],
@@ -22,7 +23,7 @@ export const SHORTCUTS: [string, string][] = [
   ["[ and ]", "Previous and next path"],
   ["A", "Blue or red view"],
   ["F", "Fit the field"],
-  ["Enter / Esc", "Done drawing points; finish / cancel an obstacle; Esc also deselects"],
+  ["Enter / Esc", "Finish / cancel an obstacle; Esc also deselects"],
   ["Shift while dragging", "Snap to 5 cm"],
   ["Double-click a tangent handle", "Back to the automatic tangent"],
   ["Wheel, right or middle drag", "Zoom, pan"],
@@ -91,13 +92,11 @@ export function onKeyDown(e: KeyboardEvent): void {
     case "Escape":
       if (inGesture()) cancelGesture();
       else if (editor.get().draftObstacle) setDraftObstacle(null);
-      else if (editor.get().tool === "waypoint") setTool("select"); // done drawing
       else if (editor.get().selection) select(null);
       else setTool("select");
       return;
     case "Enter":
       if (editor.get().draftObstacle) finishObstacle();
-      else if (editor.get().tool === "waypoint") setTool("select"); // done drawing
       return;
     case "ArrowLeft":
     case "ArrowRight":
@@ -137,9 +136,6 @@ export function onKeyDown(e: KeyboardEvent): void {
   switch (key) {
     case "v":
       setTool("select");
-      return;
-    case "w":
-      setTool("waypoint");
       return;
     case "e":
       setTool("event");

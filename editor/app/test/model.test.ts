@@ -9,10 +9,13 @@ import {
   makeWaypoint,
   PathGeometry,
 } from "../../core/src/index.ts";
-import { appendWaypoint, deleteWaypoint, insertWaypoint, moveWaypoint, setHeading, setPinned } from "../src/model/edits.ts";
+import { addWaypointAfter, appendWaypoint, deleteWaypoint, insertWaypoint, moveWaypoint, setHeading, setPinned } from "../src/model/edits.ts";
 import { addNamedPoint, linkToPoint, moveNamedPoint, removeNamedPoint } from "../src/model/namedPoints.ts";
 import { afterDelete, afterInsert, round5, round5Radians, waypointAtS } from "../src/model/positions.ts";
-import { emptyProject, eventNames, makeEditorPath, starterSpec, type Project } from "../src/model/project.ts";
+import { draftSpec, emptyProject, eventNames, isDrawn, makeEditorPath, startSpec, starterSpec, type Project } from "../src/model/project.ts";
+
+/** A new project with a short drawn path (a new one in the app starts empty). */
+const starterProject = () => ({ ...emptyProject(), paths: [makeEditorPath("Path1", starterSpec(), 0)] });
 
 const spec = makePathSpec({
   waypoints: [makeWaypoint(-4, -1), makeWaypoint(-2, 0.5), makeWaypoint(0, -0.5), makeWaypoint(2, 1)],
@@ -137,10 +140,36 @@ describe("headings and pins", () => {
   });
 });
 
+describe("drawing a path by double-clicks", () => {
+  it("an empty path takes its start, then its end; after that a point goes after the one picked", () => {
+    let p = makeEditorPath("New", startSpec(null), 0);
+    expect(isDrawn(p.spec)).toBe(false);
+    p = addWaypointAfter(p, -1, -6, -2);
+    expect(p.spec.waypoints.map((w) => [w.xMeters, w.yMeters, w.headingRadians])).toEqual([[-6, -2, 0]]);
+    p = addWaypointAfter(p, 0, -3, -2);
+    expect(isDrawn(p.spec)).toBe(true);
+    expect(p.spec.waypoints.map((w) => w.headingRadians)).toEqual([0, 0]); // the start and end poses
+    // after the start: between the two, passing through
+    p = addWaypointAfter(p, 0, -4.5, -1);
+    expect(p.spec.waypoints.map((w) => [w.xMeters, w.yMeters])).toEqual([[-6, -2], [-4.5, -1], [-3, -2]]);
+    expect(Number.isNaN(p.spec.waypoints[1]!.headingRadians)).toBe(true);
+    expect([p.links.length, p.pinned.length]).toEqual([3, 3]);
+    // after the end: the new end takes the end's heading
+    p = addWaypointAfter(p, 2, -1, -2);
+    expect(p.spec.waypoints.map((w) => w.headingRadians)).toEqual([0, Number.NaN, Number.NaN, 0]);
+  });
+
+  it("a new path from another's end starts with just its start pose", () => {
+    const spec = startSpec({ x: 1, y: 2, heading: 0.5 });
+    expect(spec.waypoints.map((w) => [w.xMeters, w.yMeters, w.headingRadians])).toEqual([[1, 2, 0.5]]);
+    expect(() => draftSpec({ waypoints: [], maxMetersPerSecond: -1 })).toThrow(); // the rest is still checked
+  });
+});
+
 describe("named points", () => {
   it("move every linked waypoint in every path", () => {
     let project: Project = {
-      ...emptyProject(),
+      ...starterProject(),
       paths: [makeEditorPath("A", spec, 0), makeEditorPath("B", spec, 1)],
     };
     const [withPoint, point] = addNamedPoint(project, "Reef", 1, 1);
@@ -157,7 +186,7 @@ describe("named points", () => {
   });
 
   it("collect event names across the project for the picker", () => {
-    const project = { ...emptyProject(), paths: [makeEditorPath("A", spec, 0), makeEditorPath("B", { ...spec, events: [eventAtMeters("align", 1)] }, 1)] };
+    const project = { ...starterProject(), paths: [makeEditorPath("A", spec, 0), makeEditorPath("B", { ...spec, events: [eventAtMeters("align", 1)] }, 1)] };
     expect(eventNames(project)).toEqual(["align", "intake", "shoot"]);
   });
 });

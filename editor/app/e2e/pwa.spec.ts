@@ -8,7 +8,7 @@ test.use({ launchOptions: { args: ["--disable-blink-features=AutomationControlle
 
 test("installable, and opens offline once visited", async ({ page, context }) => {
   await page.goto("/");
-  await expect(page.getByTestId("path-stats")).toContainText(" s,");
+  await expect(page.getByTestId("path-stats")).toContainText("no path yet"); // the app is up (a new, empty path)
   expect(await page.evaluate(() => navigator.webdriver)).toBe(false);
 
   // the browser's own verdict on the manifest and icons
@@ -26,7 +26,7 @@ test("installable, and opens offline once visited", async ({ page, context }) =>
   await expect.poll(() => page.evaluate(async () => (await caches.keys()).some((k) => k.startsWith("path-editor-")))).toBe(true);
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByTestId("path-stats")).toContainText(" s,");
+  await expect(page.getByTestId("path-stats")).toContainText("no path yet"); // the app is up (a new, empty path)
   await expect(page.getByTestId("tool-select")).toBeVisible();
   await context.setOffline(false);
 });

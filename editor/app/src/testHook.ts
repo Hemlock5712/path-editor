@@ -3,7 +3,7 @@
 
 import { analysis, currentPreview, geometryOf } from "./state/analysis.ts";
 import { activePath, editor } from "./state/editor.ts";
-import { rotationHandle, rotationTargetS, waypointHandle, waypointPose } from "./ui/draw.ts";
+import { collisions, rotationHandle, rotationTargetS, waypointHandle, waypointPose } from "./ui/draw.ts";
 
 export interface Poses {
   /** Each waypoint's pose (its set heading, or the plan's there) and its rotate knob, blue frame. */
@@ -12,16 +12,29 @@ export interface Poses {
   readonly targets: readonly { s: number; x: number; y: number; heading: number; knobX: number; knobY: number }[];
   /** The plan every ~10 cm: arc length, position, heading and direction of travel (radians). */
   readonly plan: readonly { s: number; x: number; y: number; heading: number; travel: number }[];
+  /** Where the swept bumpers hit an obstacle or the wall (drawn red on the path), and the least clearance, m. */
+  readonly collisions: readonly { sFrom: number; sTo: number; message: string }[];
+  readonly clearanceMeters: number;
 }
 
-/** The active path's poses, once the plan matches the document. */
+/** The active path's poses, once the plan matches the document (a path still being drawn: just its robots). */
 export async function currentPoses(): Promise<Poses> {
-  await currentPreview();
+  const draft = activePath().spec.waypoints.length < 2;
+  if (!draft) await currentPreview();
   const s = editor.get();
   const path = activePath(s);
+  if (draft) {
+    const model = { active: path, analysis: null, project: s.project };
+    const waypoints = path.spec.waypoints.map((_, i) => {
+      const h = waypointHandle(model, i);
+      return { ...waypointPose(model, i), knobX: h[2], knobY: h[3] };
+    });
+    return { waypoints, targets: [], plan: [], collisions: [], clearanceMeters: Number.NaN };
+  }
   const a = analysis.get().result;
   if (!a || !a.ok) throw new Error("no plan");
-  const g = geometryOf(path.spec)!;
+  const g = geometryOf(path.spec);
+  if (!g) throw new Error("no path yet");
   const model = { active: path, analysis: a, project: s.project, geometry: g };
   const waypoints = path.spec.waypoints.map((_, i) => {
     const p = waypointPose(model, i);
@@ -43,7 +56,8 @@ export async function currentPoses(): Promise<Poses> {
     const travel = Math.atan2(st.y[j]! - st.y[k]!, st.x[j]! - st.x[k]!);
     plan.push({ s: st.s[i]!, x: st.x[i]!, y: st.y[i]!, heading: st.heading[i]!, travel });
   }
-  return { waypoints, targets, plan };
+  const hits = collisions(a).map((c) => ({ sFrom: c.sFrom, sTo: c.sTo, message: c.message }));
+  return { waypoints, targets, plan, collisions: hits, clearanceMeters: a.minClearanceMeters };
 }
 
 export function installTestHook(): void {

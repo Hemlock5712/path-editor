@@ -1,10 +1,24 @@
-// The sim preview in a real browser: switch it on and the worker runs the follower on the starter path
+// The sim preview in a real browser: switch it on and the worker runs the follower on a short path
 // and reports when it finished against the plan; a shove changes the run.
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function dblField(page: Page, x: number, y: number): Promise<void> {
+  const box = (await page.getByTestId("field").boundingBox())!;
+  const scale = Math.min((box.width - 48) / 16.54, (box.height - 48) / 8.07);
+  await page.mouse.dblclick(box.x + box.width / 2 + x * scale, box.y + box.height / 2 - y * scale);
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("pathEditor.quickStartSeen", "1"));
+});
 
 test("the sim preview runs and reports a time", async ({ page }) => {
   await page.goto("/");
+  // a new project's path is empty: double-click its start and end
+  await dblField(page, -6.5, -1.5);
+  await dblField(page, -4, -1.5);
+  await page.keyboard.press("Escape"); // the inspector's path overview, with its cards
   await expect(page.getByTestId("time")).toContainText(/\/ \d+(\.\d+)? s/);
   // the switch is in the playback bar; the results take a row above it
   await page.getByTestId("sim-toggle").click();

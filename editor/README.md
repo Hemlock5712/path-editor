@@ -112,11 +112,19 @@ after PathPlanner's.
 
 **Drawing a swerve path.** A swerve's heading is its own, so a waypoint is a robot pose: a position and,
 optionally, a heading.
-- **Draw** (W): click to add a point at the end; click the path to insert one. Enter or Esc when done.
-  Drag a robot to move it; Delete or right-click removes it.
+- **Adding waypoints: double-click.** A new project's path is empty: the first double-click places the
+  start, the second the end. After that, select a waypoint and double-click the field: the new point goes
+  right after it (between it and the next, or as the new end), at the double-clicked spot, and is selected,
+  so more double-clicks build forward from it. With nothing selected a double-click only says how. A single
+  click never adds a point: it selects or deselects. A new path (**+**) starts with just its start, at the
+  last path's end, selected. **Add after** in a waypoint's inspector does the same from the keyboard
+  (halfway to the next point, or 1 m past the end), and right-clicking the field offers it too. There is no
+  separate drawing tool any more: double-click does its job in Select.
+  Drag a robot to move it; Delete or right-click removes it. Pressing on the path and dragging still inserts a
+  point there.
 - Drag the knob on a robot's ring to turn it. Headings snap to 15° (hold Alt to turn freely); the
   waypoint's **Heading** field takes a typed angle. Right-click a waypoint for **Set heading…**,
-  pass-through, pin and delete.
+  pass-through, lock and delete.
 - A waypoint without a heading is **pass-through** (dashed): the robot blends between the set headings.
   The first and last waypoints always have one. A new end takes the old end's heading, and the old end
   becomes pass-through.
@@ -128,7 +136,7 @@ optionally, a heading.
   tabs row), and to 5 cm with Shift.
 - **+** starts a new path where the active one ends, facing the way the robot ends up. A named point's
   **Start a path here** starts one there, linked to it.
-- Travel direction is automatic, so clicks alone make a smooth path. **Shape the curve by hand** (in the
+- Travel direction is automatic, so double-clicks alone make a smooth path. **Shape the curve by hand** (in the
   waypoint's inspector) shows its tangent handle, to set the direction and `tangentScale` by hand; **Reset
   to auto** undoes that.
 - **Event** (E): click the path to place a named event at the nearest point on it.
@@ -137,8 +145,9 @@ optionally, a heading.
   obstacles; press on the path and drag to insert a point.
 
 **Waypoints.**
-- Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 10 cm with Shift). **Pin** keeps a waypoint
-  where it is when the optimiser runs (a padlock marks it).
+- Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 10 cm with Shift). **Locked** (the waypoint's
+  inspector, its right-click menu, or **Optimiser settings**) keeps a waypoint where it is whatever the
+  optimiser does (a padlock marks it). Pass-through is only about heading: it never fixes or frees a point.
 - The path's Global constraints and Start and end state cards set the top speed, the maximum acceleration
   and the start and end speeds.
 - Inserting or deleting a waypoint renumbers the waypoint-relative positions of targets, zones and
@@ -165,8 +174,19 @@ optionally, a heading.
   in every path, as one undo step.
 
 **Obstacles.**
-- Edits the polygons in `field.json`: draw, drag corners, drag whole obstacles, rename and delete.
-- Each polygon is used as its convex hull, as `FieldMap` does.
+- Edits the polygons in `field.json`: draw, drag corners, drag whole obstacles, rename and delete
+  (on the field, or in **Settings → Field**).
+- Each polygon is used as its convex hull, as `FieldMap` does. The editor always writes `field.json`, in
+  `FieldMap`'s format, so the robot loads the same obstacles. A project's own `field.json` keeps its own.
+- **The 2026 field (REBUILT) by default**, origin at the centre. The positions come from WPILib's
+  2026 AprilTag layout (`2026-rebuilt-welded`), the sizes from the game manual:
+  - **Hubs** (47 in square at x = ±3.645 m). Solid.
+  - **Towers** (49.25 in by 45 in, against each alliance wall). Solid.
+  - **Trench supports**: the solid part of each trench, between the bump and the 50.34 in lane. The lane
+    itself, under the 22.25 in arm, is left free, so a robot under 22.25 in tall can use it. Taller robots:
+    add the lanes as obstacles.
+  - **Not obstacles**: the bumps (6.5 in ramps at 15°, driven over), the depots (a 1 in barrier) and the
+    outposts (part of the wall, which is checked anyway).
 
 **Live checks** (the badge on the field lists them, and they are marked on the path). All of them run on the core's plan:
 - **Tight bend.** The steady cornering speed `sqrt(μg/|κ|)` is under half the path's top speed.
@@ -174,8 +194,9 @@ optionally, a heading.
   planned without turning, and by at least 0.3 m/s. The message gives the turn, the distance, and both
   speeds. On lib's example route it reports "turns 128° over 1.54 m … slows to 0.77 m/s".
 - **Bumpers.** The bumper rectangle is swept along the plan every 2 cm, with the planned heading.
-  Touching an obstacle or the field wall is an error. Passing closer than 5 cm (the pathfinder's default
-  margin) is a warning.
+  Touching an obstacle or the field wall is an error, and the path turns red there with the bumpers drawn
+  where they hit. Passing closer than 5 cm (the pathfinder's default margin) is a warning. The optimiser
+  panel says how far the path clears them.
 - **Off the path.** An event placed off the path is an error. A rotation target or zone off the path is
   a warning.
 - **Speed.** A start or end speed that the plan can't hold, because a bend or turn caps it there.
@@ -231,18 +252,31 @@ and each event's s and t(s). `E2E_ONLY=Straight,Hairpin` authors just those path
 
 ## Optimiser
 
-Shaping a path is mostly the optimiser's job: draw the poses, then press **Optimise path** at the top of the inspector.
+Shaping a path is mostly the optimiser's job: draw the poses, then press **Optimise path** at the top of the
+inspector. It is enabled for any path with a start and an end.
 
-- **What moves.** The pass-through points, each within a corridor (0.5 m by default), and their tangent
-  scales (half to double). Tangent directions don't change.
-- **What stays put.** The start and end poses, any waypoint with a set heading (a pose the robot must reach
-  there), pinned waypoints (**Pinned** in the waypoint's inspector, its right-click menu, or **Optimiser settings**),
-  waypoints linked to a named point, and any that a zone starts or ends on or between. **Only between
-  waypoint … and waypoint …** in the settings optimises one segment. Events, rotation targets and zones placed
-  by waypoint keep their waypoint position; those placed by metres keep the same fraction of the path's
-  length.
-- **What it must keep.** A candidate counts only if it plans and its swept bumpers keep the clearance the path
-  had (up to the 5 cm margin). It also mustn't add heading warnings or errors.
+- **Curves and speeds (the default).** Waypoint positions and headings never move. It changes only the curve:
+  the tangent's direction (up to 60° either way) and scale (half to double) at every waypoint, the ends
+  included. The speed plan follows (it slows where the curve bends harder), and that is also how it clears a
+  wall: bend harder and slow down. Applying it changes only tangents, so the poses stay byte for byte.
+- **Also move unlocked waypoints** (a switch in **Optimiser settings**, off by default). The interior
+  waypoints may also move, each within the corridor (0.5 m by default), with or without a heading; a heading
+  goes with its waypoint unchanged.
+- **Never moves, in either mode.** The start and end poses, locked waypoints, waypoints linked to a named
+  point, and any that a zone starts or ends on or between. **Only between waypoint … and waypoint …** limits it
+  to one segment (the tangents at its two ends included). Events, rotation targets and zones placed by waypoint
+  keep their waypoint position; those placed by metres keep the same fraction of the path's length. It never
+  adds waypoints.
+- **What it must keep.** A candidate counts only if it plans, its swept bumpers clear every obstacle and the
+  field wall by the 5 cm margin, and it adds no heading warnings or other errors. Clearance is a hard rule:
+  a path that starts in collision (or under the margin) is first reshaped clear, by minimising its time plus a
+  large weight times the clearance it lacks along the path. It is then made faster among clear paths, even if
+  the clear result is slower than the colliding one. A clear path never comes back unclear.
+- **When it can't.** It says what and where ("Can't clear the wall by reshaping the curve between waypoints 2
+  and 3: add a waypoint or move one"), marks the spot on the field with a suggested waypoint, and offers no
+  Apply. **Add a waypoint here** puts that point in (one undo step); it is never added on its own.
+- **Route around obstacles** (stubbed). It will plan a way round with the pathfinder once that is ported to
+  `editor/core/src/plan`.
 - **Budget and repeatability.** The budget (3 s by default) sets how many plans it tries: 500 per second of
   budget. So the same path, budget and seed give the same result on any machine. The clock only stops a slow
   machine at twice the budget.
@@ -256,10 +290,13 @@ Shaping a path is mostly the optimiser's job: draw the poses, then press **Optim
 with type stripping):
 
 ```
-node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms 3000 --seed 1     [--out <file>] [--corridor 0.5] [--pin 2,5] [--segment 1,4] [--no-scales]
+node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms 3000 --seed 1     [--out <file>] [--move-waypoints] [--corridor 0.5] [--pin 2,5] [--segment 1,4] [--no-scales]
 ```
 
-It writes the optimised path file (to `--out`, or stdout) and a one-line summary to stderr. `--robot` and
+It writes the optimised path file (to `--out`, or stdout) and a one-line summary to stderr, with the clearance.
+By default it reshapes the curve only, as in the editor; `--move-waypoints` also moves the unlocked interior
+waypoints within `--corridor`. If it can't get the path clear, it writes the path unchanged, says what blocks it
+and where (with a waypoint that would help), and exits with code 3. `--robot` and
 `--field` are the robot project's `robot.json` and `field.json`; both default to the editor's defaults. There is
 no clock here, so the result depends only on the inputs, the budget and the seed. A unit test checks it against
 the in-browser optimiser byte for byte.

@@ -2,11 +2,11 @@
 
 import { deleteWaypoint, moveWaypoint, removeConstraintZone, removeEvent, removeFacePointZone, removeRotationTarget } from "../model/edits.ts";
 import { moveNamedPoint, removeNamedPoint } from "../model/namedPoints.ts";
-import { makeEditorPath, starterSpec, uniquePathName } from "../model/project.ts";
+import { makeEditorPath, startSpec, uniquePathName } from "../model/project.ts";
 import { round5 } from "../model/positions.ts";
 import { analysis, playback } from "./analysis.ts";
 import { deletePath, insertPath } from "./commands.ts";
-import { activePath, editor, editPath, editProject, execute, notify, setActivePath, setView } from "./editor.ts";
+import { activePath, editor, editPath, editProject, execute, notify, select, setActivePath, setView } from "./editor.ts";
 
 export function deleteSelection(): void {
   const s = editor.get();
@@ -62,16 +62,18 @@ export function nudge(dx: number, dy: number): void {
 
 /**
  * A new path starting where the active one ends, facing the way the robot ends up (a swerve auto is a
- * chain of paths), or at a given pose.
+ * chain of paths), or at a given pose: just its start, selected, so double-clicks carry on from there.
+ * After an empty path, an empty one.
  */
 export function newPath(start?: { x: number; y: number; heading: number; pointId?: string }): void {
   const s = editor.get();
-  const from = activePath(s).spec.waypoints.at(-1)!;
-  const pose = start ?? { x: from.xMeters, y: from.yMeters, heading: Number.isNaN(from.headingRadians) ? 0 : from.headingRadians };
-  let path = makeEditorPath(uniquePathName(s.project), starterSpec(pose.x, pose.y, pose.heading, s.project.settings.pathDefaults), s.project.paths.length);
+  const from = activePath(s).spec.waypoints.at(-1);
+  const pose = start ?? (from ? { x: from.xMeters, y: from.yMeters, heading: Number.isNaN(from.headingRadians) ? 0 : from.headingRadians } : null);
+  let path = makeEditorPath(uniquePathName(s.project), startSpec(pose, s.project.settings.pathDefaults), s.project.paths.length);
   if (start?.pointId) path = { ...path, links: path.links.map((l, i) => (i === 0 ? start.pointId! : l)) };
   execute(insertPath("New path", path, s.project.paths.length));
   setActivePath(path.id);
+  if (pose) select({ kind: "waypoint", index: 0 });
 }
 
 export function duplicatePath(): void {

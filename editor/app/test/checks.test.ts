@@ -153,3 +153,13 @@ describe("polygons", () => {
     expect(convexDistance(robot, square2)).toBe(0);
   });
 });
+
+describe("signed clearance", () => {
+  it("is the gap when apart and minus the penetration when overlapping", async () => {
+    const { signedClearance } = await import("../src/compute/polygons.ts");
+    const square = (x: number, y: number, h: number) => [[x - h, y - h], [x + h, y - h], [x + h, y + h], [x - h, y + h]] as [number, number][];
+    expect(signedClearance(square(0, 0, 0.5), square(2, 0, 0.5))).toBeCloseTo(1, 12);
+    expect(signedClearance(square(0, 0, 0.5), square(0.8, 0, 0.5))).toBeCloseTo(-0.2, 12);
+    expect(signedClearance(square(0, 0, 0.5), square(0, 0, 0.5))).toBeCloseTo(-1, 12);
+  });
+});

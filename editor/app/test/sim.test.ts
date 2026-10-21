@@ -22,7 +22,8 @@ import { DEFAULT_SIM_SETTINGS, driveOf, shoveOf, sim, simSettings, startSim } fr
 import { handle, type SimRequest, type SimResponse } from "../src/sim/worker.ts";
 import { errorColour } from "../src/sim/draw.ts";
 import { DEFAULT_SIM_PREVIEW } from "../src/model/project.ts";
-import { editor, editPath, editProject } from "../src/state/editor.ts";
+import { editor, editPath, editProject, loadProject } from "../src/state/editor.ts";
+import { emptyProject, makeEditorPath, starterSpec } from "../src/model/project.ts";
 
 const FIXTURES = join(import.meta.dirname, "..", "..", "..", "fixtures", "follow");
 
@@ -240,6 +241,7 @@ describe("the sim store", () => {
   it("runs only while on, and again whenever the path or a setting changes", () => {
     const w = new FakeWorker();
     const runner = new SimRunner(() => w);
+    loadProject({ ...emptyProject(), paths: [makeEditorPath("Path1", starterSpec(), 0)] });
     const stop = startSim(runner);
     expect(runner.started).toBe(0);
     simSettings.set({ enabled: true });

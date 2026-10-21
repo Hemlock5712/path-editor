@@ -1,6 +1,10 @@
-// The waypoint optimiser: shortens a path's planned time by moving its free interior waypoints (each
-// within a corridor around where it was) and their tangent scales. Every plan comes from the core.
-// It has no editor state, so it runs in the browser's worker and headless under Node (tools/optimise.mjs).
+// The path optimiser: shortens a path's planned time by reshaping its curve. By default ("curves and
+// speeds") only the tangents change, direction and scale, at every waypoint including the ends; the
+// waypoints and their headings stay exactly where they are, and the speed plan follows the new curve
+// (it slows where the curve is tighter). Opt in with moveWaypoints and the unlocked interior waypoints
+// may also move, each within a corridor around where it was, keeping their headings. Every plan comes
+// from the core. It has no editor state, so it runs in the browser's worker and headless under Node
+// (tools/optimise.mjs).
 //
 // Method: Nelder-Mead (adaptive coefficients for the dimension) on normalised coordinates, restarted
 // around the best point with a smaller simplex when it stalls. The start simplex's directions come
@@ -9,35 +13,43 @@
 // any machine; the wall clock is only a cap, for a slow machine.
 //
 // What stays put:
-//   - the first and last waypoints (the start and end poses), any with a set heading (a pose the robot
-//     must reach there), any pinned, any linked to a named point, any outside the segment being
-//     optimised, and any that a zone starts or ends on or between (so zone anchors don't move);
-//   - so only pass-through points move;
-//   - tangent directions (only the scales change);
+//   - every heading, and every waypoint unless moveWaypoints is on;
+//   - with it on, still the first and last waypoints (the start and end poses), any locked, any linked
+//     to a named point, any outside the segment being optimised, and any that a zone starts or ends on
+//     or between (zone anchors). A waypoint with a set heading may move; its heading goes with it;
+//   - tangents outside the segment (its two ends are in it);
 //   - events, rotation targets and zones by waypoint position keep that position (the same fraction of
 //     their stretch); those by metres keep the same fraction of the path's length.
-// A candidate only counts if it plans, its swept bumpers keep at least the clearance the path had (up to
-// the 5 cm margin), and it has no more heading warnings or errors than the path had.
+// A candidate only counts if it plans, its swept bumpers clear every obstacle and the field wall by the
+// margin (5 cm), and it has no more heading warnings or errors than the path had. That is a hard rule:
+// a path that starts in collision is first pushed out (the search minimises time plus a large weight
+// times the clearance it lacks along the swept bumpers) and then made faster among clear paths. If no
+// clear path is found, the result says what blocks it and where, suggests a waypoint that would help,
+// and changes nothing. It never adds waypoints, and only moves them when asked to.
 
 import {
   makeWaypoint,
   Path,
   PathGeometry,
+  tangentRadians,
   type PathEvent,
   type PathSpec,
   type RotationTarget,
 } from "../../../core/src/index.ts";
 import { round5 } from "../model/positions.ts";
 import { analyse, CHECKS, type AnalysisInput } from "./analysis.ts";
+import { bumperCorners, convexHull, insideRectMargin, signedClearance, type Pt } from "./polygons.ts";
 
 export interface OptimiseOptions {
-  /** How far each waypoint may move, metres. */
+  /** Also move the unlocked interior waypoints (off: only the curve's tangents change). */
+  readonly moveWaypoints: boolean;
+  /** How far each waypoint may move, metres (with moveWaypoints). */
   readonly corridorMeters: number;
-  /** Per waypoint: true = don't move it (pinned, or linked to a named point). */
+  /** Per waypoint: true = never move it (locked, or linked to a named point). */
   readonly locked: readonly boolean[];
-  /** Only move waypoints strictly between these two (null = the whole path). */
+  /** Only change the path between these two waypoints (null = the whole path). */
   readonly segment: readonly [number, number] | null;
-  /** Also change the free waypoints' tangent scales (within half to double). */
+  /** Also change the tangent scales (within half to double), not just their directions. */
   readonly optimiseScales: boolean;
   readonly seed: number;
   /** The deterministic budget. */
@@ -60,6 +72,7 @@ export function evaluationsFor(budgetSeconds: number): number {
 }
 
 export const DEFAULT_OPTIONS: OptimiseOptions = {
+  moveWaypoints: false,
   corridorMeters: 0.5,
   locked: [],
   segment: null,
@@ -77,25 +90,155 @@ export interface OptimiseResult {
   readonly stoppedBy: "evaluations" | "time" | "converged" | "cancelled";
   /** Indices of the waypoints it was allowed to move. */
   readonly free: readonly number[];
+  /** Indices of the waypoints whose tangents it was allowed to change. */
+  readonly turned: readonly number[];
+  /** The spec is a new one (faster, or pushed clear of the obstacles it hit). */
+  readonly changed: boolean;
+  /** The result clears every obstacle and the wall by the margin (false: nothing found; spec unchanged). */
+  readonly clear: boolean;
+  /** What the path couldn't be pushed clear of, when not clear. */
+  readonly blockedBy: string | null;
+  /** Where, when not clear: the closest-to-clear try's worst point, and a waypoint that would help. */
+  readonly blockedAt: BlockedAt | null;
+  /** The result's least clearance from obstacles and the wall, m (negative: overlapping). */
+  readonly clearanceMeters: number;
 }
 
-/** Why each waypoint stays put (null = the optimiser may move it). */
+export interface BlockedAt {
+  /** The worst point: metres along the path and where it is. */
+  readonly s: number;
+  readonly x: number;
+  readonly y: number;
+  /** It lies between this waypoint and the next. */
+  readonly fromWaypoint: number;
+  /** A waypoint there, pushed away from what it hits by the clearance it lacks. */
+  readonly suggestX: number;
+  readonly suggestY: number;
+}
+
+/** How far a tangent may turn from where it was, radians. */
+const MAX_TURN = Math.PI / 3;
+const DEG = Math.PI / 180;
+
+/** Weight on the clearance a colliding path lacks (s per m·m of shortfall along the path). */
+const SHORTFALL_WEIGHT = 100;
+/** Where the clearance is sampled along the path, m. */
+const CLEARANCE_STEP = 0.05;
+
+export interface Hull {
+  readonly name: string;
+  readonly hull: Pt[];
+  /** Bounding box: min x, min y, max x, max y. */
+  readonly box: readonly [number, number, number, number];
+}
+
+function box(points: readonly Pt[]): [number, number, number, number] {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of points) {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }
+  return [x0, y0, x1, y1];
+}
+
+/** The obstacles as convex hulls with their boxes (degenerate ones dropped). */
+export function hullsOf(obstacles: AnalysisInput["obstacles"]): Hull[] {
+  return obstacles
+    .map((o) => ({ name: o.name, hull: convexHull(o.polygon) }))
+    .filter((o) => o.hull.length >= 3)
+    .map((o) => ({ ...o, box: box(o.hull) }));
+}
+
+export interface Shortfall {
+  /** The clearance short of the margin, integrated along the path, m·m (0: clear everywhere). */
+  readonly total: number;
+  /** The least clearance anywhere, m (negative: overlapping; exact below the margin, a lower bound above it). */
+  readonly least: number;
+  /** What the least clearance is from. */
+  readonly worst: string;
+  /** Where (metres along the path, and the robot's centre), and which way is away from it. */
+  readonly s: number;
+  readonly x: number;
+  readonly y: number;
+  readonly away: readonly [number, number];
+}
+
+/** The unit direction away from what a body at (x, y) is closest to (the wall: straight in from it). */
+function awayFrom(x: number, y: number, what: Hull | null, halfLength: number, halfWidth: number): [number, number] {
+  if (what) {
+    let cx = 0;
+    let cy = 0;
+    for (const [px, py] of what.hull) {
+      cx += px / what.hull.length;
+      cy += py / what.hull.length;
+    }
+    const d = Math.hypot(x - cx, y - cy);
+    return d > 1e-9 ? [(x - cx) / d, (y - cy) / d] : [0, 1];
+  }
+  const gaps: [number, [number, number]][] = [
+    [halfLength - x, [-1, 0]],
+    [x + halfLength, [1, 0]],
+    [halfWidth - y, [0, -1]],
+    [y + halfWidth, [0, 1]],
+  ];
+  return gaps.reduce((a, b) => (b[0] < a[0] ? b : a))[1];
+}
+
+/** How far the swept bumpers fall short of the margin from each obstacle and the field wall. */
+export function shortfall(path: Path, input: AnalysisInput, hulls: readonly Hull[], margin: number): Shortfall {
+  const L = path.lengthMeters;
+  const n = Math.max(1, Math.ceil(L / CLEARANCE_STEP));
+  let total = 0;
+  let least = Infinity;
+  let worst = "";
+  let worstHull: Hull | null = null;
+  let at = { s: 0, x: 0, y: 0 };
+  for (let i = 0; i <= n; i++) {
+    const p = path.sample((L * i) / n);
+    const body = bumperCorners(p.xMeters, p.yMeters, p.headingRadians, input.bumperLengthMeters, input.bumperWidthMeters);
+    let here = insideRectMargin(body, input.fieldLengthMeters / 2, input.fieldWidthMeters / 2);
+    let what = "the field wall";
+    let whatHull: Hull | null = null;
+    const [x0, y0, x1, y1] = box(body);
+    for (const o of hulls) {
+      // boxes apart by the margin: the polygons are too (only clearance under the margin counts)
+      const gap = Math.max(o.box[0] - x1, x0 - o.box[2], o.box[1] - y1, y0 - o.box[3]);
+      const c = gap >= margin ? gap : signedClearance(body, o.hull);
+      if (c < here) {
+        here = c;
+        what = o.name;
+        whatHull = o;
+      }
+    }
+    if (here < least) {
+      least = here;
+      worst = what;
+      worstHull = whatHull;
+      at = { s: (L * i) / n, x: p.xMeters, y: p.yMeters };
+    }
+    if (here < margin) total += (margin - here) * (L / n);
+  }
+  const away = awayFrom(at.x, at.y, worstHull, input.fieldLengthMeters / 2, input.fieldWidthMeters / 2);
+  return { total, least, worst, ...at, away };
+}
+
+/** Why each waypoint stays put when moving waypoints is on (null = the optimiser may move it). */
 export function whyFixed(
   spec: PathSpec,
   locked: readonly boolean[],
   segment: readonly [number, number] | null = null,
 ): (string | null)[] {
   const n = spec.waypoints.length;
-  const why: (string | null)[] = spec.waypoints.map((w, i) =>
+  const why: (string | null)[] = spec.waypoints.map((_, i) =>
     i === 0 || i === n - 1
       ? "the start and end poses stay put"
-      : !Number.isNaN(w.headingRadians)
-        ? "it has a set heading"
-        : locked[i] === true
-          ? "pinned"
-          : segment && (i <= Math.min(...segment) || i >= Math.max(...segment))
-            ? "outside the segment"
-            : null,
+      : locked[i] === true
+        ? "locked"
+        : segment && (i <= Math.min(...segment) || i >= Math.max(...segment))
+          ? "outside the segment"
+          : null,
   );
   const anchor = (p: number) => {
     for (const i of [Math.floor(p), Math.ceil(p)]) if (i >= 0 && i < n) why[i] ??= "a zone starts or ends here";
@@ -107,9 +250,39 @@ export function whyFixed(
   return why;
 }
 
-/** The waypoints that must stay put (see whyFixed). */
+/** The waypoints that must stay put when moving waypoints is on (see whyFixed). */
 export function fixedWaypoints(spec: PathSpec, locked: readonly boolean[], segment: readonly [number, number] | null = null): boolean[] {
   return whyFixed(spec, locked, segment).map((w) => w !== null);
+}
+
+/** The waypoints whose tangents may change: all of them, or the segment's (its ends included). */
+export function turnableWaypoints(spec: PathSpec, segment: readonly [number, number] | null = null): number[] {
+  const n = spec.waypoints.length;
+  if (n < 2) return [];
+  const [a, b] = segment ? [Math.max(0, Math.min(...segment)), Math.min(n - 1, Math.max(...segment))] : [0, n - 1];
+  return spec.waypoints.map((_, i) => i).filter((i) => i >= a && i <= b);
+}
+
+/** Says what the optimiser will change, for the button's tooltip. */
+export function whatMoves(spec: PathSpec, options: Pick<OptimiseOptions, "moveWaypoints" | "locked" | "segment" | "corridorMeters">): string {
+  const t = turnableWaypoints(spec, options.segment).length;
+  const curves = `Reshape the curve at ${t} waypoint${t === 1 ? "" : "s"} (tangent directions and scales; the speeds follow)`;
+  if (!options.moveWaypoints) return `${curves}. Waypoints and headings stay where they are.`;
+  const m = fixedWaypoints(spec, options.locked, options.segment).filter((f) => !f).length;
+  return `${curves}, and move ${m} unlocked waypoint${m === 1 ? "" : "s"} within ${options.corridorMeters} m, keeping their headings.`;
+}
+
+/** The plain-words reason a result isn't clear, and what to do about it. */
+export function blockedMessage(
+  r: Pick<OptimiseResult, "blockedBy" | "blockedAt">,
+  options: Pick<OptimiseOptions, "moveWaypoints" | "corridorMeters">,
+): string {
+  const name = r.blockedBy ?? "the obstacles";
+  const what = name === "the field wall" ? "the wall" : /^(the |obstacle )/.test(name) ? name : `the ${name}`;
+  const where = r.blockedAt ? ` between waypoints ${r.blockedAt.fromWaypoint} and ${r.blockedAt.fromWaypoint + 1}` : "";
+  return options.moveWaypoints
+    ? `Can't clear ${what}${where} within ${options.corridorMeters} m: widen the corridor, add a waypoint, or use Route around obstacles.`
+    : `Can't clear ${what} by reshaping the curve${where}: add a waypoint or move one.`;
 }
 
 /** A small seeded generator (mulberry32), so runs repeat. */
@@ -126,13 +299,28 @@ function random(seed: number): () => number {
 interface Feasibility {
   readonly ok: boolean;
   readonly time: number;
+  readonly clearance: number;
 }
 
 export class Optimiser {
   readonly free: readonly number[];
+  readonly turned: readonly number[];
+  /** Each waypoint's tangent direction as planned now (given, or the automatic one). */
+  private readonly baseTangents: readonly number[];
   readonly beforeSeconds: number;
   private readonly dims: number;
   private readonly baseClearance: number;
+  private readonly margin = CHECKS.bumperMarginMeters;
+  private readonly hulls: Hull[];
+  /** The path starts too close to (or in) an obstacle: first push it clear. */
+  private readonly clearMode: boolean;
+  private cleared = false;
+  private leastShortfall = Infinity;
+  private leastX: number[];
+  private leastWhere: Shortfall | null = null;
+  private leastSpec: PathSpec | null = null;
+  private blockedBy = "";
+  private bestClearance: number;
   private readonly baseHeading: number;
   private readonly baseErrors: number;
   private readonly baseLength: number;
@@ -155,19 +343,39 @@ export class Optimiser {
     this.options = options;
     const spec = input.spec;
     const fixed = fixedWaypoints(spec, options.locked, options.segment);
-    this.free = spec.waypoints.map((_, i) => i).filter((i) => !fixed[i]);
-    this.dims = this.free.length * (options.optimiseScales ? 3 : 2);
+    this.free = options.moveWaypoints ? spec.waypoints.map((_, i) => i).filter((i) => !fixed[i]) : [];
+    let g: PathGeometry | null = null;
+    try {
+      g = PathGeometry.build(spec.waypoints);
+    } catch {
+      g = null; // a turn on the spot: no curve to shape
+    }
+    this.turned = g ? turnableWaypoints(spec, options.segment) : [];
+    this.baseTangents = spec.waypoints.map((w, i) =>
+      Number.isNaN(w.tangentRadians) && g ? tangentRadians(g.sample(g.sAtWaypoint(i))) : w.tangentRadians,
+    );
+    this.dims = this.free.length * 2 + this.turned.length * (options.optimiseScales ? 2 : 1);
     const base = analyse(input);
     if (!base.ok) throw new Error(`the path can't be planned: ${base.error}`);
     this.beforeSeconds = base.totalTimeSeconds;
     this.baseClearance = base.minClearanceMeters;
+    this.hulls = hullsOf(input.obstacles);
+    this.clearMode = base.minClearanceMeters < this.margin - 1e-9;
+    this.bestClearance = base.minClearanceMeters;
     this.baseHeading = base.checks.filter((c) => c.kind === "heading").length;
-    this.baseErrors = base.checks.filter((c) => c.severity === "error").length;
+    this.baseErrors = base.checks.filter((c) => c.severity === "error" && c.kind !== "bumper").length;
     this.baseLength = base.lengthMeters;
     this.rand = random(options.seed);
     this.bestX = new Array(this.dims).fill(0);
-    this.bestTime = this.beforeSeconds;
+    this.leastX = this.bestX;
+    // a colliding path has no time to beat yet: any clear one is better
+    this.bestTime = this.clearMode ? Infinity : this.beforeSeconds;
     this.bestSpec = spec;
+    if (this.clearMode) {
+      const s0 = shortfall(Path.build(spec, input.robot), input, this.hulls, this.margin);
+      this.blockedBy = s0.worst;
+      this.leastWhere = s0;
+    }
     if (this.dims > 0) this.restart();
   }
 
@@ -176,7 +384,7 @@ export class Optimiser {
   }
 
   get bestSeconds(): number {
-    return this.bestTime;
+    return Number.isFinite(this.bestTime) ? this.bestTime : this.beforeSeconds;
   }
 
   get best(): PathSpec {
@@ -187,25 +395,38 @@ export class Optimiser {
     return this.converged || this.dims === 0;
   }
 
-  /** The spec for normalised coordinates x (rounded to what the file holds). */
+  /**
+   * The spec for normalised coordinates x (rounded to what the file holds): first each free waypoint's
+   * offset in the corridor, then each turned waypoint's tangent turn (and scale).
+   */
   candidate(x: readonly number[]): PathSpec {
     const spec = this.input.spec;
     const r = this.options.corridorMeters;
-    const k = this.options.optimiseScales ? 3 : 2;
     const waypoints = spec.waypoints.slice();
     this.free.forEach((wi, j) => {
-      let u = x[j * k]!;
-      let v = x[j * k + 1]!;
+      let u = x[2 * j]!;
+      let v = x[2 * j + 1]!;
       const len = Math.hypot(u, v);
       if (len > 1) {
         u /= len;
         v /= len;
       }
       const w = spec.waypoints[wi]!;
+      waypoints[wi] = makeWaypoint(round5(w.xMeters + r * u), round5(w.yMeters + r * v), w.tangentRadians, w.tangentScale, w.headingRadians);
+    });
+    const k = this.options.optimiseScales ? 2 : 1;
+    const at = 2 * this.free.length;
+    this.turned.forEach((wi, j) => {
+      const w = waypoints[wi]!;
+      const turn = Math.max(-1, Math.min(1, x[at + k * j]!)) * MAX_TURN;
+      // to 0.01 degrees; an automatic tangent that hasn't turned stays automatic
+      const degrees = Math.round(((this.baseTangents[wi]! + turn) / DEG) * 100) / 100;
+      const wrapped = degrees > 180 ? degrees - 360 : degrees <= -180 ? degrees + 360 : degrees;
+      const tangent = Math.abs(turn) < 0.005 * DEG ? w.tangentRadians : wrapped * DEG;
       const scale = this.options.optimiseScales
-        ? Math.round(w.tangentScale * Math.pow(2, Math.max(-1, Math.min(1, x[j * k + 2]!))) * 100) / 100
+        ? Math.round(w.tangentScale * Math.pow(2, Math.max(-1, Math.min(1, x[at + k * j + 1]!))) * 100) / 100
         : w.tangentScale;
-      waypoints[wi] = makeWaypoint(round5(w.xMeters + r * u), round5(w.yMeters + r * v), w.tangentRadians, scale, w.headingRadians);
+      waypoints[wi] = makeWaypoint(w.xMeters, w.yMeters, tangent, scale, w.headingRadians);
     });
     // things placed by metres keep their fraction of the length
     let ratio = 1;
@@ -221,39 +442,58 @@ export class Optimiser {
     return { ...spec, waypoints, rotationTargets, events };
   }
 
-  /** Planned time of x, or Infinity; feasibility is checked whenever it could become the answer. */
+  /**
+   * The score of x: its planned time, or Infinity; feasibility is checked whenever it could become the
+   * answer. While no clear path is known, the time plus the weighted clearance shortfall, so the search
+   * heads out of the obstacles first.
+   */
   private evaluate(x: readonly number[]): number {
     this.evaluations++;
     const spec = this.candidate(x);
-    let time: number;
+    let path: Path;
     try {
-      time = Path.build(spec, this.input.robot).totalTimeSeconds;
+      path = Path.build(spec, this.input.robot);
     } catch {
       return Infinity;
     }
+    const time = path.totalTimeSeconds;
+    if (this.clearMode && !this.cleared) {
+      const sf = shortfall(path, this.input, this.hulls, this.margin);
+      if (sf.total < this.leastShortfall) {
+        this.leastShortfall = sf.total;
+        this.leastX = x.slice();
+        this.blockedBy = sf.worst;
+        this.leastWhere = sf;
+        this.leastSpec = spec;
+      }
+      if (sf.total > 0) return time + SHORTFALL_WEIGHT * sf.total;
+    }
     if (time < this.bestTime - 1e-9) {
       const f = this.feasible(spec);
-      if (!f.ok) return Infinity;
+      if (!f.ok) return this.clearMode && !this.cleared ? time + SHORTFALL_WEIGHT * 1e-3 : Infinity;
       this.bestTime = f.time;
       this.bestX = x.slice();
       this.bestSpec = spec;
+      this.bestClearance = f.clearance;
+      this.cleared = true;
     }
     return time;
   }
 
   private feasible(spec: PathSpec): Feasibility {
     const a = analyse({ ...this.input, spec });
-    if (!a.ok) return { ok: false, time: Infinity };
-    const clearanceNeeded = Math.min(CHECKS.bumperMarginMeters, this.baseClearance) - 1e-9;
+    if (!a.ok) return { ok: false, time: Infinity, clearance: Number.NaN };
+    // clear by the margin is a hard rule, whatever the path started with
     const heading = a.checks.filter((c) => c.kind === "heading").length;
-    const errors = a.checks.filter((c) => c.severity === "error").length;
-    const ok = a.minClearanceMeters >= clearanceNeeded && heading <= this.baseHeading && errors <= this.baseErrors;
-    return { ok, time: a.totalTimeSeconds };
+    const errors = a.checks.filter((c) => c.severity === "error" && c.kind !== "bumper").length;
+    const ok = a.minClearanceMeters >= this.margin - 1e-9 && heading <= this.baseHeading && errors <= this.baseErrors;
+    return { ok, time: a.totalTimeSeconds, clearance: a.minClearanceMeters };
   }
 
   /** A fresh simplex around the best point, along seeded random signs. */
   private restart(): void {
-    const x0 = this.bestX;
+    // around the best clear point, or while none is known, the one closest to clear
+    const x0 = this.clearMode && !this.cleared ? this.leastX : this.bestX;
     this.simplex = [x0.slice()];
     this.values = [this.evaluate(x0)];
     for (let i = 0; i < this.dims; i++) {
@@ -329,8 +569,33 @@ export class Optimiser {
     return "converged";
   }
 
+  /** Where the closest-to-clear try still hits, and a waypoint there that would help. */
+  private where(): BlockedAt | null {
+    const w = this.leastWhere;
+    if (!w) return null;
+    const spec = this.leastSpec ?? this.input.spec;
+    let fromWaypoint = 0;
+    try {
+      const g = PathGeometry.build(spec.waypoints);
+      for (let i = 0; i < spec.waypoints.length - 1; i++) if (g.sAtWaypoint(i) <= w.s) fromWaypoint = i;
+    } catch {
+      fromWaypoint = 0;
+    }
+    const push = Math.max(0, this.margin - w.least) + 0.1;
+    return {
+      s: w.s,
+      x: round5(w.x),
+      y: round5(w.y),
+      fromWaypoint,
+      suggestX: round5(w.x + push * w.away[0]),
+      suggestY: round5(w.y + push * w.away[1]),
+    };
+  }
+
   result(stoppedBy: OptimiseResult["stoppedBy"]): OptimiseResult {
-    const improved = this.bestTime < this.beforeSeconds - 1e-9;
+    // a colliding path: any clear result is the answer, even a slower one; none found changes nothing
+    const improved = this.clearMode ? this.cleared : this.bestTime < this.beforeSeconds - 1e-9;
+    const clear = !this.clearMode || this.cleared;
     return {
       spec: improved ? this.bestSpec : this.input.spec,
       beforeSeconds: this.beforeSeconds,
@@ -338,6 +603,12 @@ export class Optimiser {
       evaluations: this.evaluations,
       stoppedBy,
       free: this.free,
+      turned: this.turned,
+      changed: improved,
+      clear,
+      blockedBy: clear ? null : this.blockedBy || null,
+      blockedAt: clear ? null : this.where(),
+      clearanceMeters: improved ? this.bestClearance : this.baseClearance,
     };
   }
 }

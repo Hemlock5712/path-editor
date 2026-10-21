@@ -96,6 +96,7 @@ export function TooltipHost() {
   const [tip, setTip] = useState<{ text: string; key?: string; x: number; y: number; below: boolean } | null>(null);
   useEffect(() => {
     let timer = 0;
+    let watch: MutationObserver | null = null;
     let current: HTMLElement | null = null;
     const show = (el: HTMLElement) => {
       const raw = el.dataset.tip;
@@ -104,17 +105,26 @@ export function TooltipHost() {
       const r = el.getBoundingClientRect();
       const below = r.bottom + 40 < window.innerHeight;
       setTip({ text: text!, key, x: Math.min(window.innerWidth - 16, Math.max(16, r.left + r.width / 2)), y: below ? r.bottom + 6 : r.top - 6, below });
+      // a control swapped out from under the pointer (Stop becoming Optimise) takes its tip with it
+      watch?.disconnect();
+      watch = new MutationObserver(() => {
+        if (!el.isConnected || el.dataset.tip !== raw) hide();
+      });
+      watch.observe(el, { attributes: true, attributeFilter: ["data-tip"] });
+      if (el.parentElement) watch.observe(el.parentElement, { childList: true });
     };
     const over = (e: Event) => {
       const el = (e.target as HTMLElement).closest?.("[data-tip]") as HTMLElement | null;
       if (el === current) return;
       current = el;
       window.clearTimeout(timer);
+      watch?.disconnect();
       setTip(null);
       if (el) timer = window.setTimeout(() => show(el), e.type === "focusin" ? 300 : 500);
     };
     const hide = () => {
       window.clearTimeout(timer);
+      watch?.disconnect();
       current = null;
       setTip(null);
     };
@@ -124,6 +134,8 @@ export function TooltipHost() {
     document.addEventListener("keydown", hide, true);
     window.addEventListener("blur", hide);
     return () => {
+      window.clearTimeout(timer);
+      watch?.disconnect();
       document.removeEventListener("pointerover", over);
       document.removeEventListener("focusin", over);
       document.removeEventListener("pointerdown", hide, true);

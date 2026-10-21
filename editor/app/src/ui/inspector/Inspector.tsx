@@ -3,10 +3,8 @@
 
 import { ArrowLeft, ChevronLeft, ChevronRight, Lock, Plus } from "lucide-react";
 import { makeConstraintZone, makeRotationTarget } from "../../../../core/src/index.ts";
-import { addConstraintZone, addFacePointZone, addRotationTarget, appendWaypoint, withSpec } from "../../model/edits.ts";
+import { addConstraintZone, addFacePointZone, addRotationTarget, withSpec } from "../../model/edits.ts";
 import { addNamedPoint, uniquePointName } from "../../model/namedPoints.ts";
-import { round5 } from "../../model/positions.ts";
-import { geometryOf } from "../../state/analysis.ts";
 import { editPath, editProject, select, setTool } from "../../state/editor.ts";
 import { Button, Card, formatNumber, IconButton, NumberField, SelectField } from "../controls.tsx";
 import { OptimiseControls, OptimiserSettings } from "../panels/OptimisePanel.tsx";
@@ -29,14 +27,6 @@ function WaypointsCard() {
   const path = useActivePath();
   const points = useEditor((s) => s.project.namedPoints);
   const n = path.spec.waypoints.length;
-  // the same as the W tool, from the keyboard: a point 1 m on along the end's direction
-  const appendPastEnd = () => {
-    const g = geometryOf(path.spec);
-    const end = g?.sample(g.lengthMeters);
-    const last = path.spec.waypoints.at(-1)!;
-    const [dx, dy] = end ? [end.tangentX, end.tangentY] : [1, 0];
-    editPath("Add waypoint", (p) => appendWaypoint(p, round5(last.xMeters + dx), round5(last.yMeters + dy)), { kind: "waypoint", index: n });
-  };
   return (
     <Card title="Waypoints" open count={n} cardKey="waypoints">
       <ol className="item-list" aria-label="Waypoints">
@@ -49,7 +39,7 @@ function WaypointsCard() {
                 <span className="main">
                   ({formatNumber(w.xMeters, 2)}, {formatNumber(w.yMeters, 2)})
                 </span>
-                {path.pinned[i] && <Lock size={12} aria-label="pinned" />}
+                {path.pinned[i] && <Lock size={12} aria-label="locked" />}
                 {path.links[i] && <span className="tag accent">{points.find((q) => q.id === path.links[i])?.name}</span>}
                 <span className={set ? "heading-tag set" : "heading-tag"}>{set ? `${formatNumber(toDegrees(w.headingRadians), 1)}°` : "pass"}</span>
               </button>
@@ -57,15 +47,13 @@ function WaypointsCard() {
           );
         })}
       </ol>
-      <div className="add-row">
-        <Button onClick={appendPastEnd} label="Add a waypoint 1 m past the end" variant="ghost">
-          <Plus size={14} />
-          Waypoint at the end
-        </Button>
-        <Button onClick={() => setTool("waypoint")} variant="ghost" title="Draw: click the field to add points|W">
-          Draw…
-        </Button>
-      </div>
+      <p className="hint" data-testid="add-waypoint-hint">
+        {n === 0
+          ? "Double-click the field to place the start, then the end."
+          : n === 1
+            ? "Double-click the field to place the end."
+            : "Select a waypoint, then double-click the field to add one after it."}
+      </p>
     </Card>
   );
 }

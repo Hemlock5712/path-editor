@@ -19,6 +19,7 @@ import {
   DEFAULT_FIELD,
   DEFAULT_ROBOT_SETTINGS,
   DEFAULT_SETTINGS,
+  isDrawn,
   makeEditorPath,
   type NamedPoint,
   type Project,
@@ -80,7 +81,7 @@ interface Sidecar {
 export function writeSidecar(project: Project, view: ViewState): string {
   const root: JsonObject = {
     schema: SIDECAR_SCHEMA,
-    paths: project.paths.map((p) => ({ name: p.name, colour: p.colour, links: [...p.links], pinned: [...p.pinned] })),
+    paths: project.paths.filter((p) => isDrawn(p.spec)).map((p) => ({ name: p.name, colour: p.colour, links: [...p.links], pinned: [...p.pinned] })),
     namedPoints: project.namedPoints.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y })),
     settings: {
       redFrame: project.settings.redFrame,
@@ -122,12 +123,16 @@ export function toFiles(
   options: { hadField?: boolean; hadRobot?: boolean } = {},
 ): Map<string, string> {
   const out = new Map<string, string>();
-  for (const p of project.paths) out.set(`${PATHS_DIR}/${p.name}${PATH_SUFFIX}`, writePath(p.spec));
-  if (options.hadField || project.field !== DEFAULT_FIELD) out.set(FIELD_FILE, writeField(project.field));
+  // a path still being drawn (no end yet) isn't a path file until it has one
+  const paths = project.paths.filter((p) => isDrawn(p.spec));
+  for (const p of paths) out.set(`${PATHS_DIR}/${p.name}${PATH_SUFFIX}`, writePath(p.spec));
+  // always: the robot's FieldMap must load the obstacles the editor planned around (the 2026 field's by
+  // default; a project's own field.json stays as it is)
+  out.set(FIELD_FILE, writeField(project.field));
   if (options.hadRobot || project.robot !== DEFAULT_ROBOT_SETTINGS) out.set(ROBOT_FILE, writeRobot(project.robot));
   out.set(SIDECAR_FILE, writeSidecar(project, view));
   const pkg = project.settings.javaPackage;
-  if (pkg !== "" && isValidPackage(pkg)) out.set(enumPath(pkg), pathNameEnum(pkg, project.paths.map((p) => p.name)));
+  if (pkg !== "" && isValidPackage(pkg)) out.set(enumPath(pkg), pathNameEnum(pkg, paths.map((p) => p.name)));
   return out;
 }
 

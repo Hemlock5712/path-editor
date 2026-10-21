@@ -53,9 +53,11 @@ function Preview({ path, field }: { path: EditorPath; field: Project["field"] })
       path.spec.waypoints.forEach((w, i) => (i === 0 ? ctx.moveTo(px(w.xMeters), py(w.yMeters)) : ctx.lineTo(px(w.xMeters), py(w.yMeters))));
     }
     ctx.stroke();
-    const start = path.spec.waypoints[0]!;
-    ctx.fillStyle = "#fbbf24";
-    ctx.fillRect(px(start.xMeters) - 1.5, py(start.yMeters) - 1.5, 3, 3);
+    const start = path.spec.waypoints[0];
+    if (start) {
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillRect(px(start.xMeters) - 1.5, py(start.yMeters) - 1.5, 3, 3);
+    }
   }, [path.spec, path.colour, field]);
   return <canvas ref={ref} aria-hidden="true" />;
 }

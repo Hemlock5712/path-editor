@@ -3,7 +3,8 @@
 // and the worker's analysis for speeds, headings and checks).
 
 import { eventMeters, type PathGeometry, type RotationTarget } from "../../../core/src/index.ts";
-import type { Analysis, Stations } from "../compute/analysis.ts";
+import type { Analysis, Check, Stations } from "../compute/analysis.ts";
+import type { BlockedAt } from "../compute/optimiser.ts";
 import type { EditorPath, Project } from "../model/project.ts";
 import type { Selection, Tool } from "../state/editor.ts";
 import type { FieldView } from "./fieldView.ts";
@@ -18,8 +19,9 @@ export const COLOURS = {
   background: "#0b0f14",
   grid: "rgba(255,255,255,0.07)",
   axis: "rgba(255,255,255,0.22)",
-  obstacle: "rgba(239,68,68,0.28)",
-  obstacleEdge: "#f87171",
+  obstacle: "rgba(248,113,113,0.13)",
+  obstacleEdge: "rgba(248,113,113,0.7)",
+  collision: "#ef4444",
   waypoint: "#f8fafc",
   selected: "#fbbf24",
   linked: "#facc15",
@@ -73,6 +75,8 @@ export interface DrawModel {
   readonly geometryOf: (spec: EditorPath["spec"]) => PathGeometry | null;
   /** The optimiser's proposal for the active path, drawn dashed with its waypoints. */
   readonly ghost: EditorPath["spec"] | null;
+  /** Where the optimiser couldn't clear an obstacle, and the waypoint it suggests there. */
+  readonly blocked?: BlockedAt | null;
   /** The item under the pointer, highlighted. */
   readonly hover?: { readonly kind: "waypoint" | "turn" | "rotation"; readonly index: number } | null;
   /** A clock (ms) for the selection outline's slow march; 0 holds it still. */
@@ -129,7 +133,9 @@ export function drawField(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   drawZones(ctx, m);
   drawChecks(ctx, m);
   drawPath(ctx, m);
+  drawCollisions(ctx, m);
   drawGhost(ctx, m);
+  drawBlocked(ctx, m);
   drawFootprints(ctx, m);
   drawRotationTargets(ctx, m);
   drawHeadingGhost(ctx, m);
@@ -235,7 +241,7 @@ function drawObstacles(ctx: CanvasRenderingContext2D, m: DrawModel): void {
       }
     }
     const [cx, cy] = o.polygon.reduce(([sx, sy], [x, y]) => [sx + x / o.polygon.length, sy + y / o.polygon.length], [0, 0]);
-    ctx.fillStyle = "#fecaca";
+    ctx.fillStyle = "rgba(254,202,202,0.75)";
     ctx.font = "10px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(o.name, ...view.toCanvasRaw(cx, cy));
@@ -288,6 +294,32 @@ function drawGhost(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   }
 }
 
+/** The spot the optimiser couldn't clear (a ring) and the waypoint it suggests (a dashed + to add). */
+function drawBlocked(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const b = m.blocked;
+  if (!b) return;
+  const [x, y] = m.view.toCanvas(b.x, b.y);
+  const [sx, sy] = m.view.toCanvas(b.suggestX, b.suggestY);
+  ctx.strokeStyle = COLOURS.collision;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(x, y, 16, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  line(ctx, x, y, sx, sy);
+  ctx.beginPath();
+  ctx.arc(sx, sy, 9, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  line(ctx, sx - 5, sy, sx + 5, sy);
+  line(ctx, sx, sy - 5, sx, sy + 5);
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.fillText("add a waypoint here?", sx + 13, sy + 4);
+}
+
 function drawPath(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const g = m.geometry;
   if (!g) return;
@@ -303,6 +335,30 @@ function drawPath(ctx: CanvasRenderingContext2D, m: DrawModel): void {
     line(ctx, x0, y0, x1, y1);
   }
   ctx.lineCap = "butt";
+}
+
+/** Where the swept bumpers hit an obstacle or the wall: the path itself turns red there, with the bumpers at the middle. */
+function drawCollisions(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const a = m.analysis;
+  const g = m.geometry;
+  if (!a || !g) return;
+  for (const c of collisions(a)) {
+    band(ctx, m, c.sFrom, c.sTo, COLOURS.collision, 5);
+    const s = (c.sFrom + c.sTo) / 2;
+    const p = g.sample(s);
+    const corners = robotOutline(m.view, p.xMeters, p.yMeters, headingAtS(a.stations, s), m.project.robot.bumperLengthMeters, m.project.robot.bumperWidthMeters);
+    ctx.strokeStyle = COLOURS.collision;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+
+/** The stretches where the swept bumpers touch an obstacle or the field wall. */
+export function collisions(a: Analysis): Check[] {
+  return a.checks.filter((c) => c.kind === "bumper" && c.severity === "error");
 }
 
 /** Draws a stretch of the active path as a wide translucent band. */

@@ -88,6 +88,29 @@ async function clickField(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.click(p.x, p.y);
 }
 
+/** Double-clicks a field point, with Shift so it snaps to the 5 cm grid (exactly where asked). */
+async function dblField(page: Page, x: number, y: number): Promise<void> {
+  const p = await fieldPoint(page, x, y);
+  await page.keyboard.down("Shift");
+  await page.mouse.dblclick(p.x, p.y);
+  await page.keyboard.up("Shift");
+}
+
+/** How many waypoints the active path has, as the Waypoints card lists them (a path being drawn too). */
+async function listedWaypoints(page: Page): Promise<number> {
+  await openCard(page, "Waypoints");
+  return page.getByRole("list", { name: "Waypoints" }).getByRole("listitem").count();
+}
+
+/** On a new, empty path: double-click a start at (-6.5, -1.5) and an end 2.5 m on (both facing 0). The end stays selected. */
+async function drawStarter(page: Page): Promise<void> {
+  await expect(page.getByTestId("canvas-hint")).toContainText("Double-click the field to place the start");
+  await dblField(page, -6.5, -1.5);
+  await expect(page.getByTestId("canvas-hint")).toContainText("Double-click the field to place the end");
+  await dblField(page, -4, -1.5);
+  await expect(page.getByTestId("path-stats")).toContainText(" s,");
+}
+
 async function dragField(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
   const a = await fieldPoint(page, from.x, from.y);
   const b = await fieldPoint(page, to.x, to.y);
@@ -101,6 +124,8 @@ interface Poses {
   waypoints: { x: number; y: number; heading: number; set: boolean; knobX: number; knobY: number }[];
   targets: { s: number; x: number; y: number; heading: number; knobX: number; knobY: number }[];
   plan: { s: number; x: number; y: number; heading: number; travel: number }[];
+  collisions: { sFrom: number; sTo: number; message: string }[];
+  clearanceMeters: number;
 }
 
 /** The active path's robots and plan, once the plan matches the document (the app's test hook). */
@@ -139,18 +164,21 @@ test("add waypoints and an event, save, reload, and get the same file back", asy
   await expect(page.getByTestId("status")).toContainText("No path files");
   await expect(page.getByTestId("project-name")).toContainText("robot-project");
 
-  // an event on the starter path (a straight run along y = -1 from x = -6.5 to -4)
+  // the new path is empty: two double-clicks make a straight run along y = -1.5 from x = -6.5 to -4
+  await drawStarter(page);
+  // an event on it
   await page.keyboard.press("e");
-  await clickField(page, -5.25, -1.0);
+  await clickField(page, -5.25, -1.5);
   const name = page.getByTestId("event-name-0");
   await expect(name).toHaveValue("event");
   await name.fill("intakeDown");
   await name.press("Enter");
 
-  // two more waypoints, appended with the waypoint tool
-  await page.keyboard.press("w");
-  await clickField(page, -2.0, 1.0);
-  await clickField(page, 1.0, -0.5);
+  // two more waypoints: select the end, then each double-click adds one after the selected point
+  await page.keyboard.press("v");
+  await clickField(page, -4, -1.5);
+  await dblField(page, -2.0, 1.0);
+  await dblField(page, 1.0, -0.5);
   await expect.poll(() => waypointCount(page)).toBe(4);
   await expect(page.getByTestId("path-stats")).toContainText(" s");
 
@@ -201,7 +229,8 @@ test("the layout holds at 1280 px and the checks see an obstacle", async ({ page
   await page.goto("/");
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(width).toBeLessThanOrEqual(1280);
-  // draw an obstacle across the starter path: the bumper check reports the hit
+  await drawStarter(page);
+  // draw an obstacle across the path: the bumper check reports the hit
   await page.keyboard.press("o");
   for (const [x, y] of [
     [-5.5, -1.5],
@@ -214,7 +243,7 @@ test("the layout holds at 1280 px and the checks see an obstacle", async ({ page
   // the checks are a badge on the field; its popover lists them
   await expect(page.getByTestId("checks-badge")).toContainText("issue");
   await page.getByTestId("checks-badge").click();
-  await expect(page.getByTestId("checks")).toContainText("Bumpers hit obstacle 1");
+  await expect(page.getByTestId("checks")).toContainText(/Bumpers hit obstacle \d+/);
   await page.keyboard.press("Escape");
   await page.keyboard.press("Control+z");
   await expect(page.getByTestId("checks-badge")).toContainText("No issues");
@@ -226,33 +255,172 @@ async function planSeconds(page: Page): Promise<number> {
   return Number(/([\d.]+) s,/.exec(text)![1]);
 }
 
-test("Optimise path shortens a weave, and applying it is one undo step", async ({ page }) => {
+test("Optimise path shortens a weave by reshaping its curve; the waypoints stay put; applying it is one undo step", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByTestId("path-stats")).toContainText(" s,"); // the app is up and planning
-  await page.keyboard.press("w");
+  // a weave across the middle of the field, clear of the hubs
   for (const [x, y] of [
-    [-2, 0.2],
+    [-2.5, -2],
+    [-1.5, 1],
     [0, -2],
-    [2, 0.5],
-    [4, -1],
+    [1.5, 1.5],
+    [2.5, -1],
   ]) {
-    await clickField(page, x!, y!);
+    await dblField(page, x!, y!);
   }
-  await page.keyboard.press("v");
   await page.keyboard.press("Escape"); // nothing selected: the inspector shows the path overview
-  await expect.poll(() => waypointCount(page)).toBe(6);
+  await expect.poll(() => waypointCount(page)).toBe(5);
   const before = await planSeconds(page);
+  const drawn = (await poses(page)).waypoints.map((w) => [w.x, w.y, w.heading, w.set]);
 
   // the Path panel's Optimise path, with its default budget; the new shape shows dashed until applied
+  await expect(page.getByTestId("optimise-path")).toHaveAttribute("data-tip", /^Reshape the curve at 5 waypoints .*Waypoints and headings stay where they are/);
   await page.getByTestId("optimise-path").click();
   await expect(page.getByTestId("optimise-apply")).toBeVisible({ timeout: 20_000 });
   expect(await planSeconds(page)).toBe(before);
   await expect(page.getByTestId("optimise-status")).toContainText("faster");
   await page.getByTestId("optimise-apply").click();
-  await expect.poll(() => planSeconds(page)).toBeLessThan(before * 0.95);
+  await expect.poll(() => planSeconds(page)).toBeLessThan(before * 0.98);
+  // the curve changed, not the poses
+  expect((await poses(page)).waypoints.map((w) => [w.x, w.y, w.heading, w.set])).toEqual(drawn);
 
   await page.keyboard.press("Control+z");
   await expect.poll(() => planSeconds(page)).toBe(before);
+});
+
+/** Whether the field canvas shows the collision red (#ef4444) within a few pixels of a field point. */
+async function redNear(page: Page, x: number, y: number): Promise<boolean> {
+  const p = await fieldPoint(page, x, y);
+  return page.evaluate(
+    ({ px, py }) => {
+      const c = document.querySelector<HTMLCanvasElement>('[data-testid="field"]')!;
+      const r = c.getBoundingClientRect();
+      const k = c.width / r.width;
+      const d = c.getContext("2d")!.getImageData(Math.round((px - r.left) * k) - 3, Math.round((py - r.top) * k) - 3, 7, 7).data;
+      for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i]! - 0xef) < 14 && Math.abs(d[i + 1]! - 0x44) < 20 && Math.abs(d[i + 2]! - 0x44) < 20) return true;
+      return false;
+    },
+    { px: p.x, py: p.y },
+  );
+}
+
+test("a path through the hub turns red; the curve alone can't clear it, so it says where and offers a waypoint; moving waypoints clears it", async ({ page }) => {
+  await page.goto("/");
+  await drawStarter(page);
+  await expect(page.getByTestId("checks-badge")).toContainText("No issues"); // the starter clears the hub
+  // across the blue hub (2026 field): the new middle point sits over the hub's centre
+  await dblField(page, -3.645, 0.3);
+  await dblField(page, -0.5, 0);
+  await page.keyboard.press("Escape");
+  let p = await poses(page);
+  expect(p.collisions.length).toBeGreaterThan(0);
+  expect(p.collisions[0]!.message).toContain("blue hub");
+  await expect(page.getByTestId("checks-badge")).toHaveClass(/error/);
+  await expect(page.getByTestId("optimise-clearance")).toContainText("hit an obstacle");
+  // the colliding stretch is drawn red on the path
+  const hit = p.collisions[0]!;
+  const at = (s: number) => p.plan.reduce((best, q) => (Math.abs(q.s - s) < Math.abs(best.s - s) ? q : best));
+  const marks = [0.2, 0.35, 0.8].map((f) => at(hit.sFrom + f * (hit.sTo - hit.sFrom)));
+  const red = await Promise.all(marks.map((q) => redNear(page, q.x, q.y)));
+  expect(red.filter(Boolean).length).toBeGreaterThanOrEqual(2);
+  await page.screenshot({ path: "test-results/obstacles-before.png" });
+
+  // reshaping the curve can't get round a point inside the hub: it says so and where, offers a waypoint there, no Apply
+  await page.getByTestId("optimise-path").click();
+  await expect(page.getByTestId("optimise-discard")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("optimise-status")).toContainText(
+    /Can't clear the blue hub by reshaping the curve between waypoints \d and \d: add a waypoint or move one\./,
+  );
+  await expect(page.getByTestId("optimise-apply")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/obstacles-blocked.png" });
+  // the suggested waypoint goes in as one undo step
+  await page.getByTestId("optimise-add-point").click();
+  await expect.poll(() => waypointCount(page)).toBe(5);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => waypointCount(page)).toBe(4);
+  expect((await poses(page)).collisions.length).toBeGreaterThan(0);
+
+  // with moving waypoints on and a wider corridor it can: the result clears the hub, and the red is gone once applied
+  await openCard(page, "Optimiser settings");
+  await page.getByTestId("optimise-move-waypoints").click();
+  await page.getByLabel("Corridor").fill("1.5");
+  await page.getByLabel("Corridor").press("Enter");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("optimise-path").click();
+  await expect(page.getByTestId("optimise-apply")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("optimise-status")).toContainText("Clears obstacles by");
+  await page.getByTestId("optimise-apply").click();
+  await expect.poll(async () => (await poses(page)).collisions.length).toBe(0);
+  p = await poses(page);
+  expect(p.clearanceMeters).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  await expect(page.getByTestId("optimise-clearance")).toContainText("Clears obstacles by");
+  expect((await Promise.all(marks.map((q) => redNear(page, q.x, q.y)))).some(Boolean)).toBe(false);
+  await page.screenshot({ path: "test-results/obstacles-after.png" });
+});
+
+test("a two-point path into the wall: Optimise is on, reshapes the curve clear of it, and undo brings the hit back", async ({ page }) => {
+  await page.goto("/");
+  // an empty project: two double-clicks along the near wall, the start facing 0°
+  await dblField(page, -2.5, -3.45);
+  await dblField(page, 1.5, -3.45);
+  // turn the end to face 90°: halfway round, the bumpers' corner reaches the wall
+  let p = await poses(page);
+  const end = p.waypoints[1]!;
+  await dragField(page, { x: end.knobX, y: end.knobY }, { x: end.x, y: end.y + 1 });
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await poses(page)).collisions.map((c) => c.message).join()).toContain("field wall");
+  await expect(page.getByTestId("checks-badge")).toHaveClass(/error/);
+  p = await poses(page);
+  const drawn = p.waypoints.map((w) => [w.x, w.y, w.heading, w.set]);
+  expect(drawn.map((w) => w[3])).toEqual([true, true]);
+
+  const optimise = page.getByTestId("optimise-path");
+  await expect(optimise).toBeEnabled();
+  await expect(optimise).toHaveAttribute("data-tip", /^Reshape the curve at 2 waypoints/);
+  await page.screenshot({ path: "test-results/wall-before.png" });
+  await optimise.click();
+  await expect(page.getByTestId("optimise-apply")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("optimise-apply").click();
+  await expect.poll(async () => (await poses(page)).collisions.length).toBe(0);
+  await expect(page.getByTestId("checks-badge")).not.toHaveClass(/error/);
+  await page.getByTestId("checks-badge").click();
+  await expect(page.getByTestId("checks")).not.toContainText("wall");
+  await page.keyboard.press("Escape");
+  // the same poses: only the curve (and so the speeds) changed
+  expect((await poses(page)).waypoints.map((w) => [w.x, w.y, w.heading, w.set])).toEqual(drawn);
+  await page.screenshot({ path: "test-results/wall-after.png" });
+
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await poses(page)).collisions.map((c) => c.message).join()).toContain("field wall");
+});
+
+test("double-click adds a waypoint after the selected one; a single click never adds one", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("path-stats")).toContainText("no path yet");
+  // a single click on an empty path does nothing but select nothing
+  await clickField(page, -6, -2);
+  expect(await listedWaypoints(page)).toBe(0);
+  await drawStarter(page);
+  expect(await listedWaypoints(page)).toBe(2);
+  await clickField(page, 0, 2.5);
+  expect(await listedWaypoints(page)).toBe(2);
+  // with nothing selected a double-click only says how
+  await page.keyboard.press("Escape");
+  await dblField(page, 0, 2.5);
+  await expect(page.getByTestId("status")).toContainText("Select a waypoint, then double-click to add one after it");
+  expect(await listedWaypoints(page)).toBe(2);
+  // select the start: double-clicks build forward from it, each new point selected in turn
+  await clickField(page, -6.5, -1.5);
+  await dblField(page, -5.5, 0.5);
+  await dblField(page, -5, 1.5);
+  const p = await poses(page);
+  expect(p.waypoints).toHaveLength(4);
+  expect(p.waypoints.map((w) => [Math.round(w.x * 10) / 10, Math.round(w.y * 10) / 10])).toEqual([
+    [-6.5, -1.5],
+    [-5.5, 0.5],
+    [-5, 1.5],
+    [-4, -1.5],
+  ]);
+  expect(p.waypoints.map((w) => w.set)).toEqual([true, false, false, true]);
 });
 
 test("the bench view opens with the snapshot and shows an export, read-only", async ({ page }) => {
@@ -332,7 +500,7 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
   await expect(table).toContainText("Ours v2");
   await expect(table.locator("td.best")).toHaveText("2.1 (3.15)");
   // editing shortcuts are off while it's open, and nothing in the project changed
-  await page.keyboard.press("w");
+  await page.keyboard.press("r");
   await page.getByTestId("page-editor").click();
   await expect(page.getByTestId("tool-select")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("undo")).toBeDisabled();
@@ -340,7 +508,7 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
 
 test("usability, first run: draw a typical swerve auto in about ten actions", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByTestId("path-stats")).toContainText(" s,");
+  await expect(page.getByTestId("path-stats")).toContainText("no path yet");
   // a first run shows the quick start; it goes for good once dismissed (not counted: it's a one-off)
   await expect(page.getByTestId("quick-start")).toBeVisible();
   await page.getByTestId("quick-start-dismiss").click();
@@ -352,21 +520,20 @@ test("usability, first run: draw a typical swerve auto in about ten actions", as
     await what();
   };
 
-  // 1. the start pose: drag the starter's first robot to the start line, and
+  // 1. the start pose: double-click the start line, and
   // 2. turn it by its knob to face 180° (the 15° snap lands it exactly)
+  await expect(page.getByTestId("canvas-hint")).toContainText("Double-click the field to place the start");
+  await act(() => dblField(page, -6, -2));
   let p = await poses(page);
-  await act(() => dragField(page, p.waypoints[0]!, { x: -6, y: -2 }));
-  p = await poses(page);
   await act(() => dragField(page, { x: p.waypoints[0]!.knobX, y: p.waypoints[0]!.knobY }, { x: -7, y: -2.02 }));
-  // 3-6. Draw: three clicks add points at the end (the starter's end becomes the first pass-through point)
-  await act(() => page.keyboard.press("w"));
-  await expect(page.getByTestId("canvas-hint")).toContainText("Click to add a point");
+  // 3-6. four double-clicks add the end, then a point after it each time (the end so far becomes a pass-through point)
   for (const [x, y] of [
+    [-4, -1.5],
     [-2, 1.5],
     [1, 0.5],
     [4, 2],
   ]) {
-    await act(() => clickField(page, x!, y!));
+    await act(() => dblField(page, x!, y!));
   }
   // 7. the scoring pose: turn the end robot's knob to 30°
   p = await poses(page);
@@ -411,12 +578,10 @@ test("usability, first run: draw a typical swerve auto in about ten actions", as
 
 test("right-click a waypoint to set its heading; the panel row has the heading and pass-through", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByTestId("path-stats")).toContainText(" s,");
-  await page.keyboard.press("w");
-  await clickField(page, -1, 1);
-  await page.keyboard.press("Enter");
+  await drawStarter(page);
+  await dblField(page, -1, 1);
   await expect(page.getByTestId("tool-select")).toHaveAttribute("aria-checked", "true");
-  // the starter's end is now a pass-through point in the middle
+  // the old end is now a pass-through point in the middle
   let p = await poses(page);
   expect(p.waypoints.map((w) => w.set)).toEqual([true, false, true]);
   const mid = await fieldPoint(page, p.waypoints[1]!.x, p.waypoints[1]!.y);
@@ -440,33 +605,48 @@ test("right-click a waypoint to set its heading; the panel row has the heading a
   await expect(page.getByRole("dialog", { name: "Quick start" })).toContainText("drag the knob on its ring");
 });
 
-test("Optimise path leaves pinned and set-heading waypoints alone; Discard keeps the path", async ({ page }) => {
+test("Optimise path never moves a locked waypoint, moves none by default, and Discard keeps the path", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByTestId("path-stats")).toContainText(" s,");
-  await page.keyboard.press("w");
+  await drawStarter(page);
   for (const [x, y] of [
-    [-2, 0.2],
+    [-1.5, -0.5],
     [0, -2],
-    [2, 0.5],
+    [1.5, -0.5],
   ]) {
-    await clickField(page, x!, y!);
+    await dblField(page, x!, y!);
   }
-  await page.keyboard.press("Enter");
-  // pin waypoint 2 from its menu, and give waypoint 3 a heading: only 1 may move
-  const p = await poses(page);
+  // lock waypoint 2 from its menu, and give waypoint 3 a heading
+  let p = await poses(page);
   const w2 = await fieldPoint(page, p.waypoints[2]!.x, p.waypoints[2]!.y);
   await page.mouse.click(w2.x, w2.y, { button: "right" });
-  await page.getByRole("menuitem", { name: /^Pin/ }).click();
+  await page.getByRole("menuitem", { name: /^Lock in place/ }).click();
+  await expect(page.getByTestId("waypoint-lock")).toBeChecked();
   const w3 = await fieldPoint(page, p.waypoints[3]!.x, p.waypoints[3]!.y);
   await page.mouse.click(w3.x, w3.y, { button: "right" });
   await page.getByRole("menuitem", { name: "Hold a heading here" }).click();
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("optimise-path")).toHaveAttribute("data-tip", /Move the 1 pass-through point /);
-  const before = (await poses(page)).waypoints;
+  p = await poses(page);
+  const before = p.waypoints.map((w) => [w.x, w.y, w.heading, w.set]);
+
+  // by default only the curve changes: Discard leaves everything as it was
+  await expect(page.getByTestId("optimise-path")).toHaveAttribute("data-tip", /^Reshape the curve at 5 waypoints/);
   await page.getByTestId("optimise-path").click();
   await expect(page.getByTestId("optimise-discard")).toBeVisible({ timeout: 20_000 });
   await page.getByTestId("optimise-discard").click();
-  const after = (await poses(page)).waypoints;
-  expect(after.map((w) => [w.x, w.y])).toEqual(before.map((w) => [w.x, w.y]));
+  expect((await poses(page)).waypoints.map((w) => [w.x, w.y, w.heading, w.set])).toEqual(before);
   await expect(page.getByTestId("optimise-status")).toHaveCount(0);
+
+  // moving waypoints on: the unlocked interior ones may move (the one with a heading too, keeping it); the locked one never
+  await openCard(page, "Optimiser settings");
+  await page.getByTestId("optimise-move-waypoints").click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("optimise-path")).toHaveAttribute("data-tip", /move 2 unlocked waypoints within 0.5 m, keeping their headings/);
+  await page.getByTestId("optimise-path").click();
+  await expect(page.getByTestId("optimise-apply")).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId("optimise-apply").click();
+  await expect.poll(async () => (await poses(page)).waypoints.map((w) => [w.x, w.y])).not.toEqual(before.map((w) => [w[0], w[1]]));
+  const after = (await poses(page)).waypoints;
+  expect([after[2]!.x, after[2]!.y]).toEqual([before[2]![0], before[2]![1]]); // locked
+  expect([after[0]!.x, after[0]!.y, after[4]!.x, after[4]!.y]).toEqual([before[0]![0], before[0]![1], before[4]![0], before[4]![1]]); // the ends
+  expect([after[3]!.heading, after[3]!.set]).toEqual([before[3]![2], true]); // its heading kept
 });

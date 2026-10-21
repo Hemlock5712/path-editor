@@ -4,7 +4,7 @@
 // sim, not the robot); whether the preview is on and the shove are this browser's.
 
 import { DEFAULT_DRIVE, GRAVITY, type DriveSettings, type PathSpec, type Shove } from "../../../core/src/index.ts";
-import type { Project, SimPreviewSettings } from "../model/project.ts";
+import { isDrawn, type Project, type SimPreviewSettings } from "../model/project.ts";
 import { activePath, editor } from "../state/editor.ts";
 import { createStore } from "../state/store.ts";
 import type { SimInput, SimResult } from "./preview.ts";
@@ -99,6 +99,12 @@ export function startSim(runner = new SimRunner()): () => void {
     const drive = s.project.settings.simPreview;
     if (last && last.spec === spec && last.robot === s.project.robot && last.drive === drive && last.settings === settings) return;
     last = { spec, robot: s.project.robot, drive, settings };
+    if (!isDrawn(spec)) {
+      // nothing to drive yet
+      runner.clear();
+      sim.set({ input: null, result: null });
+      return;
+    }
     const input = simInput(s.project, spec, settings);
     runner.request(input, (result) => sim.set({ input, result }));
   };

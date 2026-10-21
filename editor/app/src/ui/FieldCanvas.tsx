@@ -12,7 +12,7 @@ import { eventMeters, makePathEvent, makeRotationTarget, type PathGeometry } fro
 import {
   addEvent,
   addRotationTarget,
-  appendWaypoint,
+  addWaypointAfter,
   deleteWaypoint,
   insertWaypoint,
   moveWaypoint,
@@ -40,7 +40,6 @@ import {
   previewProject,
   select,
   setDraftObstacle,
-  setTool,
   setView,
   type EditorState,
   type Selection,
@@ -104,12 +103,22 @@ const DRAG_START_PX = 4;
 
 /** What each tool does, shown on the field. */
 export const TOOL_HINTS: Record<EditorState["tool"], string> = {
-  select: "Drag a robot to move it, the knob on its ring to turn it (Alt: freely). Drag the path to insert a point. Right-click a point for more.",
-  waypoint: "Click to add a point at the end; click the path to insert one. Enter or Esc when done.",
+  select:
+    "Select a waypoint and double-click the field to add one after it. Drag a robot to move it, the knob on its ring to turn it (Alt: freely). Drag the path to insert a point. Right-click a point for more.",
   rotation: "Click the path to add a heading there. Drag a heading's robot along the path, or its knob to turn it.",
   event: "Click the path to place an event.",
   obstacle: "Click the corners of an obstacle; double-click or Enter to finish.",
 };
+
+/** The Select tool's hint on a path still being drawn. */
+function drawingHint(n: number): string | null {
+  return n === 0 ? "Double-click the field to place the start." : n === 1 ? "Double-click the field to place the end." : null;
+}
+
+/** What a double-click on the field says when it can't add a waypoint. */
+export const ADD_HINT = "Select a waypoint, then double-click to add one after it";
+/** Presses closer together than this are one click sequence (a double-click), ms. */
+const DOUBLE_CLICK_MS = 600;
 
 function makeView(s: EditorState, width: number, height: number): FieldView {
   return new FieldView(width, height, s.project.field.lengthMeters, s.project.field.widthMeters, s.view, s.project.settings.redFrame);
@@ -173,6 +182,11 @@ export function FieldCanvas() {
   const motionRef = useRef(0);
   const zoomTarget = useRef<{ zoom: number; px: number; py: number } | null>(null);
   const tool = useStore(editor, (s) => s.tool);
+  const drawing = useStore(editor, (s) => drawingHint(activePath(s).spec.waypoints.length));
+  /** The waypoint selected at the last press: a double-click adds after it, though its first click deselected it. */
+  const deselectedRef = useRef<{ index: number; pathId: string } | null>(null);
+  /** When the last press was: a press long after it starts a new click sequence. */
+  const lastPressRef = useRef(-Infinity);
   const liveOverlay = useStore(ui, (u) => u.liveOverlay);
 
   // ---------------------------------------------------------------------------- drawing
@@ -210,6 +224,7 @@ export function FieldCanvas() {
       time: reducedMotion() ? 0 : performance.now(),
       geometryOf,
       ghost: optimiser.get().pathId === active.id ? optimiser.get().preview : null,
+      blocked: optimiser.get().pathId === active.id && optimiser.get().status === "done" ? (optimiser.get().result?.blockedAt ?? null) : null,
     });
     const simResult = sim.get().result;
     if (simSettings.get().enabled && simResult?.ok && sim.get().input?.spec === active.spec) {
@@ -267,9 +282,21 @@ export function FieldCanvas() {
     const [fx, fy] = view().toField(px, py);
     const x = round5(fx);
     const y = round5(fy);
-    const n = activePath().spec.waypoints.length;
+    const s = editor.get();
+    const n = activePath(s).spec.waypoints.length;
+    const after = s.selection?.kind === "waypoint" ? s.selection.index : n < 2 ? n - 1 : null;
+    const add: MenuEntry[] =
+      after === null
+        ? []
+        : [
+            {
+              label: n === 0 ? "Place the start here" : n === 1 ? "Place the end here" : `Add a waypoint after ${after} here`,
+              icon: <Plus size={14} />,
+              run: () => addAfter(after, x, y),
+            },
+          ];
     openContextMenu(clientX, clientY, "Field", [
-      { label: "Add a waypoint here", icon: <Plus size={14} />, run: () => editPath("Add waypoint", (p) => appendWaypoint(p, x, y), { kind: "waypoint", index: n }) },
+      ...add,
       { label: "Start a new path here", icon: <CornerDownRight size={14} />, run: () => newPath({ x, y, heading: 0 }) },
       "separator",
       { label: "Blue or red view", icon: <Repeat size={14} />, shortcut: "A", run: toggleAlliance },
@@ -378,7 +405,7 @@ export function FieldCanvas() {
         if (Math.hypot(p.xMeters - fx, p.yMeters - fy) <= s.project.robot.bumperWidthMeters / 2) return { kind: "slide", index: i };
       }
     }
-    if (s.tool === "select" || s.tool === "waypoint") {
+    if (s.tool === "select") {
       for (let i = spec.waypoints.length - 1; i >= 0; i--) {
         if (insideFootprint(model, i, fx, fy)) return { kind: "waypoint", index: i };
       }
@@ -426,31 +453,8 @@ export function FieldCanvas() {
   const clickTool = (px: number, py: number, shift: boolean): boolean => {
     const s = editor.get();
     const v = view();
-    const [fx, fy] = v.toField(px, py);
-    const x = snapMeters(fx, shift, s.view.gridSnap);
-    const y = snapMeters(fy, shift, s.view.gridSnap);
     const path = activePath(s);
     switch (s.tool) {
-      case "waypoint": {
-        const hit = projectToPath(px, py);
-        if (hit && hit.px <= PATH_SNAP_PX && hit.s > 1e-3 && hit.s < hit.g.lengthMeters - 1e-3) {
-          const p = hit.g.sample(hit.s);
-          const k = Math.min(path.spec.waypoints.length - 2, Math.floor(waypointAtS(hit.g, hit.s)));
-          editPath("Insert point", (pp) => insertAt(pp, hit.s, round5(p.xMeters), round5(p.yMeters)), { kind: "waypoint", index: k + 1 });
-        } else {
-          const point = magnet(s.project, x, y);
-          const n = path.spec.waypoints.length;
-          editProject(
-            "Add point",
-            (pr) => {
-              const added = { ...pr, paths: pr.paths.map((p) => (p.id === path.id ? appendWaypoint(p, point?.x ?? x, point?.y ?? y) : p)) };
-              return point ? linkToPoint(added, path.id, n, point.id) : added;
-            },
-            { kind: "waypoint", index: n },
-          );
-        }
-        return true;
-      }
       case "event": {
         const hit = projectToPath(px, py);
         if (!hit || hit.px > EVENT_SNAP_PX) {
@@ -518,6 +522,13 @@ export function FieldCanvas() {
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     canvasRef.current!.focus();
+    // remember the selected waypoint for a double-click (its first click deselects it); a press long
+    // after the last one starts a new click sequence with nothing remembered
+    const now = performance.now();
+    const s0 = editor.get();
+    if (s0.selection?.kind === "waypoint") deselectedRef.current = { index: s0.selection.index, pathId: s0.activePathId };
+    else if (now - lastPressRef.current > DOUBLE_CLICK_MS) deselectedRef.current = null;
+    lastPressRef.current = now;
     stopMotion();
     const [px, py] = pointer(e);
     const s = editor.get();
@@ -566,8 +577,8 @@ export function FieldCanvas() {
       canvasRef.current!.setPointerCapture(e.pointerId);
       return;
     }
-    // pressing on the path in Select or Waypoint: dragging away inserts a point there
-    if (s.tool === "select" || s.tool === "waypoint") {
+    // pressing on the path in Select: dragging away inserts a point there
+    if (s.tool === "select") {
       const onPath = projectToPath(px, py);
       if (onPath && onPath.px <= PATH_SNAP_PX && onPath.s > 1e-3 && onPath.s < onPath.g.lengthMeters - 1e-3) {
         dragRef.current = { kind: "insert", s: onPath.s, startX: px, startY: py, started: false };
@@ -761,13 +772,39 @@ export function FieldCanvas() {
         const g = geometryOf(path.spec);
         if (g) select({ kind: "waypoint", index: Math.min(path.spec.waypoints.length - 2, Math.floor(waypointAtS(g, drag.s))) + 1 });
       } else {
-        // a click on the path: the Waypoint tool inserts there, Select just selects nothing
+        // a click on the path just selects nothing
         const [px, py] = pointer(e);
         if (!clickTool(px, py, e.shiftKey)) select(null);
       }
       return;
     }
     endGesture(dragLabel(drag));
+  };
+
+
+  /** Adds a waypoint at (x, y) after waypoint i of the active path, and selects it (a named point nearby links it). */
+  const addAfter = (i: number, x: number, y: number) => {
+    const s = editor.get();
+    const path = activePath(s);
+    const n = path.spec.waypoints.length;
+    const point = magnet(s.project, x, y);
+    const [ax, ay] = point ? [point.x, point.y] : [x, y];
+    // between two waypoints: where it lands on that stretch, so things placed by waypoint keep their place
+    let f = 0.5;
+    const g = i < n - 1 ? geometryOf(path.spec) : null;
+    if (g) {
+      const w = waypointAtS(g, g.projectGlobal(ax, ay).s);
+      if (Math.floor(w) === i) f = w - i;
+    }
+    const at = Math.min(i + 1, n);
+    editProject(
+      n === 0 ? "Place start" : n === 1 ? "Place end" : "Add waypoint",
+      (pr) => {
+        const added = { ...pr, paths: pr.paths.map((p) => (p.id === path.id ? addWaypointAfter(p, i, ax, ay, f) : p)) };
+        return point ? linkToPoint(added, path.id, at, point.id) : added;
+      },
+      { kind: "waypoint", index: at },
+    );
   };
 
   const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -777,10 +814,34 @@ export function FieldCanvas() {
       finishObstacle();
       return;
     }
+    if (s.tool !== "select") return;
     const hit = hitTest(px, py);
     if (hit?.kind === "tangent") {
       editPath("Automatic tangent", (p) => setTangent(p, hit.index, Number.NaN, 1.0));
+      return;
     }
+    // on a robot, a knob or a marker the clicks selected it; an obstacle is just more field here
+    if (hit && hit.kind !== "obstacle") return;
+    // the first click of the double-click deselected the waypoint it builds on
+    const path = activePath(s);
+    const n = path.spec.waypoints.length;
+    const recent = deselectedRef.current;
+    const after =
+      s.selection?.kind === "waypoint"
+        ? s.selection.index
+        : recent && recent.pathId === path.id && recent.index < n
+          ? recent.index
+          : n < 2
+            ? n - 1 // an empty path: the start, then the end
+            : null;
+    deselectedRef.current = null;
+    lastPressRef.current = -Infinity; // the next press starts a new sequence
+    if (after === null) {
+      notify(ADD_HINT);
+      return;
+    }
+    const [fx, fy] = view().toField(px, py);
+    addAfter(after, snapMeters(fx, e.shiftKey, s.view.gridSnap), snapMeters(fy, e.shiftKey, s.view.gridSnap));
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -838,14 +899,14 @@ export function FieldCanvas() {
         onContextMenu={(e) => e.preventDefault()}
       />
       <div className="canvas-hint" data-testid="canvas-hint" aria-live="polite">
-        {TOOL_HINTS[tool]}
+        {(tool === "select" && drawing) || TOOL_HINTS[tool]}
       </div>
       <QuickStartOverlay />
     </div>
   );
 }
 
-/** Right-click on a waypoint: its heading, pin and delete (the app's context menu). */
+/** Right-click on a waypoint: its heading, lock and delete (the app's context menu). */
 function waypointMenu(index: number, x: number, y: number): void {
   const path = activePath();
   const w = path.spec.waypoints[index];
@@ -877,9 +938,9 @@ function waypointMenu(index: number, x: number, y: number): void {
   }
   items.push(
     {
-      label: path.pinned[index] ? "Unpin (the optimiser may move it)" : "Pin (the optimiser leaves it)",
+      label: path.pinned[index] ? "Unlock" : "Lock in place (the optimiser never moves it)",
       icon: path.pinned[index] ? <LockOpen size={14} /> : <Lock size={14} />,
-      run: () => editPath(path.pinned[index] ? "Unpin" : "Pin", (p) => setPinned(p, index, !p.pinned[index])),
+      run: () => editPath(path.pinned[index] ? "Unlock" : "Lock", (p) => setPinned(p, index, !p.pinned[index])),
     },
     "separator",
     {
@@ -949,7 +1010,3 @@ export function finishObstacle(): void {
   );
 }
 
-/** Leaves the Waypoint tool (Enter or Esc while drawing). */
-export function finishDrawing(): void {
-  setTool("select");
-}
