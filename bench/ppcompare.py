@@ -131,6 +131,30 @@ BASE = {"ours_optimised": "ours_v2", "pp2027_optimised": "pp2027_hold", "pp_path
 TOOL = {"ours_optimised": "ours", "pp2027_optimised": "pp2027", "pp_path2_optimised": "path2"}
 BUDGET_MS = 3000  # the optimiser's default budget (1500 plans), for every tool
 OPTIMISED_FILE = os.path.join(OUT, "ppcompare_optimised.json")
+MU_FILE = os.path.join(OUT, "musweep_optimised.json")
+
+# The planning-grip sweep (`run.py --mu-sweep`): ours planned at mu 0.85, 1.0 and 1.15 as well as the shipped
+# 0.7, as drawn and optimised. The output limiter's grip stays as shipped (1.0) unless the plan asks for more
+# (planning mu 1.15): then it matches the plan, or the limiter would clip the plan's own corners.
+MU_SWEEP = (0.7, 0.85, 1.0, 1.15)
+
+
+def mu_key(mu, optimised=False):
+    if mu == 0.7:
+        return "ours_optimised" if optimised else "ours_v2"
+    return f"ours_mu{round(mu * 100):03d}" + ("_optimised" if optimised else "")
+
+
+for _mu in MU_SWEEP[1:]:
+    METHODS[mu_key(_mu)] = ("(b)", f"Ours v2, planning mu {_mu:g}", ("chain", "ours_v2", {
+        "mu": _mu, "limiterFrictionCoefficient": max(1.0, _mu)}))
+    METHODS[mu_key(_mu, True)] = ("(c)", f"Ours v2 optimised, planning mu {_mu:g}", ("optimised", f"ours@{_mu:g}"))
+    BASE[mu_key(_mu, True)] = mu_key(_mu)
+    TOOL[mu_key(_mu, True)] = f"ours@{_mu:g}"
+
+
+def tool_mu(tool):
+    return float(tool.split("@")[1]) if "@" in tool else 0.7
 TUNED_FILES = [os.path.join(OUT, "results.json"), os.path.join(OUT, "ppcompare_tuned.json")]
 
 
@@ -194,7 +218,8 @@ def planned_seconds(key, legs, native):
     if kind[1] == "ours_v2":
         from followers.ours_v2 import call_fresh, robot_json
 
-        return sum(call_fresh(op="load", path=n["path"], robot=robot_json(0.7))["totalTimeSeconds"] for n in native)
+        mu = kind[2].get("mu", 0.7)
+        return sum(call_fresh(op="load", path=n["path"], robot=robot_json(mu))["totalTimeSeconds"] for n in native)
     from followers.pathplanner import PathPlannerPath, RobotConfig, generate_trajectory
 
     opts = kind[2]
@@ -460,28 +485,30 @@ def main(seeds, procs, names=None):
 # ============================================================================================ the optimiser
 def _optimise_job(args):
     name, tool = args
-    if tool == "ours":
-        return [optimise_ours(leg) for leg in targets()[name]]
+    if tool.startswith("ours"):
+        return [optimise_ours(leg, mu=tool_mu(tool)) for leg in targets()[name]]
     from pp_objective import optimise_target
 
     return optimise_target(name, tool, BUDGET_MS / 1000)
 
 
-def prepare_optimised(pool, names):
-    """Runs the optimiser once per target and tool (it is deterministic) into OPTIMISED_FILE, which the bench
-    runs read. Returns the before/after planned times per path file."""
-    jobs = [(n, t) for n in names for t in ("ours", "pp2027", "path2")]
+def prepare_optimised(pool, names, tools=("ours", "pp2027", "path2"), path=OPTIMISED_FILE):
+    """Runs the optimiser once per target and tool (it is deterministic) into `path`, which the bench runs
+    read. Returns the before/after planned times per path file."""
+    jobs = [(n, t) for n in names for t in tools]
     res = pool.map(_optimise_job, jobs, chunksize=1)
     store, report = {}, {}
     for (n, t), r in zip(jobs, res):
-        if t == "ours":
+        if t.startswith("ours"):
             store.setdefault(n, {})[t] = [tree for tree, _ in r]
             report.setdefault(n, {})[t] = [info for _, info in r]
         else:
             store.setdefault(n, {})[t], report.setdefault(n, {})[t] = r
     os.makedirs(OUT, exist_ok=True)
-    with open(OPTIMISED_FILE, "w") as fh:
+    with open(path, "w") as fh:
         json.dump({"natives": store, "report": report}, fh)
+    global _optimised
+    _optimised = None
     return report
 
 
@@ -492,27 +519,32 @@ def optimised_native(name, key):
     """The optimised path(s) for a target, as the row's follower takes them."""
     global _optimised
     if _optimised is None:
-        _optimised = json.load(open(OPTIMISED_FILE))["natives"]
-    n = _optimised[name][TOOL[key]]
-    if key == "ours_optimised":
+        _optimised = {}
+        for f in (OPTIMISED_FILE, MU_FILE):
+            if os.path.exists(f):
+                for t, tools in json.load(open(f))["natives"].items():
+                    _optimised.setdefault(t, {}).update(tools)
+    tool = TOOL[key]
+    n = _optimised[name][tool]
+    if tool.startswith("ours"):
         from followers.ours_v2 import call_fresh, server
 
         out = []
         for tree in n:
-            call_fresh(op="load", path=tree, robot=_robot())
+            call_fresh(op="load", path=tree, robot=_robot(tool_mu(tool)))
             g = server().call(op="geometry", step=0.02)
             out.append({"path": tree, "geometry": np.column_stack([g["x"], g["y"]])})
         return out
     return n
 
 
-def _robot():
+def _robot(mu=0.7):
     from followers.ours_v2 import robot_json
 
-    return robot_json(0.7)
+    return robot_json(mu)
 
 
-def optimise_ours(course, budget_ms=BUDGET_MS, seed=1):
+def optimise_ours(course, budget_ms=BUDGET_MS, seed=1, mu=0.7):
     """The headless optimiser on one leg of ours: `node tools/optimise.mjs <path.json> --robot <robot.json>
     --field <field.json> --budget-ms N --seed S --out <file> --pin ...`. Waypoints where the course sets a
     heading are pinned (ours authors those headings as rotation targets, which the optimiser doesn't treat
@@ -527,7 +559,7 @@ def optimise_ours(course, budget_ms=BUDGET_MS, seed=1):
     with tempfile.TemporaryDirectory() as d:
         p, r, f, o = (os.path.join(d, n) for n in ("path.json", "robot.json", "field.json", "out.json"))
         json.dump(to_ours(course), open(p, "w"))
-        json.dump(_robot(), open(r, "w"))
+        json.dump(_robot(mu), open(r, "w"))
         json.dump(field, open(f, "w"))
         cmd = ["node", OPTIMISER, p, "--robot", r, "--field", f, "--budget-ms", str(budget_ms), "--seed", str(seed),
                "--out", o]
