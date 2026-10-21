@@ -168,6 +168,19 @@ export function Toasts() {
         <div key={t.id} className={`toast ${t.kind}`} role={t.kind === "error" ? "alert" : "status"}>
           {t.kind === "error" ? <AlertCircle size={16} /> : t.kind === "ok" ? <CheckCircle2 size={16} /> : <Info size={16} />}
           <span>{t.text}</span>
+          {t.action && (
+            <button
+              type="button"
+              className="btn small primary"
+              data-testid="toast-action"
+              onClick={() => {
+                t.action!.run();
+                toasts.set((s) => ({ list: s.list.filter((x) => x.id !== t.id) }));
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>

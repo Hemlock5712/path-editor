@@ -6,12 +6,23 @@ import { makeEditorPath, startSpec, uniquePathName } from "../model/project.ts";
 import { round5 } from "../model/positions.ts";
 import { analysis, playback } from "./analysis.ts";
 import { deletePath, insertPath } from "./commands.ts";
-import { activePath, editor, editPath, editProject, execute, notify, select, setActivePath, setView } from "./editor.ts";
+import { activePath, editor, editPath, editProject, execute, notify, refuseLinkedCopy, select, setActivePath, setView, type Selection } from "./editor.ts";
+import type { ItemRef } from "../ui/drawItems.ts";
+import { transformPath, unlinkPath, type Transform, type TransformMode } from "../model/mirror.ts";
 
 export function deleteSelection(): void {
+  const sel = editor.get().selection;
+  if (sel) deleteItem(sel);
+}
+
+/** The selection an item on the field stands for. */
+export function selectionOfItem(ref: ItemRef): Selection {
+  return ref.kind === "point" ? { kind: "point", id: ref.id } : { kind: ref.kind, index: ref.index };
+}
+
+/** Deletes one item (a waypoint, marker, target, zone, obstacle or named point) as one undo step. */
+export function deleteItem(sel: Selection): void {
   const s = editor.get();
-  const sel = s.selection;
-  if (!sel) return;
   switch (sel.kind) {
     case "waypoint":
       if (activePath(s).spec.waypoints.length <= 2) notify("A path needs at least two waypoints.", "error");
@@ -74,6 +85,30 @@ export function newPath(start?: { x: number; y: number; heading: number; pointId
   execute(insertPath("New path", path, s.project.paths.length));
   setActivePath(path.id);
   if (pose) select({ kind: "waypoint", index: 0 });
+}
+
+/** Flips or mirrors the active path: in place, as a copy, or as a linked copy (one undo step). */
+export function transformActivePath(t: Transform, mode: TransformMode): void {
+  const s = editor.get();
+  const path = activePath(s);
+  if (mode === "inPlace" && refuseLinkedCopy()) return;
+  let made = path.id;
+  const label = t === "flip" ? "Flip path" : "Mirror path";
+  const ok = editProject(label, (pr) => {
+    const [next, id] = transformPath(pr, path.id, t, mode);
+    made = id;
+    return next;
+  });
+  if (ok && made !== path.id) {
+    setActivePath(made);
+    const copy = activePath();
+    notify(mode === "linked" ? `${copy.name} follows ${path.name}: edit ${path.name} and it updates.` : `Made ${copy.name}.`);
+  }
+}
+
+/** Makes a linked copy an ordinary path again. */
+export function unlinkActivePath(id: string): void {
+  editProject("Unlink copy", (pr) => unlinkPath(pr, id));
 }
 
 export function duplicatePath(): void {

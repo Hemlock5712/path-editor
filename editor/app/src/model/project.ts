@@ -12,6 +12,7 @@ import {
   type RobotConfig,
   type Waypoint,
 } from "../../../core/src/index.ts";
+import type { Twin } from "./mirror.ts";
 
 /** A field point shared across paths. Moving it moves every waypoint linked to it. */
 export interface NamedPoint {
@@ -19,6 +20,10 @@ export interface NamedPoint {
   readonly name: string;
   readonly x: number;
   readonly y: number;
+  /** The heading a robot has there, radians (absent or NaN: none). */
+  readonly heading?: number;
+  /** Its flipped or mirrored twin, kept in step with it (see mirror.ts). */
+  readonly twin?: Twin | null;
 }
 
 export interface EditorPath {
@@ -31,6 +36,8 @@ export interface EditorPath {
   /** Per waypoint: pinned, so the optimiser leaves it where it is. Same length as spec.waypoints. */
   readonly pinned: readonly boolean[];
   readonly colour: string;
+  /** A linked copy: this path is always its source turned by the transform, and isn't edited itself. */
+  readonly mirrorOf?: Twin | null;
 }
 
 /** One obstacle polygon in field.json (metres, origin at the field centre). */

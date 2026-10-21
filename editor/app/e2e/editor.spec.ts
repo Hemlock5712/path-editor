@@ -180,13 +180,13 @@ test("add waypoints and an event, save, reload, and get the same file back", asy
 
   // the new path is empty: two double-clicks make a straight run along y = -1.5 from x = -6.5 to -4
   await drawStarter(page);
-  // an event on it
+  // an event on it: E (with nothing selected; with a waypoint selected E turns it), click the path, name it
+  await page.keyboard.press("Escape");
   await page.keyboard.press("e");
   await clickField(page, -5.25, -1.5);
-  const name = page.getByTestId("event-name-0");
-  await expect(name).toHaveValue("event");
-  await name.fill("intakeDown");
-  await name.press("Enter");
+  await page.getByTestId("flow-name").fill("intakeDown");
+  await page.getByTestId("flow-name").press("Enter");
+  await expect(page.getByTestId("event-name-0")).toHaveValue("intakeDown");
 
   // two more waypoints: select the end, then each double-click adds one after the selected point
   await page.keyboard.press("v");
@@ -594,17 +594,17 @@ test("usability, first run: draw a typical swerve auto in about ten actions", as
   p = await poses(page);
   const end = p.waypoints[4]!;
   await act(() => dragField(page, { x: end.knobX, y: end.knobY }, { x: end.x + Math.cos(30 * DEG), y: end.y + Math.sin(30 * DEG) }));
-  // 8-10. Heading: click the path between the 2nd and 3rd pass-through points, and turn that robot to 90°
+  // 8-10. Heading: R, click the path between the 2nd and 3rd pass-through points, and turn the ghost robot
+  // there to 90° by its knob (letting go sets it)
   await act(() => page.keyboard.press("r"));
   p = await poses(page);
   const nearest = (w: { x: number; y: number }) =>
     p.plan.reduce((best, q, i) => (Math.hypot(q.x - w.x, q.y - w.y) < Math.hypot(p.plan[best]!.x - w.x, p.plan[best]!.y - w.y) ? i : best), 0);
   const mid = p.plan[Math.round((nearest(p.waypoints[2]!) + nearest(p.waypoints[3]!)) / 2)]!;
   await act(() => clickField(page, mid.x, mid.y));
-  p = await poses(page);
-  expect(p.targets).toHaveLength(1);
-  const t = p.targets[0]!;
-  await act(() => dragField(page, { x: t.knobX, y: t.knobY }, { x: t.x, y: t.y + 1 }));
+  const knob = (await page.evaluate(() => (window as unknown as { pathEditorTest: { doc(): { flow: { knob: [number, number] } } } }).pathEditorTest.doc().flow.knob))!;
+  await act(() => dragField(page, { x: knob[0], y: knob[1] }, { x: mid.x, y: mid.y + 1 }));
+  await expect.poll(async () => (await poses(page)).targets.length).toBe(1);
 
   // what was drawn: a start pose, three pass-through points, a scoring pose, one heading change between
   p = await poses(page);

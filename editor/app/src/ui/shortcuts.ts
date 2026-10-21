@@ -6,17 +6,26 @@ import { cancelGesture, editor, inGesture, redo, select, setDraftObstacle, setTo
 import { openFolder, save } from "../state/session.ts";
 import { openSettings, ui } from "../state/ui.ts";
 import { finishObstacle } from "./FieldCanvas.tsx";
+import { cancelFlow, flow, startFlow } from "../state/flow.ts";
+import { copySelection, cycleWaypoint, paste, rotateSelection } from "../state/helpers.ts";
+
+const DEG = Math.PI / 180;
 
 export const SHORTCUTS: [string, string][] = [
   ["Ctrl+K", "Command palette: every command, by name"],
   ["Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)", "Undo / redo"],
   ["Ctrl+S / Ctrl+O", "Save / open a folder"],
   ["Double-click the field", "Add a waypoint after the selected one (an empty path: the start, then the end)"],
-  ["V R E O", "Select, Heading, Event and Obstacle tools"],
+  ["V O", "Select and Obstacle tools"],
+  ["R E Z T N", "Add a heading, an event, a constraint zone, a point-towards zone or a named point, step by step (Esc cancels)"],
   ["Alt while turning", "Turn freely (headings snap to 15° otherwise)"],
   ["Right-click a waypoint", "Set heading, pass-through, lock, delete"],
   ["Delete", "Delete the selected item"],
-  ["Arrows (Shift)", "Nudge the selected waypoint or point 1 cm (10 cm)"],
+  ["Arrows (Shift)", "Nudge the selected waypoint or point 1 cm (5 cm)"],
+  ["Q / E", "Turn the selected waypoint, heading or named point 5° left / right (E with nothing selected adds an event)"],
+  ["Tab / Shift+Tab", "Select the next / previous waypoint"],
+  ["M", "Measure: drag between two points (they snap to waypoints and named points)"],
+  ["Ctrl+C / Ctrl+V", "Copy the selected waypoint (paste puts it after the selected one), or with nothing selected the path (paste makes a new path)"],
   ["Space", "Play or pause"],
   [", and .", "Step the playback 0.1 s"],
   ["Home", "Playback to the start"],
@@ -78,11 +87,21 @@ export function onKeyDown(e: KeyboardEvent): void {
     undo();
     return;
   }
+  if (ctrl && key === "c" && ui.get().page === "editor" && !window.getSelection()?.toString()) {
+    e.preventDefault();
+    copySelection();
+    return;
+  }
+  if (ctrl && key === "v" && ui.get().page === "editor") {
+    e.preventDefault();
+    void paste();
+    return;
+  }
   if (ctrl || e.altKey) return;
   if ((e.key === " " || e.key === "Enter") && pressable(e.target)) return;
   // the editing keys belong to the editor page
   if (ui.get().page !== "editor") return;
-  const step = e.shiftKey ? 0.1 : 0.01;
+  const step = e.shiftKey ? 0.05 : 0.01;
   switch (e.key) {
     case "Delete":
     case "Backspace":
@@ -91,6 +110,7 @@ export function onKeyDown(e: KeyboardEvent): void {
       return;
     case "Escape":
       if (inGesture()) cancelGesture();
+      else if (flow.get().kind) cancelFlow();
       else if (editor.get().draftObstacle) setDraftObstacle(null);
       else if (editor.get().selection) select(null);
       else setTool("select");
@@ -132,16 +152,37 @@ export function onKeyDown(e: KeyboardEvent): void {
     case "?":
       ui.set({ helpOpen: true });
       return;
+    case "Tab":
+      if (flow.get().kind) return;
+      e.preventDefault();
+      cycleWaypoint(e.shiftKey ? -1 : 1);
+      return;
   }
   switch (key) {
     case "v":
       setTool("select");
       return;
+    case "q":
+      rotateSelection(5 * DEG);
+      return;
     case "e":
-      setTool("event");
+      // with something to turn selected, E turns it; otherwise it adds an event
+      if (!rotateSelection(-5 * DEG)) startFlow("event");
+      return;
+    case "m":
+      setTool("measure");
       return;
     case "r":
-      setTool("rotation");
+      startFlow("rotation");
+      return;
+    case "z":
+      startFlow("constraint");
+      return;
+    case "t":
+      startFlow("face");
+      return;
+    case "n":
+      startFlow("point");
       return;
     case "o":
       setTool("obstacle");

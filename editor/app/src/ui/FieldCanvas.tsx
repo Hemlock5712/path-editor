@@ -6,12 +6,16 @@
 // direction is automatic; the tangent handle only shows with "shape the curve" on.
 
 import { QuickStartOverlay } from "./QuickStart.tsx";
-import { Compass, CornerDownRight, Lock, LockOpen, Maximize2, Navigation, Plus, Repeat, Trash2 } from "lucide-react";
+import { FlowBar, FlowForm } from "./editor/FlowBar.tsx";
+import { deleteAnchor, DELETE_RADIUS, flowKnob, zoneChip, type ItemRef } from "./drawItems.ts";
+import { selectionTitle } from "./inspector/Items.tsx";
+import { finishRotation, flow, pickOnPath, pickPoint, setFlowHeading, stepTakes } from "../state/flow.ts";
+import { faceNext, faceTargets, faceToward, poseNearElement, STANDOFF_METERS } from "../state/helpers.ts";
+import { deleteItem, selectionOfItem } from "../state/actions.ts";
+import { Compass, CornerDownRight, Crosshair, Lock, LockOpen, Maximize2, Navigation, Plus, Repeat, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { eventMeters, makePathEvent, makeRotationTarget, type PathGeometry } from "../../../core/src/index.ts";
 import {
-  addEvent,
-  addRotationTarget,
   addWaypointAfter,
   deleteWaypoint,
   insertWaypoint,
@@ -24,7 +28,7 @@ import {
   updateRotationTarget,
 } from "../model/edits.ts";
 import { linkToPoint, moveNamedPoint } from "../model/namedPoints.ts";
-import { eventNames, type EditorPath, type Project } from "../model/project.ts";
+import { type EditorPath, type Project } from "../model/project.ts";
 import { round5, round5Radians, waypointAtS } from "../model/positions.ts";
 import { drawSim } from "../sim/draw.ts";
 import { sim, simSettings } from "../sim/state.ts";
@@ -38,6 +42,7 @@ import {
   endGesture,
   notify,
   previewProject,
+  refuseLinkedCopy,
   select,
   setDraftObstacle,
   setView,
@@ -47,7 +52,7 @@ import {
 import { live } from "../state/live.ts";
 import { optimiser } from "../state/optimiser.ts";
 import { useStore } from "../state/store.ts";
-import { openContextMenu, ui, type MenuEntry } from "../state/ui.ts";
+import { openContextMenu, toast, ui, type MenuEntry } from "../state/ui.ts";
 import { fitView, newPath, toggleAlliance } from "../state/actions.ts";
 import {
   drawField,
@@ -74,7 +79,9 @@ type Drag =
   | { kind: "point"; id: string }
   | { kind: "event"; index: number }
   | { kind: "vertex"; obstacle: number; vertex: number }
-  | { kind: "obstacle"; index: number; startX: number; startY: number };
+  | { kind: "obstacle"; index: number; startX: number; startY: number }
+  | { kind: "flowKnob" }
+  | { kind: "measure" };
 
 type Hit =
   | { kind: "waypoint"; index: number }
@@ -86,9 +93,13 @@ type Hit =
   | { kind: "point"; id: string }
   | { kind: "event"; index: number }
   | { kind: "vertex"; obstacle: number; vertex: number }
-  | { kind: "obstacle"; index: number };
+  | { kind: "obstacle"; index: number }
+  | { kind: "zone"; zone: "constraint" | "face"; index: number }
+  | { kind: "delete"; ref: ItemRef };
 
 const HIT_PX = 10;
+/** A field click this close to a named point or a field element's centre snaps to it, metres. */
+const ELEMENT_SNAP_METERS = 0.4;
 /** A click this close to the path lands on it (inserting a waypoint, placing an event). */
 const PATH_SNAP_PX = 14;
 const EVENT_SNAP_PX = 40;
@@ -105,9 +116,8 @@ const DRAG_START_PX = 4;
 export const TOOL_HINTS: Record<EditorState["tool"], string> = {
   select:
     "Select a waypoint and double-click the field to add one after it. Drag a robot to move it, the knob on its ring to turn it (Alt: freely). Drag the path to insert a point. Right-click a point for more.",
-  rotation: "Click the path to add a heading there. Drag a heading's robot along the path, or its knob to turn it.",
-  event: "Click the path to place an event.",
   obstacle: "Click the corners of an obstacle; double-click or Enter to finish.",
+  measure: "Drag from one point to another to measure (ends snap to waypoints and named points; Shift: 5 cm grid).",
 };
 
 /** The Select tool's hint on a path still being drawn. */
@@ -171,6 +181,38 @@ const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(pre
 /** The item under the pointer, for the hover highlight (null: nothing). */
 export type HoverTarget = { readonly kind: "waypoint" | "turn" | "rotation"; readonly index: number } | null;
 
+/** The deletable item a hit is on (the × shows for it). */
+function itemOf(hit: Hit | null): ItemRef | null {
+  if (!hit) return null;
+  switch (hit.kind) {
+    case "event":
+      return { kind: "event", index: hit.index };
+    case "rotation":
+    case "slide":
+      return { kind: "rotation", index: hit.index };
+    case "face":
+      return { kind: "face", index: hit.index };
+    case "zone":
+      return { kind: hit.zone, index: hit.index };
+    case "point":
+      return { kind: "point", id: hit.id };
+    case "delete":
+      return hit.ref;
+    default:
+      return null;
+  }
+}
+
+function itemOfSelection(sel: Selection | null): ItemRef | null {
+  if (!sel) return null;
+  if (sel.kind === "point") return { kind: "point", id: sel.id };
+  if (sel.kind === "event" || sel.kind === "rotation" || sel.kind === "face" || sel.kind === "constraint") return { kind: sel.kind, index: sel.index };
+  return null;
+}
+
+const sameItem = (a: ItemRef | null, b: ItemRef | null) =>
+  a === b || (a !== null && b !== null && a.kind === b.kind && ("id" in a ? a.id === (b as { id: string }).id : a.index === (b as { index: number }).index));
+
 export function FieldCanvas() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -179,6 +221,13 @@ export function FieldCanvas() {
   const dragRef = useRef<Drag | null>(null);
   const frameRef = useRef(0);
   const hoverRef = useRef<HoverTarget>(null);
+  /** The item under the pointer (its × shows), whether the pointer is on the ×, and the field point under it. */
+  const hoverItemRef = useRef<ItemRef | null>(null);
+  const deleteHotRef = useRef(false);
+  const fieldHoverRef = useRef<{ x: number; y: number } | null>(null);
+  /** The Measure tool's line, blue frame. */
+  const measureRef = useRef<{ a: [number, number]; b: [number, number] } | null>(null);
+  const flowState = useStore(flow, (f) => f);
   const motionRef = useRef(0);
   const zoomTarget = useRef<{ zoom: number; px: number; py: number } | null>(null);
   const tool = useStore(editor, (s) => s.tool);
@@ -224,6 +273,11 @@ export function FieldCanvas() {
       time: reducedMotion() ? 0 : performance.now(),
       geometryOf,
       ghost: optimiser.get().pathId === active.id ? optimiser.get().preview : null,
+      deletable: hoverItemRef.current ?? itemOfSelection(s.selection),
+      deleteHot: deleteHotRef.current,
+      flow: flow.get(),
+      flowHover: fieldHoverRef.current,
+      measure: s.tool === "measure" ? measureRef.current : null,
       blocked: optimiser.get().pathId === active.id && optimiser.get().status === "done" ? (optimiser.get().result?.blockedAt ?? null) : null,
     });
     const simResult = sim.get().result;
@@ -317,6 +371,7 @@ export function FieldCanvas() {
       playback.subscribe(schedule),
       live.subscribe(schedule),
       optimiser.subscribe(schedule),
+      flow.subscribe(schedule),
       sim.subscribe(schedule),
       simSettings.subscribe(schedule),
     ];
@@ -367,6 +422,12 @@ export function FieldCanvas() {
     const spec = path.spec;
     const a = analysis.get().result;
     const model = { active: path, analysis: a && a.ok ? a : null, project: s.project, geometry: g };
+    // the × on the item under the pointer, or the selected one
+    const items = { view: v, active: path, geometry: g, project: s.project };
+    for (const ref of [hoverItemRef.current, itemOfSelection(s.selection)]) {
+      const at = ref ? deleteAnchor(items, ref) : null;
+      if (ref && at && Math.hypot(at[0] - px, at[1] - py) <= DELETE_RADIUS + 3) return { kind: "delete", ref };
+    }
     for (let i = spec.waypoints.length - 1; i >= 0; i--) {
       const h = waypointHandle(model, i);
       if (near(v, px, py, h[2], h[3])) return { kind: "turn", index: i };
@@ -392,13 +453,20 @@ export function FieldCanvas() {
       }
     }
     for (const p of s.project.namedPoints) if (near(v, px, py, p.x, p.y)) return { kind: "point", id: p.id };
+    for (const zone of ["constraint", "face"] as const) {
+      const n = zone === "constraint" ? spec.constraintZones.length : spec.facePointZones.length;
+      for (let i = n - 1; i >= 0; i--) {
+        const c = zoneChip(items, zone, i);
+        if (c && Math.abs(px - c.x) <= c.w / 2 && Math.abs(py - c.y) <= c.h / 2 + 2) return { kind: "zone", zone, index: i };
+      }
+    }
     for (let i = spec.facePointZones.length - 1; i >= 0; i--) {
       const z = spec.facePointZones[i]!;
       if (near(v, px, py, z.point.x, z.point.y)) return { kind: "face", index: i };
     }
     const [fx, fy] = v.toField(px, py);
     // robot bodies grab in the tools that move them; the placing tools click straight through them
-    if (g && (s.tool === "select" || s.tool === "rotation")) {
+    if (g && s.tool === "select") {
       // a heading's robot slides along the path
       for (let i = spec.rotationTargets.length - 1; i >= 0; i--) {
         const p = g.sample(rotationTargetS(spec.rotationTargets[i]!, g));
@@ -453,38 +521,7 @@ export function FieldCanvas() {
   const clickTool = (px: number, py: number, shift: boolean): boolean => {
     const s = editor.get();
     const v = view();
-    const path = activePath(s);
     switch (s.tool) {
-      case "event": {
-        const hit = projectToPath(px, py);
-        if (!hit || hit.px > EVENT_SNAP_PX) {
-          notify("Click on the path to place an event.");
-          return true;
-        }
-        const names = eventNames(s.project);
-        const last = s.selection?.kind === "event" ? path.spec.events[s.selection.index]?.name : undefined;
-        const name = last ?? names[0] ?? "event";
-        editPath("Add event", (pp) => addEvent(pp, makePathEvent(name, round5(waypointAtS(hit.g, hit.s)), Number.NaN)), {
-          kind: "event",
-          index: path.spec.events.length,
-        });
-        return true;
-      }
-      case "rotation": {
-        const hit = projectToPath(px, py);
-        if (!hit || hit.px > EVENT_SNAP_PX) {
-          notify("Click on the path to add a heading there.");
-          return true;
-        }
-        const a = analysis.get().result;
-        const heading = a && a.ok ? headingAtS(a.stations, hit.s) : 0;
-        const target = makeRotationTarget(round5(waypointAtS(hit.g, hit.s)), Number.NaN, snapHeading(heading, false));
-        editPath("Add heading", (pp) => addRotationTarget(pp, target), {
-          kind: "rotation",
-          index: path.spec.rotationTargets.length,
-        });
-        return true;
-      }
       case "obstacle": {
         const [rx, ry] = v.toRaw(px, py);
         const draft = s.draftObstacle ?? [];
@@ -492,6 +529,7 @@ export function FieldCanvas() {
         return true;
       }
       case "select":
+      case "measure":
         return false;
     }
   };
@@ -517,7 +555,69 @@ export function FieldCanvas() {
         return { kind: "obstacle", index: hit.obstacle };
       case "obstacle":
         return { kind: "obstacle", index: hit.index };
+      case "zone":
+        return { kind: hit.zone, index: hit.index };
+      case "delete":
+        return editor.get().selection!;
     }
+  };
+
+  // ---------------------------------------------------------------------------- guided flows
+
+  /** A field point, snapped to a named point or a field element's centre when one is close. */
+  const snapToElement = (x: number, y: number): { x: number; y: number; snappedTo: string | null } => {
+    const s = editor.get();
+    let best: { x: number; y: number; snappedTo: string | null; d: number } = { x, y, snappedTo: null, d: ELEMENT_SNAP_METERS };
+    for (const p of s.project.namedPoints) {
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d < best.d) best = { x: p.x, y: p.y, snappedTo: p.name, d };
+    }
+    for (const o of s.project.field.obstacles) {
+      if (o.polygon.length === 0) continue;
+      const cx = o.polygon.reduce((t, q) => t + q[0], 0) / o.polygon.length;
+      const cy = o.polygon.reduce((t, q) => t + q[1], 0) / o.polygon.length;
+      const d = Math.hypot(cx - x, cy - y);
+      if (d < best.d) best = { x: round5(cx), y: round5(cy), snappedTo: o.name, d };
+    }
+    return { x: best.x, y: best.y, snappedTo: best.snappedTo };
+  };
+
+  /** A Measure end: on a waypoint or named point within reach, on the 5 cm grid with Shift, else where pressed. */
+  const measureEnd = (px: number, py: number, shift: boolean): [number, number] => {
+    const s = editor.get();
+    const v = view();
+    for (const w of activePath(s).spec.waypoints) if (near(v, px, py, w.xMeters, w.yMeters, 12)) return [w.xMeters, w.yMeters];
+    for (const q of s.project.namedPoints) if (near(v, px, py, q.x, q.y, 12)) return [q.x, q.y];
+    const [fx, fy] = v.toField(px, py);
+    return [snapMeters(fx, shift, false), snapMeters(fy, shift, false)];
+  };
+
+  /** A press while a flow runs: its knob, a place on the path, or a point on the field. True if it took it. */
+  const flowPress = (px: number, py: number, shift: boolean): Drag | boolean => {
+    const f = flow.get();
+    if (!f.kind) return false;
+    const s = editor.get();
+    const v = view();
+    const knob = flowKnob({ geometry: geometryOf(activePath(s).spec), project: s.project }, f);
+    if (knob && near(v, px, py, knob[0], knob[1], HIT_PX + 2)) return { kind: "flowKnob" };
+    const takes = stepTakes(f.kind, f.step);
+    if (takes === "path") {
+      const hit = projectToPath(px, py);
+      if (!hit || hit.px > EVENT_SNAP_PX) {
+        notify("Click on the path.");
+        return true;
+      }
+      const a = analysis.get().result;
+      pickOnPath(waypointAtS(hit.g, hit.s), a && a.ok ? headingAtS(a.stations, hit.s) : 0);
+      return true;
+    }
+    if (takes === "field") {
+      const [fx, fy] = v.toField(px, py);
+      const p = shift ? { x: snapMeters(fx, true, false), y: snapMeters(fy, true, false), snappedTo: null } : snapToElement(fx, fy);
+      pickPoint(p.x, p.y, p.snappedTo);
+      return true;
+    }
+    return false;
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -547,11 +647,20 @@ export function FieldCanvas() {
       lastT: performance.now(),
     });
     if (e.button === 2) {
-      // right-click on a waypoint: its menu; anywhere else: pan, or (without moving) the field's menu
+      // right-click on a waypoint or an item: its menu; anywhere else: pan, or (without moving) the field's menu
       const hit = hitTest(px, py);
       if (hit && (hit.kind === "waypoint" || hit.kind === "turn")) {
         select({ kind: "waypoint", index: hit.index });
         waypointMenu(hit.index, e.clientX, e.clientY);
+        return;
+      }
+      const item = itemOf(hit);
+      if (item) {
+        const sel = selectionOfItem(item);
+        select(sel);
+        openContextMenu(e.clientX, e.clientY, selectionTitle(sel, { events: activePath(s).spec.events, obstacles: s.project.field.obstacles, points: s.project.namedPoints }), [
+          { label: "Delete", icon: <Trash2 size={14} />, shortcut: "Del", danger: true, run: () => deleteItem(sel) },
+        ]);
         return;
       }
     }
@@ -562,7 +671,49 @@ export function FieldCanvas() {
       return;
     }
     if (e.button !== 0) return;
+    if (s.tool === "measure") {
+      const a = measureEnd(px, py, e.shiftKey);
+      measureRef.current = { a, b: a };
+      dragRef.current = { kind: "measure" };
+      canvasRef.current!.setPointerCapture(e.pointerId);
+      schedule();
+      return;
+    }
+    const taken = flowPress(px, py, e.shiftKey);
+    if (taken) {
+      if (typeof taken === "object") {
+        dragRef.current = taken;
+        canvasRef.current!.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     const hit = hitTest(px, py);
+    if (hit?.kind === "delete") {
+      deleteItem(selectionOfItem(hit.ref));
+      hoverItemRef.current = null;
+      deleteHotRef.current = false;
+      return;
+    }
+    if (hit?.kind === "zone") {
+      select(selectionOf(hit));
+      return;
+    }
+    // a linked copy follows its source: its own robots and markers don't move
+    const pathItem = hit && hit.kind !== "point" && hit.kind !== "vertex" && hit.kind !== "obstacle";
+    if (hit && pathItem && activePath(s).mirrorOf) {
+      // (a waypoint on a named point moves the point, which is shared: that's allowed)
+      const link = hit.kind === "waypoint" ? activePath(s).links[hit.index] : null;
+      if (link) {
+        select({ kind: "point", id: link });
+        beginGesture();
+        dragRef.current = { kind: "point", id: link };
+        canvasRef.current!.setPointerCapture(e.pointerId);
+        return;
+      }
+      select(selectionOf(hit));
+      refuseLinkedCopy();
+      return;
+    }
     if (hit) {
       select(selectionOf(hit));
       beginGesture();
@@ -598,8 +749,14 @@ export function FieldCanvas() {
     const v = view();
     const s = editor.get();
     if (!drag) {
+      const f = flow.get();
+      if (f.kind) {
+        const [fx, fy] = v.toField(px, py);
+        fieldHoverRef.current = stepTakes(f.kind, f.step) === "field" ? snapToElement(fx, fy) : null;
+        schedule();
+      }
       const hit = projectToPath(px, py);
-      const reach = s.tool === "rotation" ? EVENT_SNAP_PX : PATH_SNAP_PX;
+      const reach = f.kind && stepTakes(f.kind, f.step) === "path" ? EVENT_SNAP_PX : PATH_SNAP_PX;
       const hoverS = hit && hit.px <= reach ? hit.s : Number.NaN;
       if (!(Number.isNaN(hoverS) && Number.isNaN(playback.get().hoverS))) playback.set({ hoverS });
       const under = hitTest(px, py);
@@ -608,8 +765,22 @@ export function FieldCanvas() {
         hoverRef.current = hover;
         schedule();
       }
+      // the × stays while the pointer goes from the item to it
+      const item = itemOf(under);
+      const hot = under?.kind === "delete";
+      if (!sameItem(item, hoverItemRef.current) || hot !== deleteHotRef.current) {
+        hoverItemRef.current = item;
+        deleteHotRef.current = hot;
+        schedule();
+      }
+      if (f.kind) {
+        canvasRef.current!.style.cursor = "crosshair";
+        return;
+      }
       canvasRef.current!.style.cursor = under
-        ? under.kind === "turn" || under.kind === "rotation"
+        ? under.kind === "delete" || under.kind === "zone"
+          ? "pointer"
+          : under.kind === "turn" || under.kind === "rotation"
           ? ROTATE_CURSOR
           : under.kind === "tangent" || under.kind === "vertex"
             ? "crosshair"
@@ -628,6 +799,19 @@ export function FieldCanvas() {
     const onPath = (fn: (p: EditorPath) => EditorPath) =>
       previewProject((base) => ({ ...base, paths: base.paths.map((p) => (p.id === id ? fn(p) : p)) }));
     switch (drag.kind) {
+      case "measure": {
+        if (measureRef.current) measureRef.current = { a: measureRef.current.a, b: measureEnd(px, py, e.shiftKey) };
+        schedule();
+        return;
+      }
+      case "flowKnob": {
+        const g = geometryOf(activePath(s).spec);
+        const f = flow.get();
+        if (!g || f.kind !== "rotation") return;
+        const c = g.sample(g.sAtWaypoint(f.picks[0]!));
+        setFlowHeading(snapHeading(Math.atan2(fy - c.yMeters, fx - c.xMeters), e.altKey));
+        return;
+      }
       case "pan": {
         if (Math.hypot(px - drag.startX, py - drag.startY) > 3) drag.moved = true;
         const now = performance.now();
@@ -758,6 +942,12 @@ export function FieldCanvas() {
     dragRef.current = null;
     if (canvasRef.current!.hasPointerCapture(e.pointerId)) canvasRef.current!.releasePointerCapture(e.pointerId);
     if (!drag) return;
+    if (drag.kind === "measure") return;
+    // letting go of the ghost robot's knob sets the heading
+    if (drag.kind === "flowKnob") {
+      finishRotation();
+      return;
+    }
     if (drag.kind === "pan") {
       canvasRef.current!.style.cursor = "";
       if (!drag.moved && drag.button === 0) select(null);
@@ -797,7 +987,7 @@ export function FieldCanvas() {
       if (Math.floor(w) === i) f = w - i;
     }
     const at = Math.min(i + 1, n);
-    editProject(
+    const ok = editProject(
       n === 0 ? "Place start" : n === 1 ? "Place end" : "Add waypoint",
       (pr) => {
         const added = { ...pr, paths: pr.paths.map((p) => (p.id === path.id ? addWaypointAfter(p, i, ax, ay, f) : p)) };
@@ -805,6 +995,20 @@ export function FieldCanvas() {
       },
       { kind: "waypoint", index: at },
     );
+    const pose = ok && !point ? poseNearElement(ax, ay) : null;
+    if (pose) {
+      const id = path.id;
+      toast(`Snap to ${STANDOFF_METERS} m in front of the ${pose.name}, facing it?`, "info", 9000, {
+        label: "Snap",
+        run: () => {
+          if (activePath().id !== id || !activePath().spec.waypoints[at]) return;
+          editPath("Snap to the element", (p) => {
+            const moved = moveWaypoint(p, at, pose.x, pose.y);
+            return setHeading(moved, at, pose.heading);
+          });
+        },
+      });
+    }
   };
 
   const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -820,8 +1024,9 @@ export function FieldCanvas() {
       editPath("Automatic tangent", (p) => setTangent(p, hit.index, Number.NaN, 1.0));
       return;
     }
-    // on a robot, a knob or a marker the clicks selected it; an obstacle is just more field here
-    if (hit && hit.kind !== "obstacle") return;
+    // on a robot, a knob or a marker the clicks selected it; an obstacle is just more field here, and a
+    // named point is where the new waypoint goes (linked to it)
+    if (hit && hit.kind !== "obstacle" && hit.kind !== "point") return;
     // the first click of the double-click deselected the waypoint it builds on
     const path = activePath(s);
     const n = path.spec.waypoints.length;
@@ -881,6 +1086,29 @@ export function FieldCanvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const headingReachPx = () => {
+    const r = editor.get().project.robot;
+    return (Math.hypot(r.bumperLengthMeters, r.bumperWidthMeters) / 2 + 0.2) * view().scale;
+  };
+
+  /** The flow's last-step form, beside the spot it was placed at (kept inside the field). */
+  const flowFormAt = () => {
+    const f = flowState;
+    const g = geometryOf(activePath().spec);
+    let at: [number, number] | null = null;
+    if (f.point) at = [f.point.x, f.point.y];
+    else if (g && f.picks.length > 0) {
+      const p = g.sample(g.sAtWaypoint(f.picks[f.picks.length - 1]!));
+      at = [p.xMeters, p.yMeters];
+    }
+    if (!at) return null;
+    const [cx, cy] = view().toCanvas(at[0], at[1]);
+    const { width, height } = sizeRef.current;
+    // clear of the spot and of the heading flow's ghost robot and its knob
+    const off = f.kind === "rotation" ? 40 + headingReachPx() : 28;
+    return <FlowForm left={Math.min(Math.max(8, cx + off), width - 260)} top={Math.min(Math.max(56, cy - 20), height - 240)} />;
+  };
+
   return (
     <div ref={wrapRef} className="field-wrap">
       <canvas
@@ -894,13 +1122,23 @@ export function FieldCanvas() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onPointerLeave={() => !dragRef.current && playback.set({ hoverS: Number.NaN })}
+        onPointerLeave={() => {
+          if (dragRef.current) return;
+          playback.set({ hoverS: Number.NaN });
+          hoverItemRef.current = null;
+          deleteHotRef.current = false;
+          schedule();
+        }}
         onDoubleClick={onDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
-      <div className="canvas-hint" data-testid="canvas-hint" aria-live="polite">
-        {(tool === "select" && drawing) || TOOL_HINTS[tool]}
-      </div>
+      {!flowState.kind && (
+        <div className="canvas-hint" data-testid="canvas-hint" aria-live="polite">
+          {(tool === "select" && drawing) || TOOL_HINTS[tool]}
+        </div>
+      )}
+      <FlowBar />
+      {flowState.kind && flowFormAt()}
       <QuickStartOverlay />
     </div>
   );
@@ -929,6 +1167,8 @@ function waypointMenu(index: number, x: number, y: number): void {
       },
     },
   ];
+  items.push({ label: "Face the next waypoint", icon: <Navigation size={14} />, run: () => faceNext(index) });
+  for (const t of faceTargets().slice(0, 6)) items.push({ label: `Face ${t.name}`, icon: <Crosshair size={14} />, run: () => faceToward(index, t.x, t.y, `Face ${t.name}`) });
   if (!isEnd) {
     items.push({
       label: passThrough ? "Hold a heading here" : "Pass through (no heading)",
@@ -956,7 +1196,7 @@ function waypointMenu(index: number, x: number, y: number): void {
 }
 
 /** The undo label for a finished drag. */
-function dragLabel(drag: Exclude<Drag, { kind: "pan" } | { kind: "insert" }>): string {
+function dragLabel(drag: Exclude<Drag, { kind: "pan" } | { kind: "insert" } | { kind: "flowKnob" } | { kind: "measure" }>): string {
   switch (drag.kind) {
     case "waypoint":
       return drag.label;

@@ -3,10 +3,19 @@
 
 import { makeWaypoint } from "../../../core/src/index.ts";
 import { withSpec } from "./edits.ts";
+import { transformPoint } from "./mirror.ts";
 import { newId, type NamedPoint, type Project } from "./project.ts";
 
-/** Moves a named point and every waypoint linked to it. */
+/** Moves a named point and every waypoint linked to it, and its twin (if it has one) to match. */
 export function moveNamedPoint(project: Project, id: string, x: number, y: number): Project {
+  const twin = project.namedPoints.find((p) => p.id === id)?.twin;
+  const moved = moveOne(project, id, x, y);
+  if (!twin || !moved.namedPoints.some((p) => p.id === twin.id)) return moved;
+  const [tx, ty] = transformPoint(twin.transform, x, y);
+  return moveOne(moved, twin.id, tx, ty);
+}
+
+function moveOne(project: Project, id: string, x: number, y: number): Project {
   const namedPoints = project.namedPoints.map((p) => (p.id === id ? { ...p, x, y } : p));
   const paths = project.paths.map((path) => {
     if (!path.links.includes(id)) return path;
@@ -32,20 +41,24 @@ export function linkToPoint(project: Project, pathId: string, i: number, pointId
   return { ...project, paths };
 }
 
-export function addNamedPoint(project: Project, name: string, x: number, y: number): [Project, NamedPoint] {
-  const point: NamedPoint = { id: newId("pt"), name, x, y };
+export function addNamedPoint(project: Project, name: string, x: number, y: number, heading = Number.NaN): [Project, NamedPoint] {
+  const point: NamedPoint = { id: newId("pt"), name, x, y, heading };
   return [{ ...project, namedPoints: [...project.namedPoints, point] }, point];
+}
+
+export function setPointHeading(project: Project, id: string, heading: number): Project {
+  return { ...project, namedPoints: project.namedPoints.map((p) => (p.id === id ? { ...p, heading } : p)) };
 }
 
 export function renameNamedPoint(project: Project, id: string, name: string): Project {
   return { ...project, namedPoints: project.namedPoints.map((p) => (p.id === id ? { ...p, name } : p)) };
 }
 
-/** Removes a point; waypoints that followed it stay where they are, unlinked. */
+/** Removes a point; waypoints that followed it stay where they are, unlinked (and its twin, if any, is unlinked). */
 export function removeNamedPoint(project: Project, id: string): Project {
   return {
     ...project,
-    namedPoints: project.namedPoints.filter((p) => p.id !== id),
+    namedPoints: project.namedPoints.filter((p) => p.id !== id).map((p) => (p.twin?.id === id ? { ...p, twin: null } : p)),
     paths: project.paths.map((p) => (p.links.includes(id) ? { ...p, links: p.links.map((l) => (l === id ? null : l)) } : p)),
   };
 }

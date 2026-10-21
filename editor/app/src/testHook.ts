@@ -1,7 +1,10 @@
 // Read-only hooks for the browser tests (e2e-author and the Playwright specs): the active path's
 // preview numbers, unrounded, and where its robots and their handles are on the field.
 
+import { writePath } from "../../core/src/index.ts";
 import { analysis, currentPreview, geometryOf } from "./state/analysis.ts";
+import { flow } from "./state/flow.ts";
+import { flowKnob } from "./ui/drawItems.ts";
 import { activePath, editor } from "./state/editor.ts";
 import { collisions, rotationHandle, rotationTargetS, waypointHandle, waypointPose } from "./ui/draw.ts";
 
@@ -60,6 +63,25 @@ export async function currentPoses(): Promise<Poses> {
   return { waypoints, targets, plan, collisions: hits, clearanceMeters: a.minClearanceMeters };
 }
 
+/** The document as the tests check it: the active path's file, the paths and the named points. */
+export function currentDoc() {
+  const s = editor.get();
+  const path = activePath(s);
+  return {
+    active: path.name,
+    file: path.spec.waypoints.length >= 2 ? JSON.parse(writePath(path.spec)) : null,
+    links: path.links,
+    paths: s.project.paths.map((p) => ({
+      name: p.name,
+      mirrorOf: p.mirrorOf ? (s.project.paths.find((q) => q.id === p.mirrorOf!.id)?.name ?? null) : null,
+      file: p.spec.waypoints.length >= 2 ? JSON.parse(writePath(p.spec)) : null,
+    })),
+    namedPoints: s.project.namedPoints.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, heading: p.heading ?? null, twin: p.twin?.id ?? null })),
+    selection: s.selection,
+    flow: { ...flow.get(), knob: flowKnob({ geometry: geometryOf(path.spec), project: s.project }, flow.get()) },
+  };
+}
+
 export function installTestHook(): void {
-  (window as unknown as { pathEditorTest: object }).pathEditorTest = { preview: currentPreview, poses: currentPoses };
+  (window as unknown as { pathEditorTest: object }).pathEditorTest = { preview: currentPreview, poses: currentPoses, doc: currentDoc };
 }

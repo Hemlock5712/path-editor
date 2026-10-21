@@ -25,6 +25,7 @@ import {
   type Project,
   type ProjectSettings,
 } from "../model/project.ts";
+import type { Transform } from "../model/mirror.ts";
 import { DEFAULT_VIEW, type ViewState } from "../state/editor.ts";
 import type { ProjectFiles } from "./files.ts";
 import { enumPath, isValidPackage, pathNameEnum } from "./javaEnum.ts";
@@ -72,6 +73,8 @@ interface Sidecar {
     readonly colour?: string;
     readonly links?: readonly (string | null)[];
     readonly pinned?: readonly boolean[];
+    /** A linked copy: the source path's name and the transform. */
+    readonly mirrorOf?: { readonly name: string; readonly transform: Transform } | null;
   }[];
   readonly namedPoints: readonly NamedPoint[];
   readonly settings: Partial<ProjectSettings>;
@@ -81,8 +84,18 @@ interface Sidecar {
 export function writeSidecar(project: Project, view: ViewState): string {
   const root: JsonObject = {
     schema: SIDECAR_SCHEMA,
-    paths: project.paths.filter((p) => isDrawn(p.spec)).map((p) => ({ name: p.name, colour: p.colour, links: [...p.links], pinned: [...p.pinned] })),
-    namedPoints: project.namedPoints.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y })),
+    paths: project.paths.filter((p) => isDrawn(p.spec)).map((p) => {
+      const meta: JsonObject = { name: p.name, colour: p.colour, links: [...p.links], pinned: [...p.pinned] };
+      const source = p.mirrorOf ? project.paths.find((q) => q.id === p.mirrorOf!.id) : undefined;
+      if (source) meta.mirrorOf = { name: source.name, transform: p.mirrorOf!.transform };
+      return meta;
+    }),
+    namedPoints: project.namedPoints.map((p) => {
+      const meta: JsonObject = { id: p.id, name: p.name, x: p.x, y: p.y };
+      if (p.heading !== undefined && !Number.isNaN(p.heading)) meta.heading = p.heading;
+      if (p.twin) meta.twin = { id: p.twin.id, transform: p.twin.transform };
+      return meta;
+    }),
     settings: {
       redFrame: project.settings.redFrame,
       javaPackage: project.settings.javaPackage,
@@ -193,9 +206,20 @@ export function fromFiles(files: ReadonlyMap<string, string>): LoadedProject | n
   }
 
   const pointIds = new Set((sidecar?.namedPoints ?? []).map((p) => p.id));
+  // linked copies name their source; ids are made fresh on every load
+  const idOf = new Map(paths.map((p) => [p.name, p.id]));
+  const mirrorOf = (name: string) => {
+    const m = sidecar?.paths.find((q) => q.name === name)?.mirrorOf;
+    const id = m ? idOf.get(m.name) : undefined;
+    return m && id && id !== idOf.get(name) ? { id, transform: m.transform } : null;
+  };
   const project: Project = {
-    paths: paths.map((p) => ({ ...p, links: p.links.map((l) => (l !== null && pointIds.has(l) ? l : null)) })),
-    namedPoints: sidecar?.namedPoints ?? [],
+    paths: paths.map((p) => ({ ...p, links: p.links.map((l) => (l !== null && pointIds.has(l) ? l : null)), mirrorOf: mirrorOf(p.name) })),
+    namedPoints: (sidecar?.namedPoints ?? []).map((p) => ({
+      ...p,
+      heading: typeof p.heading === "number" ? p.heading : Number.NaN,
+      twin: p.twin && pointIds.has(p.twin.id) ? p.twin : null,
+    })),
     field,
     robot,
     settings: {

@@ -128,8 +128,19 @@ optionally, a heading.
 - A waypoint without a heading is **pass-through** (dashed): the robot blends between the set headings.
   The first and last waypoints always have one. A new end takes the old end's heading, and the old end
   becomes pass-through.
-- **Heading** (R): click the path to add a heading partway along it (a rotation target), at the planned
-  heading there. Drag its robot along the path, or its knob to turn it.
+- **Guided adding.** Headings, events, zones and named points are each added in a few steps. A step bar
+  over the field says which step is next (the current one lit), Esc cancels, and nothing changes until the
+  last step, so the whole thing is one undo step. The toolbar, the keys, the command palette and the
+  inspector's **+** buttons all start the same flows:
+  - **Heading** (R): click the path, then turn the ghost robot there by its knob (letting go sets it) or
+    type an angle. Afterwards, drag its robot along the path, or its knob to turn it.
+  - **Event** (E, with nothing selected): click the path, then name it. The project's names are offered as
+    you type and as one-click chips.
+  - **Constraint zone** (Z): click where it starts on the path, then where it ends, then give its top speed
+    (and, optionally, its acceleration; blank is none).
+  - **Point-towards zone** (T): its start and end on the path, then the point to face. That click snaps to a
+    named point or a field element's centre (a hub, say) when it's close; Shift doesn't.
+  - **Named point** (N): click the spot, then its name and (optionally) its heading.
 - The path's **Heading between set headings** is *hold* (blend between them: the default) or *face
   travel*. Files from schemas 1 and 2 read as face travel, as they always behaved.
 - Snapping: to named points (a magnet, which also links the waypoint), to a 25 cm grid (**Grid** in the
@@ -139,13 +150,30 @@ optionally, a heading.
 - Travel direction is automatic, so double-clicks alone make a smooth path. **Shape the curve by hand** (in the
   waypoint's inspector) shows its tangent handle, to set the direction and `tangentScale` by hand; **Reset
   to auto** undoes that.
-- **Event** (E): click the path to place a named event at the nearest point on it.
 - **Obstacle** (O): click corners, then double-click or press Enter to finish.
 - **Select** (V): drag robots, knobs, face points, named points, events (they slide along the path) and
-  obstacles; press on the path and drag to insert a point.
+  obstacles; press on the path and drag to insert a point. Each zone has a chip beside its middle (its
+  speed limit, or "faces n") that selects it.
+- **Removing things.** Hover an event, a heading, a zone's chip or a named point and a small × shows by it
+  (the selected one keeps its ×): click it to delete. Right-click any of them for **Delete**; the Delete key
+  deletes the selection; every row in the inspector's lists has a trash icon. All of them undo.
+- **Measure** (M): drag between two points for the distance, direction and Δx, Δy. Its ends snap to
+  waypoints and named points, and to 5 cm with Shift.
+- Hovering the path shows the stretch under the pointer: which waypoints, its length and the plan's time
+  on it.
+- **Facing.** **Face next** (the waypoint's inspector, or its right-click menu) turns a waypoint toward the
+  next one (the last one: the way it arrives). **Face target** turns it toward a named point or a field
+  element's centre.
+- **Poses by field elements.** Double-click a waypoint down beside a field element and a toast offers the
+  pose in front of it: square to the element's nearest face, the bumpers 0.45 m off it, facing it
+  ("Snap to 0.45 m in front of the blue hub, facing it?"). The elements are the field file's obstacles.
+- **Copy and paste** (Ctrl+C, Ctrl+V). With a waypoint selected: a copy of it goes in after the selected
+  one, 30 cm on. With nothing selected: the path, pasted as a new path (and its file is put on the system
+  clipboard as text, so a path file copied from anywhere pastes as a new path too).
 
 **Waypoints.**
-- Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 10 cm with Shift). **Locked** (the waypoint's
+- Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 5 cm with Shift). Q and E turn the selected
+  waypoint, heading or named point 5° left or right; Tab and Shift+Tab step through the waypoints. **Locked** (the waypoint's
   inspector, its right-click menu, or **Optimiser settings**) keeps a waypoint where it is whatever the
   optimiser does (a padlock marks it). Pass-through is only about heading: it never fixes or frees a point.
 - The path's Global constraints and Start and end state cards set the top speed, the maximum acceleration
@@ -166,6 +194,20 @@ optionally, a heading.
 - The name field suggests every event name already used in the project.
 - The inspector shows each event's distance along the path and its fire time in the plan.
 - Event markers on the field and the charts light up as the playback passes them.
+
+**Flip and mirror** (the Paths rail's flip button, a path's right-click menu, or the palette).
+- **Flip** turns a path half-way round the field's centre (the other alliance's version). **Mirror top ↔
+  bottom** (y → −y) makes the other side's auto. **Mirror left ↔ right** (x → −x) turns it end to end.
+- Everything on the path turns with it: waypoints, headings, tangents, rotation targets and face points.
+  Events and zones keep their places along it.
+- The result can replace the path itself, be a new path (a copy), or be a **linked copy**. A linked copy
+  follows its source: edit the source and the copy is remade, and the copy's own shape can't be edited (its
+  named-point waypoints can still be dragged, which moves the shared point). Both cards show a link badge
+  with **Unlink**.
+- Named points the path uses get **twins** ("Score L" ↔ "Score L (mirror)"), made the first time and reused
+  after. The pair stays in step: move either one and the other moves to match, and with it every waypoint on
+  it. The point's inspector shows the twin, with **Unlink**.
+- Links between paths, and between twin points, are kept in the sidecar (`.pathproject.json`).
 
 **Named points (linked targets).**
 - Field points shared across paths. Link any waypoint to one, from the waypoint's inspector (pick a point,
@@ -188,7 +230,17 @@ optionally, a heading.
   - **Not obstacles**: the bumps (6.5 in ramps at 15°, driven over), the depots (a 1 in barrier) and the
     outposts (part of the wall, which is checked anyway).
 
-**Live checks** (the badge on the field lists them, and they are marked on the path). All of them run on the core's plan:
+**Live checks** (the badge on the field lists them, and they are marked on the path). All of them run on the
+core's plan, and each has its fix-it buttons in the list:
+- a collision: **Route around** or **Optimise**;
+- a tight bend: **Slow to … m/s here** (a constraint zone over the bend at its cornering speed) or **Optimise**;
+- a turn too sharp for its distance: **Lengthen the blend** of the face-point zone that makes it (or **Edit
+  the heading** that does);
+- an event or heading off the path: **Snap to the path**; a zone running off it: **Clip to the path**;
+- a start or end speed the plan can't hold: **Start at …** or **End at …** the speed it can.
+
+A zone's inspector also has **Split at the middle**.
+
 - **Tight bend.** The steady cornering speed `sqrt(μg/|κ|)` is under half the path's top speed.
 - **Turn too sharp for its distance.** The planned heading slows the plan to under 75 % of the same path
   planned without turning, and by at least 0.3 m/s. The message gives the turn, the distance, and both

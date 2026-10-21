@@ -5,6 +5,7 @@ import { canOpenFolders } from "../io/files.ts";
 import { cyclePath, duplicatePath, fitView, newPath, removeActivePath, toggleAlliance, togglePlay, zoomBy } from "../state/actions.ts";
 import { editor, redo, setTool, setView, undo, type Tool } from "../state/editor.ts";
 import { startOptimise, startRouteAround } from "../state/optimiser.ts";
+import { startFlow, type FlowKind } from "../state/flow.ts";
 import { downloadZip, newProject, openFolder, save } from "../state/session.ts";
 import { openSettings, setPage, ui } from "../state/ui.ts";
 
@@ -19,9 +20,17 @@ export interface Command {
 
 export const TOOLS: readonly { readonly tool: Tool; readonly label: string; readonly key: string }[] = [
   { tool: "select", label: "Select", key: "V" },
-  { tool: "rotation", label: "Heading along the path", key: "R" },
-  { tool: "event", label: "Event", key: "E" },
   { tool: "obstacle", label: "Obstacle", key: "O" },
+  { tool: "measure", label: "Measure", key: "M" },
+];
+
+/** The guided flows, on the toolbar between Select and Obstacle. */
+export const FLOWS: readonly { readonly flow: FlowKind; readonly label: string; readonly key: string; readonly hint: string }[] = [
+  { flow: "rotation", label: "Heading along the path", key: "R", hint: "Click the path, then turn the robot there" },
+  { flow: "event", label: "Event", key: "E", hint: "Click the path, then name the event (E with a waypoint selected turns it instead)" },
+  { flow: "constraint", label: "Constraint zone (speed limit)", key: "Z", hint: "Click the zone's start and end on the path, then set its speed limit" },
+  { flow: "face", label: "Point-towards zone", key: "T", hint: "Click the zone's start and end on the path, then the point to face" },
+  { flow: "point", label: "Named point", key: "N", hint: "Click the spot, then name it" },
 ];
 
 export const COMMANDS: readonly Command[] = [
@@ -39,6 +48,12 @@ export const COMMANDS: readonly Command[] = [
   { id: "next-path", label: "Next path", group: "Path", shortcut: "]", run: () => cyclePath(1) },
   { id: "optimise", label: "Optimise path", group: "Path", run: () => startOptimise() },
   { id: "route-around", label: "Route around obstacles", group: "Path", run: startRouteAround },
+  { id: "transform", label: "Flip or mirror path…", group: "Path", run: () => ui.set({ transformOpen: true }) },
+  { id: "flow-constraint", label: "Add a constraint zone (speed limit)…", group: "Add", shortcut: "Z", run: () => startFlow("constraint") },
+  { id: "flow-rotation", label: "Add a heading along the path…", group: "Add", shortcut: "R", run: () => startFlow("rotation") },
+  { id: "flow-event", label: "Add an event…", group: "Add", shortcut: "E", run: () => startFlow("event") },
+  { id: "flow-face", label: "Add a point-towards zone…", group: "Add", shortcut: "T", run: () => startFlow("face") },
+  { id: "flow-point", label: "Add a named point…", group: "Add", shortcut: "N", run: () => startFlow("point") },
   { id: "play", label: "Play or pause", group: "View", shortcut: "Space", run: togglePlay },
   { id: "alliance", label: "Blue or red view", group: "View", shortcut: "A", run: toggleAlliance },
   { id: "fit", label: "Fit the field", group: "View", shortcut: "F", run: fitView },

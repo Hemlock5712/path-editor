@@ -2805,3 +2805,191 @@ dialog::backdrop {
   padding-top: var(--s3);
   border-top: 1px solid var(--border);
 }
+
+/* guided flows: the step bar over the field, and the form a flow ends with */
+.flow-bar {
+  bottom: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  gap: var(--s2);
+  padding: 4px 4px 4px var(--s3);
+  max-width: calc(100% - 24px);
+}
+
+.flow-title {
+  white-space: nowrap;
+}
+
+.flow-steps {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-steps li {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: var(--fs-xs);
+  background: var(--raised-2);
+  color: var(--muted);
+}
+
+.flow-steps li.done {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.flow-steps li.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.flow-text {
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-form {
+  position: absolute;
+  z-index: 5;
+  width: 236px;
+  padding: var(--s3);
+  background: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-pop);
+  animation: pop-in 120ms var(--ease);
+}
+
+.flow-form form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.flow-form .hint {
+  margin: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--raised-2);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--hover);
+}
+
+.item-list li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.item-list li .item {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-delete {
+  opacity: 0.45;
+}
+
+.item-list li:hover .row-delete,
+.row-delete:focus-visible {
+  opacity: 1;
+}
+
+/* links between a path and its linked copy, and between twin named points */
+.link-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--accent);
+}
+
+.link-badge .link {
+  margin-left: 2px;
+}
+
+/* the Flip or mirror dialog's choices */
+dialog.transform fieldset {
+  border: none;
+  margin: 0 0 var(--s3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+dialog.transform legend {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.choice {
+  display: flex;
+  gap: var(--s2);
+  align-items: flex-start;
+  padding: 6px var(--s2);
+  border-radius: var(--r2);
+  cursor: pointer;
+}
+
+.choice:hover {
+  background: var(--hover);
+}
+
+.choice span {
+  display: flex;
+  flex-direction: column;
+}
+
+.choice small {
+  color: var(--muted);
+}
+
+.link-badge.banner {
+  display: flex;
+  margin: 0 0 var(--s2);
+  padding: var(--s2);
+  border-radius: var(--r2);
+  background: var(--accent-soft);
+  font-size: var(--fs-sm);
+}
+
+/* fix-it buttons under a check */
+.checks .fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 6px 8px;
+}
+
+.checks .fixes:empty {
+  display: none;
+}
