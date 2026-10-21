@@ -12,3 +12,6 @@ export * from "./path.ts";
 export * from "./frame.ts";
 export * from "./json.ts";
 export * from "./pathFile.ts";
+export * from "./jmath.ts";
+export * from "./follow.ts";
+export * from "./sim.ts";
