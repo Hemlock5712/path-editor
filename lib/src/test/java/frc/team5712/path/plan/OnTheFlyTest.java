@@ -130,6 +130,15 @@ class OnTheFlyTest {
     assertTrue(otf.rollingEnd());
   }
 
+  /** fixtures/plan/plans.json must be what this code writes; run `lib/gradlew -p lib fixtures` if not. */
+  @Test
+  void committedPlanFixturesAreUpToDate() throws IOException {
+    java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty("fixtures.dir", "../fixtures"));
+    String committed = Files.readString(dir.resolve(frc.team5712.path.tools.PlanFixtureGen.OUT));
+    assertEquals(frc.team5712.path.tools.PlanFixtureGen.fixture(dir), committed.replace("\r\n", "\n"),
+        "fixtures/plan/plans.json is stale: run lib/gradlew -p lib fixtures");
+  }
+
   @Test
   void theFieldFileIsTheEditorsFormat() throws IOException {
     String text = Files.readString(java.nio.file.Path.of(System.getProperty("fixtures.dir", "../fixtures"), "plan",
