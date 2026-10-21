@@ -1803,6 +1803,19 @@ Planned time before -> after the optimiser, summed over the target's path files:
 
 <!-- musweep:end -->
 
+**Recommendation: keep mu 0.7 as the default.** No planning grip beats PathPlanner optimised on both measures with a
+perfect pose. Optimised, ours settles first at every mu (2.40-2.45 s against 2.68 s), but PathPlanner reaches 5 cm
+first at every mu (2.15 s against 2.18 s at mu 1.15 and 2.24 s at 0.7). Raising mu gains at most 0.06 s to 5 cm. On
+most targets the 6 m/s^2 and 4 m/s limits bind, not cornering grip. The cost is wheel slip (1028 -> 1964 ms) and a
+worse end error on wheel odometry (6.1 -> 9.0 cm, still below PathPlanner's 16.8 cm). The rest of the 5 cm gap is
+elsewhere:
+- moving_start: 1.35 s against 1.61 s. PathPlanner regenerates its trajectory from the measured start speed; ours plans
+  from rest.
+- A steady 0.02-0.03 s on every path: our end approach (the ease-in and the DriveToPose finish) gets to 5 cm later than
+  PathPlanner's time-sampled trajectory, then settles sooner.
+The plant's grip is mu 1.15 static / 1.0 kinetic, so 1.15 plans at its very limit. A team that measures more grip on
+its carpet can raise `frictionCoefficient` in robot.json; it stays a robot setting.
+
 ## Fidelity caveats
 
 **The plant and the run**
