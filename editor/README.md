@@ -54,7 +54,7 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 | `src/main/deploy/paths/field.json` | field size and obstacle polygons | `FieldMap.read` |
 | `src/main/deploy/paths/robot.json` | the robot (`RobotConfig`'s keys) plus `bumperLengthMeters` / `bumperWidthMeters` | `RobotFile`, `PlannerConfig.fromRobotFile` |
 | `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points and which waypoints follow them, pinned waypoints, the red-frame and enum settings, the view | the editor only |
-| `src/main/java/<package>/PathName.java` | an enum of every path file (package set in the Project panel; `frc.robot` by default) | robot code |
+| `src/main/java/<package>/PathName.java` | an enum of every path file (package set in Settings > Project; `frc.robot` by default) | robot code |
 
 - **Only changed files are written.** `field.json` and `robot.json` are only created once you edit them.
 - **Unknown keys are kept.** That applies to the keys in `field.json` and `robot.json` that the editor
@@ -103,7 +103,7 @@ after PathPlanner's.
 - Wheel to zoom about the pointer. Drag the empty field, or right- or middle-drag anywhere, to pan.
   **Fit** (F) resets the view.
 - **Blue/red view** (A). Paths are always stored for blue. The red view draws them through the
-  project's red frame (a half-turn about the centre, or a mirror; set in the Project panel), and edits
+  project's red frame (a half-turn about the centre, or a mirror; set in Settings > Project), and edits
   made there are converted back to blue. Obstacles are physical, so they never flip.
 - The path line is the robot's centre, coloured by planned speed. Every waypoint is drawn as the robot
   there (its bumper footprint). Faint footprints between waypoints are optional (every 0.5, 1 or 2 m).
@@ -128,8 +128,8 @@ optionally, a heading.
   tabs row), and to 5 cm with Shift.
 - **+** starts a new path where the active one ends, facing the way the robot ends up. A named point's
   **Start a path here** starts one there, linked to it.
-- Travel direction is automatic, so clicks alone make a smooth path. **Shape the curve here** (in the
-  waypoint's panel) shows its tangent handle, to set the direction and `tangentScale` by hand; **Reset
+- Travel direction is automatic, so clicks alone make a smooth path. **Shape the curve by hand** (in the
+  waypoint's inspector) shows its tangent handle, to set the direction and `tangentScale` by hand; **Reset
   to auto** undoes that.
 - **Event** (E): click the path to place a named event at the nearest point on it.
 - **Obstacle** (O): click corners, then double-click or press Enter to finish.
@@ -139,7 +139,8 @@ optionally, a heading.
 **Waypoints.**
 - Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 10 cm with Shift). **Pin** keeps a waypoint
   where it is when the optimiser runs (a padlock marks it).
-- The Path panel sets the start and end speeds, the top speed and the maximum acceleration.
+- The path's Global constraints and Start and end state cards set the top speed, the maximum acceleration
+  and the start and end speeds.
 - Inserting or deleting a waypoint renumbers the waypoint-relative positions of targets, zones and
   events, so each stays on the same stretch of path.
 
@@ -152,14 +153,14 @@ optionally, a heading.
 
 **Named events.**
 - Placed on the path by clicking. Each is stored as `atWaypoint` (it stays on its stretch when the path
-  changes) or `atMeters`; switch in the panel.
+  changes) or `atMeters`; switch in the event's inspector.
 - The name field suggests every event name already used in the project.
-- The panel shows each event's distance along the path and its fire time in the plan.
+- The inspector shows each event's distance along the path and its fire time in the plan.
 - Event markers on the field and the charts light up as the playback passes them.
 
 **Named points (linked targets).**
-- Field points shared across paths. Link any waypoint to one, from the Waypoints panel or the Named
-  points panel.
+- Field points shared across paths. Link any waypoint to one, from the waypoint's inspector (pick a point,
+  or make one there).
 - Moving the point, by dragging it, dragging a linked waypoint or typing, moves every linked waypoint
   in every path, as one undo step.
 
@@ -167,7 +168,7 @@ optionally, a heading.
 - Edits the polygons in `field.json`: draw, drag corners, drag whole obstacles, rename and delete.
 - Each polygon is used as its convex hull, as `FieldMap` does.
 
-**Live checks** (in the Checks panel, and marked on the path). All of them run on the core's plan:
+**Live checks** (the badge on the field lists them, and they are marked on the path). All of them run on the core's plan:
 - **Tight bend.** The steady cornering speed `sqrt(μg/|κ|)` is under half the path's top speed.
 - **Turn too sharp for its distance.** The planned heading slows the plan to under 75 % of the same path
   planned without turning, and by at least 0.3 m/s. The message gives the turn, the distance, and both
@@ -205,7 +206,7 @@ Hit tests and snapping use the core's geometry on the main thread, which is chea
 
 ## The phase 6 authoring suite
 
-`e2e-author/author.spec.ts` builds the end-to-end paths entirely through the UI: the panels, plus Event-tool clicks
+`e2e-author/author.spec.ts` builds the end-to-end paths entirely through the UI: the inspector and Settings, plus Event-tool clicks
 on the path. The paths are the bench courses, a short hop, a turn on the spot, zones, a named point and a rolling
 pair. It saves them with the editor's save flow into a folder on disk (a directory handle whose writes go through
 Playwright to the file system). It reads each path's preview through `window.pathEditorTest.preview()`, a
@@ -214,12 +215,12 @@ and each event's s and t(s). `E2E_ONLY=Straight,Hairpin` authors just those path
 
 ## Optimiser
 
-Shaping a path is mostly the optimiser's job: draw the poses, then press **Optimise path** in the Path panel.
+Shaping a path is mostly the optimiser's job: draw the poses, then press **Optimise path** at the top of the inspector.
 
 - **What moves.** The pass-through points, each within a corridor (0.5 m by default), and their tangent
   scales (half to double). Tangent directions don't change.
 - **What stays put.** The start and end poses, any waypoint with a set heading (a pose the robot must reach
-  there), pinned waypoints (**Pin** in the waypoint panel, its right-click menu, or **Optimiser settings**),
+  there), pinned waypoints (**Pinned** in the waypoint's inspector, its right-click menu, or **Optimiser settings**),
   waypoints linked to a named point, and any that a zone starts or ends on or between. **Only between
   waypoint … and waypoint …** in the settings optimises one segment. Events, rotation targets and zones placed
   by waypoint keep their waypoint position; those placed by metres keep the same fraction of the path's
@@ -229,7 +230,7 @@ Shaping a path is mostly the optimiser's job: draw the poses, then press **Optim
 - **Budget and repeatability.** The budget (3 s by default) sets how many plans it tries: 500 per second of
   budget. So the same path, budget and seed give the same result on any machine. The clock only stops a slow
   machine at twice the budget.
-- **Results.** The field shows the best path so far, dashed. The Path panel gives the before and after times.
+- **Results.** The field shows the best path so far, dashed. The inspector gives the before and after times.
   **Apply** is one undo step (it refuses if the path changed meanwhile); **Discard** keeps the path.
 - **Method.** Nelder-Mead with adaptive coefficients, restarted around the best point as it converges, in
   `app/src/compute/optimiser.ts`. In the editor it runs in a Web Worker in chunks, so **Stop** keeps the best
@@ -249,7 +250,7 @@ the in-browser optimiser byte for byte.
 
 ## Bench comparison
 
-**Bench** in the toolbar swaps the workspace for a read-only view of the bench's results.
+The **Bench** page is a read-only view of the bench's results.
 
 - **Getting the data.** The view opens with a committed snapshot, `app/public/bench/results-lite.json`
   (about 0.7 MB). It has the full tables, the geometry to the millimetre, and seed 0's traces every 0.2 s.
@@ -274,8 +275,8 @@ the in-browser optimiser byte for byte.
 - **Time sync.** It sends `[-1, 0, int, its time]` and the server answers with its own clock. The client keeps
   the shortest round trip's offset, as ntcore's client does.
 - **Connection.** It reconnects when the robot goes away. It is read-only.
-- **The panel.** The connect box takes a team number (5712 → 10.57.12.2) or an address (`localhost` for a
-  simulation) and the pose topic. The panel shows the active path, phase, progress s, the distance left,
+- **The Telemetry page.** The connect box takes a team number (5712 → 10.57.12.2) or an address (`localhost` for a
+  simulation) and the pose topic. It shows the active path, phase, progress s, the distance left,
   cross-track, the reference, the robot's pose and its age, and the events fired.
 - **On the field.** The robot (pink), the reference, and the follower's progress, drawn on the path when the
   editor shows the path the robot is running.
@@ -303,17 +304,17 @@ Network Access**. The browser asks once per site: "local network" for the robot 
 simulation on localhost. Until that is allowed, the connection fails with
 `net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`. Granting it, the same connections opened.
 
-- **What the Live panel does.** On https it checks the permission (`navigator.permissions.query` with
-  `local-network` or `loopback-network`). If the browser will ask, the panel says to allow it. If it was
-  blocked, the panel says where to re-allow it (the site settings, left of the address bar).
+- **What the Telemetry page does.** On https it checks the permission (`navigator.permissions.query` with
+  `local-network` or `loopback-network`). If the browser will ask, the page says to allow it. If it was
+  blocked, the page says where to re-allow it (the site settings, left of the address bar).
 - **Other browsers.** If the browser has no such permission (the query throws), it blocks `ws://` from https
-  pages outright, so the panel says to use Chrome or Edge or to run locally. A bare host name
+  pages outright, so the page says to use Chrome or Edge or to run locally. A bare host name
   (`roborio-5712-frc`) or a public address counts as mixed content too.
 - **Managed computers.** An administrator can pre-allow the site with Chrome's `LocalNetworkAccessAllowedForUrls`
   policy.
 - **Running locally always works.** `npm --prefix editor/app run dev` serves the editor over http on this
   computer, where none of this applies.
-- **Tests.** `e2e/https.spec.ts` serves the production build at the real site's origin and checks the panel's
+- **Tests.** `e2e/https.spec.ts` serves the production build at the real site's origin and checks the Telemetry page's
   notes, before and after the permission is granted. The Chrome background is
   [the Local Network Access permission prompt](https://developer.chrome.com/blog/local-network-access) and
   [its extension to WebSockets (Chrome 147)](https://groups.google.com/a/chromium.org/g/blink-dev/c/O6GMKt44Ups).

@@ -1,6 +1,7 @@
 // Where the project came from and how it saves: a robot project folder (File System Access API),
 // or, where the browser can't write folders, an uploaded folder saved back as a zip download.
 
+import { lastNativeFolder } from "../io/native.ts";
 import { askConfirm } from "./confirm.ts";
 import { canOpenFolders, DirectoryFiles, filesFromUpload, pickFolder, type ProjectFiles } from "../io/files.ts";
 import { loadFrom, PATH_SUFFIX, PATHS_DIR, saveTo, toFiles } from "../io/projectIo.ts";
@@ -78,6 +79,12 @@ export async function openFolder(): Promise<void> {
 export async function openUpload(list: FileList): Promise<void> {
   if (!(await confirmDiscard())) return;
   await openFiles(await filesFromUpload(list), false);
+}
+
+/** The desktop app: reopens the project from last time, if it's still there. */
+export async function reopenLastProject(): Promise<void> {
+  const files = await lastNativeFolder().catch(() => null);
+  if (files && !session.get().files && !isDirty(editor.get())) await openFiles(files, true);
 }
 
 /** Opens a folder handle directly (for tests, and the recent folder if the browser hands one back). */

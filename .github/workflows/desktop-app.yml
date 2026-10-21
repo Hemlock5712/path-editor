@@ -1,0 +1,92 @@
+# The desktop app (editor/desktop, Tauri 2): installers for Windows, macOS and Linux.
+#   - Push a tag v* (for example v2.0.0) to build them all and attach them to a draft GitHub release of
+#     that name. Check the draft, then publish it.
+#   - Or run it by hand (Actions > Desktop app > Run workflow) to test a build: the installers come back
+#     as the run's artifacts, and nothing is released.
+# Actions are pinned to commits (the comments give their tags); Rust and Node to exact versions.
+
+name: Desktop app
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ""
+            name: windows
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            name: macos
+          - platform: ubuntu-22.04
+            args: ""
+            name: linux
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.15.1
+          cache: npm
+          cache-dependency-path: |
+            editor/core/package-lock.json
+            editor/app/package-lock.json
+            editor/desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch, 2026-10-16
+        with:
+          toolchain: 1.99.1
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: editor/desktop/src-tauri -> target
+
+      - name: Linux libraries (WebKitGTK and friends)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: Install the editor's packages
+        run: |
+          npm ci --prefix editor/core
+          npm ci --prefix editor/app
+          npm ci --prefix editor/desktop
+
+      - name: Build (and, for a tag, attach to the draft release)
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: editor/desktop
+          tauriScript: npm run tauri
+          args: ${{ matrix.args }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Path Editor {0}', github.ref_name) || '' }}
+          releaseBody: "The path editor as a desktop app. Windows: the .msi or the -setup.exe. macOS: the .dmg. Linux: the .AppImage, .deb or .rpm."
+          releaseDraft: true
+
+      - name: Keep the installers (a hand-run build)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: path-editor-${{ matrix.name }}
+          path: |
+            editor/desktop/src-tauri/target/**/release/bundle/msi/*.msi
+            editor/desktop/src-tauri/target/**/release/bundle/nsis/*-setup.exe
+            editor/desktop/src-tauri/target/**/release/bundle/dmg/*.dmg
+            editor/desktop/src-tauri/target/**/release/bundle/appimage/*.AppImage
+            editor/desktop/src-tauri/target/**/release/bundle/deb/*.deb
+            editor/desktop/src-tauri/target/**/release/bundle/rpm/*.rpm
+          if-no-files-found: error

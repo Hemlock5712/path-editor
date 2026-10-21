@@ -55,6 +55,6 @@ export const COMMANDS: readonly Command[] = [
   { id: "help", label: "Quick start and keyboard shortcuts", group: "Help", shortcut: "?", run: () => ui.set({ helpOpen: true }) },
 ];
 
-export function commandById(id: string): Command {
-  return COMMANDS.find((c) => c.id === id)!;
+export function commandById(id: string): Command | undefined {
+  return COMMANDS.find((c) => c.id === id);
 }

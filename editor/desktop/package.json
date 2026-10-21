@@ -1,0 +1,14 @@
+{
+  "name": "@team5712/path-editor-desktop",
+  "version": "2.0.0",
+  "private": true,
+  "description": "The path editor as a desktop app (Tauri 2): native file access to the robot project, and NT4 without the browser's rules.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1"
+  }
+}

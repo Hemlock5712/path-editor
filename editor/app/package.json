@@ -17,6 +17,7 @@
     "screenshots": "playwright test --config playwright.screens.config.ts"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.12.1",
     "lucide-react": "0.469.0",
     "react": "19.1.1",
     "react-dom": "19.1.1"

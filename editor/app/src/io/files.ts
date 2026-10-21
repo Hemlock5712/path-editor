@@ -2,6 +2,8 @@
 // in-memory set (an uploaded folder, a test), behind one small interface. Paths are relative to the
 // robot project's root and use '/'.
 
+import { isTauri, pickNativeFolder } from "./native.ts";
+
 export interface ProjectFiles {
   /** Shown in the title bar: the folder's name. */
   readonly label: string;
@@ -117,7 +119,7 @@ export class MemoryFiles implements ProjectFiles {
 
 /** Whether this browser can open and write a folder in place (Chrome, Edge). */
 export function canOpenFolders(): boolean {
-  return typeof window !== "undefined" && "showDirectoryPicker" in window;
+  return isTauri() || (typeof window !== "undefined" && "showDirectoryPicker" in window);
 }
 
 declare global {
@@ -126,8 +128,9 @@ declare global {
   }
 }
 
-/** Asks for a robot project folder. Null if the user cancels. */
-export async function pickFolder(): Promise<DirectoryFiles | null> {
+/** Asks for a robot project folder (the native dialog in the desktop app). Null if the user cancels. */
+export async function pickFolder(): Promise<ProjectFiles | null> {
+  if (isTauri()) return pickNativeFolder();
   try {
     const handle = await window.showDirectoryPicker!({ id: "robot-project", mode: "readwrite" });
     return new DirectoryFiles(handle);

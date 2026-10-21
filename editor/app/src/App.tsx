@@ -13,6 +13,9 @@ import { Stage } from "./ui/editor/Stage.tsx";
 import { Inspector } from "./ui/inspector/Inspector.tsx";
 import { SettingsPage } from "./ui/pages/SettingsPage.tsx";
 import { TelemetryPage } from "./ui/pages/TelemetryPage.tsx";
+import { isTauri } from "./io/native.ts";
+import { reopenLastProject } from "./state/session.ts";
+import { listenToNativeMenu } from "./ui/nativeMenu.ts";
 import { onKeyDown } from "./ui/shortcuts.ts";
 import { CommandPalette, ConfirmHost, ContextMenuHost, HelpDialog, installAppBehaviour, Splitter, Toasts, TooltipHost } from "./ui/shell.tsx";
 import { StatusBar, TopBar } from "./ui/TopBar.tsx";
@@ -81,6 +84,11 @@ export function App() {
     window.addEventListener("beforeunload", leave);
     // the splash in index.html goes once the app has drawn
     document.getElementById("splash")?.remove();
+    // the desktop app: native menus, and the robot project from last time
+    if (isTauri()) {
+      void reopenLastProject();
+      void listenToNativeMenu();
+    }
     return () => {
       uninstall();
       window.removeEventListener("keydown", onKeyDown);

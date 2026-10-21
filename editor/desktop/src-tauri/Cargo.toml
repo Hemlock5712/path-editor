@@ -1,0 +1,25 @@
+[package]
+name = "path-editor-5712"
+version = "2.0.0"
+description = "Path Editor 5712: the swerve path editor as a desktop app"
+authors = ["FRC team 5712"]
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "path_editor_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.1", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.1", features = [] }
+serde = { version = "1", features = ["derive"] }
+rfd = "=0.17.2"
+
+[profile.release]
+codegen-units = 4
+lto = true
+opt-level = "s"
+strip = true
