@@ -1,5 +1,6 @@
-"""Port of PathPlanner's new path system, "path2" (mjansen4857/pathplanner, branch new-path, commit af86ef2,
-2026-09-09; in the GUI only, not yet in PathPlannerLib):
+"""Port of PathPlanner's new path system, "path2" (mjansen4857/pathplanner, branch new-path, commit
+af86ef2b, 2026-09-09). A PRE-RELEASE branch: the GUI has it, no PathPlannerLib release ships it yet, so
+the robot side (FollowDynamicPath) is the GUI's own port of it.
 
 - lib/path2/simulation/path2_path_follower.dart: Path2PathFollower, "the controller portion of the supplied
   FollowDynamicPath command". No trajectory: the robot heads for the current waypoint at P 4 x the distance
@@ -367,19 +368,20 @@ def _progress(a, b, p):
 class Path2Follower:
     """Path2PathFollower. waypoints: dicts {xy, rot (or None), vmax, handoff, wmax, alpha_max}."""
 
-    def __init__(self, waypoints, end_distance, end_angle, pose, robot_speeds, target_first=False):
+    def __init__(self, waypoints, end_distance, end_angle, pose, robot_speeds, target_first=False, gains=(4.0, 2.0, 5.0)):
         self.wps = waypoints
         self.idx = 0 if target_first or len(waypoints) == 1 else 1
         self.seg_start = pose[:2] if target_first else waypoints[0]["xy"]
         self.seg_end = waypoints[self.idx]["xy"]
         w = waypoints[self.idx]
-        self.rot = _ProfiledPid(5.0, w["wmax"], w["alpha_max"])
+        kp, kp_ct, kp_rot = gains
+        self.rot = _ProfiledPid(kp_rot, w["wmax"], w["alpha_max"])
         self.rot.pid.continuous = True
         self.rot.pid.tol = end_angle
         self.rot.reset(pose[2], robot_speeds[2])
-        self.trans = _Pid(4.0)
+        self.trans = _Pid(kp)
         self.trans.tol = end_distance
-        self.ct = _Pid(2.0)
+        self.ct = _Pid(kp_ct)
         self.ct.tol = end_distance
         self.held = None
         self._update_held(pose[2])
@@ -476,7 +478,7 @@ def robot_config(cof=None):
     return RobotConfig() if cof is None else RobotConfig(wheel_cof=cof)
 
 
-def plan_time(native, accel_cap=None, limits: Limits = Limits(), cfg=None):
+def plan_time(native, accel_cap=None, limits: Limits = Limits(), cfg=None, gains=(4.0, 2.0, 5.0)):
     """The GUI's time for the path(s): Path2Simulator from rest at each path's first waypoint (its heading),
     the setpoint generator at the GUI's 10 rotations per second steering, summed over the paths. None if a
     path doesn't finish within 120 s."""
@@ -487,7 +489,7 @@ def plan_time(native, accel_cap=None, limits: Limits = Limits(), cfg=None):
     for wps in native["paths"]:
         first = wps[0]
         pose = (first["xy"][0], first["xy"][1], first["rot"] or 0.0)
-        f = Path2Follower(wps, native["end_distance"], native["end_angle"], pose, (0.0, 0.0, 0.0))
+        f = Path2Follower(wps, native["end_distance"], native["end_angle"], pose, (0.0, 0.0, 0.0), gains=gains)
         sp = gen.at((0.0, 0.0, 0.0))
         for step in range(1, 6001):
             sp = gen.generate(sp, f.calculate(pose))
@@ -506,8 +508,9 @@ class PathPlanner2(Follower):
     speeds. A chain of paths: the next starts when one finishes, targeting its second waypoint."""
 
     def __init__(self, accel_cap=None, handoff=DEFAULT_HANDOFF, end_distance=DEFAULT_END_DISTANCE,
-                 end_degrees=DEFAULT_END_DEGREES, limits: Limits = Limits(), cof=None):
+                 end_degrees=DEFAULT_END_DEGREES, kp=4.0, kp_ct=2.0, kp_rot=5.0, limits: Limits = Limits(), cof=None):
         self.accel_cap, self.handoff, self.lim = accel_cap, handoff, limits
+        self.gains = (kp, kp_ct, kp_rot)
         self.end_distance, self.end_angle = end_distance, math.radians(end_degrees)
         self.cfg = robot_config(cof)
         cons = None if accel_cap is None else (limits.max_speed, accel_cap, limits.max_omega, limits.max_alpha)
@@ -533,7 +536,7 @@ class PathPlanner2(Follower):
     def _start_path(self, pose, field_vel):
         robot = _to_robot(field_vel, pose[2])
         self.f = Path2Follower(self.native["paths"][self.k], self.native["end_distance"], self.native["end_angle"],
-                               pose, robot)
+                               pose, robot, gains=self.gains)
         self.sp = self.gen.at(robot)
 
     def step(self, t, pose, vel):

@@ -36,7 +36,9 @@ START, END = "<!-- generated:start -->", "<!-- generated:end -->"
 MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_caps", "bline_tuned", "bline_tuned_caps",
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
                 "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_noadapt", "ours_tuned"]
+MAIN_METHODS += ["pp_path2", "pp_path2_tuned"]  # PathPlanner's new path system (new-path branch, pre-release)
 TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme", "ours_tuned": "ours_v2"}
+TUNED_BASE["pp_path2_tuned"] = "pp_path2"
 EXTRA = {  # registry entries that only exist in the bench driver
     "pathplanner_tuned": ("pathplanner", None, "PathPlanner (tuned) + hold"),
     "pathplanner_hold_cof09": ("pathplanner", {"hold": True, "cof": 0.9}, "PathPlanner (kP 5) + hold, wheel COF 0.9"),
@@ -73,6 +75,16 @@ def ours_grid(quick):
     # planning mu 0.7 was the interior optimum in phase 3's sweep, so it stays fixed here
     return [{"easeInPerSecond": e, "latencySeconds": lat, "limiterFrictionCoefficient": lim}
             for e in (9.0, 12.0, 16.0) for lat in (0.03, 0.05, 0.07) for lim in (1.0, 1.4, 2.0)]
+
+
+def path2_grid(quick):
+    """PathPlanner path2 (new-path): its three P gains, the handoff distance and the end tolerance, inside the
+    shared limits (the setpoint generator capped at 6 m/s^2, as every other method's)."""
+    if quick:
+        return [{"accel_cap": 6.0, "end_distance": e, "end_degrees": 1.0} for e in (0.02, 0.05)]
+    return [{"accel_cap": 6.0, "kp": kp, "kp_ct": ct, "handoff": h, "end_distance": e, "end_degrees": d}
+            for kp in (2.0, 3.0, 4.0, 6.0) for ct in (1.0, 2.0, 4.0) for h in (0.1, 0.25, 0.5, 0.75)
+            for e, d in ((0.02, 1.0), (0.05, 2.0))]
 
 
 def resolve(key, tuned):
@@ -228,6 +240,9 @@ def main():
         best, table = sweep(pool, "ours_v2", ours_grid(a.quick), courses)
         out["tuned"]["ours_tuned"], out["sweeps"]["ours"] = best, table
         print("Ours v2 tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
+        best, table = sweep(pool, "pp_path2", path2_grid(a.quick), courses)
+        out["tuned"]["pp_path2_tuned"], out["sweeps"]["pp_path2"] = best, table
+        print("PathPlanner path2 tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
         for pose in poses:
             jobs, keys = [], []
             for c in courses:
@@ -367,6 +382,8 @@ def geometry_md(out):
         g_s = gen.get(name)
         L.append(f"- Choreo `{name}.traj`: {len(tr['samples'])} samples, {tr['samples'][-1][0]:.3f} s"
                  + (f", generated in {g_s:.1f} s by choreo-cli" if g_s is not None else ""))
+        L.append("- PathPlanner path2 (new-path, pre-release): the same waypoints as nodes (a pose waypoint where a "
+                 "heading is set), joined by distance transitions; it drives the straight segments between them")
         g = to_goal_chain(co)["goals"]
         L.append("- DriveToPose chain goals: " + ", ".join(f"{p(x)} @{math.degrees(x[2]):.0f} deg" for x in g))
         L.append(f"- Neutral path length {NeutralPath(co).length:.2f} m; old path-editor and PathPlanner author the same "
@@ -380,7 +397,8 @@ def sweep_md(out):
     for name, key, edge, title in (("bline", "bline_tuned", "radius", "BLine, no caps"),
                                    ("bline_caps", "bline_tuned_caps", "radius", "BLine with corner caps"),
                                    ("pathplanner", "pathplanner_tuned", "cof", "PathPlanner + hold"),
-                                   ("ours", "ours_tuned", "easeInPerSecond", "Ours v2")):
+                                   ("ours", "ours_tuned", "easeInPerSecond", "Ours v2"),
+                                   ("pp_path2", "pp_path2_tuned", "handoff", "PathPlanner path2")):
         if name not in out["sweeps"]:
             continue
         tab = sorted(out["sweeps"][name], key=lambda e: (-e["settled_frac"], e["score"]))

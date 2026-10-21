@@ -1255,6 +1255,18 @@ The margin is how far beyond the bumpers' half-diagonal the obstacles are grown,
   handles that reproduce those exact cubics (checked in `tests/test_courses.py`). Catmull-Rom tightens the hairpin
   to 0.75 m at the joins.
 
+**PathPlanner path2 (`--pp-compare` and the main tables)**
+- path2 is a pre-release on PathPlanner's `new-path` branch. The robot side here is the GUI's own port of
+  FollowDynamicPath's controller, followed by PathPlannerLib's Java setpoint generator. The real command may differ
+  when it ships.
+- Its "plan" is a simulated run (the GUI's ideal robot, ending at its end tolerance), not a profile, so it is not
+  the same kind of number as ours or PathPlanner 2027's planned time. The tables put them side by side and say so.
+- As shipped it has no linear acceleration limit (the setpoint generator allows what the motors and wheel COF
+  1.15 allow); the tuned row adds the shared 6 m/s^2 as PathConstraints, which PathPlannerLib's generator takes.
+- It finishes on distance alone (no speed check), so with a tight tolerance it can finish while passing through
+  the end and coast. That is its behaviour, not a bench artefact.
+- The 2026 routes' depot position is assumed; the bench does not collide with field elements.
+
 ## Sources
 
 | What | Repository, branch, commit | Files ported |
@@ -1266,5 +1278,7 @@ The margin is how far beyond the bumpers' half-diagonal the obstacles are grown,
 | BLine-Web corner seeding | same BLine-Web commit | `core/constraints/autoVelocityConstraints.ts` (`createAutoVelocitySolveSetup`, `buildCorners`, `seedCapsFromCorners`, `segmentCapsFromSolvedCaps`, `roundConstraintValue`), `core/bend/cornerBend.ts` (read for the fillet geometry) |
 | Choreo, ChoreoLib | github.com/SleipnirGroup/Choreo, tag `v2027.0.0-alpha-3`, 3a9e15f022f081c93420c3ccc712fd1809e49d9e (2026-09-11); release binary `Choreo-v2027.0.0-alpha-3-Windows-x86_64-standalone.zip` | `choreo-cli.exe` (run to generate); `choreolib/.../trajectory/Trajectory.java`, `SwerveSample.java`, `auto/AutoTrajectory.java`; `docs/choreolib/getting-started.md` (follower gains); `src-core/src/spec/*.rs` (file formats) |
 | PathPlanner pathfinding | same PathPlanner commit | `pathfinding/LocalADStar`, `commands/PathfindingCommand`, `path/PathPlannerPath.waypointsFromPoses`, `path/Waypoint.autoControlPoints`; navgrid rule from `Writerside/topics/gui-Navigation-Grid-Editor.md` |
+| PathPlanner path2 (pre-release) | github.com/mjansen4857/pathplanner, `new-path`, af86ef2b55b502c7929884f08ff2b7214035b9fb (2026-09-09); no PathPlannerLib release ships it yet | `lib/path2/simulation/path2_path_follower.dart` (FollowDynamicPath's controller), `path2_simulator.dart` (the GUI's time), `swerve_setpoint_generator.dart`, `swerve_math.dart`, `lib/path2/waypoint.dart`, `graph.dart` (handoff and end-tolerance defaults); PathPlannerLib `util/swerve/SwerveSetpointGenerator.java` at the 2027 commit above (the robot side, with PathConstraints). Read as data only |
+| 2026 field (the `--pp-compare` routes) | github.com/wpilibsuite/allwpilib, `main`, c610ffd17fb144e7348af48caad7f3944a7765b6 | `fields/src/generate/resources/org/wpilib/fields/apriltag/2026-rebuilt-welded.csv` (hub, trench, outpost and tower positions) |
 | DriveToPose, AccelerationLimiter | this repo, `bench/reference/DriveToPose.java`, `AccelerationLimiter.java` (via `race_drive_to_pose.py`) | `execute`, `isFinished`, `limit` |
 | Plant | this repo, `bench/alignsim` (unchanged) | |
