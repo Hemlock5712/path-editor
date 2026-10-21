@@ -36,6 +36,14 @@ preview deploys. A clean install builds with
 `npm ci --prefix editor/core && npm ci --prefix editor/app && npm --prefix editor/app run build`. On the
 https site, connecting to a robot needs the browser's permission (see **Live robot**, below).
 
+**Install it as an app.** The deployed site is a PWA. In Edge or Chrome, use **Install app** (or the install
+icon in the address bar), and it opens in its own window from the Start menu or the dock. The service worker
+(`app/sw-plugin.ts` writes `dist/sw.js` at build time) caches the built app, so once it has been opened it
+also opens offline. A new deploy replaces the cache the next time it opens online. `e2e/pwa.spec.ts` checks
+that the browser finds it installable and that it reloads with the network off. The worker isn't registered
+in development or under test automation. For native file access and NT4 without the browser's rules, see
+the desktop app (`editor/desktop/`).
+
 ## What it reads and writes
 
 Open the robot project's root folder (the one with `build.gradle`). The editor works in:
