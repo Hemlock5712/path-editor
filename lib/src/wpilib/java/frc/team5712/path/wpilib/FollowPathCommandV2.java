@@ -34,6 +34,9 @@ public final class FollowPathCommandV2 extends Command {
   private DoubleSupplier clock = Timer::getTimestamp;
   private Supplier<FieldFrame> frameSource;
   private PathLibrary library;
+  private double lastStep = Double.NEGATIVE_INFINITY;
+  /** Steps closer together than this are in the same robot loop (it runs every 20 ms). */
+  private static final double SAME_LOOP_SECONDS = 0.005;
 
   public FollowPathCommandV2(
       String name,
@@ -95,16 +98,31 @@ public final class FollowPathCommandV2 extends Command {
     return follower;
   }
 
+  /**
+   * Starts the follower and sends its first command at once, as the v3 command does. Commands v2
+   * calls {@code execute()} only from the next loop, so a path chained after a rolling end (or started
+   * by a trigger) would otherwise coast a loop on the old command.
+   */
   @Override
   public void initialize() {
     FieldSpeeds measured = Conversions.toFieldSpeeds(fieldVelocity.get());
-    follower.start(clock.getAsDouble(), Conversions.toPose(pose.get()), measured,
+    double now = clock.getAsDouble();
+    follower.start(now, Conversions.toPose(pose.get()), measured,
         startFrame(), handedCommand == null ? measured : handedCommand.get());
+    step(now);
   }
 
   @Override
   public void execute() {
-    FieldSpeeds out = follower.step(clock.getAsDouble(), Conversions.toPose(pose.get()),
+    double now = clock.getAsDouble();
+    if (now - lastStep > SAME_LOOP_SECONDS) { // not again in the loop initialize() already stepped
+      step(now);
+    }
+  }
+
+  private void step(double now) {
+    lastStep = now;
+    FieldSpeeds out = follower.step(now, Conversions.toPose(pose.get()),
         Conversions.toFieldSpeeds(fieldVelocity.get()));
     fieldOutput.accept(Conversions.toChassisVelocities(out));
     telemetry.log(follower);

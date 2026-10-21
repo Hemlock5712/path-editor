@@ -17,6 +17,11 @@ import frc.team5712.path.core.RobotConfig;
  * @param crossTrackKd sideways m/s per m/s of sideways drift
  * @param headingKp rad/s per radian of heading error
  * @param terminalRadiusMeters distance to go at which the DriveToPose law takes over
+ * @param terminalTurnRadians ... once the plan also has no more than this left to turn. A short hop
+ *     with a big turn (or a turn in place) is then followed along its plan, with translation and
+ *     spin sharing the grip as planned, and handed over only for its last degrees, where the plan
+ *     has slowed its spin; handed over at 10° the robot was still spinning too fast to stop in the
+ *     heading left and overshot by 7° (the end-to-end suite's short hop)
  * @param brakeMetersPerSecondSquared the stopping law's deceleration, sqrt(2·a·d)
  * @param easeInPerSecond DriveToPose's ease-in line, m/s per metre left
  * @param stopDeadbandMeters ask for zero speed inside this
@@ -51,6 +56,7 @@ public record FollowerConfig(
     double crossTrackKd,
     double headingKp,
     double terminalRadiusMeters,
+    double terminalTurnRadians,
     double brakeMetersPerSecondSquared,
     double easeInPerSecond,
     double stopDeadbandMeters,
@@ -90,6 +96,7 @@ public record FollowerConfig(
     b.crossTrackKd = crossTrackKd;
     b.headingKp = headingKp;
     b.terminalRadiusMeters = terminalRadiusMeters;
+    b.terminalTurnRadians = terminalTurnRadians;
     b.brakeMetersPerSecondSquared = brakeMetersPerSecondSquared;
     b.easeInPerSecond = easeInPerSecond;
     b.stopDeadbandMeters = stopDeadbandMeters;
@@ -123,6 +130,7 @@ public record FollowerConfig(
     private double crossTrackKd = 0.0;
     private double headingKp = 5.0;
     private double terminalRadiusMeters = 0.3;
+    private double terminalTurnRadians = Math.toRadians(2.0);
     private double brakeMetersPerSecondSquared = 6.0;
     private double easeInPerSecond = 12.0; // DriveToPose ships 6; the bench sweep's pick (tuning seeds)
     private double stopDeadbandMeters = 0.003;
@@ -155,6 +163,7 @@ public record FollowerConfig(
     public Builder crossTrackKd(double v) { crossTrackKd = v; return this; }
     public Builder headingKp(double v) { headingKp = v; return this; }
     public Builder terminalRadiusMeters(double v) { terminalRadiusMeters = v; return this; }
+    public Builder terminalTurnRadians(double v) { terminalTurnRadians = v; return this; }
     public Builder brakeMetersPerSecondSquared(double v) { brakeMetersPerSecondSquared = v; return this; }
     public Builder easeInPerSecond(double v) { easeInPerSecond = v; return this; }
     public Builder stopDeadbandMeters(double v) { stopDeadbandMeters = v; return this; }
@@ -189,6 +198,7 @@ public record FollowerConfig(
         case "crossTrackKd" -> crossTrackKd = v;
         case "headingKp" -> headingKp = v;
         case "terminalRadiusMeters" -> terminalRadiusMeters = v;
+        case "terminalTurnRadians" -> terminalTurnRadians = v;
         case "brakeMetersPerSecondSquared" -> brakeMetersPerSecondSquared = v;
         case "easeInPerSecond" -> easeInPerSecond = v;
         case "stopDeadbandMeters" -> stopDeadbandMeters = v;
@@ -218,7 +228,8 @@ public record FollowerConfig(
 
     public FollowerConfig build() {
       return new FollowerConfig(robot, latencySeconds, windowMeters, reprojectMeters, crossTrackKp,
-          crossTrackKd, headingKp, terminalRadiusMeters, brakeMetersPerSecondSquared, easeInPerSecond,
+          crossTrackKd, headingKp, terminalRadiusMeters, terminalTurnRadians, brakeMetersPerSecondSquared,
+          easeInPerSecond,
           stopDeadbandMeters, maxOmegaRadPerSec, maxAlphaRadPerSecSquared, headingEaseInPerSecond,
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
           headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,

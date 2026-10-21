@@ -58,7 +58,14 @@ public final class PathLibrary {
    * present (else {@link RobotConfig#DEFAULT}).
    */
   public static PathLibrary loadAll() {
-    File dir = new File(Filesystem.getDeployDirectory(), "paths");
+    return loadAll(new File(Filesystem.getDeployDirectory(), "paths"));
+  }
+
+  /**
+   * Loads every {@code *.path.json} in {@code dir}, with the robot from {@code dir/robot.json} if
+   * present (else {@link RobotConfig#DEFAULT}): what {@link #loadAll()} does with the deploy folder.
+   */
+  public static PathLibrary loadAll(File dir) {
     File robotFile = new File(dir, "robot.json");
     RobotConfig robot = robotFile.isFile() ? RobotFile.read(read(robotFile)) : RobotConfig.DEFAULT;
     return loadAll(dir, robot);

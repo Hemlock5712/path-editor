@@ -211,8 +211,9 @@ class PathFollowerTest {
         .onEvent(fired::add);
     run(path, f, FieldFrame.BLUE, 20, NONE);
     assertEquals(List.of("a", "b", "c"), fired);
-    assertTrue(where.get(0) >= 1.0 && where.get(0) < 1.2, "fired as it passed, at " + where.get(0));
-    assertTrue(where.get(2) >= 6.0 && where.get(2) < 6.2);
+    // on the loop nearest to passing: within half a loop of travel (4 m/s · 10 ms = 4 cm), either side
+    assertEquals(1.0, where.get(0), 0.045, "fired as it passed, at " + where.get(0));
+    assertEquals(6.0, where.get(2), 0.045, "fired as it passed, at " + where.get(2));
   }
 
   @Test
@@ -232,7 +233,81 @@ class PathFollowerTest {
     run(path, f, FieldFrame.RED_HALF_TURN, 20, NONE);
     assertEquals(List.of("fileEarly", "code", "fileLate"), fired);
     assertTrue(Math.abs(where.get(0) - path.geometry().sAtWaypoint(0.5)) < 0.2, "fired as it passed: " + where);
-    assertTrue(where.get(2) >= 6.0 && where.get(2) < 6.2, "fired as it passed: " + where);
+    assertEquals(6.0, where.get(2), 0.045, "fired as it passed: " + where);
+  }
+
+  /** Plans spin a little under the follower's own limits (540°/s, 720°/s²), as the e2e suite's robot does. */
+  static final RobotConfig SPIN_ROBOT = RobotConfig.DEFAULT.withMaxAngularRadPerSec(7.5).withMaxAngularRadPerSecSquared(10.0);
+
+  @Test
+  void aStepInStartsOwnLoopPlansForAWholeLoop() {
+    // the adapters start and step in the same loop, at the same time: that first command must not be a
+    // millisecond's worth of acceleration (it made every path start a loop late)
+    Path path = Path.build(FixturePaths.straight(), ROBOT);
+    PathSample s0 = path.sample(0);
+    Pose p = new Pose(s0.xMeters(), s0.yMeters(), s0.headingRadians());
+    FieldSpeeds still = new FieldSpeeds(0, 0, 0);
+    PathFollower same = new PathFollower(path, CFG);
+    same.start(1.0, p, still, FieldFrame.BLUE);
+    FieldSpeeds first = same.step(1.0, p, still);
+    PathFollower next = new PathFollower(path, CFG);
+    next.start(1.0, p, still, FieldFrame.BLUE);
+    FieldSpeeds aLoopLater = next.step(1.0 + DT, p, still);
+    assertEquals(aLoopLater.vxMetersPerSecond(), first.vxMetersPerSecond(), 1e-12);
+    assertTrue(first.vxMetersPerSecond() > 0.05, "moves off the line at once: " + first);
+  }
+
+  @Test
+  void aTurnOnTheSpotFollowsItsPlanAndItsEventsFireOnTheTurn() {
+    PathSpec spec = FixturePaths.pureRotation().withEvents(List.of(PathEvent.atWaypoint("half", 0.5)));
+    Path path = Path.build(spec, SPIN_ROBOT);
+    PathFollower f = new PathFollower(path, FollowerConfig.defaults(SPIN_ROBOT));
+    List<Double> headingAtEvent = new ArrayList<>();
+    double[] heading = {0};
+    f.onEvent(name -> headingAtEvent.add(heading[0]));
+    Run r = run(path, f, FieldFrame.BLUE, 5, (t, plant, ff) -> heading[0] = plant.pose().headingRadians());
+    assertTrue(r.finished());
+    assertTrue(r.seconds() < path.totalTimeSeconds() + 0.3, "took " + r.seconds() + " s for a " + path.totalTimeSeconds() + " s plan");
+    // halfway through the turn, not all at once at the start (progress used to come from a 1 mm projection)
+    assertEquals(45.0, Math.toDegrees(headingAtEvent.get(0)), 8.0);
+    for (Pose q : r.trace()) {
+      assertTrue(Math.hypot(q.xMeters() - 1.0, q.yMeters() + 0.5) < 0.01, "stays on the spot: " + q);
+    }
+  }
+
+  @Test
+  void aShortHopWithABigTurnIsFollowedAlongItsPlan() {
+    // 0.2 m with an 80° turn is inside the terminal radius from the start; it used to be driven by the
+    // DriveToPose law alone, at three times the planned speed, while the turn lagged
+    Path path = Path.build(FixturePaths.shortHop(), SPIN_ROBOT);
+    PathFollower f = new PathFollower(path, FollowerConfig.defaults(SPIN_ROBOT));
+    double planPeak = 0;
+    for (double s = 0; s <= path.lengthMeters(); s += 0.002) {
+      planPeak = Math.max(planPeak, path.sample(s).metersPerSecond());
+    }
+    Run r = run(path, f, FieldFrame.BLUE, 5, NONE);
+    double peak = 0;
+    for (int i = 1; i < r.trace().size(); i++) {
+      Pose a = r.trace().get(i - 1);
+      Pose b = r.trace().get(i);
+      peak = Math.max(peak, Math.hypot(b.xMeters() - a.xMeters(), b.yMeters() - a.yMeters()) / DT);
+    }
+    assertTrue(r.finished());
+    // 1.2x here (it was 3.5x): the last 2° are the DriveToPose law's, which closes the last centimetres
+    // a little faster than the plan's crawl
+    assertTrue(peak < 1.25 * planPeak, "peak " + peak + " m/s against the plan's " + planPeak);
+    assertTrue(r.seconds() < path.totalTimeSeconds() + 0.35, "took " + r.seconds() + " s for a " + path.totalTimeSeconds() + " s plan");
+  }
+
+  @Test
+  void eventListenersAddUp() {
+    Path path = Path.build(FixturePaths.straight(), ROBOT);
+    List<String> a = new ArrayList<>();
+    List<String> b = new ArrayList<>();
+    PathFollower f = new PathFollower(path, CFG).addEvent("x", 1.0, () -> {}).onEvent(a::add).onEvent(b::add);
+    run(path, f, FieldFrame.BLUE, 10, NONE);
+    assertEquals(List.of("x"), a);
+    assertEquals(List.of("x"), b);
   }
 
   @Test
