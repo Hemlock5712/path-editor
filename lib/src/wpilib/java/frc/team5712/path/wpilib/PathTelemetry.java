@@ -3,6 +3,7 @@ package frc.team5712.path.wpilib;
 import frc.team5712.path.core.PathSample;
 import frc.team5712.path.core.Pose;
 import frc.team5712.path.follow.PathFollower;
+import frc.team5712.path.plan.PlanResult;
 import java.util.ArrayList;
 import java.util.List;
 import org.wpilib.math.geometry.Pose2d;
@@ -21,6 +22,8 @@ import org.wpilib.telemetry.TelemetryTable;
  *   <li>{@code /Telemetry/Path/ToReef/}, once per start: Plan (the planned path every 5 cm and its end:
  *       s, x, y, heading, t, v per sample, flattened, in the field frame the robot runs it in),
  *       PlanEvents and PlanEventMeters (the path's events and where they are), and PlanSeconds;
+ *   <li>{@code /Telemetry/Path/<name>/}, for an on-the-fly path, at each plan: PlanOk, PlanMicros, Replans,
+ *       StartSnap, GoalSnap, MinClearance, PlanFailure ({@link #plan}); the plan itself goes out as Plan;
  *   <li>{@code /Telemetry/PathFollower/}: Active (the running path's name, "" when none), LastEvent and
  *       EventsFired, shared by every follow command.
  * </ul>
@@ -86,6 +89,21 @@ public final class PathTelemetry {
   /** The path ended (finished or cancelled): no path is active. */
   public void end() {
     SHARED.log("Active", "");
+  }
+
+  /**
+   * An on-the-fly path was planned (or re-planned): PlanOk, PlanMicros, Replans, StartSnap and GoalSnap (m,
+   * how far a start or goal inside an obstacle was moved out), MinClearance (m, bumpers to the nearest
+   * obstacle or wall along the plan) and PlanFailure ("" when it planned).
+   */
+  public void plan(PlanResult r, int replans) {
+    table.log("PlanOk", r.ok());
+    table.log("PlanMicros", r.totalMicros());
+    table.log("Replans", replans);
+    table.log("StartSnap", r.startSnapMeters());
+    table.log("GoalSnap", r.goalSnapMeters());
+    table.log("MinClearance", r.ok() ? r.minClearanceMeters() : Double.NaN);
+    table.log("PlanFailure", r.failure() == null ? "" : r.failure());
   }
 
   public void log(PathFollower f) {

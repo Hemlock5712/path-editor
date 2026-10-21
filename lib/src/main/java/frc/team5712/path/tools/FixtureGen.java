@@ -44,6 +44,7 @@ public final class FixtureGen {
     Files.writeString(files, pathFiles(), StandardCharsets.UTF_8);
     System.out.println("wrote " + files);
     FollowFixtureGen.writeAll(out); // the closed-loop follower traces, fixtures/follow
+    PlanFixtureGen.write(out); // the pathfinder's plans on the 2026 field, fixtures/plan
   }
 
   /** Where the path-file round-trip fixture goes, relative to the fixtures folder. */

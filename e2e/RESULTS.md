@@ -85,12 +85,12 @@ follower's own 540°/s and 720°/s², so feedback has room, as the plan's grip (
 | Slalom | V2 | blue | pass | 5 | 1.7 cm | 0.035 s | 2.90 / 2.87 s | 0.42 s | 3.56 / 3.69 m/s | pass (1 fired) |
 | Slalom | V2 | red (half-turn) | pass | 5 | 1.4 cm | 0.052 s | 2.90 / 2.87 s | 0.36 s | 3.56 / 3.69 m/s | pass (1 fired) |
 | Slalom | V2 | red (mirror) | pass | 5 | 1.9 cm | 0.035 s | 2.90 / 2.87 s | 0.42 s | 3.56 / 3.69 m/s | pass (1 fired) |
-| LongAuto | V3 | blue | pass | 6 | 1.1 cm | 0.052 s | 3.98 / 3.95 s | 0.44 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V3 | red (half-turn) | pass | 6 | 1.2 cm | 0.052 s | 3.98 / 3.95 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V3 | red (mirror) | pass | 6 | 2.2 cm | 0.039 s | 3.98 / 3.95 s | 0.34 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V2 | blue | pass | 6 | 2.0 cm | 0.039 s | 3.98 / 3.95 s | 0.36 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V2 | red (half-turn) | pass | 6 | 2.3 cm | 0.039 s | 3.98 / 3.95 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V2 | red (mirror) | pass | 6 | 3.9 cm | 0.053 s | 4.00 / 3.95 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V3 | blue | pass | 6 | 2.8 cm | 0.039 s | 3.98 / 3.95 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V3 | red (half-turn) | pass | 6 | 2.6 cm | 0.039 s | 3.98 / 3.95 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V3 | red (mirror) | pass | 6 | 2.9 cm | 0.033 s | 3.98 / 3.95 s | 0.34 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V2 | blue | pass | 6 | 3.1 cm | 0.039 s | 3.98 / 3.95 s | 0.36 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V2 | red (half-turn) | pass | 6 | 3.3 cm | 0.033 s | 3.98 / 3.95 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V2 | red (mirror) | pass | 6 | 1.5 cm | 0.052 s | 4.00 / 3.95 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
 | MovingStart | V3 | blue | pass | 5 | 3.7 cm | 0.019 s | 1.62 / 1.60 s | 0.32 s | 3.99 / 4.00 m/s | pass (4 fired) |
 | MovingStart | V3 | red (half-turn) | pass | 5 | 4.0 cm | 0.019 s | 1.62 / 1.60 s | 0.38 s | 4.00 / 4.00 m/s | pass (4 fired) |
 | MovingStart | V3 | red (mirror) | pass | 5 | 3.7 cm | 0.019 s | 1.62 / 1.60 s | 0.38 s | 3.99 / 4.00 m/s | pass (4 fired) |
@@ -124,6 +124,6 @@ follower's own 540°/s and 720°/s², so feedback has room, as the plan's grip (
 | RollA → RollB | V3 | blue | pass | 10 | 3.9 cm | 0.027 s | 2.40 / 2.36 s | 0.46 s | 3.99 / 4.00 m/s | pass (1 fired) |
 | RollA → RollB | V3 | red (half-turn) | pass | 10 | 3.5 cm | 0.032 s | 2.42 / 2.36 s | 0.38 s | 3.99 / 4.00 m/s | pass (1 fired) |
 | RollA → RollB | V3 | red (mirror) | pass | 10 | 3.5 cm | 0.032 s | 2.40 / 2.36 s | 0.36 s | 3.99 / 4.00 m/s | pass (1 fired) |
-| RollA → RollB | V2 | blue | pass | 10 | 3.3 cm | 0.032 s | 2.40 / 2.36 s | 0.38 s | 3.99 / 4.00 m/s | pass (1 fired) |
+| RollA → RollB | V2 | blue | pass | 10 | 3.4 cm | 0.032 s | 2.40 / 2.36 s | 0.38 s | 3.99 / 4.00 m/s | pass (1 fired) |
 | RollA → RollB | V2 | red (half-turn) | pass | 10 | 3.6 cm | 0.032 s | 2.42 / 2.36 s | 0.36 s | 3.99 / 4.00 m/s | pass (1 fired) |
 | RollA → RollB | V2 | red (mirror) | pass | 10 | 3.8 cm | 0.032 s | 2.42 / 2.36 s | 0.36 s | 3.99 / 4.00 m/s | pass (1 fired) |
