@@ -4,9 +4,11 @@ import { cyclePath, deleteSelection, fitView, nudge, stepPlayback, toggleAllianc
 import { playback } from "../state/analysis.ts";
 import { cancelGesture, editor, inGesture, redo, select, setDraftObstacle, setTool, undo } from "../state/editor.ts";
 import { openFolder, save } from "../state/session.ts";
+import { openSettings, ui } from "../state/ui.ts";
 import { finishObstacle } from "./FieldCanvas.tsx";
 
 export const SHORTCUTS: [string, string][] = [
+  ["Ctrl+K", "Command palette: every command, by name"],
   ["Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)", "Undo / redo"],
   ["Ctrl+S / Ctrl+O", "Save / open a folder"],
   ["V W R E O", "Select, Draw (waypoints), Heading, Event and Obstacle tools"],
@@ -24,6 +26,9 @@ export const SHORTCUTS: [string, string][] = [
   ["Shift while dragging", "Snap to 5 cm"],
   ["Double-click a tangent handle", "Back to the automatic tangent"],
   ["Wheel, right or middle drag", "Zoom, pan"],
+  ["Ctrl + / Ctrl − / Ctrl+0", "Zoom the field in, out, fit"],
+  ["Drag a field's label", "Scrub the number (Shift: finer); arrow keys step it"],
+  ["Ctrl+,", "Settings"],
 ];
 
 function typing(target: EventTarget | null): boolean {
@@ -32,9 +37,25 @@ function typing(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
 
-export function onKeyDown(e: KeyboardEvent, openHelp: () => void): void {
+/** A focused control that Space and Enter press (a button, switch, slider, option). */
+function pressable(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.tagName === "BUTTON" || target.getAttribute("role") === "slider" || target.getAttribute("role") === "option");
+}
+
+export function onKeyDown(e: KeyboardEvent): void {
   const ctrl = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
+  if (ctrl && key === "k") {
+    e.preventDefault();
+    ui.set({ paletteOpen: !ui.get().paletteOpen });
+    return;
+  }
+  if (ctrl && e.key === ",") {
+    e.preventDefault();
+    openSettings();
+    return;
+  }
+  if (ui.get().paletteOpen || ui.get().helpOpen) return;
   if (ctrl && key === "s") {
     e.preventDefault();
     void save();
@@ -57,6 +78,9 @@ export function onKeyDown(e: KeyboardEvent, openHelp: () => void): void {
     return;
   }
   if (ctrl || e.altKey) return;
+  if ((e.key === " " || e.key === "Enter") && pressable(e.target)) return;
+  // the editing keys belong to the editor page
+  if (ui.get().page !== "editor") return;
   const step = e.shiftKey ? 0.1 : 0.01;
   switch (e.key) {
     case "Delete":
@@ -107,7 +131,7 @@ export function onKeyDown(e: KeyboardEvent, openHelp: () => void): void {
       cyclePath(1);
       return;
     case "?":
-      openHelp();
+      ui.set({ helpOpen: true });
       return;
   }
   switch (key) {

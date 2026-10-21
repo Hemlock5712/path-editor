@@ -13,9 +13,11 @@
     "e2e": "playwright test",
     "e2e:author": "playwright test --config playwright.author.config.ts",
     "e2e:full": "node ../../tools/e2e.mjs",
-    "test:nt4": "vitest run --config vitest.nt4.config.ts"
+    "test:nt4": "vitest run --config vitest.nt4.config.ts",
+    "screenshots": "playwright test --config playwright.screens.config.ts"
   },
   "dependencies": {
+    "lucide-react": "0.469.0",
     "react": "19.1.1",
     "react-dom": "19.1.1"
   },

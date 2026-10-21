@@ -6,7 +6,7 @@ import { bestByMetric, courseOffset, methodColour, stat, type BenchData } from "
 import { bench, loadBench, toggleShown, type BenchState } from "../state/bench.ts";
 import { DEFAULT_VIEW, editor } from "../state/editor.ts";
 import { useStore } from "../state/store.ts";
-import { formatNumber, SelectField } from "./controls.tsx";
+import { formatNumber, SelectField, Switch } from "./controls.tsx";
 import { drawFieldImage, drawGrid } from "./draw.ts";
 import { FieldView } from "./fieldView.ts";
 
@@ -148,13 +148,13 @@ export function BenchView() {
   const s = useStore(bench, (b) => b);
   const data = s.data;
   return (
-    <main className="workspace bench" aria-label="Bench comparison (read-only)">
-      <section className="field-column bench-column" aria-label="The course on the field">
+    <main className="bench-page" aria-label="Bench comparison (read-only)">
+      <section className="bench-column" aria-label="The course on the field">
         <BenchCanvas />
         {data && <ResultsTable data={data} s={s} />}
       </section>
-      <aside className="sidebar" aria-label="Bench choices">
-        <div className="section-body bench-controls">
+      <aside className="bench-side" aria-label="Bench choices">
+        <div className="bench-controls">
           <h2 className="subhead">Bench comparison</h2>
           <p className="hint">
             Read-only. It opens with the committed snapshot (one trace seed, traces every 0.2 s). For the full export, run{" "}
@@ -166,6 +166,7 @@ export function BenchView() {
             <span className="field-label">Load a bench export</span>
             <input
               type="file"
+              className="file-input"
               accept=".json,application/json"
               data-testid="bench-file"
               onChange={async (e) => {
@@ -194,9 +195,7 @@ export function BenchView() {
                 options={data.meta.traceSeeds.map((x) => ({ value: String(x), label: String(x) }))}
                 onChange={(seed) => bench.set({ seed })}
               />
-              <label className="row">
-                <input type="checkbox" checked={s.traces} onChange={() => bench.set({ traces: !s.traces })} /> True traces (solid); authored paths are dashed
-              </label>
+              <Switch label="True traces (solid); authored paths dashed" checked={s.traces} onChange={(on) => bench.set({ traces: on })} />
               <ul className="legend" aria-label="Shown on the field">
                 {s.shown.map((m) => (
                   <li key={m}>

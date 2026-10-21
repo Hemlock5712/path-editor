@@ -284,9 +284,24 @@ async function setNumber(field: Locator, value: number): Promise<void> {
   await field.press("Enter");
 }
 
+/** The inspector's path overview (back from a selected item). */
+async function overview(page: Page): Promise<void> {
+  const back = page.getByTestId("inspector-back");
+  if (await back.isVisible()) await back.click();
+  await expect(page.getByTestId("optimise-path")).toBeVisible();
+}
+
+/** Opens one of the overview's cards. */
 async function openSection(page: Page, title: string): Promise<void> {
-  const details = page.locator("details.section", { has: page.locator("summary", { hasText: new RegExp(`^${title}`) }) });
-  if ((await details.getAttribute("open")) === null) await details.locator("summary").click();
+  await overview(page);
+  const head = page.locator("button.card-head", { hasText: new RegExp(`^${title}`) });
+  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+}
+
+/** Picks an option in one of the app's selects. */
+async function choose(page: Page, select: Locator, option: string): Promise<void> {
+  await select.click();
+  await page.getByRole("option", { name: option, exact: true }).click();
 }
 
 /** Canvas pixels for a blue-frame field point at the default view. */
@@ -298,8 +313,13 @@ async function fieldPoint(page: Page, x: number, y: number): Promise<{ x: number
 
 const waypointGroup = (page: Page, i: number) => page.getByRole("group", { name: `Waypoint ${i}`, exact: true });
 
-async function setWaypoint(page: Page, i: number, [x, y, tangent]: readonly [number, number, number?], heading?: number): Promise<void> {
+async function selectWaypoint(page: Page, i: number): Promise<void> {
+  await openSection(page, "Waypoints");
   await page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(i).click();
+}
+
+async function setWaypoint(page: Page, i: number, [x, y, tangent]: readonly [number, number, number?], heading?: number): Promise<void> {
+  await selectWaypoint(page, i);
   const g = waypointGroup(page, i);
   await setNumber(g.getByLabel("x", { exact: true }), x);
   await setNumber(g.getByLabel("y", { exact: true }), y);
@@ -311,34 +331,39 @@ async function setWaypoint(page: Page, i: number, [x, y, tangent]: readonly [num
   if (tangent !== undefined) {
     // the travel direction is set by hand behind "Shape the curve here"
     const shape = page.getByTestId("shape-curve");
-    if (!(await shape.isChecked())) await shape.check();
+    if ((await shape.getAttribute("aria-checked")) !== "true") await shape.click();
     await setNumber(g.getByLabel("Travel direction", { exact: true }), tangent);
   }
 }
 
 async function author(page: Page, plan: PathPlan, first: boolean): Promise<void> {
   if (!first) await page.getByTestId("new-path").click();
+  await page.getByTestId("rename-path").click();
   const name = page.getByTestId("path-name");
   await name.fill(plan.name);
   await name.press("Enter");
   await expect(page.getByRole("tab", { name: plan.name })).toHaveAttribute("aria-selected", "true");
 
   // waypoints: the new path has two; the rest are added from the panel, then every one is typed in
-  for (let i = 2; i < plan.waypoints.length; i++) await page.getByRole("button", { name: "Add a waypoint 1 m past the end" }).click();
+  for (let i = 2; i < plan.waypoints.length; i++) {
+    await openSection(page, "Waypoints");
+    await page.getByRole("button", { name: "Add a waypoint 1 m past the end" }).click();
+  }
   for (let i = 0; i < plan.waypoints.length; i++) await setWaypoint(page, i, plan.waypoints[i]!, plan.headings.find((h) => h.wp === i)?.deg);
 
+  if (plan.startSpeed !== undefined || plan.endSpeed !== undefined) await openSection(page, "Start and end state");
   if (plan.startSpeed !== undefined) await setNumber(page.getByLabel("Start speed"), plan.startSpeed);
   if (plan.endSpeed !== undefined) await setNumber(page.getByLabel("End speed"), plan.endSpeed);
 
   if (plan.namedPoint) {
     const { wp, x, y } = plan.namedPoint;
-    await page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(wp).click();
-    await openSection(page, "Named points");
+    await selectWaypoint(page, wp);
     await page.getByRole("button", { name: `New point at waypoint ${wp}` }).click();
-    const card = page.getByRole("group").filter({ has: page.getByText("waypoint linked") }).last();
+    const card = page.getByRole("group", { name: /^Point / });
     await setNumber(card.getByLabel("x", { exact: true }), x);
     await setNumber(card.getByLabel("y", { exact: true }), y);
     // the linked waypoint followed the point
+    await openSection(page, "Waypoints");
     await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(wp)).toContainText(`(${x}, ${y})`);
   }
 
@@ -353,23 +378,23 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
     const field = page.getByTestId(`event-name-${i}`);
     await field.fill(e.name);
     await field.press("Enter");
-    await card.getByLabel("At measured by").selectOption("m" in e.at ? "m" : "wp");
+    await choose(page, card.getByRole("combobox", { name: "At measured by" }), "m" in e.at ? "by metres" : "by waypoint");
     await setNumber(page.getByTestId(`event-at-${i}`), "m" in e.at ? e.at.m : e.at.wp);
   }
   await page.keyboard.press("v");
 
   if (plan.rotationTargets) {
-    await openSection(page, "Headings along the path");
     for (const [i, t] of plan.rotationTargets.entries()) {
+      await openSection(page, "Rotation targets");
       await page.getByRole("button", { name: "Add a heading at the end of the path" }).click();
       const card = page.getByRole("group", { name: `Heading ${i + 1}`, exact: true });
       await setNumber(card.getByLabel("At", { exact: true }), t.wp);
       await setNumber(card.getByLabel("Heading", { exact: true }), t.deg);
     }
   }
-  if (plan.faceZone || plan.constraintZone) await openSection(page, "Zones");
   if (plan.faceZone) {
     const z = plan.faceZone;
+    await openSection(page, "Point-towards zones");
     await page.getByRole("button", { name: "Add face-point zone" }).click();
     const card = page.getByRole("group", { name: "Face-point zone 1" });
     await setNumber(card.getByLabel("From", { exact: true }), z.from);
@@ -380,6 +405,7 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   }
   if (plan.constraintZone) {
     const z = plan.constraintZone;
+    await openSection(page, "Constraint zones");
     await page.getByRole("button", { name: "Add constraint zone" }).click();
     const card = page.getByRole("group", { name: "Constraint zone 1" });
     await setNumber(card.getByLabel("To", { exact: true }), z.to);
@@ -405,9 +431,11 @@ test("author the end-to-end suite in the editor and save it", async ({ page }) =
 
   // the robot: spin limits a little under the follower's own (540°/s, 720°/s²), so the plan leaves
   // feedback room to catch up, as the plan's grip (μ 0.7) sits under the limiter's (1.0)
-  await openSection(page, "Robot");
+  await page.getByTestId("settings").click();
+  await page.getByTestId("settings-robot").click();
   await setNumber(page.getByLabel("Max spin", { exact: true }), 7.5);
-  await setNumber(page.getByLabel("Max spin accel"), 10);
+  await setNumber(page.getByLabel("Max spin accel", { exact: true }), 10);
+  await page.getByTestId("page-editor").click();
 
   for (const [i, plan] of chosen.entries()) await author(page, plan, i === 0);
 

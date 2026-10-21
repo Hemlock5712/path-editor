@@ -109,6 +109,19 @@ function poses(page: Page): Promise<Poses> {
 }
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** How many waypoints the active path has, once the plan has caught up. */
+async function waypointCount(page: Page): Promise<number> {
+  return (await poses(page)).waypoints.length;
+}
+
+/** Back to the inspector's path overview, and open one of its cards. */
+async function openCard(page: Page, title: string): Promise<void> {
+  const back = page.getByTestId("inspector-back");
+  if (await back.isVisible()) await back.click();
+  const head = page.locator("button.card-head", { hasText: new RegExp(`^${title}`) });
+  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+}
 const DEG = Math.PI / 180;
 
 // The quick start shows on a first run; the tests that aren't about it start with it dismissed
@@ -138,14 +151,14 @@ test("add waypoints and an event, save, reload, and get the same file back", asy
   await page.keyboard.press("w");
   await clickField(page, -2.0, 1.0);
   await clickField(page, 1.0, -0.5);
-  await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("listitem")).toHaveCount(4);
+  await expect.poll(() => waypointCount(page)).toBe(4);
   await expect(page.getByTestId("path-stats")).toContainText(" s");
 
   // undo and redo the last waypoint: the document comes back the same
   await page.keyboard.press("Control+z");
-  await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("listitem")).toHaveCount(3);
+  await expect.poll(() => waypointCount(page)).toBe(3);
   await page.keyboard.press("Control+y");
-  await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("listitem")).toHaveCount(4);
+  await expect.poll(() => waypointCount(page)).toBe(4);
 
   await page.getByTestId("save").click();
   await expect(page.getByTestId("status")).toContainText("Saved to robot-project");
@@ -161,8 +174,10 @@ test("add waypoints and an event, save, reload, and get the same file back", asy
   await page.reload();
   await page.getByTestId("open-folder").click();
   await expect(page.getByTestId("status")).toContainText("Opened robot-project: 1 path");
-  await expect(page.getByTestId("event-name-0")).toHaveValue("intakeDown");
   await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("listitem")).toHaveCount(4);
+  await openCard(page, "Event markers");
+  await page.getByTestId("event-item-0").click();
+  await expect(page.getByTestId("event-name-0")).toHaveValue("intakeDown");
 
   // the red view only changes the picture, never the file
   await page.keyboard.press("a");
@@ -196,9 +211,13 @@ test("the layout holds at 1280 px and the checks see an obstacle", async ({ page
     await clickField(page, x!, y!);
   }
   await page.keyboard.press("Enter");
+  // the checks are a badge on the field; its popover lists them
+  await expect(page.getByTestId("checks-badge")).toContainText("issue");
+  await page.getByTestId("checks-badge").click();
   await expect(page.getByTestId("checks")).toContainText("Bumpers hit obstacle 1");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Control+z");
-  await expect(page.getByTestId("checks")).not.toContainText("Bumpers hit");
+  await expect(page.getByTestId("checks-badge")).toContainText("No issues");
 });
 
 /** The plan's total time as the Path panel shows it ("…, 4.38 s, top …"). */
@@ -220,8 +239,8 @@ test("Optimise path shortens a weave, and applying it is one undo step", async (
     await clickField(page, x!, y!);
   }
   await page.keyboard.press("v");
-  await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("listitem")).toHaveCount(6);
-  await poses(page); // the plan has caught up with the last click
+  await page.keyboard.press("Escape"); // nothing selected: the inspector shows the path overview
+  await expect.poll(() => waypointCount(page)).toBe(6);
   const before = await planSeconds(page);
 
   // the Path panel's Optimise path, with its default budget; the new shape shows dashed until applied
@@ -254,7 +273,7 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
     geometry: { straight_3m: { neutral: [[0, 0], [3, 0]], ours_v2: [[0, 0], [3, 0]], choreo: [[0, 0], [3, 0]] } },
     traces: { straight_3m: { "0": { ours_v2: [[0, 0, 0, 0], [1, 1.5, 0.01, 0], [2, 3, 0, 0]], choreo: [[0, 0, 0, 0], [2.6, 3, 0.02, 0]] } } },
   };
-  await page.getByTestId("bench-toggle").click();
+  await page.getByTestId("page-bench").click();
   // it opens with the committed snapshot; a file replaces it
   await expect(page.getByText(/results-lite\.json \(snapshot\): \d+ courses/)).toBeVisible();
   await expect(page.getByTestId("bench-table")).toContainText("Ours v2");
@@ -264,7 +283,7 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
   await expect(table.locator("td.best")).toHaveText("2.1 (3.15)");
   // editing shortcuts are off while it's open, and nothing in the project changed
   await page.keyboard.press("w");
-  await page.getByTestId("bench-toggle").click();
+  await page.getByTestId("page-editor").click();
   await expect(page.getByTestId("tool-select")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("undo")).toBeDisabled();
 });
@@ -324,7 +343,9 @@ test("usability, first run: draw a typical swerve auto in about ten actions", as
   expect(Math.abs(wrap(p.waypoints[4]!.heading - 30 * DEG))).toBeLessThan(1e-9);
   expect(p.targets).toHaveLength(1);
   expect(Math.abs(wrap(p.targets[0]!.heading - 90 * DEG))).toBeLessThan(1e-9);
-  await expect(page.getByLabel("Heading between set headings")).toHaveValue("hold");
+  await page.keyboard.press("Escape");
+  await openCard(page, "Rotation targets");
+  await expect(page.getByTestId("heading-mode")).toHaveAttribute("data-value", "hold");
 
   // the robot holds and blends the set headings: it turns 180° → 90° → 30° and no more, wherever the
   // path bends; it never just faces where it's going
@@ -362,10 +383,10 @@ test("right-click a waypoint to set its heading; the panel row has the heading a
   // and back to pass-through from the checkbox; an end can't be made pass-through
   await page.getByTestId("waypoint-pass-through").check();
   await expect.poll(async () => (await poses(page)).waypoints[1]!.set).toBe(false);
-  await page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(2).click();
+  await page.getByTestId("next-waypoint").click();
   await expect(page.getByTestId("waypoint-pass-through")).toBeDisabled();
   // the ? button shows the quick start again
-  await page.getByRole("button", { name: "Help" }).click();
+  await page.getByTestId("help").click();
   await expect(page.getByRole("dialog", { name: "Quick start" })).toContainText("drag the knob on its ring");
 });
 
@@ -389,7 +410,8 @@ test("Optimise path leaves pinned and set-heading waypoints alone; Discard keeps
   const w3 = await fieldPoint(page, p.waypoints[3]!.x, p.waypoints[3]!.y);
   await page.mouse.click(w3.x, w3.y, { button: "right" });
   await page.getByRole("menuitem", { name: "Hold a heading here" }).click();
-  await expect(page.getByTestId("optimise-path")).toHaveAttribute("title", /Move the 1 pass-through point /);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("optimise-path")).toHaveAttribute("data-tip", /Move the 1 pass-through point /);
   const before = (await poses(page)).waypoints;
   await page.getByTestId("optimise-path").click();
   await expect(page.getByTestId("optimise-discard")).toBeVisible({ timeout: 20_000 });

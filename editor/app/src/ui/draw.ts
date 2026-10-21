@@ -73,6 +73,10 @@ export interface DrawModel {
   readonly geometryOf: (spec: EditorPath["spec"]) => PathGeometry | null;
   /** The optimiser's proposal for the active path, drawn dashed with its waypoints. */
   readonly ghost: EditorPath["spec"] | null;
+  /** The item under the pointer, highlighted. */
+  readonly hover?: { readonly kind: "waypoint" | "turn" | "rotation"; readonly index: number } | null;
+  /** A clock (ms) for the selection outline's slow march; 0 holds it still. */
+  readonly time?: number;
 }
 
 /** Linear interpolation of a station column at s. */
@@ -549,7 +553,32 @@ function drawWaypoints(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   spec.waypoints.forEach((_, i) => {
     const p = waypointPose(m, i);
     const sel = i === selected;
-    ctx.lineWidth = sel ? 3 : 2;
+    const hovered = m.hover && (m.hover.kind === "waypoint" || m.hover.kind === "turn") && m.hover.index === i;
+    if (hovered && !sel) {
+      // a soft halo under the robot the pointer is on
+      ctx.save();
+      ctx.lineWidth = 8;
+      ctx.globalAlpha = 0.25;
+      drawRobot(ctx, m, p.x, p.y, p.heading, "#f8fafc", null);
+      ctx.restore();
+    }
+    if (sel) {
+      // the selection: an outline just outside the bumpers, marching slowly
+      const { bumperLengthMeters: L, bumperWidthMeters: W } = m.project.robot;
+      const pad = 6 / m.view.scale;
+      const pts = robotOutline(m.view, p.x, p.y, p.heading, L + 2 * pad, W + 2 * pad);
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.lineDashOffset = -((m.time ?? 0) / 60) % 9;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = COLOURS.selected;
+      ctx.beginPath();
+      pts.forEach(([x, y], k) => (k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.lineWidth = sel ? 3 : hovered ? 2.5 : 2;
     if (!p.set) ctx.setLineDash([6, 4]);
     const colour = sel ? COLOURS.selected : p.set ? COLOURS.waypoint : "rgba(248,250,252,0.55)";
     drawRobot(ctx, m, p.x, p.y, p.heading, colour, sel ? "rgba(251,191,36,0.15)" : p.set ? "rgba(248,250,252,0.08)" : null);
@@ -730,8 +759,9 @@ function drawLegend(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const a = m.analysis;
   if (!a) return;
   const vmax = Math.max(...a.stations.v);
-  const x = 12;
-  const y = m.view.height - 22;
+  // under the tool bar, clear of the playback bar along the bottom
+  const x = 16;
+  const y = 74;
   const w = 120;
   for (let i = 0; i < w; i++) {
     ctx.fillStyle = speedColour(i / (w - 1));

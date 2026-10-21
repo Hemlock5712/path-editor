@@ -7,6 +7,7 @@ import {
   makePathSpec,
   makeWaypoint,
   type FieldFrame,
+  type HeadingMode,
   type PathSpec,
   type RobotConfig,
 } from "../../../core/src/index.ts";
@@ -58,11 +59,30 @@ export interface RobotSettings {
   readonly extra: Readonly<Record<string, unknown>>;
 }
 
+/** What a new path starts with. */
+export interface PathDefaults {
+  readonly maxMetersPerSecond: number;
+  readonly maxMetersPerSecondSquared: number;
+  readonly headingMode: HeadingMode;
+}
+
+/** The simulated drivetrain the Sim preview runs the follower on (editor-only). */
+export interface SimPreviewSettings {
+  /** From a command to the wheels starting to answer, ms. */
+  readonly latencyMs: number;
+  /** The drive's first-order lag (time constant), ms. */
+  readonly lagMs: number;
+  /** The sim's grip as a multiple of the robot's μ (below 1: a slippier carpet than planned). */
+  readonly gripScale: number;
+}
+
 export interface ProjectSettings {
   /** How red is made from blue: a half-turn about the centre or a mirror. */
   readonly redFrame: Exclude<FieldFrame, "BLUE">;
   /** Java package of the generated PathName enum, e.g. frc.robot. Empty = don't generate it. */
   readonly javaPackage: string;
+  readonly pathDefaults: PathDefaults;
+  readonly simPreview: SimPreviewSettings;
 }
 
 export interface Project {
@@ -88,7 +108,16 @@ export const DEFAULT_ROBOT_SETTINGS: RobotSettings = {
   extra: {},
 };
 
-export const DEFAULT_SETTINGS: ProjectSettings = { redFrame: "RED_HALF_TURN", javaPackage: "frc.robot" };
+export const DEFAULT_PATH_DEFAULTS: PathDefaults = { maxMetersPerSecond: 4.0, maxMetersPerSecondSquared: 6.0, headingMode: "hold" };
+
+export const DEFAULT_SIM_PREVIEW: SimPreviewSettings = { latencyMs: 20, lagMs: 40, gripScale: 1 };
+
+export const DEFAULT_SETTINGS: ProjectSettings = {
+  redFrame: "RED_HALF_TURN",
+  javaPackage: "frc.robot",
+  pathDefaults: DEFAULT_PATH_DEFAULTS,
+  simPreview: DEFAULT_SIM_PREVIEW,
+};
 
 export const PATH_COLOURS = ["#38bdf8", "#f97316", "#a3e635", "#e879f9", "#facc15", "#2dd4bf", "#fb7185"];
 
@@ -136,13 +165,14 @@ const STARTER_LENGTH = 2.5;
  * A new path: a robot pose and a short straight run from it, holding that heading at both ends (the
  * first and last waypoints always have one). By default it starts on the blue side, facing the field.
  */
-export function starterSpec(x = -6.5, y = -1.0, headingRadians = 0): PathSpec {
+export function starterSpec(x = -6.5, y = -1.0, headingRadians = 0, defaults: PathDefaults = DEFAULT_PATH_DEFAULTS): PathSpec {
   const ex = Math.round((x + STARTER_LENGTH * Math.cos(headingRadians)) * 1e5) / 1e5;
   const ey = Math.round((y + STARTER_LENGTH * Math.sin(headingRadians)) * 1e5) / 1e5;
   return makePathSpec({
     waypoints: [makeWaypoint(x, y, Number.NaN, 1, headingRadians), makeWaypoint(ex, ey, Number.NaN, 1, headingRadians)],
-    maxMetersPerSecond: 4.0,
-    maxMetersPerSecondSquared: 6.0,
+    maxMetersPerSecond: defaults.maxMetersPerSecond,
+    maxMetersPerSecondSquared: defaults.maxMetersPerSecondSquared,
+    headingMode: defaults.headingMode,
   });
 }
 

@@ -6,7 +6,8 @@
 // direction is automatic; the tangent handle only shows with "shape the curve" on.
 
 import { QuickStartOverlay } from "./QuickStart.tsx";
-import { useEffect, useRef, useState } from "react";
+import { Compass, CornerDownRight, Lock, LockOpen, Maximize2, Navigation, Plus, Repeat, Trash2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { eventMeters, makePathEvent, makeRotationTarget, type PathGeometry } from "../../../core/src/index.ts";
 import {
   addEvent,
@@ -45,6 +46,8 @@ import {
 import { live } from "../state/live.ts";
 import { optimiser } from "../state/optimiser.ts";
 import { useStore } from "../state/store.ts";
+import { openContextMenu, ui, type MenuEntry } from "../state/ui.ts";
+import { fitView, newPath, toggleAlliance } from "../state/actions.ts";
 import {
   drawField,
   headingAtS,
@@ -59,7 +62,7 @@ import {
 import { FieldView } from "./fieldView.ts";
 
 type Drag =
-  | { kind: "pan"; startX: number; startY: number; cx0: number; cy0: number; moved: boolean }
+  | { kind: "pan"; startX: number; startY: number; cx0: number; cy0: number; moved: boolean; button: number; vx: number; vy: number; lastX: number; lastY: number; lastT: number }
   | { kind: "waypoint"; index: number; label: string }
   | { kind: "turn"; index: number }
   | { kind: "tangent"; index: number }
@@ -147,11 +150,15 @@ function magnet(project: Project, x: number, y: number): Project["namedPoints"][
   return best;
 }
 
-interface Menu {
-  readonly x: number;
-  readonly y: number;
-  readonly index: number;
-}
+/** The rotate cursor: a curved arrow, drawn for the canvas (the browser has none). */
+const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a7 7 0 1 0 1.5 6" stroke="#000" stroke-width="4"/><path d="M19 3v5h-5" stroke="#000" stroke-width="4"/><path d="M18 8a7 7 0 1 0 1.5 6" stroke="#fff" stroke-width="2"/><path d="M19 3v5h-5" stroke="#fff" stroke-width="2"/></g></svg>',
+)}") 12 12, alias`;
+
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** The item under the pointer, for the hover highlight (null: nothing). */
+export type HoverTarget = { readonly kind: "waypoint" | "turn" | "rotation"; readonly index: number } | null;
 
 export function FieldCanvas() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -160,8 +167,11 @@ export function FieldCanvas() {
   const sizeRef = useRef({ width: 800, height: 400 });
   const dragRef = useRef<Drag | null>(null);
   const frameRef = useRef(0);
-  const [menu, setMenu] = useState<Menu | null>(null);
+  const hoverRef = useRef<HoverTarget>(null);
+  const motionRef = useRef(0);
+  const zoomTarget = useRef<{ zoom: number; px: number; py: number } | null>(null);
   const tool = useStore(editor, (s) => s.tool);
+  const liveOverlay = useStore(ui, (u) => u.liveOverlay);
 
   // ---------------------------------------------------------------------------- drawing
 
@@ -191,8 +201,10 @@ export function FieldCanvas() {
       showPlaybackRobot: pb.playing || pb.t > 0,
       hoverS: pb.hoverS,
       draftObstacle: s.draftObstacle,
-      live: live.get().robot,
-      liveProgress: live.get().active ? { pathName: live.get().active, progressMeters: live.get().progressMeters } : null,
+      live: ui.get().liveOverlay ? live.get().robot : null,
+      liveProgress: ui.get().liveOverlay && live.get().active ? { pathName: live.get().active, progressMeters: live.get().progressMeters } : null,
+      hover: hoverRef.current,
+      time: reducedMotion() ? 0 : performance.now(),
       geometryOf,
       ghost: optimiser.get().pathId === active.id ? optimiser.get().preview : null,
     });
@@ -200,6 +212,61 @@ export function FieldCanvas() {
 
   const schedule = () => {
     if (frameRef.current === 0) frameRef.current = requestAnimationFrame(draw);
+  };
+
+  useEffect(() => {
+    if (reducedMotion()) return;
+    let frame = 0;
+    const tick = () => {
+      if (editor.get().selection?.kind === "waypoint") schedule();
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => schedule(), [liveOverlay]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Glides the view (pan inertia, smooth zoom) until it settles; any press stops it. */
+  const stopMotion = () => {
+    if (motionRef.current) cancelAnimationFrame(motionRef.current);
+    motionRef.current = 0;
+    zoomTarget.current = null;
+  };
+
+  const glide = (vx0: number, vy0: number) => {
+    stopMotion();
+    if (reducedMotion() || Math.hypot(vx0, vy0) < 0.15) return;
+    let vx = vx0;
+    let vy = vy0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = Math.min(48, now - last);
+      last = now;
+      const v = view();
+      setView({ centerX: v.view.centerX - (vx * dt) / v.scale, centerY: v.view.centerY + (vy * dt) / v.scale });
+      const k = Math.pow(0.9, dt / 16);
+      vx *= k;
+      vy *= k;
+      motionRef.current = Math.hypot(vx, vy) > 0.02 ? requestAnimationFrame(step) : 0;
+    };
+    motionRef.current = requestAnimationFrame(step);
+  };
+
+  /** Right-click on the empty field. */
+  const fieldMenu = (clientX: number, clientY: number, [px, py]: [number, number]) => {
+    const [fx, fy] = view().toField(px, py);
+    const x = round5(fx);
+    const y = round5(fy);
+    const n = activePath().spec.waypoints.length;
+    openContextMenu(clientX, clientY, "Field", [
+      { label: "Add a waypoint here", icon: <Plus size={14} />, run: () => editPath("Add waypoint", (p) => appendWaypoint(p, x, y), { kind: "waypoint", index: n }) },
+      { label: "Start a new path here", icon: <CornerDownRight size={14} />, run: () => newPath({ x, y, heading: 0 }) },
+      "separator",
+      { label: "Blue or red view", icon: <Repeat size={14} />, shortcut: "A", run: toggleAlliance },
+      { label: "Fit the field", icon: <Maximize2 size={14} />, shortcut: "F", run: fitView },
+    ]);
   };
 
   useEffect(() => {
@@ -435,21 +502,36 @@ export function FieldCanvas() {
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     canvasRef.current!.focus();
-    setMenu(null);
+    stopMotion();
     const [px, py] = pointer(e);
     const s = editor.get();
+    const pan = (): Drag => ({
+      kind: "pan",
+      startX: px,
+      startY: py,
+      cx0: s.view.centerX,
+      cy0: s.view.centerY,
+      moved: false,
+      button: e.button,
+      vx: 0,
+      vy: 0,
+      lastX: px,
+      lastY: py,
+      lastT: performance.now(),
+    });
     if (e.button === 2) {
-      // right-click on a waypoint: its menu; anywhere else: pan
+      // right-click on a waypoint: its menu; anywhere else: pan, or (without moving) the field's menu
       const hit = hitTest(px, py);
       if (hit && (hit.kind === "waypoint" || hit.kind === "turn")) {
         select({ kind: "waypoint", index: hit.index });
-        setMenu({ x: px, y: py, index: hit.index });
+        waypointMenu(hit.index, e.clientX, e.clientY);
         return;
       }
     }
     if (e.button === 1 || e.button === 2) {
-      dragRef.current = { kind: "pan", startX: px, startY: py, cx0: s.view.centerX, cy0: s.view.centerY, moved: false };
+      dragRef.current = pan();
       canvasRef.current!.setPointerCapture(e.pointerId);
+      canvasRef.current!.style.cursor = "grabbing";
       return;
     }
     if (e.button !== 0) return;
@@ -479,7 +561,7 @@ export function FieldCanvas() {
     }
     if (clickTool(px, py, e.shiftKey)) return;
     // select tool on empty field: pan, and deselect if it was just a click
-    dragRef.current = { kind: "pan", startX: px, startY: py, cx0: s.view.centerX, cy0: s.view.centerY, moved: false };
+    dragRef.current = pan();
     canvasRef.current!.setPointerCapture(e.pointerId);
   };
 
@@ -494,10 +576,17 @@ export function FieldCanvas() {
       const hoverS = hit && hit.px <= reach ? hit.s : Number.NaN;
       if (!(Number.isNaN(hoverS) && Number.isNaN(playback.get().hoverS))) playback.set({ hoverS });
       const under = hitTest(px, py);
+      const hover: HoverTarget = under && (under.kind === "waypoint" || under.kind === "turn" || under.kind === "rotation") ? { kind: under.kind, index: under.index } : null;
+      if (hover?.kind !== hoverRef.current?.kind || hover?.index !== hoverRef.current?.index) {
+        hoverRef.current = hover;
+        schedule();
+      }
       canvasRef.current!.style.cursor = under
         ? under.kind === "turn" || under.kind === "rotation"
-          ? "alias"
-          : "grab"
+          ? ROTATE_CURSOR
+          : under.kind === "tangent" || under.kind === "vertex"
+            ? "crosshair"
+            : "move"
         : s.tool === "select"
           ? Number.isFinite(hoverS)
             ? "copy"
@@ -514,6 +603,14 @@ export function FieldCanvas() {
     switch (drag.kind) {
       case "pan": {
         if (Math.hypot(px - drag.startX, py - drag.startY) > 3) drag.moved = true;
+        const now = performance.now();
+        const dt = Math.max(1, now - drag.lastT);
+        // a smoothed velocity, px/ms, for the glide after release
+        drag.vx = 0.7 * ((px - drag.lastX) / dt) + 0.3 * drag.vx;
+        drag.vy = 0.7 * ((py - drag.lastY) / dt) + 0.3 * drag.vy;
+        drag.lastX = px;
+        drag.lastY = py;
+        drag.lastT = now;
         setView({ centerX: drag.cx0 - (px - drag.startX) / v.scale, centerY: drag.cy0 + (py - drag.startY) / v.scale });
         return;
       }
@@ -635,7 +732,10 @@ export function FieldCanvas() {
     if (canvasRef.current!.hasPointerCapture(e.pointerId)) canvasRef.current!.releasePointerCapture(e.pointerId);
     if (!drag) return;
     if (drag.kind === "pan") {
-      if (!drag.moved && e.button === 0) select(null);
+      canvasRef.current!.style.cursor = "";
+      if (!drag.moved && drag.button === 0) select(null);
+      else if (!drag.moved && drag.button === 2) fieldMenu(e.clientX, e.clientY, pointer(e));
+      else if (drag.moved && performance.now() - drag.lastT < 60) glide(drag.vx, drag.vy);
       return;
     }
     if (drag.kind === "insert") {
@@ -670,7 +770,31 @@ export function FieldCanvas() {
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     const [px, py] = pointer(e);
-    setView(view().zoomAbout(px, py, Math.exp(-e.deltaY * 0.0015)));
+    // a pinch arrives as Ctrl+wheel with small steps: it zooms faster per step
+    const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
+    if (reducedMotion()) {
+      setView(view().zoomAbout(px, py, factor));
+      return;
+    }
+    const from = zoomTarget.current?.zoom ?? editor.get().view.zoom;
+    if (motionRef.current && !zoomTarget.current) stopMotion();
+    zoomTarget.current = { zoom: Math.min(40, Math.max(0.3, from * factor)), px, py };
+    if (motionRef.current) return;
+    const step = () => {
+      const t = zoomTarget.current;
+      if (!t) {
+        motionRef.current = 0;
+        return;
+      }
+      const z = editor.get().view.zoom;
+      const next = Math.abs(t.zoom - z) < 1e-3 * z ? t.zoom : z + (t.zoom - z) * 0.35;
+      setView(view().zoomAbout(t.px, t.py, next / z));
+      if (next === t.zoom) {
+        zoomTarget.current = null;
+        motionRef.current = 0;
+      } else motionRef.current = requestAnimationFrame(step);
+    };
+    motionRef.current = requestAnimationFrame(step);
   };
 
   useEffect(() => {
@@ -700,81 +824,58 @@ export function FieldCanvas() {
       <div className="canvas-hint" data-testid="canvas-hint" aria-live="polite">
         {TOOL_HINTS[tool]}
       </div>
-      {menu && <WaypointMenu menu={menu} close={() => setMenu(null)} />}
       <QuickStartOverlay />
     </div>
   );
 }
 
-/** Right-click on a waypoint: its heading, pin and delete. */
-function WaypointMenu({ menu, close }: { menu: Menu; close: () => void }) {
+/** Right-click on a waypoint: its heading, pin and delete (the app's context menu). */
+function waypointMenu(index: number, x: number, y: number): void {
   const path = activePath();
-  const w = path.spec.waypoints[menu.index];
-  const firstRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => firstRef.current?.focus(), []);
-  if (!w) return null;
+  const w = path.spec.waypoints[index];
+  if (!w) return;
   const n = path.spec.waypoints.length;
-  const isEnd = menu.index === 0 || menu.index === n - 1;
+  const isEnd = index === 0 || index === n - 1;
   const passThrough = Number.isNaN(w.headingRadians);
-  const run = (fn: () => void) => () => {
-    fn();
-    close();
-  };
   const planned = () => {
     const a = analysis.get().result;
-    return snapHeading(waypointPose({ active: path, analysis: a && a.ok ? a : null }, menu.index).heading, false);
+    return snapHeading(waypointPose({ active: path, analysis: a && a.ok ? a : null }, index).heading, false);
   };
-  return (
-    <div
-      className="context-menu"
-      role="menu"
-      aria-label={`Waypoint ${menu.index}`}
-      style={{ left: menu.x, top: menu.y }}
-      onKeyDown={(e) => e.key === "Escape" && close()}
-    >
-      <button
-        ref={firstRef}
-        type="button"
-        role="menuitem"
-        onClick={run(() => {
-          if (passThrough) editPath("Set heading", (p) => setHeading(p, menu.index, planned()));
-          // the waypoint panel's heading field takes the typed angle
-          setTimeout(() => document.querySelector<HTMLInputElement>('[data-testid="waypoint-heading"]')?.focus(), 0);
-        })}
-      >
-        Set heading…
-      </button>
-      {!isEnd && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={run(() =>
-            editPath(passThrough ? "Set heading" : "Pass through", (p) => setHeading(p, menu.index, passThrough ? planned() : Number.NaN)),
-          )}
-        >
-          {passThrough ? "Hold a heading here" : "Pass through (no heading)"}
-        </button>
-      )}
-      <button
-        type="button"
-        role="menuitem"
-        onClick={run(() => editPath(path.pinned[menu.index] ? "Unpin" : "Pin", (p) => setPinned(p, menu.index, !p.pinned[menu.index])))}
-      >
-        {path.pinned[menu.index] ? "Unpin (the optimiser may move it)" : "Pin (the optimiser leaves it)"}
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        disabled={n <= 2}
-        onClick={run(() => editPath("Delete waypoint", (p) => deleteWaypoint(p, menu.index), null))}
-      >
-        Delete
-      </button>
-      <button type="button" role="menuitem" onClick={close}>
-        Close
-      </button>
-    </div>
+  const items: MenuEntry[] = [
+    {
+      label: "Set heading…",
+      icon: <Compass size={14} />,
+      run: () => {
+        if (passThrough) editPath("Set heading", (p) => setHeading(p, index, planned()));
+        // the inspector's heading field takes the typed angle
+        setTimeout(() => document.querySelector<HTMLInputElement>('[data-testid="waypoint-heading"]')?.focus(), 0);
+      },
+    },
+  ];
+  if (!isEnd) {
+    items.push({
+      label: passThrough ? "Hold a heading here" : "Pass through (no heading)",
+      icon: <Navigation size={14} />,
+      run: () => editPath(passThrough ? "Set heading" : "Pass through", (p) => setHeading(p, index, passThrough ? planned() : Number.NaN)),
+    });
+  }
+  items.push(
+    {
+      label: path.pinned[index] ? "Unpin (the optimiser may move it)" : "Pin (the optimiser leaves it)",
+      icon: path.pinned[index] ? <LockOpen size={14} /> : <Lock size={14} />,
+      run: () => editPath(path.pinned[index] ? "Unpin" : "Pin", (p) => setPinned(p, index, !p.pinned[index])),
+    },
+    "separator",
+    {
+      label: "Delete waypoint",
+      icon: <Trash2 size={14} />,
+      shortcut: "Del",
+      danger: true,
+      disabled: n <= 2,
+      run: () => editPath("Delete waypoint", (p) => deleteWaypoint(p, index), null),
+    },
   );
+  openContextMenu(x, y, `Waypoint ${index}`, items);
 }
 
 /** The undo label for a finished drag. */

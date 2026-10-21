@@ -56,6 +56,38 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 - **What you see is what the robot plans.** Edits are rounded to what the file holds (5 decimals; angles
   to 1e-5°), so the preview is exactly the plan the robot builds from the saved file.
 
+## Layout
+
+The editor is built as an app in a window: no page scroll, its own controls, menus and dialogs, laid out
+after PathPlanner's.
+
+- **Top bar.** The project and its file actions, the pages (**Editor**, **Telemetry**, **Bench**), the
+  command palette (**Ctrl+K**: every command by name, with its shortcut), help (**?**) and **Settings**
+  (**Ctrl+,**).
+- **Editor page.**
+  - **Paths rail (left).** One card per path with a small preview: New (from the active path's end),
+    Duplicate, Rename (F2 or double-click), Delete (undoable), and a right-click menu.
+  - **Field (centre).** The tools and Undo/Redo float top left, with the path's name and plan (length, time,
+    top speed). The checks badge (its popover lists them), blue/red view, grid snap, footprints and Fit float
+    top right. Playback is a slim bar along the bottom. The charts are a drawer underneath, closed until opened.
+  - **Inspector (right).** With nothing selected: **Optimise path**, then the path's cards in PathPlanner's
+    order (Waypoints open; Global constraints, Start and end state, Rotation targets, Event markers,
+    Constraint zones, Point-towards zones, Named points, Optimiser settings). With something selected: only
+    that item, with Back (Esc) and, for waypoints, previous/next.
+  - The rail and the inspector resize by dragging their edges, and the sizes are remembered.
+- **Settings page.** Robot (robot.json), Path defaults (what a new path starts with), Field (size and
+  obstacles), Project (the robot project folder, red flip, PathName enum), Sim preview drivetrain (latency,
+  lag, grip), and Editor (snapping, footprints, the quick start).
+- **Telemetry page.** The NT4 connection and live data. The connection stays up on the other pages, and a
+  switch shows the live robot on the editor's field.
+- **Feel.** Number fields scrub when you drag their label (Shift for finer) and step with the arrow keys or
+  their steppers. Selects, switches, sliders, menus, tooltips (with shortcuts) and toasts are the app's own.
+  The field pans with a little inertia and zooms smoothly toward the pointer. Ctrl+wheel, pinch and
+  Ctrl +/−/0 zoom the field, never the page. There is no text selection or drag ghost on the app's chrome.
+  Motion is 120-180 ms and off with the system's reduced-motion setting.
+- **Screenshots.** `npm run screenshots` saves the empty editor, a drawn path, a selected waypoint, Settings
+  and Telemetry at 1440×900 and 1280×800 to `app/screenshots/`.
+
 ## Features
 
 **Field.**

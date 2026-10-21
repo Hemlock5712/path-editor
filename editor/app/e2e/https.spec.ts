@@ -26,8 +26,7 @@ test.beforeEach(async ({ page }) => {
 async function openLive(page: import("@playwright/test").Page) {
   await page.goto(`${ORIGIN}/`);
   await expect(page.getByTestId("path-stats")).toContainText(" s,");
-  const summary = page.locator("summary", { hasText: "Live robot (NT4)" });
-  await summary.click();
+  await page.getByTestId("page-telemetry").click();
 }
 
 test("from the https site, the Live panel says to allow local network access", async ({ page }) => {

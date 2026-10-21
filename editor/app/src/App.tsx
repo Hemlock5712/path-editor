@@ -1,24 +1,21 @@
-// The editor's layout: toolbar and tabs on top, the field with the side panels, charts and playback
-// below. Starts the analysis worker and the playback clock.
+// The app's window: the top bar, the page (editor, telemetry, bench or settings), the status bar, and
+// the app-wide layers (tooltips, toasts, menus, the palette, dialogs). Starts the analysis worker and the
+// playback clock.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { analysis, playback, startAnalysis } from "./state/analysis.ts";
-import { bench } from "./state/bench.ts";
-import { useStore } from "./state/store.ts";
-import { BenchView } from "./ui/BenchView.tsx";
 import { editor, isDirty } from "./state/editor.ts";
-import { Charts } from "./ui/Charts.tsx";
-import { FieldCanvas } from "./ui/FieldCanvas.tsx";
-import { ChecksPanel } from "./ui/panels/ChecksPanel.tsx";
-import { EventsPanel } from "./ui/panels/EventsPanel.tsx";
-import { ObstaclesPanel, PointsPanel, ProjectPanel, RobotPanel } from "./ui/panels/FieldPanels.tsx";
-import { RotationPanel, ZonesPanel } from "./ui/panels/HeadingPanel.tsx";
-import { LivePanel } from "./ui/panels/LivePanel.tsx";
-import { OptimisePanel } from "./ui/panels/OptimisePanel.tsx";
-import { PathPanel, WaypointsPanel } from "./ui/panels/PathPanel.tsx";
-import { QuickStartList } from "./ui/QuickStart.tsx";
-import { onKeyDown, SHORTCUTS } from "./ui/shortcuts.ts";
-import { PathTabs, PlaybackBar, StatusLine, Toolbar } from "./ui/Toolbar.tsx";
+import { useStore } from "./state/store.ts";
+import { INSPECTOR, RAIL, ui } from "./state/ui.ts";
+import { BenchView } from "./ui/BenchView.tsx";
+import { ProjectRail } from "./ui/editor/ProjectRail.tsx";
+import { Stage } from "./ui/editor/Stage.tsx";
+import { Inspector } from "./ui/inspector/Inspector.tsx";
+import { SettingsPage } from "./ui/pages/SettingsPage.tsx";
+import { TelemetryPage } from "./ui/pages/TelemetryPage.tsx";
+import { onKeyDown } from "./ui/shortcuts.ts";
+import { CommandPalette, ConfirmHost, ContextMenuHost, HelpDialog, installAppBehaviour, Splitter, Toasts, TooltipHost } from "./ui/shell.tsx";
+import { StatusBar, TopBar } from "./ui/TopBar.tsx";
 
 /** Advances the playback clock while playing. */
 function usePlaybackClock(): void {
@@ -42,61 +39,51 @@ function usePlaybackClock(): void {
   }, []);
 }
 
-function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (open && !d.open) d.showModal();
-    if (!open && d.open) d.close();
-  }, [open]);
+function EditorPage() {
+  const railWidth = useStore(ui, (s) => s.railWidth);
+  const inspectorWidth = useStore(ui, (s) => s.inspectorWidth);
   return (
-    <dialog ref={ref} className="help" aria-labelledby="help-title" onClose={onClose}>
-      <h2 id="help-title">Quick start</h2>
-      <QuickStartList />
-      <h2>Keyboard shortcuts</h2>
-      <table>
-        <tbody>
-          {SHORTCUTS.map(([keys, what]) => (
-            <tr key={keys}>
-              <th scope="row">
-                <kbd>{keys}</kbd>
-              </th>
-              <td>{what}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p>
-        The field origin is its centre (WPILib 2027). Paths are stored for blue; the red view shows them through the
-        project's red flip, and edits made there are stored for blue.
-      </p>
-      <form method="dialog">
-        <button type="submit" autoFocus>
-          Close
-        </button>
-      </form>
-    </dialog>
+    <div className="split">
+      <aside className="pane side" style={{ width: railWidth }} aria-label="Project">
+        <ProjectRail />
+      </aside>
+      <Splitter label="Resize the paths rail" side="left" width={railWidth} min={RAIL.min} max={RAIL.max} onResize={(w) => ui.set({ railWidth: w })} />
+      <div className="pane main">
+        <Stage />
+      </div>
+      <Splitter
+        label="Resize the inspector"
+        side="right"
+        width={inspectorWidth}
+        min={INSPECTOR.min}
+        max={INSPECTOR.max}
+        onResize={(w) => ui.set({ inspectorWidth: w })}
+      />
+      <aside className="pane side" style={{ width: inspectorWidth }} aria-label="Inspector" data-testid="inspector">
+        <Inspector />
+      </aside>
+    </div>
   );
 }
 
 export function App() {
-  const [help, setHelp] = useState(false);
-  const benchOpen = useStore(bench, (b) => b.open);
+  const page = useStore(ui, (s) => s.page);
   usePlaybackClock();
 
   useEffect(() => startAnalysis(), []);
 
   useEffect(() => {
-    // the Bench view is read-only: no editing shortcuts while it is open
-    const keys = (e: KeyboardEvent) => !bench.get().open && onKeyDown(e, () => setHelp(true));
     const leave = (e: BeforeUnloadEvent) => {
       if (isDirty(editor.get())) e.preventDefault();
     };
-    window.addEventListener("keydown", keys);
+    const uninstall = installAppBehaviour();
+    window.addEventListener("keydown", onKeyDown);
     window.addEventListener("beforeunload", leave);
+    // the splash in index.html goes once the app has drawn
+    document.getElementById("splash")?.remove();
     return () => {
-      window.removeEventListener("keydown", keys);
+      uninstall();
+      window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("beforeunload", leave);
     };
   }, []);
@@ -115,35 +102,20 @@ export function App() {
 
   return (
     <div className="app">
-      <Toolbar />
-      <PathTabs onHelp={() => setHelp(true)} />
-      {benchOpen ? (
-        <BenchView />
-      ) : (
-        <main className="workspace">
-          <section className="field-column" aria-label="Field">
-            <FieldCanvas />
-            <PlaybackBar />
-            <Charts />
-          </section>
-          <aside className="sidebar" aria-label="Path details">
-            <ChecksPanel />
-            <PathPanel />
-            <WaypointsPanel />
-            <EventsPanel />
-            <RotationPanel />
-            <ZonesPanel />
-            <OptimisePanel />
-            <PointsPanel />
-            <ObstaclesPanel />
-            <RobotPanel />
-            <ProjectPanel />
-            <LivePanel />
-          </aside>
-        </main>
-      )}
-      <StatusLine />
-      <HelpDialog open={help} onClose={() => setHelp(false)} />
+      <TopBar />
+      <div className="page" data-page={page}>
+        {page === "editor" && <EditorPage />}
+        {page === "telemetry" && <TelemetryPage />}
+        {page === "bench" && <BenchView />}
+        {page === "settings" && <SettingsPage />}
+      </div>
+      <StatusBar />
+      <TooltipHost />
+      <Toasts />
+      <ContextMenuHost />
+      <CommandPalette />
+      <ConfirmHost />
+      <HelpDialog />
     </div>
   );
 }

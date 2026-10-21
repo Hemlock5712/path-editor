@@ -1,7 +1,7 @@
 // The first-run quick start: how to draw a swerve path in six lines. Shown over the field until it is
 // dismissed (remembered in this browser), and always at the top of the help dialog.
 
-import { useState } from "react";
+import { createStore, useStore } from "../state/store.ts";
 
 export const QUICK_START: readonly string[] = [
   "Draw (W): click to add points; click the path to insert one. Enter when done.",
@@ -33,9 +33,16 @@ export function QuickStartList() {
   );
 }
 
-/** The first-run card over the field; "Got it" hides it for good (the ? button shows it again). */
+const overlay = createStore({ open: !seen() });
+
+/** Shows the quick start over the field again (Settings, Editor). */
+export function showQuickStart(): void {
+  overlay.set({ open: true });
+}
+
+/** The first-run card over the field; "Got it" hides it for good (Settings or ? show it again). */
 export function QuickStartOverlay() {
-  const [open, setOpen] = useState(() => !seen());
+  const open = useStore(overlay, (s) => s.open);
   if (!open) return null;
   const dismiss = () => {
     try {
@@ -43,13 +50,13 @@ export function QuickStartOverlay() {
     } catch {
       // private mode: it shows again next time
     }
-    setOpen(false);
+    overlay.set({ open: false });
   };
   return (
     <div className="quick-start" role="dialog" aria-label="Quick start" data-testid="quick-start">
       <h2>Quick start</h2>
       <QuickStartList />
-      <button type="button" onClick={dismiss} data-testid="quick-start-dismiss">
+      <button type="button" className="btn primary" onClick={dismiss} data-testid="quick-start-dismiss">
         Got it
       </button>
     </div>

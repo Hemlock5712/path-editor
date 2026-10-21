@@ -1,6 +1,7 @@
 // Where the project came from and how it saves: a robot project folder (File System Access API),
 // or, where the browser can't write folders, an uploaded folder saved back as a zip download.
 
+import { askConfirm } from "./confirm.ts";
 import { canOpenFolders, DirectoryFiles, filesFromUpload, pickFolder, type ProjectFiles } from "../io/files.ts";
 import { loadFrom, PATH_SUFFIX, PATHS_DIR, saveTo, toFiles } from "../io/projectIo.ts";
 import { download, zip } from "../io/zip.ts";
@@ -32,8 +33,8 @@ function pathFilesOf(): Set<string> {
   return new Set(editor.get().project.paths.map((p) => `${PATHS_DIR}/${p.name}${PATH_SUFFIX}`));
 }
 
-function confirmDiscard(): boolean {
-  return !isDirty(editor.get()) || window.confirm("Discard the unsaved changes?");
+async function confirmDiscard(): Promise<boolean> {
+  return !isDirty(editor.get()) || (await askConfirm("Discard the unsaved changes?", "Discard"));
 }
 
 async function openFiles(files: ProjectFiles, writable: boolean): Promise<void> {
@@ -68,14 +69,14 @@ export async function openFolder(): Promise<void> {
     notify("This browser can't open folders; use Upload instead (and save as a zip).", "error");
     return;
   }
-  if (!confirmDiscard()) return;
+  if (!(await confirmDiscard())) return;
   const files = await pickFolder();
   if (files) await openFiles(files, true);
 }
 
 /** Loads an uploaded folder (any browser); saving it gives a zip to unpack over the project. */
 export async function openUpload(list: FileList): Promise<void> {
-  if (!confirmDiscard()) return;
+  if (!(await confirmDiscard())) return;
   await openFiles(await filesFromUpload(list), false);
 }
 
@@ -125,8 +126,8 @@ export function downloadZip(): void {
   notify("Downloaded paths.zip: unzip it over the robot project's folder.");
 }
 
-export function newProject(): void {
-  if (!confirmDiscard()) return;
+export async function newProject(): Promise<void> {
+  if (!(await confirmDiscard())) return;
   loadProject(emptyProject());
   session.set({ files: null, writable: false, hadField: false, hadRobot: false, knownPathFiles: new Set() });
   notify("New project. Open a robot project folder or save to choose one.");

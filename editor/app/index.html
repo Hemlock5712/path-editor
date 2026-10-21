@@ -3,10 +3,64 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 13 C6 13 6 3 14 3' stroke='%2338bdf8' stroke-width='2' fill='none'/%3E%3C/svg%3E" />
+    <meta name="theme-color" content="#11161d" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <title>Path Editor 5712</title>
+    <style>
+      /* the splash, styled before any script or stylesheet loads: no flash of a white page */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0e13;
+        color: #8d99aa;
+        font: 13px "Segoe UI", system-ui, sans-serif;
+        overflow: hidden;
+      }
+      #splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        z-index: 100;
+      }
+      #splash .bar {
+        width: 120px;
+        height: 3px;
+        border-radius: 3px;
+        background: #1e2631;
+        overflow: hidden;
+      }
+      #splash .bar::after {
+        content: "";
+        display: block;
+        width: 40%;
+        height: 100%;
+        background: #4ca6ff;
+        animation: splash 1s ease-in-out infinite alternate;
+      }
+      @keyframes splash {
+        to {
+          transform: translateX(150%);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash .bar::after {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="splash" aria-hidden="true">
+      <img src="/icon.svg" width="56" height="56" alt="" />
+      <div>Path Editor</div>
+      <div class="bar"></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

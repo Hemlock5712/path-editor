@@ -68,7 +68,7 @@ export function newPath(start?: { x: number; y: number; heading: number; pointId
   const s = editor.get();
   const from = activePath(s).spec.waypoints.at(-1)!;
   const pose = start ?? { x: from.xMeters, y: from.yMeters, heading: Number.isNaN(from.headingRadians) ? 0 : from.headingRadians };
-  let path = makeEditorPath(uniquePathName(s.project), starterSpec(pose.x, pose.y, pose.heading), s.project.paths.length);
+  let path = makeEditorPath(uniquePathName(s.project), starterSpec(pose.x, pose.y, pose.heading, s.project.settings.pathDefaults), s.project.paths.length);
   if (start?.pointId) path = { ...path, links: path.links.map((l, i) => (i === 0 ? start.pointId! : l)) };
   execute(insertPath("New path", path, s.project.paths.length));
   setActivePath(path.id);
@@ -90,9 +90,9 @@ export function removeActivePath(): void {
     return;
   }
   const path = activePath(s);
-  if (!window.confirm(`Delete the path ${path.name}? (Undo brings it back; saving removes its file.)`)) return;
   const index = s.project.paths.indexOf(path);
   execute(deletePath("Delete path", path, index), null);
+  notify(`Deleted ${path.name}: Ctrl+Z brings it back (saving removes its file).`);
 }
 
 export function cyclePath(step: number): void {
@@ -123,4 +123,10 @@ export function toggleAlliance(): void {
 
 export function fitView(): void {
   setView({ zoom: 1, centerX: 0, centerY: 0 });
+}
+
+/** Zooms the field about its centre (the keyboard and the palette; the wheel zooms about the pointer). */
+export function zoomBy(factor: number): void {
+  const v = editor.get().view;
+  setView({ zoom: Math.min(40, Math.max(0.3, v.zoom * factor)) });
 }

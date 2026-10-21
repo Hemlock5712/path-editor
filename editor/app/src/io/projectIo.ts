@@ -70,7 +70,12 @@ export function writeSidecar(project: Project, view: ViewState): string {
     schema: SIDECAR_SCHEMA,
     paths: project.paths.map((p) => ({ name: p.name, colour: p.colour, links: [...p.links], pinned: [...p.pinned] })),
     namedPoints: project.namedPoints.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y })),
-    settings: { redFrame: project.settings.redFrame, javaPackage: project.settings.javaPackage },
+    settings: {
+      redFrame: project.settings.redFrame,
+      javaPackage: project.settings.javaPackage,
+      pathDefaults: { ...project.settings.pathDefaults },
+      simPreview: { ...project.settings.simPreview },
+    },
     view: {
       alliance: view.alliance,
       zoom: view.zoom,
@@ -176,7 +181,12 @@ export function fromFiles(files: ReadonlyMap<string, string>): LoadedProject | n
     namedPoints: sidecar?.namedPoints ?? [],
     field,
     robot,
-    settings: { ...DEFAULT_SETTINGS, ...(sidecar?.settings ?? {}) },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      ...(sidecar?.settings ?? {}),
+      pathDefaults: { ...DEFAULT_SETTINGS.pathDefaults, ...(sidecar?.settings?.pathDefaults ?? {}) },
+      simPreview: { ...DEFAULT_SETTINGS.simPreview, ...(sidecar?.settings?.simPreview ?? {}) },
+    },
   };
   return {
     project,

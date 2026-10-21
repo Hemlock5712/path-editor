@@ -6,7 +6,8 @@ import { setPinned } from "../../model/edits.ts";
 import { editPath } from "../../state/editor.ts";
 import { applyOptimise, cancelOptimise, discardOptimise, optimiser, startOptimise } from "../../state/optimiser.ts";
 import { useStore } from "../../state/store.ts";
-import { formatNumber, IconButton, NumberField, Section } from "../controls.tsx";
+import { Lock, LockOpen, WandSparkles } from "lucide-react";
+import { formatNumber, NumberField, Switch } from "../controls.tsx";
 import { useActivePath } from "./common.tsx";
 
 const STOPPED = {
@@ -29,22 +30,23 @@ export function OptimiseControls() {
     <div className="optimise">
       <div className="row">
         {running && forThisPath ? (
-          <IconButton label="Stop the optimiser and keep the best so far" onClick={cancelOptimise} testId="optimise-cancel">
+          <button type="button" className="btn big block" onClick={cancelOptimise} data-tip="Stop and keep the best so far" data-testid="optimise-cancel">
             Stop
-          </IconButton>
+          </button>
         ) : (
           <button
             type="button"
-            className="primary"
+            className="btn primary big block"
             onClick={startOptimise}
             disabled={free === 0 || (forThisPath && o.status === "done")}
-            title={
+            data-tip={
               free === 0
                 ? "Nothing to move: only pass-through points that aren't pinned move"
                 : `Move the ${free} pass-through point${free === 1 ? "" : "s"} and their tangents to shorten the planned time (${formatNumber(o.budgetSeconds, 1)} s budget)`
             }
             data-testid="optimise-path"
           >
+            <WandSparkles size={16} />
             Optimise path
           </button>
         )}
@@ -65,19 +67,19 @@ export function OptimiseControls() {
         <div className="row">
           {o.result.afterSeconds < o.result.beforeSeconds ? (
             <>
-              <button type="button" className="primary" onClick={applyOptimise} title="Use the dashed path (one undo step)" data-testid="optimise-apply">
+              <button type="button" className="btn primary" onClick={applyOptimise} data-tip="Use the dashed path (one undo step)" data-testid="optimise-apply">
                 Apply
               </button>
-              <IconButton label="Keep the path as it was" onClick={discardOptimise} testId="optimise-discard">
+              <button type="button" className="btn ghost" onClick={discardOptimise} data-tip="Keep the path as it was" data-testid="optimise-discard">
                 Discard
-              </IconButton>
+              </button>
             </>
           ) : (
             <>
               <span className="hint">No faster path within the corridor.</span>
-              <IconButton label="Close the optimiser result" onClick={discardOptimise} testId="optimise-discard">
+              <button type="button" className="btn ghost" onClick={discardOptimise} data-testid="optimise-discard">
                 OK
-              </IconButton>
+              </button>
             </>
           )}
         </div>
@@ -86,7 +88,7 @@ export function OptimiseControls() {
   );
 }
 
-export function OptimisePanel() {
+export function OptimiserSettings() {
   const path = useActivePath();
   const o = useStore(optimiser, (s) => s);
   const running = o.status === "running";
@@ -96,7 +98,7 @@ export function OptimisePanel() {
   const setSegment = (from: number, to: number) =>
     optimiser.set({ segment: Number.isNaN(from) || Number.isNaN(to) ? null : [Math.round(from), Math.round(to)] });
   return (
-    <Section title="Optimiser settings">
+    <>
       <p className="hint">
         Optimise path moves the pass-through points (within the corridor) and their tangent scales to shorten the planned time, keeping the
         bumpers clear of obstacles and the heading checks as they are. The start, the end, points with a set heading and pinned points stay
@@ -107,10 +109,8 @@ export function OptimisePanel() {
         <NumberField label="Budget" unit="s" min={0.2} value={o.budgetSeconds} onCommit={(v) => optimiser.set({ budgetSeconds: v })} />
         <NumberField label="Seed" decimals={0} value={o.seed} onCommit={(v) => optimiser.set({ seed: Math.round(v) })} />
       </div>
-      <label className="row">
-        <input type="checkbox" checked={o.optimiseScales} onChange={() => optimiser.set({ optimiseScales: !o.optimiseScales })} /> Tangent scales too
-      </label>
-      <div className="grid2" title="Only move the waypoints between these two; blank = the whole path">
+      <Switch label="Tangent scales too" checked={o.optimiseScales} onChange={(on) => optimiser.set({ optimiseScales: on })} />
+      <div className="grid2" data-tip="Only move the waypoints between these two; blank = the whole path">
         <NumberField
           label="Only between waypoint"
           decimals={0}
@@ -128,27 +128,31 @@ export function OptimisePanel() {
           onCommit={(v) => setSegment(o.segment ? o.segment[0] : 0, v)}
         />
       </div>
-      <fieldset className="card">
-        <legend>Pinned waypoints</legend>
-        <div className="locks">
+      <div className="field">
+        <span className="field-label">Pinned waypoints</span>
+        <div className="locks" role="group" aria-label="Pinned waypoints">
           {path.spec.waypoints.map((_, i) => {
             const pinned = path.pinned[i] === true;
             // (linked waypoints come back as locked: say why)
             const reason = why[i] === "pinned" ? "linked to a named point" : why[i]!;
             return (
-              <label key={i} title={reason ?? (pinned ? "pinned: the optimiser leaves it" : "pin it to keep it where it is")}>
-                <input
-                  type="checkbox"
-                  checked={pinned || reason !== null}
-                  disabled={reason !== null || running}
-                  onChange={(e) => editPath(e.target.checked ? "Pin" : "Unpin", (p) => setPinned(p, i, e.target.checked))}
-                />{" "}
+              <button
+                key={i}
+                type="button"
+                className="pin-chip"
+                aria-pressed={pinned || reason !== null}
+                aria-label={`Pin waypoint ${i}`}
+                disabled={reason !== null || running}
+                data-tip={reason ?? (pinned ? "Pinned: the optimiser leaves it" : "Pin it to keep it where it is")}
+                onClick={() => editPath(pinned ? "Unpin" : "Pin", (p) => setPinned(p, i, !pinned))}
+              >
+                {pinned || reason !== null ? <Lock size={11} /> : <LockOpen size={11} />}
                 {i}
-              </label>
+              </button>
             );
           })}
         </div>
-      </fieldset>
-    </Section>
+      </div>
+    </>
   );
 }
