@@ -279,13 +279,31 @@ The **Bench** page is a read-only view of the bench's results, set up so they ca
 - **Time sync.** It sends `[-1, 0, int, its time]` and the server answers with its own clock. The client keeps
   the shortest round trip's offset, as ntcore's client does.
 - **Connection.** It reconnects when the robot goes away. It is read-only.
-- **The Telemetry page.** The connect box takes a team number (5712 → 10.57.12.2) or an address (`localhost` for a
-  simulation) and the pose topic. It shows the active path, phase, progress s, the distance left,
-  cross-track, the reference, the robot's pose and its age, and the events fired.
-- **On the field.** The robot (pink), the reference, and the follower's progress, drawn on the path when the
-  editor shows the path the robot is running.
-- **Topics.** It reads what `PathTelemetry` publishes: `/Telemetry/PathFollower/{Active, EventsFired, LastEvent}`
-  and `/Telemetry/Path/<path>/{Phase, Progress, Remaining, CrossTrack, Reference, Goal}`.
+- **The Telemetry page** shows how well the robot tracks a path. The connect box takes a team number
+  (5712 → 10.57.12.2) or an address (`localhost` for a simulation) and the pose topic.
+  - **Recording.** Every run of the follower is recorded loop by loop (`nt4/recorder.ts`), from
+    PathFollower/Active naming a path until it goes back to "". The last 10 runs are listed, and each can be
+    exported as JSON or imported back.
+  - **The field.** The path the robot is following: the plan it published, or the open project's path of that
+    name. Where it should be (the reference, ghosted), where it is (solid), a line between them, the trail
+    coloured by cross-track error (green on the line, red from 10 cm), and the path's events lighting up as
+    they fire.
+  - **Graphs** over time or over distance along the path: cross-track, along-track (ahead of or behind the
+    plan's schedule) and heading error, planned and actual speed, and planned and actual turn rate. The
+    finish phase is shaded and events are marked where they fired.
+  - **A cursor** is shared by the field and the graphs. It follows the live run (**Live**), or scrubs and
+    replays a recorded one.
+  - **The summary** gives cross-track RMS and max, final position and heading error, the time against the plan,
+    and the events fired against the path's.
+- **On the editor's field.** The robot (pink), the reference, and the follower's progress, drawn on the path when
+  the editor shows the path the robot is running (a switch on the Telemetry page turns this off).
+- **Topics.** It reads what `PathTelemetry` publishes.
+  - `/Telemetry/PathFollower/{Active, EventsFired, LastEvent}`.
+  - Each loop, `/Telemetry/Path/<path>/{Phase, Progress, Remaining, CrossTrack, AlongTrack, HeadingError, Speed,
+    PlannedSpeed, Omega, PlannedOmega, Elapsed, Reference, Goal}`.
+  - Once per start, `Plan`: the planned path every 5 cm as [s, x, y, heading, t, v] per sample, in the frame the
+    robot runs it in. About 1,100 doubles for a 9 m path. Also `PlanEvents`, `PlanEventMeters` and `PlanSeconds`.
+  - It subscribes with "all" so no loop is coalesced away.
 
 **Tested against the real thing.** `npm run test:nt4` starts lib's `Nt4TelemetryServer` with `gradlew nt4Server`.
 That is WPILib's ntcore as an NT4 server, from the alpha-7 jars and desktop natives, with a real `PathFollower` in
@@ -297,7 +315,13 @@ That is WPILib's ntcore as an NT4 server, from the alpha-7 jars and desktop nati
 - a whole run's events arrive in order;
 - the time sync works. The harness publishes ntcore's own clock (ns) and flushes each loop. On arrival, the
   client's estimate of server time sits at or just after that clock: measured median 0.8 ms, never earlier than
-  half a round trip, with about a 1 ms round trip.
+  half a round trip, with about a 1 ms round trip;
+- a whole run, recorded as the Telemetry page records it, matches the follower's own account of it. At the end
+  of each run the harness publishes `Harness/RunSummary` from the follower's values each loop. Measured: 183 of
+  183 loops, cross-track RMS 0.389 cm (follower 0.389), max 1.105 cm (1.105), final error 0.16 cm (0.15).
+
+`npm run e2e:live` runs the Telemetry page against the same harness in a browser. It records runs, checks the
+summary and the graphs, and saves `screenshots/telemetry-during-run.png` and `telemetry-after-run.png`.
 
 It hasn't been on a robot yet.
 

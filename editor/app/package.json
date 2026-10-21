@@ -14,7 +14,8 @@
     "e2e:author": "playwright test --config playwright.author.config.ts",
     "e2e:full": "node ../../tools/e2e.mjs",
     "test:nt4": "vitest run --config vitest.nt4.config.ts",
-    "screenshots": "playwright test --config playwright.screens.config.ts"
+    "screenshots": "playwright test --config playwright.screens.config.ts",
+    "e2e:live": "playwright test --config playwright.live.config.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.1",

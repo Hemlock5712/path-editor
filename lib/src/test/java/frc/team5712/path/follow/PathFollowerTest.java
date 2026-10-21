@@ -91,6 +91,32 @@ class PathFollowerTest {
   }
 
   @Test
+  void reportsHowItTracksThePlan() {
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    PathFollower follower = new PathFollower(path, CFG);
+    assertTrue(Double.isNaN(follower.alongTrackMeters()), "nothing before the start");
+    double[] worst = new double[3];
+    List<Double> along = new ArrayList<>();
+    Run r = run(path, follower, FieldFrame.BLUE, 20, (t, plant, f) -> {
+      if (f.phase() != PathFollower.Phase.TRACKING || Double.isNaN(f.headingErrorRadians())) {
+        return; // (before the first step there is nothing to report yet)
+      }
+      along.add(f.alongTrackMeters());
+      worst[0] = Math.max(worst[0], Math.abs(f.headingErrorRadians()));
+      worst[1] = Math.max(worst[1], Math.abs(f.measuredMetersPerSecond() - f.plannedMetersPerSecond()));
+      worst[2] = Math.max(worst[2], f.plannedMetersPerSecond());
+      assertEquals(f.elapsedSeconds(), t, 0.05);
+    });
+    assertTrue(r.finished());
+    assertTrue(along.size() > 50);
+    // it keeps the plan's heading and speed closely, and stays within a stride of the plan's schedule
+    assertTrue(worst[0] < 0.05, "heading error " + worst[0]);
+    assertTrue(worst[1] < 0.8, "speed error " + worst[1]);
+    assertTrue(worst[2] <= FixturePaths.sCurve().maxMetersPerSecond() + 1e-9);
+    assertTrue(along.stream().allMatch(a -> Math.abs(a) < 0.6), "along-track " + along);
+  }
+
+  @Test
   void recoversFromAShove() {
     Path path = Path.build(FixturePaths.sCurve(), ROBOT);
     Run r = run(path, new PathFollower(path, CFG), FieldFrame.BLUE, 20,

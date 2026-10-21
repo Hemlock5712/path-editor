@@ -56,7 +56,11 @@ export interface Nt4Options {
   readonly prefixes: readonly string[];
   /** How often the server should send updates, seconds. */
   readonly periodicSeconds?: number;
+  /** Send every value, not only the newest each period (for recording every loop). */
+  readonly all?: boolean;
   readonly onValue?: (v: Nt4Value) => void;
+  /** After the values of one incoming frame (a robot loop's flush arrives as one). */
+  readonly onFrameEnd?: () => void;
   readonly onStatus?: (status: Nt4Status, detail: string) => void;
   readonly onTimeSync?: (offsetUs: number, rttUs: number) => void;
   /** Local clock, µs (tests can replace it). */
@@ -192,7 +196,7 @@ export class Nt4Client {
       params: {
         topics: [...this.options.prefixes],
         subuid: 1,
-        options: { prefix: true, periodic: this.options.periodicSeconds ?? 0.02, all: false },
+        options: { prefix: true, periodic: this.options.periodicSeconds ?? 0.02, all: this.options.all ?? false },
       },
     };
     socket.send(JSON.stringify([message]));
@@ -247,6 +251,7 @@ export class Nt4Client {
       this.latestByName.set(topic.name, v);
       this.options.onValue?.(v);
     }
+    this.options.onFrameEnd?.();
   }
 
   private onTimeSync(serverTimeUs: number, sentUs: number): void {

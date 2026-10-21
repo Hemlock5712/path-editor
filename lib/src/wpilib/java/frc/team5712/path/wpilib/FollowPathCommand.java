@@ -135,7 +135,7 @@ public final class FollowPathCommand implements Command {
     FieldFrame frame = startFrame();
     follower.start(clock.getAsDouble(), Conversions.toPose(pose.get()), measured, frame,
         handedCommand == null ? measured : handedCommand.get());
-    telemetry.begin();
+    telemetry.begin(follower);
     while (true) {
       execute(coroutine);
       if (follower.isFinished()) {

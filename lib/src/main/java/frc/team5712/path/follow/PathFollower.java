@@ -128,6 +128,10 @@ public final class PathFollower {
   private double s;
   private double lastS; // progress at the previous step, for its rate
   private double lastTime;
+  private double startTime;
+  private double headingError = Double.NaN;
+  private double measuredSpeed = Double.NaN;
+  private double measuredOmega = Double.NaN;
   private double settledSince = Double.NaN;
   private double crossTrack;
   private double refX;
@@ -265,6 +269,10 @@ public final class PathFollower {
     updateProgress(p);
     lastS = s;
     lastTime = timeSeconds;
+    startTime = timeSeconds;
+    headingError = Double.NaN;
+    measuredSpeed = Double.NaN;
+    measuredOmega = Double.NaN;
     settledSince = Double.NaN;
     phase = Phase.TRACKING;
     slipMu = Double.POSITIVE_INFINITY;
@@ -295,6 +303,8 @@ public final class PathFollower {
       return output();
     }
 
+    measuredSpeed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
+    measuredOmega = vel.omegaRadPerSec();
     pollGoal(pose);
     updateGrip(dt);
     double brakeDecel = Math.min(cfg.brakeMetersPerSecondSquared(), slipMu * RobotConfig.GRAVITY);
@@ -370,6 +380,8 @@ public final class PathFollower {
       refY = here.yMeters() + ny * offset;
       refHeading = here.headingRadians();
     }
+
+    headingError = Angles.wrap(refHeading - pose.headingRadians());
 
     // Raw field-axis overrides, given in the robot's frame: into blue, then before or after the limiter
     double ox = overrideX == null ? Double.NaN : overrideX.getAsDouble();
@@ -656,6 +668,51 @@ public final class PathFollower {
   /** Signed distance from the path, metres, positive to the left of travel (0 in the terminal phase). */
   public double crossTrackMeters() {
     return crossTrack;
+  }
+
+  /**
+   * How far ahead of the plan's schedule the robot is, metres: progress minus where the plan is at the
+   * time since the start (negative: behind). NaN before the start.
+   */
+  public double alongTrackMeters() {
+    if (phase == Phase.IDLE) {
+      return Double.NaN;
+    }
+    return s - active.profile().sAtTime(Math.max(0.0, lastTime - startTime));
+  }
+
+  /** The reference heading minus the measured one, radians (blue frame), at the last step. */
+  public double headingErrorRadians() {
+    return headingError;
+  }
+
+  /** The plan's speed at the robot's progress, m/s. */
+  public double plannedMetersPerSecond() {
+    return phase == Phase.IDLE ? Double.NaN : active.sample(s).metersPerSecond();
+  }
+
+  /** The plan's turn rate at the robot's progress, rad/s (blue frame). */
+  public double plannedOmegaRadPerSec() {
+    if (phase == Phase.IDLE) {
+      return Double.NaN;
+    }
+    PathSample here = active.sample(s);
+    return here.metersPerSecond() * here.headingRadiansPerMeter();
+  }
+
+  /** The measured speed over the ground at the last step, m/s. */
+  public double measuredMetersPerSecond() {
+    return measuredSpeed;
+  }
+
+  /** The measured turn rate at the last step, rad/s (blue frame). */
+  public double measuredOmegaRadPerSec() {
+    return measuredOmega;
+  }
+
+  /** Seconds since the start, at the last step. */
+  public double elapsedSeconds() {
+    return lastTime - startTime;
   }
 
   /** The pose the follower is steering for this loop, in the robot's frame. */

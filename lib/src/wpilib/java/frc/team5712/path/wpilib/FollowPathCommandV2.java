@@ -109,7 +109,7 @@ public final class FollowPathCommandV2 extends Command {
     double now = clock.getAsDouble();
     follower.start(now, Conversions.toPose(pose.get()), measured,
         startFrame(), handedCommand == null ? measured : handedCommand.get());
-    telemetry.begin();
+    telemetry.begin(follower);
     step(now);
   }
 
