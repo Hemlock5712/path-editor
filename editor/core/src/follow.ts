@@ -132,12 +132,16 @@ export class OutputLimiter {
     alpha = Math.max(-this.maxAlpha, Math.min(this.maxAlpha, alpha));
     const speedingUp = ax * this.vx + ay * this.vy > 0.0;
     if (speedingUp) {
-      const wheel = Math.sqrt(this.vx * this.vx + this.vy * this.vy) + Math.abs(this.omega) * this.robot.moduleRadiusMeters;
+      // only the push along the travel is the motors'; turning the velocity is the tread's grip
+      const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+      const wheel = speed + Math.abs(this.omega) * this.robot.moduleRadiusMeters;
       const motor = driveAccelMetersPerSecondSquared(this.robot, wheel);
-      const a = Math.sqrt(ax * ax + ay * ay);
-      if (a > motor) {
-        ax *= motor / a;
-        ay *= motor / a;
+      const ux = this.vx / speed;
+      const uy = this.vy / speed;
+      const along = ax * ux + ay * uy;
+      if (along > motor) {
+        ax -= (along - motor) * ux;
+        ay -= (along - motor) * uy;
       }
     }
     const total = Math.sqrt(ax * ax + ay * ay) + this.lever * Math.abs(alpha);
