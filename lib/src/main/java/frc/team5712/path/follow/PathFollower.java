@@ -535,7 +535,8 @@ public final class PathFollower {
       PathSample end = active.sample(active.lengthMeters());
       double past = (pose.xMeters() - end.xMeters()) * end.tangentX()
           + (pose.yMeters() - end.yMeters()) * end.tangentY();
-      if (remaining <= 1e-6 || past >= 0.0) {
+      // past the end's line, once near the end (a path can start beyond that line, e.g. an on-the-fly one)
+      if (remaining <= 1e-6 || (past >= 0.0 && remaining <= cfg.windowMeters())) {
         finish();
       }
       return;

@@ -1,10 +1,14 @@
 package frc.team5712.path.wpilib;
 
+import frc.team5712.path.core.Json;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.PathEvent;
 import frc.team5712.path.core.PathFile;
 import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.core.RobotFile;
+import frc.team5712.path.plan.FieldMap;
+import frc.team5712.path.plan.Pathfinder;
+import frc.team5712.path.plan.PlannerConfig;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -12,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -37,13 +43,27 @@ import org.wpilib.system.Filesystem;
  *
  * {@link #unboundEventNames} lists the names the path files use that have no command yet, which is
  * where a typo between the editor and the code shows up.
+ *
+ * <p>It also loads {@code field.json} (the field's size and obstacles, as the editor writes it) and builds
+ * the {@link Pathfinder}'s visibility graph, once, for on-the-fly paths ({@link Pathfinding}); and the
+ * editor's named points ({@code .pathproject.json}), so a path can be planned to one by name. A bad
+ * field.json fails loudly here, at boot. Without one the field is empty (walls only), at the 2026 size.
  */
 public final class PathLibrary {
   public static final String SUFFIX = ".path.json";
 
+  public static final String FIELD_FILE = "field.json";
+  public static final String PROJECT_FILE = ".pathproject.json";
+  /** The 2026 field (WPILib's 2026-rebuilt layout), for a deploy folder without field.json. */
+  public static final double DEFAULT_FIELD_LENGTH = 16.541;
+  public static final double DEFAULT_FIELD_WIDTH = 8.069;
+
   private final Map<String, Path> paths;
   private final RobotConfig robot;
   private final double buildMillis;
+  private Pathfinder pathfinder;
+  private boolean fieldFromFile;
+  private Map<String, double[]> namedPoints = Map.of();
   private final Map<String, org.wpilib.command3.Command> eventCommands = new HashMap<>();
   private final Map<String, org.wpilib.command2.Command> eventCommandsV2 = new HashMap<>();
 
@@ -68,7 +88,99 @@ public final class PathLibrary {
   public static PathLibrary loadAll(File dir) {
     File robotFile = new File(dir, "robot.json");
     RobotConfig robot = robotFile.isFile() ? RobotFile.read(read(robotFile)) : RobotConfig.DEFAULT;
-    return loadAll(dir, robot);
+    PathLibrary lib = loadAll(dir, robot);
+    long t0 = System.nanoTime();
+    PlannerConfig planner = robotFile.isFile()
+        ? PlannerConfig.fromRobotFile(PathFile.asMap(Json.parse(read(robotFile)), "robot.json"))
+        : PlannerConfig.DEFAULT;
+    lib.loadField(new File(dir, FIELD_FILE), planner);
+    lib.loadNamedPoints(new File(dir, PROJECT_FILE));
+    lib.fieldMillis = (System.nanoTime() - t0) / 1e6;
+    return lib;
+  }
+
+  private double fieldMillis;
+  private double warmUpMillis;
+  /** Plans made at boot so the first real one isn't slowed by the JIT. */
+  static final int WARM_UP_QUERIES = 40;
+
+  /** How long the boot warm-up plans took, milliseconds (part of {@link #fieldMillis}). */
+  public double warmUpMillis() {
+    return warmUpMillis;
+  }
+
+  /**
+   * Reads {@code file} (field.json) if it exists, else an empty 2026-size field, and builds the pathfinder
+   * for this robot with {@code planner}'s bumpers and margin. A bad file throws, naming it.
+   */
+  public PathLibrary loadField(File file, PlannerConfig planner) {
+    FieldMap field;
+    fieldFromFile = file.isFile();
+    if (fieldFromFile) {
+      try {
+        field = FieldMap.fromJson(PathFile.asMap(Json.parse(read(file)), "field file"));
+      } catch (RuntimeException e) {
+        throw new IllegalStateException("field " + file + ": " + e.getMessage(), e);
+      }
+    } else {
+      field = new FieldMap(DEFAULT_FIELD_LENGTH, DEFAULT_FIELD_WIDTH, List.of(), List.of());
+    }
+    pathfinder = new Pathfinder(field, robot, planner);
+    warmUpMillis = pathfinder.warmUp(WARM_UP_QUERIES);
+    return this;
+  }
+
+  /** The editor's named points ({@code namedPoints} in .pathproject.json), blue frame; none if absent. */
+  private void loadNamedPoints(File file) {
+    if (!file.isFile()) {
+      return;
+    }
+    Map<String, double[]> points = new LinkedHashMap<>();
+    try {
+      Object list = PathFile.asMap(Json.parse(read(file)), "project file").get("namedPoints");
+      if (list instanceof List<?> l) {
+        for (Object o : l) {
+          Map<String, Object> m = PathFile.asMap(o, "named point");
+          points.put(String.valueOf(m.get("name")), new double[] {
+              PathFile.number(m, "x", Double.NaN), PathFile.number(m, "y", Double.NaN)});
+        }
+      }
+    } catch (RuntimeException e) {
+      throw new IllegalStateException("named points in " + file + ": " + e.getMessage(), e);
+    }
+    namedPoints = Collections.unmodifiableMap(points);
+  }
+
+  /** The pathfinder over field.json's obstacles, its graph built at load. */
+  public Pathfinder pathfinder() {
+    if (pathfinder == null) {
+      loadField(new File("-"), PlannerConfig.DEFAULT); // a library built from a robot alone: an empty field
+    }
+    return pathfinder;
+  }
+
+  /** True when the obstacles came from a field.json (false: an empty field). */
+  public boolean hasFieldFile() {
+    return fieldFromFile;
+  }
+
+  /** The editor's named points by name, {x, y} in the blue frame. */
+  public Map<String, double[]> namedPoints() {
+    return namedPoints;
+  }
+
+  /** A named point, {x, y} in the blue frame. */
+  public double[] namedPoint(String name) {
+    double[] p = namedPoints.get(name);
+    if (p == null) {
+      throw new NoSuchElementException("no named point " + name + " (have " + namedPoints.keySet() + ")");
+    }
+    return p;
+  }
+
+  /** How long reading field.json and building the visibility graph took, milliseconds. */
+  public double fieldMillis() {
+    return fieldMillis;
   }
 
   /** Loads and builds every {@code *.path.json} in {@code dir}. A bad file fails loudly, at boot. */

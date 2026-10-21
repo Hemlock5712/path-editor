@@ -109,18 +109,18 @@ public final class ConvexPolygon {
     int n = xs.length;
     for (int i = 0; i < n; i++) {
       int prev = (i + n - 1) % n;
-      double a0 = Math.atan2(ny[prev], nx[prev]);
-      double a1 = Math.atan2(ny[i], nx[i]);
+      double a0 = StrictMath.atan2(ny[prev], nx[prev]);
+      double a1 = StrictMath.atan2(ny[i], nx[i]);
       double turn = a1 - a0;
       while (turn < 0) {
         turn += 2 * Math.PI;
       }
       int steps = Math.max(1, (int) Math.ceil(turn / maxStepRadians - 1e-9));
       double step = turn / steps;
-      double rr = r / Math.cos(step / 2);
+      double rr = r / StrictMath.cos(step / 2);
       for (int k = 0; k <= steps; k++) {
         double a = a0 + k * step;
-        pts.add(new double[] {xs[i] + rr * Math.cos(a), ys[i] + rr * Math.sin(a)});
+        pts.add(new double[] {xs[i] + rr * StrictMath.cos(a), ys[i] + rr * StrictMath.sin(a)});
       }
     }
     return of(pts.toArray(new double[0][]));

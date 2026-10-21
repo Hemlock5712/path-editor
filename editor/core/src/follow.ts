@@ -440,7 +440,8 @@ export class PathFollower {
     if (this.rollingEnd) {
       const end = this.path.sample(this.path.lengthMeters);
       const past = (pose.xMeters - end.xMeters) * end.tangentX + (pose.yMeters - end.yMeters) * end.tangentY;
-      if (remaining <= 1e-6 || past >= 0.0) this.finish();
+      // past the end's line, once near the end (a path can start beyond that line, e.g. an on-the-fly one)
+      if (remaining <= 1e-6 || (past >= 0.0 && remaining <= this.cfg.windowMeters)) this.finish();
       return;
     }
     if (this.phaseNow !== "TERMINAL") return;
