@@ -144,4 +144,36 @@ class CuspTest {
     assertEquals(end.xMeters(), tr.x.get(last), 0.02);
     assertEquals(end.yMeters(), tr.y.get(last), 0.02);
   }
+
+  /** A deliberate reversal in the middle of a path: out past B, stop, back through C to D. */
+  @Test
+  void aDeliberateReversalMidPathIsFollowedAsStopAndBack() {
+    PathSpec spec = PathSpec.of(List.of(Waypoint.at(0.0, 0.0, 0.0), Waypoint.at(2.0, 0.0, 0.0),
+            Waypoint.at(1.2, 0.05, Math.PI), Waypoint.at(0.0, 0.6)))
+        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, 0.0), RotationTarget.atWaypoint(3, 0.0)))
+        .withLimits(4.0, 6.0);
+    Path p = Path.build(spec, RobotConfig.DEFAULT);
+    assertEquals(1, p.cusps().length, java.util.Arrays.toString(p.cusps()));
+    double c = p.cusps()[0];
+    assertTrue(c > 1.0 && c < p.lengthMeters() - 1.0, "mid-path: " + c);
+    assertEquals(0.0, p.profile().velocityAt(c), 1e-9);
+    FollowerConfig cfg = FollowerConfig.defaults(RobotConfig.DEFAULT).toBuilder().latencySeconds(0.07).build();
+    FollowerSim.Trace tr = FollowerSim.run(p, cfg, FollowerSim.Drive.DEFAULT, FieldFrame.BLUE, null, 0.5, 20);
+    assertTrue(tr.finishLoop > 0, "finished");
+    var tip = p.sample(c);
+    var approach = p.sample(c - 0.05);
+    double furthest = Double.NEGATIVE_INFINITY;
+    for (int i = 0; i < tr.t.size(); i++) {
+      furthest = Math.max(furthest, (tr.x.get(i) - tip.xMeters()) * approach.tangentX()
+          + (tr.y.get(i) - tip.yMeters()) * approach.tangentY());
+    }
+    var end = p.sample(p.lengthMeters());
+    int last = tr.t.size() - 1;
+    System.out.printf("mid-path reversal at %.3f m: past the tip %.3f m, end error %.3f m, %.2f s (plan %.2f s)%n", c,
+        furthest, Math.hypot(tr.x.get(last) - end.xMeters(), tr.y.get(last) - end.yMeters()),
+        tr.finishLoop * 0.02, p.totalTimeSeconds());
+    assertTrue(furthest < 0.03, "went " + furthest + " m past the cusp");
+    assertEquals(end.xMeters(), tr.x.get(last), 0.02);
+    assertEquals(end.yMeters(), tr.y.get(last), 0.02);
+  }
 }
