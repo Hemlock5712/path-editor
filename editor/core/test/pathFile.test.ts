@@ -83,6 +83,7 @@ describe("path files", () => {
     expect(written).toContain('{ "x": 0, "y": 123.45679 }');
     expect(Object.keys(pathToJson(spec))).toEqual([
       "schema",
+      "headingMode",
       "waypoints",
       "rotationTargets",
       "facePointZones",
@@ -95,7 +96,7 @@ describe("path files", () => {
 
   it("rejects a wrong schema and missing fields", () => {
     expect(() => readPath('{ "waypoints": [] }')).toThrow(/schema/);
-    expect(() => readPath('{ "schema": 3, "waypoints": [] }')).toThrow(/schema 3/);
+    expect(() => readPath('{ "schema": 4, "waypoints": [] }')).toThrow(/schema 4/);
     expect(() => readPath('{ "schema": 1.5, "waypoints": [] }')).toThrow(/schema 1.5/);
     expect(() => readPath('{ "schema": 1, "waypoints": [ { "x": 0 }, { "x": 1, "y": 0 } ] }')).toThrow(/'y'/);
     expect(() => readPath('{ "schema": 1, "waypoints": [ { "x": "0", "y": 0 } ] }')).toThrow(/number/);
@@ -117,7 +118,7 @@ describe("events (schema 2)", () => {
     expect(v1.events).toEqual([]);
     expect(v1.waypoints).toEqual(v2.waypoints);
     const written = writePath(v1);
-    expect(written.startsWith('{\n  "schema": 2,')).toBe(true);
+    expect(written.startsWith('{\n  "schema": 3,\n  "headingMode": "faceTravel",')).toBe(true);
     expect(written).toContain('"events": []');
   });
 
@@ -169,3 +170,44 @@ describe("events (schema 2)", () => {
     for (const { text } of fixture.files) expect(writePath(readPath(text))).toBe(text);
   });
 });
+
+describe("headings (schema 3)", () => {
+  const v2 = () => read(join(RESOURCES, "example.v2.path.json"));
+
+  it("reads schema 1 and 2 files as face-travel, what they did, and schema 3 as hold by default", () => {
+    expect(readPath(exampleV1()).headingMode).toBe("faceTravel");
+    expect(readPath(v2()).headingMode).toBe("faceTravel");
+    expect(readPath(example()).headingMode).toBe("hold");
+    expect(readPath('{ "schema": 3, "waypoints": [ { "x": 0, "y": 0 }, { "x": 1, "y": 0 } ] }').headingMode).toBe("hold");
+    expect(() => readPath('{ "schema": 3, "headingMode": "spin", "waypoints": [ { "x": 0, "y": 0 }, { "x": 1, "y": 0 } ] }')).toThrow(/headingMode/);
+  });
+
+  it("writes a waypoint's heading and reads it back", () => {
+    const spec = makePathSpec({
+      waypoints: [makeWaypoint(0, 0, Number.NaN, 1, Math.PI / 2), makeWaypoint(2, 1), makeWaypoint(4, 0, Number.NaN, 1, -Math.PI / 4)],
+    });
+    const text = writePath(spec);
+    expect(text).toContain('{ "x": 0, "y": 0, "headingDegrees": 90 }');
+    expect(text).toContain('{ "x": 2, "y": 1 }');
+    expect(writePath(readPath(text))).toBe(text);
+  });
+
+  it("holds the set headings, and with none holds the start direction instead of facing travel", () => {
+    const curve = [makeWaypoint(0, 0), makeWaypoint(2, 1), makeWaypoint(4, 0)];
+    const hold = Path.build(makePathSpec({ waypoints: curve }), DEFAULT_ROBOT);
+    const face = Path.build(makePathSpec({ waypoints: curve, headingMode: "faceTravel" }), DEFAULT_ROBOT);
+    const start = hold.sample(0).headingRadians;
+    const mid = hold.lengthMeters / 2;
+    expect(hold.sample(mid).headingRadians).toBe(start); // held
+    expect(face.sample(mid).headingRadians).toBeCloseTo(Math.atan2(face.sample(mid).tangentY, face.sample(mid).tangentX), 12);
+    // waypoint headings are rotation targets at the waypoints
+    const set = Path.build(
+      makePathSpec({ waypoints: [makeWaypoint(0, 0, Number.NaN, 1, 0), makeWaypoint(2, 1), makeWaypoint(4, 0, Number.NaN, 1, Math.PI / 2)] }),
+      DEFAULT_ROBOT,
+    );
+    expect(set.sample(0).headingRadians).toBe(0);
+    expect(set.sample(set.lengthMeters).headingRadians).toBeCloseTo(Math.PI / 2, 12);
+    expect(set.spec.rotationTargets).toHaveLength(2);
+  });
+});
+

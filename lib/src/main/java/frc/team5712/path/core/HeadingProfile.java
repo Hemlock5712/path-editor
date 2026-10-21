@@ -9,7 +9,8 @@ import java.util.List;
  * <p>Layers, bottom to top:
  *
  * <ol>
- *   <li><b>Base.</b> With no rotation targets the robot faces the direction of travel
+ *   <li><b>Base.</b> With no rotation targets, {@link HeadingMode#HOLD} (the default) holds the
+ *       direction the path starts out in; {@link HeadingMode#FACE_TRAVEL} faces the direction of travel
  *       (θ = tangent angle, dθ/ds = κ, d²θ/ds² = dκ/ds). With targets, the heading holds the first
  *       target before it, the last after it, and between two targets turns the shortest way with the
  *       minimum-jerk blend {@code 10τ³ − 15τ⁴ + 6τ⁵} over the whole stretch, so dθ/ds and d²θ/ds²
@@ -49,8 +50,19 @@ public final class HeadingProfile {
     this.zonePointY = zonePointY;
   }
 
+  /** The heading profile as before heading modes: face travel when there are no targets. */
   public static HeadingProfile build(
       PathGeometry geometry, List<RotationTarget> targets, List<FacePointZone> zones) {
+    return build(geometry, targets, zones, HeadingMode.FACE_TRAVEL);
+  }
+
+  public static HeadingProfile build(
+      PathGeometry geometry, List<RotationTarget> targets, List<FacePointZone> zones, HeadingMode mode) {
+    if (mode == HeadingMode.HOLD && targets.isEmpty()) {
+      // nothing set: hold the direction the path starts out in
+      GeometrySample start = geometry.sample(0.0);
+      targets = List.of(RotationTarget.atMeters(0.0, Angles.atan2(start.tangentY(), start.tangentX())));
+    }
     // Resolve to metres and insertion-sort by s (a handful of targets; stable, so ties keep the
     // authored order; and no lambdas, whose first use costs tens of milliseconds at boot)
     int nt = targets.size();

@@ -15,10 +15,12 @@ import java.util.Map;
  *
  * <pre>
  * {
- *   "schema": 2,
+ *   "schema": 3,
+ *   "headingMode": "hold",
  *   "waypoints": [
- *     { "x": -6, "y": -2, "tangentDegrees": 0 },
- *     { "x": -3, "y": -1, "tangentScale": 1.2 }
+ *     { "x": -6, "y": -2, "tangentDegrees": 0, "headingDegrees": 0 },
+ *     { "x": -3, "y": -1, "tangentScale": 1.2 },
+ *     { "x": 0, "y": -1, "headingDegrees": 90 }
  *   ],
  *   "rotationTargets": [
  *     { "waypoint": 0, "degrees": 0 },
@@ -45,12 +47,15 @@ import java.util.Map;
  * the path-wide maxima (absent = no cap). Unknown keys are ignored, so editor-only data can't break
  * the robot.
  *
- * <p>Schema 2 added {@code events}. Schema 1 files (no events) still read; writing always gives the
- * current schema.
+ * <p>Schema 2 added {@code events}. Schema 3 added the robot's heading at a waypoint
+ * ({@code headingDegrees}; absent = pass-through) and {@code headingMode}: {@code "hold"} (the default)
+ * holds and blends the set headings, {@code "faceTravel"} faces the direction of travel when none are
+ * set. Schema 1 and 2 files still read, as {@code faceTravel}, which is what they did; writing always
+ * gives the current schema.
  */
 public final class PathFile {
   /** The schema this code writes. */
-  public static final int SCHEMA = 2;
+  public static final int SCHEMA = 3;
 
   /** The oldest schema this code still reads. */
   public static final int OLDEST_SCHEMA = 1;
@@ -81,6 +86,7 @@ public final class PathFile {
   public static Map<String, Object> toJson(PathSpec spec) {
     Map<String, Object> root = new LinkedHashMap<>();
     root.put("schema", SCHEMA);
+    root.put("headingMode", spec.headingMode().fileName());
 
     List<Object> waypoints = new ArrayList<>();
     for (Waypoint w : spec.waypoints()) {
@@ -92,6 +98,9 @@ public final class PathFile {
       }
       if (w.tangentScale() != 1.0) {
         m.put("tangentScale", w.tangentScale());
+      }
+      if (w.hasHeading()) {
+        m.put("headingDegrees", w.headingRadians() / DEGREES);
       }
       waypoints.add(m);
     }
@@ -175,12 +184,14 @@ public final class PathFile {
     for (Object o : list(root, "waypoints")) {
       Map<String, Object> m = asMap(o, "waypoint");
       double tangent = number(m, "tangentDegrees", Double.NaN);
+      double heading = number(m, "headingDegrees", Double.NaN);
       waypoints.add(
           new Waypoint(
               required(m, "x"),
               required(m, "y"),
               Double.isNaN(tangent) ? Double.NaN : tangent * DEGREES,
-              number(m, "tangentScale", 1.0)));
+              number(m, "tangentScale", 1.0),
+              Double.isNaN(heading) ? Double.NaN : heading * DEGREES));
     }
 
     List<RotationTarget> targets = new ArrayList<>();
@@ -233,7 +244,23 @@ public final class PathFile {
         number(root, "maxMetersPerSecondSquared", Double.POSITIVE_INFINITY),
         number(root, "startMetersPerSecond", 0.0),
         number(root, "endMetersPerSecond", 0.0),
-        events);
+        events,
+        headingMode(root, (int) schema));
+  }
+
+  /** Schema 3 says; older files faced the direction of travel when no heading was set. */
+  private static HeadingMode headingMode(Map<String, Object> root, int schema) {
+    if (schema < 3) {
+      return HeadingMode.FACE_TRAVEL;
+    }
+    Object v = root.get("headingMode");
+    if (v == null) {
+      return HeadingMode.HOLD;
+    }
+    if (!(v instanceof String name)) {
+      throw new IllegalArgumentException("'headingMode' must be a string");
+    }
+    return HeadingMode.fromFileName(name);
   }
 
   // ------------------------------------------------------------------------------ helpers

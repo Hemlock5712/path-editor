@@ -1,12 +1,14 @@
 // Reads and writes *.path.json. Port of lib's PathFile.java and RobotFile.java: 5-decimal numbers,
 // keys in a fixed order, degrees in the file and radians everywhere else, unknown keys ignored.
-// Schema 2 added events; schema 1 files still read, and writing always gives the current schema.
+// Schema 2 added events; schema 3 added waypoint headings and headingMode. Schema 1 and 2 files still
+// read, as "faceTravel" (what they did); writing always gives the current schema.
 
 import { fixed5, writeJson, type JsonValue } from "./json.ts";
 import { DEFAULT_ROBOT, checkRobot, type Motor, type RobotConfig } from "./robot.ts";
 import {
   DEFAULT_BLEND_METERS,
   eventByWaypoint,
+  hasHeading,
   hasTangent,
   makeConstraintZone,
   makeFacePointZone,
@@ -14,11 +16,12 @@ import {
   makePathSpec,
   makeRotationTarget,
   makeWaypoint,
+  type HeadingMode,
   type PathSpec,
 } from "./spec.ts";
 
 /** The schema this code writes. */
-export const SCHEMA = 2;
+export const SCHEMA = 3;
 
 /** The oldest schema this code still reads. */
 export const OLDEST_SCHEMA = 1;
@@ -37,11 +40,12 @@ export function writePath(spec: PathSpec): string {
 
 /** The file's JSON tree, keys in file order. */
 export function pathToJson(spec: PathSpec): JsonObject {
-  const root: JsonObject = { schema: SCHEMA };
+  const root: JsonObject = { schema: SCHEMA, headingMode: spec.headingMode };
   root.waypoints = spec.waypoints.map((w) => {
     const m: JsonObject = { x: w.xMeters, y: w.yMeters };
     if (hasTangent(w)) m.tangentDegrees = w.tangentRadians / DEGREES;
     if (w.tangentScale !== 1.0) m.tangentScale = w.tangentScale;
+    if (hasHeading(w)) m.headingDegrees = w.headingRadians / DEGREES;
     return m;
   });
   root.rotationTargets = spec.rotationTargets.map((t) => {
@@ -89,11 +93,13 @@ export function pathFromJson(root: JsonObject): PathSpec {
   const waypoints = list(root, "waypoints").map((o) => {
     const m = asObject(o, "waypoint");
     const tangent = num(m, "tangentDegrees", Number.NaN);
+    const heading = num(m, "headingDegrees", Number.NaN);
     return makeWaypoint(
       required(m, "x"),
       required(m, "y"),
       Number.isNaN(tangent) ? Number.NaN : tangent * DEGREES,
       num(m, "tangentScale", 1.0),
+      Number.isNaN(heading) ? Number.NaN : heading * DEGREES,
     );
   });
   const rotationTargets = list(root, "rotationTargets").map((o) => {
@@ -133,7 +139,17 @@ export function pathFromJson(root: JsonObject): PathSpec {
     startMetersPerSecond: num(root, "startMetersPerSecond", 0.0),
     endMetersPerSecond: num(root, "endMetersPerSecond", 0.0),
     events,
+    headingMode: headingModeOf(root, schema),
   });
+}
+
+/** Schema 3 says; older files faced the direction of travel when no heading was set. */
+function headingModeOf(root: JsonObject, schema: number): HeadingMode {
+  if (schema < 3) return "faceTravel";
+  const v = root.headingMode;
+  if (v === undefined || v === null) return "hold";
+  if (v !== "hold" && v !== "faceTravel") throw new RangeError("unknown headingMode '" + String(v) + "' (hold or faceTravel)");
+  return v;
 }
 
 /** Reads a robot config; every key is optional and defaults to DEFAULT_ROBOT. */

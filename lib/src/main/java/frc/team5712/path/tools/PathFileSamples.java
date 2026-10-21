@@ -2,6 +2,7 @@ package frc.team5712.path.tools;
 
 import frc.team5712.path.core.ConstraintZone;
 import frc.team5712.path.core.FacePointZone;
+import frc.team5712.path.core.HeadingMode;
 import frc.team5712.path.core.PathEvent;
 import frc.team5712.path.core.PathSpec;
 import frc.team5712.path.core.RotationTarget;
@@ -62,7 +63,8 @@ public final class PathFileSamples {
       double y = -4.0 + 8.0 * next();
       double tangent = next() < 0.4 ? (next() * 2.0 - 1.0) * Math.PI : Double.NaN;
       double scale = next() < 0.3 ? 0.5 + next() : 1.0;
-      waypoints.add(new Waypoint(x, y, tangent, scale));
+      double heading = next() < 0.5 ? (next() * 2.0 - 1.0) * Math.PI : Double.NaN;
+      waypoints.add(new Waypoint(x, y, tangent, scale, heading));
     }
 
     List<RotationTarget> targets = new ArrayList<>();
@@ -99,6 +101,7 @@ public final class PathFileSamples {
     double maxAccel = next() < 0.5 ? Double.POSITIVE_INFINITY : 1.0 + next() * 4.0;
     double startSpeed = next() < 0.3 ? next() * 2.0 : 0.0;
     double endSpeed = next() < 0.3 ? next() * 2.0 : 0.0;
-    return new PathSpec(waypoints, targets, faces, zones, maxSpeed, maxAccel, startSpeed, endSpeed, events);
+    HeadingMode mode = next() < 0.3 ? HeadingMode.FACE_TRAVEL : HeadingMode.HOLD;
+    return new PathSpec(waypoints, targets, faces, zones, maxSpeed, maxAccel, startSpeed, endSpeed, events, mode);
   }
 }

@@ -15,6 +15,7 @@ import java.util.List;
  * @param startMetersPerSecond speed along the path at the start
  * @param endMetersPerSecond speed along the path at the end (above 0 = a rolling hand-off)
  * @param events named events along the path, in file order (the follower fires them in path order)
+ * @param headingMode what the heading does where none is set (hold, the default, or face travel)
  */
 public record PathSpec(
     List<Waypoint> waypoints,
@@ -25,7 +26,8 @@ public record PathSpec(
     double maxMetersPerSecondSquared,
     double startMetersPerSecond,
     double endMetersPerSecond,
-    List<PathEvent> events) {
+    List<PathEvent> events,
+    HeadingMode headingMode) {
 
   public PathSpec {
     waypoints = List.copyOf(waypoints);
@@ -33,6 +35,9 @@ public record PathSpec(
     facePointZones = List.copyOf(facePointZones);
     constraintZones = List.copyOf(constraintZones);
     events = List.copyOf(events);
+    if (headingMode == null) {
+      throw new IllegalArgumentException("a heading mode is needed");
+    }
     if (waypoints.size() < 2) {
       throw new IllegalArgumentException("a path needs at least two waypoints");
     }
@@ -42,6 +47,21 @@ public record PathSpec(
     if (!(startMetersPerSecond >= 0.0) || !(endMetersPerSecond >= 0.0)) {
       throw new IllegalArgumentException("start and end speeds must be >= 0");
     }
+  }
+
+  /** A spec holding its headings (the default mode). */
+  public PathSpec(
+      List<Waypoint> waypoints,
+      List<RotationTarget> rotationTargets,
+      List<FacePointZone> facePointZones,
+      List<ConstraintZone> constraintZones,
+      double maxMetersPerSecond,
+      double maxMetersPerSecondSquared,
+      double startMetersPerSecond,
+      double endMetersPerSecond,
+      List<PathEvent> events) {
+    this(waypoints, rotationTargets, facePointZones, constraintZones, maxMetersPerSecond,
+        maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events, HeadingMode.HOLD);
   }
 
   /** A spec with no events. */
@@ -73,31 +93,41 @@ public record PathSpec(
 
   public PathSpec withRotationTargets(List<RotationTarget> targets) {
     return new PathSpec(waypoints, targets, facePointZones, constraintZones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events, headingMode);
   }
 
   public PathSpec withFacePointZones(List<FacePointZone> zones) {
     return new PathSpec(waypoints, rotationTargets, zones, constraintZones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events, headingMode);
   }
 
   public PathSpec withConstraintZones(List<ConstraintZone> zones) {
     return new PathSpec(waypoints, rotationTargets, facePointZones, zones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events, headingMode);
   }
 
   public PathSpec withLimits(double maxSpeed, double maxAccel) {
     return new PathSpec(waypoints, rotationTargets, facePointZones, constraintZones,
-        maxSpeed, maxAccel, startMetersPerSecond, endMetersPerSecond, events);
+        maxSpeed, maxAccel, startMetersPerSecond, endMetersPerSecond, events, headingMode);
   }
 
   public PathSpec withEndSpeeds(double startSpeed, double endSpeed) {
     return new PathSpec(waypoints, rotationTargets, facePointZones, constraintZones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startSpeed, endSpeed, events);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startSpeed, endSpeed, events, headingMode);
   }
 
   public PathSpec withEvents(List<PathEvent> newEvents) {
     return new PathSpec(waypoints, rotationTargets, facePointZones, constraintZones,
-        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, newEvents);
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, newEvents, headingMode);
+  }
+
+  public PathSpec withHeadingMode(HeadingMode mode) {
+    return new PathSpec(waypoints, rotationTargets, facePointZones, constraintZones,
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events, mode);
+  }
+
+  public PathSpec withWaypoints(List<Waypoint> newWaypoints) {
+    return new PathSpec(newWaypoints, rotationTargets, facePointZones, constraintZones,
+        maxMetersPerSecond, maxMetersPerSecondSquared, startMetersPerSecond, endMetersPerSecond, events, headingMode);
   }
 }

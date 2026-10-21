@@ -1,0 +1,37 @@
+{
+  "schema": 2,
+  "waypoints": [
+    { "x": -5.2, "y": -2.5, "tangentDegrees": 0 },
+    { "x": -3.6, "y": -1.5 },
+    { "x": -2, "y": -2.4 },
+    { "x": -0.4, "y": -1.2 },
+    { "x": 0.8, "y": 0.5 },
+    { "x": 0, "y": 2.2 },
+    { "x": -1.6, "y": 2.6 },
+    { "x": -3.2, "y": 1.6 },
+    { "x": -4.4, "y": 2.5 },
+    { "x": -5.44, "y": 3, "tangentDegrees": 180 }
+  ],
+  "rotationTargets": [
+    { "waypoint": 0, "degrees": 0 },
+    { "waypoint": 3.5, "degrees": 90 },
+    { "waypoint": 6, "degrees": 180 },
+    { "meters": 15, "degrees": 180 }
+  ],
+  "facePointZones": [
+    { "fromWaypoint": 4, "toWaypoint": 5.5, "x": 4, "y": 0, "blendMeters": 0.5 }
+  ],
+  "constraintZones": [
+    { "fromWaypoint": 7, "toWaypoint": 8, "maxMetersPerSecond": 2 }
+  ],
+  "events": [
+    { "name": "intakeDown", "atWaypoint": 0.5 },
+    { "name": "spinUp", "atMeters": 6.25 },
+    { "name": "intakeUp", "atWaypoint": 3 },
+    { "name": "score \"L4\"", "atMeters": 15.98765 }
+  ],
+  "maxMetersPerSecond": 4,
+  "maxMetersPerSecondSquared": 6,
+  "startMetersPerSecond": 0,
+  "endMetersPerSecond": 0.5
+}

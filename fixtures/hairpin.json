@@ -1,7 +1,8 @@
 {
   "inputs": {
     "path": {
-      "schema": 2,
+      "schema": 3,
+      "headingMode": "hold",
       "waypoints": [
         { "x": -3, "y": -1, "tangentDegrees": 0 },
         { "x": 0, "y": -1 },
