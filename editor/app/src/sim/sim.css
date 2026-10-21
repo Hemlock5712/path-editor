@@ -1,0 +1,73 @@
+/* The sim preview's bar (under the playback) and its sidebar section. */
+
+.sim-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-toggle {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.sim-numbers {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--muted);
+}
+
+.sim-numbers strong {
+  color: #fb923c;
+}
+
+.sim-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sim-error {
+  color: var(--error);
+}
+
+.sim-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 6px 0;
+  cursor: crosshair;
+}
+
+.sim-plan-end {
+  stroke: var(--muted);
+  stroke-dasharray: 3 2;
+}
+
+.sim-finish {
+  stroke: #fb923c;
+}
+
+.sim-shove {
+  stroke: #e879f9;
+  stroke-dasharray: 2 2;
+}
+
+.sim-cursor {
+  stroke: var(--accent);
+}
+
+.sim-events {
+  margin-top: 6px;
+}
+
+.sim-events td {
+  text-align: right;
+}

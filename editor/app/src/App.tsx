@@ -2,6 +2,8 @@
 // below. Starts the analysis worker and the playback clock.
 
 import { useEffect, useRef, useState } from "react";
+import { SimBar, SimPanel } from "./sim/SimPanel.tsx";
+import { startSim } from "./sim/state.ts";
 import { analysis, playback, startAnalysis } from "./state/analysis.ts";
 import { editor, isDirty } from "./state/editor.ts";
 import { Charts } from "./ui/Charts.tsx";
@@ -78,6 +80,7 @@ export function App() {
   usePlaybackClock();
 
   useEffect(() => startAnalysis(), []);
+  useEffect(() => startSim(), []);
 
   useEffect(() => {
     const keys = (e: KeyboardEvent) => onKeyDown(e, () => setHelp(true));
@@ -112,10 +115,12 @@ export function App() {
         <section className="field-column" aria-label="Field">
           <FieldCanvas />
           <PlaybackBar />
+          <SimBar />
           <Charts />
         </section>
         <aside className="sidebar" aria-label="Path details">
           <ChecksPanel />
+          <SimPanel />
           <PathPanel />
           <WaypointsPanel />
           <EventsPanel />

@@ -7,6 +7,7 @@ import { DEFAULT_ROBOT_SETTINGS, type RobotSettings } from "../../model/project.
 import { editProject, select } from "../../state/editor.ts";
 import { isValidPackage } from "../../io/javaEnum.ts";
 import { IconButton, NumberField, Section, SelectField, TextField, formatNumber } from "../controls.tsx";
+import { SimDriveFields } from "../../sim/SimPanel.tsx";
 import { useActivePath, useEditor } from "./common.tsx";
 
 export function PointsPanel() {
@@ -216,6 +217,7 @@ export function RobotPanel() {
       <IconButton label="Reset the robot to the defaults" onClick={() => editProject("Reset robot", (p) => ({ ...p, robot: { ...DEFAULT_ROBOT_SETTINGS, extra: p.robot.extra } }))}>
         Reset to defaults
       </IconButton>
+      <SimDriveFields />
     </Section>
   );
 }
