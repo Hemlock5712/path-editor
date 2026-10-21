@@ -5,7 +5,7 @@
 | `frc.team5712.path.core` (phase 2) | geometry, heading and velocity profiles, frame flips, path files | nothing |
 | `frc.team5712.path.follow` (phase 3) | `PathFollower`: one controller from path to pose | core, slip |
 | `frc.team5712.path.slip` | `SlipDetector`, `SlipAwareOdometry` (optional), `SlipSignal` | core |
-| `frc.team5712.path.plan` (phase 4) | `Pathfinder`: obstacle-avoiding paths during a match | core |
+| `frc.team5712.path.plan` (phase 4) | `Pathfinder`: obstacle-avoiding paths during a match; `OnTheFly`: plan, follow, re-plan | core |
 | `frc.team5712.path.tools` | `FixtureGen`, `ProfileCli`, `PlanCli`, `BenchServer` (the bench bridge) | core, follow, plan, slip |
 | `frc.team5712.path.wpilib` (source set `src/wpilib`) | Commands v3 and v2 adapters, `PathLibrary`, telemetry | WPILib 2027 |
 
@@ -377,11 +377,79 @@ been measured.
   a violation always converges here because the corner-to-corner route itself keeps the margin.
 - **Short hops and turns on the spot** plan in the core, not as a special case in the planner (see below).
 - **Concave obstacles become their convex hulls,** which is conservative.
-- **Not done yet:** dynamic obstacles, a WPILib command wrapper, and loading `deploy/paths/field.json` in
-  `PathLibrary` (callers use `FieldMap.read`).
+- **Not done yet:** dynamic obstacles (the field is static; a moving goal is supported, a moving robot in the way
+  isn't). The command wrapper and loading field.json are done: see "On-the-fly paths on the robot" below.
 - **The margin stays 0.05 m by default.** On the bench's four routes with wheel odometry, 0.10 m and 0.15 m
   shut gaps and forced detours up to three times longer, and still touched once the odometry drifted (see
   bench/RESULTS.md). Vision fixes the contacts; a wider berth doesn't.
+
+### On-the-fly paths on the robot
+
+`PathLibrary.loadAll()` also loads, from `deploy/paths`:
+
+- `field.json`, the editor's format (`{"field": {"length_m", "width_m"}, "obstacles": [{"name", "polygon"}]}`).
+  It builds the `Pathfinder` (grown obstacles and visibility graph) once, then warms it up with 40 throwaway plans so
+  the JIT has compiled it before the first real one. On the desktop that's about 170 ms at boot, 135 ms of it the
+  warm-up. A bad file throws at boot, naming the file. With no field.json the field is empty (walls only) at the
+  2026 size.
+- The bumper size from `robot.json` (`bumperLengthMeters`, `bumperWidthMeters`).
+- The editor's named points (`namedPoints` in `.pathproject.json`).
+
+`Pathfinding` (`src/wpilib`) builds the commands, for Commands v3 and (with a `V2` suffix) v2:
+
+```java
+Pathfinding otf = new Pathfinding(paths, FollowerConfig.defaults(paths.robot()),
+    drive::getPose, drive::getFieldVelocity, drive::driveFieldVelocity, FieldFrame.RED_HALF_TURN);
+otf.to(drive, new Pose2d(-7.6, 3.1, Rotation2d.k180deg));   // blue frame, flipped on red
+otf.toPoint(drive, "Depot", Rotation2d.k180deg);            // an editor named point (blue frame)
+otf.toTarget(drive, vision::scoringPose);                   // real field frame, used as given
+otf.thenFollow(drive, "ToReef");                            // to the path's start, then the path
+otf.to(drive, goal).withMovingGoal(vision::pieceIfSeen);     // the end follows a moving goal (real frame)
+```
+
+- **Planning.** Each command plans when it starts, from the measured pose and velocity, with `OnTheFly` (in `plan`,
+  no WPILib). This is the one place path work happens at go: about 1 ms median and under 5 ms at the 95th
+  percentile on the desktop.
+  - A start or goal inside a grown obstacle is snapped out.
+  - If the robot ends up more than 20 cm off the plan (`replanAbove`, e.g. after a hard shove), it plans again from
+    where it is, at the speed it's going, at most once per 0.5 s. `replan()` asks for a re-plan at any time.
+- **Hand-over.** `thenFollow` arrives along the path's start direction at the path's start speed. Inside the
+  pathfinder, `plan(..., endSpeed, endTangent)` ends the route with a straight approach of 0.5 m plus the braking
+  distance. So a path that starts moving gets a rolling hand-over, and one that starts at rest gets a stop.
+- **Frames.** It plans in the real field frame, because field.json's obstacles are where they physically are. On
+  red, authored goals (poses, named points, a path's start) are flipped with the alliance's frame, read when the
+  command starts. `toTarget` and moving goals are taken as given.
+- **Telemetry** goes out under `Path/<name>`, like a followed path's, so the Telemetry page draws it:
+  - Plan, published again at every re-plan.
+  - Each loop's state.
+  - The planning figures: PlanOk, PlanMicros, Replans, StartSnap, GoalSnap, MinClearance and PlanFailure.
+- **The follower fix this needed.** A rolling end used to finish as soon as the robot was past the end's line. An
+  on-the-fly path can start beyond that line, so now the robot also has to be within the projection window
+  (0.5 m) of the end. The Java and TS followers both changed. The golden traces didn't change.
+
+The TS port (`editor/core/src/plan`) is bit-exact with this planner, for the editor's "Route around obstacles". The
+check is `fixtures/plan/plans.json` (`PlanFixtureGen`): 13 starts and goals on the 2026 field, worst deviation 0.
+The planner's trig goes through `StrictMath` (fdlibm, as V8's does) for that.
+
+**The 2026 field** (`fixtures/plan/field_2026.json`) is built from WPILib's tag layout and is approximate:
+
+- both hubs;
+- the four bumps, as obstacles (a robot that drives over them can delete them);
+- both towers;
+- the trenches are left open.
+
+**End-to-end** (`lib/gradlew -p lib e2eTest --tests '*PathfindEndToEndTest'`, report in `e2e/PATHFIND.md`): through
+the WPILib adapters on the e2e `SimDrive`, with contact checked against the true pose every 5 ms.
+
+| Scenario | Runs | Passed | Worst clearance |
+|---|---|---|---|
+| 50 seeded random routes, v3 and v2, blue and red | 200 | 200 | 5.4 cm |
+| Sideways shove a third of the way in; every run planned again | 20 | 20 | 3.9 cm |
+| Path hand-overs | 12 | 12 | 6.2 cm |
+| Moving named-point goal | 2 | 2 | 7.5 cm |
+
+The shoves are placed where the robot has room to be pushed: a push into an obstacle is contact by the pusher,
+which no planner can prevent.
 
 ### Short hops with big turns (core)
 

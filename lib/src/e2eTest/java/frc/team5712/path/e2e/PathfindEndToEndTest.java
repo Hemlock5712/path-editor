@@ -393,6 +393,12 @@ class PathfindEndToEndTest {
         }
       }
     }
+    List<String> unshoved = results.stream().filter(r -> !r.kind().equals("shove") && r.replans() > 0)
+        .map(r -> r.kind() + " " + r.pair() + " " + r.framework() + " " + r.frame()).toList();
+    if (!unshoved.isEmpty()) {
+      md.append("\nRuns that planned again without being shoved (more than 20 cm off their plan): ")
+          .append(String.join(", ", unshoved)).append(".\n");
+    }
     long pass = results.stream().filter(Result::pass).count();
     md.append(String.format(Locale.ROOT, "%n**%d of %d runs pass.** Worst bumper clearance %.1f cm.%n", pass, results.size(),
         100 * results.stream().mapToDouble(Result::minClearance).min().orElse(Double.NaN)));
