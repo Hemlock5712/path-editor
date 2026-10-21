@@ -10,6 +10,8 @@ Line-for-line in structure. Approximations (see RESULTS.md):
   1.15 (the sim's static mu); it is NOT changed for the low-grip course (nobody adapts).
 - Drive feedforwards (wheel forces/currents) are not computed: the plant takes velocity requests only.
 - Events, point-towards zones, constraint zones, flipping and Choreo paths are not ported.
+- A non-zero GoalEndState velocity (a chain of paths) is ported: the end state carries it, and at the end
+  the command stops with the last output standing (FollowPathCommand.end only zeroes below 0.1 m/s).
 - The trajectory is always generated from the measured start speeds (FollowPathCommand's branch when the
   robot doesn't match the path's IdealStartingState; when it does, the ideal trajectory is the same
   generation with the ideal speeds).
@@ -284,7 +286,8 @@ def _next_rot_idx(pts, start):
     return len(pts) - 1
 
 
-def generate_trajectory(path: PathPlannerPath, start_field_speeds, start_rotation, cfg: RobotConfig, lim: Limits):
+def generate_trajectory(path: PathPlannerPath, start_field_speeds, start_rotation, cfg: RobotConfig, lim: Limits,
+                        goal_velocity=0.0):
     pts = path.points
     n = len(pts)
     states = []
@@ -342,12 +345,14 @@ def generate_trajectory(path: PathPlannerPath, start_field_speeds, start_rotatio
 
     _forward(states, cfg, lim)
     end = states[-1]
-    end_robot = rot((0.0, 0.0), -end.pose[2])  # goal end velocity 0
+    # the GoalEndState's velocity along the end heading
+    end_field = (goal_velocity * math.cos(end.heading), goal_velocity * math.sin(end.heading))
+    end_robot = rot(end_field, -end.pose[2])
     end_states = cfg.to_module_states((end_robot[0], end_robot[1], 0.0))
     for m in range(cfg.n):
         end.mod_v[m] = end_states[m][0]
-    end.vel = (0.0, 0.0, 0.0)
-    end.lin = 0.0
+    end.vel = (end_field[0], end_field[1], 0.0)
+    end.lin = goal_velocity
     _reverse(states, cfg, lim)
 
     for i in range(1, n):
@@ -511,17 +516,22 @@ class PathPlanner(Follower):
 
     def reset(self, native, start):
         path = PathPlannerPath(native)
-        self.states = generate_trajectory(path, start.vel, start.pose[2], self.cfg, self.lim)
+        self.goal_velocity = native.get("goal_velocity", 0.0)
+        self.states = generate_trajectory(path, start.vel, start.pose[2], self.cfg, self.lim, self.goal_velocity)
         self.total = self.states[-1].t
         self.t0 = start.t
         self.goal = self.states[-1].pose
         self.finished = False
+        self.last = tuple(start.vel)
 
     def step(self, t, pose, vel):
         if self.finished:
             return (0.0, 0.0, 0.0)
         now = t - self.t0
         if now >= self.total:  # isFinished(): timer.hasElapsed(totalTime)
+            if self.goal_velocity >= 0.1:  # a rolling end: end() keeps the last output for the next command
+                self.finished = True
+                return self.last
             if not self.hold:
                 self.finished = True
                 return (0.0, 0.0, 0.0)
@@ -532,8 +542,9 @@ class PathPlanner(Follower):
                 return (0.0, 0.0, 0.0)
             return (self.kp * ex, self.kp * ey, self.kp_rot * eth)
         tp, ff = sample(self.states, now)
-        return (ff[0] + self.kp * (tp[0] - pose[0]), ff[1] + self.kp * (tp[1] - pose[1]),
-                ff[2] + self.kp_rot * wrap(tp[2] - pose[2]))
+        self.last = (ff[0] + self.kp * (tp[0] - pose[0]), ff[1] + self.kp * (tp[1] - pose[1]),
+                     ff[2] + self.kp_rot * wrap(tp[2] - pose[2]))
+        return self.last
 
     def done(self):
         return self.finished
