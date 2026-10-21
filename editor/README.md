@@ -213,6 +213,22 @@ Playwright to the file system). It reads each path's preview through `window.pat
 read-only hook that waits for the worker to plan the current document and returns the total time, the peak speed
 and each event's s and t(s). `E2E_ONLY=Straight,Hairpin` authors just those paths.
 
+## Sim preview
+
+**Sim** in the playback bar runs the robot's own follower on a simulated drivetrain. It is a TS port of
+`PathFollower` that matches Java exactly: `core/src/follow.ts`, checked against the golden traces in
+`fixtures/follow`. It runs in a worker (`app/src/sim/`) whenever the path, the robot or a sim setting changes.
+
+- **The playback bar** shows when it finished against the plan, the settle time and the cross-track max.
+- **The field** shows the simulated trace, shaded by cross-track error; where each event fired against its
+  flag; the shove; and the simulated robot (dashed) at the playback time, next to the plan's.
+- **The inspector's Sim preview card** has a shove (a hit at a chosen time), cross-track over time (click to
+  seek), and a table of when each event fired against the plan.
+- **The drivetrain** is in **Settings > Sim preview**: command latency, velocity lag and floor grip. It is
+  saved in the project's sidecar file, not robot.json, because it describes the sim, not the robot. The
+  defaults are the end-to-end suite's: 20 ms, 40 ms, no grip cap.
+- **What it assumes.** The floor grips: slip sensing and adaptive grip run only on the robot.
+
 ## Optimiser
 
 Shaping a path is mostly the optimiser's job: draw the poses, then press **Optimise path** at the top of the inspector.
@@ -349,7 +365,7 @@ simulation on localhost. Until that is allowed, the connection fails with
 
 ## Not done
 
-- A follower sim preview (being built separately) and freehand stroke to waypoints.
+- Freehand stroke to waypoints.
 - **Motor presets other than the Kraken X60 FOC** use vendor datasheet figures (stall torque, stall
   current, free speed) and haven't been checked against dyno data. The FOC numbers are the core's.
 - **No tab reordering, no multi-select, and no numeric editing of obstacle corners** (drag them on the

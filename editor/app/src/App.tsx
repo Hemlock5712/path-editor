@@ -3,6 +3,7 @@
 // playback clock.
 
 import { useEffect } from "react";
+import { startSim } from "./sim/state.ts";
 import { analysis, playback, startAnalysis } from "./state/analysis.ts";
 import { editor, isDirty } from "./state/editor.ts";
 import { useStore } from "./state/store.ts";
@@ -74,6 +75,7 @@ export function App() {
   usePlaybackClock();
 
   useEffect(() => startAnalysis(), []);
+  useEffect(() => startSim(), []);
 
   useEffect(() => {
     const leave = (e: BeforeUnloadEvent) => {

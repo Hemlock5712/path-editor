@@ -50,6 +50,18 @@ export interface LoadedProject {
   readonly hadRobot: boolean;
 }
 
+/** The sim preview's drivetrain from the sidecar, each value checked (older files had none). */
+function simPreviewOf(stored: unknown): ProjectSettings["simPreview"] {
+  const saved = stored as Partial<Record<string, unknown>> | undefined;
+  const d = DEFAULT_SETTINGS.simPreview;
+  const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : fallback);
+  return {
+    latencyMs: num(saved?.latencyMs, d.latencyMs),
+    lagMs: num(saved?.lagMs, d.lagMs),
+    gripMu: typeof saved?.gripMu === "number" && saved.gripMu > 0 ? saved.gripMu : null,
+  };
+}
+
 // ------------------------------------------------------------------------------ sidecar
 
 interface Sidecar {
@@ -74,7 +86,7 @@ export function writeSidecar(project: Project, view: ViewState): string {
       redFrame: project.settings.redFrame,
       javaPackage: project.settings.javaPackage,
       pathDefaults: { ...project.settings.pathDefaults },
-      simPreview: { ...project.settings.simPreview },
+      simPreview: { latencyMs: project.settings.simPreview.latencyMs, lagMs: project.settings.simPreview.lagMs, gripMu: project.settings.simPreview.gripMu },
     },
     view: {
       alliance: view.alliance,
@@ -185,7 +197,7 @@ export function fromFiles(files: ReadonlyMap<string, string>): LoadedProject | n
       ...DEFAULT_SETTINGS,
       ...(sidecar?.settings ?? {}),
       pathDefaults: { ...DEFAULT_SETTINGS.pathDefaults, ...(sidecar?.settings?.pathDefaults ?? {}) },
-      simPreview: { ...DEFAULT_SETTINGS.simPreview, ...(sidecar?.settings?.simPreview ?? {}) },
+      simPreview: simPreviewOf(sidecar?.settings?.simPreview),
     },
   };
   return {

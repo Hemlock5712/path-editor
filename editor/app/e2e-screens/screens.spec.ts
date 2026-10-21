@@ -52,6 +52,21 @@ for (const size of SIZES) {
     await shot("2-drawn-path");
 
     await page.getByTestId("charts-toggle").click();
+
+    // the sim preview: its switch and numbers in the playback bar, its card in the inspector
+    await page.getByTestId("sim-toggle").click();
+    await expect(page.getByTestId("sim-time")).toBeVisible();
+    await page.locator("button.card-head", { hasText: /^Sim preview/ }).click();
+    await page.locator("button.card-head", { hasText: /^Waypoints/ }).click();
+    await page.getByTestId("play").click();
+    await page.waitForTimeout(1500);
+    await page.getByTestId("play").click();
+    await settle(page);
+    await shot("2b-sim-preview");
+    await page.getByTestId("sim-toggle").click();
+    await page.locator("button.card-head", { hasText: /^Waypoints/ }).click();
+    await page.locator("button.card-head", { hasText: /^Sim preview/ }).click();
+
     await page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(2).click();
     await settle(page);
     await shot("3-selected-waypoint");

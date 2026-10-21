@@ -72,8 +72,8 @@ export interface SimPreviewSettings {
   readonly latencyMs: number;
   /** The drive's first-order lag (time constant), ms. */
   readonly lagMs: number;
-  /** The sim's grip as a multiple of the robot's μ (below 1: a slippier carpet than planned). */
-  readonly gripScale: number;
+  /** The floor's grip in the sim, μ (caps the simulated chassis's acceleration at μ·g); null: no cap. */
+  readonly gripMu: number | null;
 }
 
 export interface ProjectSettings {
@@ -110,7 +110,7 @@ export const DEFAULT_ROBOT_SETTINGS: RobotSettings = {
 
 export const DEFAULT_PATH_DEFAULTS: PathDefaults = { maxMetersPerSecond: 4.0, maxMetersPerSecondSquared: 6.0, headingMode: "hold" };
 
-export const DEFAULT_SIM_PREVIEW: SimPreviewSettings = { latencyMs: 20, lagMs: 40, gripScale: 1 };
+export const DEFAULT_SIM_PREVIEW: SimPreviewSettings = { latencyMs: 20, lagMs: 40, gripMu: null };
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   redFrame: "RED_HALF_TURN",

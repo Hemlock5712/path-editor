@@ -26,6 +26,8 @@ import {
 import { linkToPoint, moveNamedPoint } from "../model/namedPoints.ts";
 import { eventNames, type EditorPath, type Project } from "../model/project.ts";
 import { round5, round5Radians, waypointAtS } from "../model/positions.ts";
+import { drawSim } from "../sim/draw.ts";
+import { sim, simSettings } from "../sim/state.ts";
 import { analysis, geometryOf, playback } from "../state/analysis.ts";
 import {
   activePath,
@@ -188,8 +190,9 @@ export function FieldCanvas() {
     const active = activePath(s);
     const a = analysis.get().result;
     const pb = playback.get();
+    const view = makeView(s, width, height);
     drawField(ctx, {
-      view: makeView(s, width, height),
+      view,
       image: imageRef.current,
       project: s.project,
       active,
@@ -208,6 +211,11 @@ export function FieldCanvas() {
       geometryOf,
       ghost: optimiser.get().pathId === active.id ? optimiser.get().preview : null,
     });
+    const simResult = sim.get().result;
+    if (simSettings.get().enabled && simResult?.ok && sim.get().input?.spec === active.spec) {
+      const { bumperLengthMeters, bumperWidthMeters } = s.project.robot;
+      drawSim(ctx, { view, preview: simResult, bumperLengthMeters, bumperWidthMeters, playbackT: pb.t, showRobot: pb.playing || pb.t > 0 });
+    }
   };
 
   const schedule = () => {
@@ -276,7 +284,15 @@ export function FieldCanvas() {
       schedule();
     };
     img.src = `${import.meta.env.BASE_URL}field-2026.png`;
-    const unsubs = [editor.subscribe(schedule), analysis.subscribe(schedule), playback.subscribe(schedule), live.subscribe(schedule), optimiser.subscribe(schedule)];
+    const unsubs = [
+      editor.subscribe(schedule),
+      analysis.subscribe(schedule),
+      playback.subscribe(schedule),
+      live.subscribe(schedule),
+      optimiser.subscribe(schedule),
+      sim.subscribe(schedule),
+      simSettings.subscribe(schedule),
+    ];
     const wrap = wrapRef.current!;
     const observer = new ResizeObserver(() => {
       const rect = wrap.getBoundingClientRect();

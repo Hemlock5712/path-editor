@@ -12,6 +12,7 @@ import { Button, Card, formatNumber, IconButton, NumberField, SelectField } from
 import { OptimiseControls, OptimiserSettings } from "../panels/OptimisePanel.tsx";
 import { toDegrees, useActivePath, useEditor } from "../panels/common.tsx";
 import { Pane } from "../shell.tsx";
+import { SimCard } from "../../sim/SimPanel.tsx";
 import {
   ConstraintZoneInspector,
   EventInspector,
@@ -316,6 +317,7 @@ function Overview() {
       <ConstraintZonesCard />
       <FaceZonesCard />
       <PointsCard />
+      <SimCard />
       <Card title="Optimiser settings" cardKey="optimiser">
         <OptimiserSettings />
       </Card>

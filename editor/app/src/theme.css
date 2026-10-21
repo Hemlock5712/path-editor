@@ -714,7 +714,7 @@ code {
   position: absolute;
   z-index: 2;
   left: 50%;
-  bottom: 60px;
+  bottom: 92px;
   transform: translateX(-50%);
   max-width: calc(100% - 32px);
   padding: var(--s1) var(--s3);
@@ -2380,4 +2380,36 @@ dialog::backdrop {
 .run-dot.live {
   background: var(--ok);
   box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.2);
+}
+
+/* the editor's playback overlay: the playback bar, and the sim preview's row above it when on */
+.playback-overlay {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 24px));
+  bottom: var(--s3);
+  display: flex;
+  flex-direction: column;
+  background: rgba(17, 22, 29, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(6px);
+}
+
+.playback-overlay > .playback-bar {
+  position: static;
+  transform: none;
+  width: auto;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.playback-overlay > .playback-bar .switch {
+  font-size: var(--fs-sm);
+  white-space: nowrap;
 }

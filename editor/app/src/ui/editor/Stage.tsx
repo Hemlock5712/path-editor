@@ -31,6 +31,7 @@ import { redo, setTool, setView, undo, type Tool } from "../../state/editor.ts";
 import { live } from "../../state/live.ts";
 import { useStore } from "../../state/store.ts";
 import { openContextMenu, ui } from "../../state/ui.ts";
+import { SimResultRow, SimSwitch } from "../../sim/SimPanel.tsx";
 import { Charts } from "../Charts.tsx";
 import { TOOLS } from "../commands.ts";
 import { formatNumber, IconButton, Portal, Slider, useDismiss, usePopoverPosition } from "../controls.tsx";
@@ -255,7 +256,9 @@ function PlaybackBar() {
   const result = useStore(analysis, (a) => a.result);
   const total = result && result.ok ? result.totalTimeSeconds : 0;
   return (
-    <div className="playback-bar" role="group" aria-label="Playback">
+    <div className="playback-overlay">
+      <SimResultRow />
+      <div className="playback-bar" role="group" aria-label="Playback">
       <IconButton label={playing ? "Pause" : "Play"} shortcut="Space" onClick={togglePlay} disabled={total === 0} testId="play">
         {playing ? <Pause size={16} /> : <Play size={16} />}
       </IconButton>
@@ -279,6 +282,9 @@ function PlaybackBar() {
       <span className="time" data-testid="time">
         {formatNumber(Math.min(t, total), 2)} / <strong>{formatNumber(total, 2)} s</strong>
       </span>
+      <span className="sep" />
+      <SimSwitch />
+      </div>
     </div>
   );
 }
