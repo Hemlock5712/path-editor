@@ -11,7 +11,7 @@ from courses import COURSES, NeutralPath, to_bezier
 from followers.pathplanner import PathPlannerPath, RobotConfig, generate_trajectory
 from followers.pathplanner2 import GUI_STEER_RATE, Path2Follower, SetpointGenerator, plan_time, to_path2
 from common import Limits
-from pp_objective import Objective
+from pp_objective import Optimiser, PathFile, mulberry32
 
 
 def test_setpoint_generator_keeps_to_the_cap_and_the_grip():
@@ -106,28 +106,54 @@ def test_planned_times_follow_each_tool(tuned):
         assert 0.5 < t < 3.0, key
 
 
-def test_pending_rows_say_why():
-    assert ppcompare.optimiser_status() is not None or ppcompare.os.path.exists(ppcompare.OPTIMISER)
+def test_optimised_rows_need_the_optimiser(monkeypatch):
+    monkeypatch.setattr(ppcompare, "optimiser_status", lambda: "pending optimiser: test")
     with pytest.raises(ValueError):
         ppcompare.make("ours_optimised")
 
 
+def test_the_seeded_generator_is_javascripts_mulberry32():
+    r = mulberry32(1)
+    assert [r() for _ in range(3)] == [0.6270739405881613, 0.002735721180215478, 0.5274470399599522]
+
+
+def _files(tool):
+    from courses import to_bezier
+
+    legs = ppcompare.targets()["around_hub_trench"]
+    if tool == "pp2027":
+        return PathFile("pp2027", to_bezier(legs[0]), leg=legs[0])
+    n = to_path2(legs)
+    return PathFile("path2", n["paths"][0], end={"end_distance": n["end_distance"], "end_angle": n["end_angle"]})
+
+
 @pytest.mark.parametrize("tool", ["pp2027", "path2"])
-def test_objective_scores_the_drawn_path_and_moves_within_the_corridor(tool):
-    o = Objective("around_hub_trench", tool)
-    assert o.dims == 3 * 5
-    assert o.score([0.0] * o.dims) == pytest.approx(o.before)
+def test_objective_moves_free_waypoints_within_the_corridor(tool):
+    o = _files(tool)
+    assert o.free == [1, 2, 3, 4, 5] and o.dims == 15  # the ends (with headings) stay put
+    assert o.seconds(o.candidate([0.0] * o.dims)) == pytest.approx(o.before)
     x = [0.0] * o.dims
-    x[0], x[1] = 3.0, 4.0  # outside the unit disc: clipped onto the corridor's edge
+    x[0], x[1], x[2] = 3.0, 4.0, 1.0  # outside the unit disc: onto the corridor's edge; handles doubled
     c = o.candidate(x)
     if tool == "pp2027":
-        a0 = np.array(o.base[0]["waypoints"][1]["anchor"])
-        a1 = np.array(c[0]["waypoints"][1]["anchor"])
+        w0, w1 = o.base["waypoints"][1], c["waypoints"][1]
+        assert np.linalg.norm(np.subtract(w1["anchor"], w0["anchor"])) == pytest.approx(0.5, abs=1e-5)
+        assert np.linalg.norm(np.subtract(w1["next"], w1["anchor"])) == pytest.approx(
+            2 * np.linalg.norm(np.subtract(w0["next"], w0["anchor"])), abs=1e-4)
     else:
-        a0 = np.array(o.base["paths"][0][1]["xy"])
-        a1 = np.array(c["paths"][0][1]["xy"])
-    assert np.linalg.norm(a1 - a0) == pytest.approx(0.5)
-    assert o.score(x) is not None
+        assert np.linalg.norm(np.subtract(c[1]["xy"], o.base[1]["xy"])) == pytest.approx(0.5, abs=1e-5)
+    assert o.seconds(c) is not None
+
+
+@pytest.mark.parametrize("tool", ["pp2027", "path2"])
+def test_the_search_never_makes_it_slower_and_keeps_to_its_budget(tool):
+    o = Optimiser(_files(tool), seed=1, max_evaluations=150)
+    o.run()
+    assert o.best_time <= o.before
+    assert o.evaluations < 150 + 2 * o.dims  # a step may finish past the budget, as in optimiser.ts
+    again = Optimiser(_files(tool), seed=1, max_evaluations=150)
+    again.run()
+    assert again.best_time == o.best_time  # deterministic for a seed and budget
 
 
 def test_report_has_every_row(tuned):
@@ -136,12 +162,12 @@ def test_report_has_every_row(tuned):
     rows = {m: agg([ppcompare.run_job(("start_to_shot", m, s, "truth")) for s in (0, 1)])
             for m in ppcompare.RUN_METHODS}
     out = {"meta": {"seeds": [0, 1], "targets": ["start_to_shot"], "methods": ppcompare.RUN_METHODS,
-                    "pending": {m: "pending optimiser" for m in ppcompare.PENDING}, "wall_s": 1.0,
+                    "pending": {m: "pending optimiser" for m in ppcompare.OPTIMISED}, "wall_s": 1.0,
                     "t_sim": {"start_to_shot": 5.0}},
            "runs": {"truth": {"start_to_shot": rows}}}
     md = ppcompare.section_md(out)
     assert md.startswith(ppcompare.PPC_START) and md.endswith(ppcompare.PPC_END)
-    for m in ppcompare.RUN_METHODS + ppcompare.PENDING:
+    for m in ppcompare.RUN_METHODS + ppcompare.OPTIMISED:
         assert ppcompare.METHODS[m][1] in md
     assert md.count("pending optimiser") >= 3
 

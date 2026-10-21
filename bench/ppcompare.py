@@ -126,6 +126,11 @@ METHODS = {
     "pp_path2_optimised": ("(d)", "PathPlanner path2 after the optimiser (waypoints)", ("optimised", "path2")),
 }
 RUN_METHODS = ["pp2027_hold", "pp2027_tuned", "pp_path2", "pp_path2_tuned", "ours_v2"]
+OPTIMISED = ["ours_optimised", "pp2027_optimised", "pp_path2_optimised"]
+BASE = {"ours_optimised": "ours_v2", "pp2027_optimised": "pp2027_hold", "pp_path2_optimised": "pp_path2"}
+TOOL = {"ours_optimised": "ours", "pp2027_optimised": "pp2027", "pp_path2_optimised": "path2"}
+BUDGET_MS = 3000  # the optimiser's default budget (1500 plans), for every tool
+OPTIMISED_FILE = os.path.join(OUT, "ppcompare_optimised.json")
 TUNED_FILES = [os.path.join(OUT, "results.json"), os.path.join(OUT, "ppcompare_tuned.json")]
 
 
@@ -140,14 +145,13 @@ def path2_tuned():
 
 
 def options(key):
-    kind = METHODS[key][2]
+    kind = METHODS[BASE.get(key, key)][2]
     if kind[1] == "tuned":
         t = path2_tuned()
         if t is None:
             raise ValueError("path2 isn't tuned yet: run the main bench or ppcompare.main")
         return t
     return kind[1]
-PENDING = ["ours_optimised", "pp2027_optimised", "pp_path2_optimised"]
 OPTIMISER = os.path.join(ROOT, "tools", "optimise.mjs")
 
 
@@ -164,6 +168,10 @@ def make(key):
     from followers.chain import Chain
     from followers.pathplanner2 import PathPlanner2
 
+    if key in BASE:  # the optimised rows run their tool's own follower, as shipped
+        if optimiser_status() is not None:
+            raise ValueError(f"{key}: {optimiser_status()}")
+        key = BASE[key]
     kind = METHODS[key][2]
     if kind[0] == "chain":
         return Chain(kind[1], **kind[2])
@@ -176,6 +184,7 @@ def make(key):
 def planned_seconds(key, legs, native):
     """Each tool's own generator time for the authored path(s), the way its editor shows it: from the plan's
     start speed (0, or the handoff speed), summed over the chain."""
+    key = BASE.get(key, key)
     kind = METHODS[key][2]
     if kind[0] == "path2":
         from followers.pathplanner2 import plan_time
@@ -228,7 +237,7 @@ def run_job(job, trace=False):
     if first.grip_drop is not None:
         plant.arm_grip_drop(first.grip_drop, NeutralPath(first))
     f = make(key)
-    native = f.adapt(legs)
+    native = optimised_native(name, key) if key in BASE else f.adapt(legs)
     plan = planned_seconds(key, legs, native)
     T = sim_seconds(legs)
     r = simulate(f, native, first.start_pose, first.start_velocity, rp, rng, T, pose_src, plant,
@@ -277,13 +286,17 @@ def run(seeds, procs, poses=("truth", "odom"), names=None, methods=None):
     from run import agg
 
     names = names or list(targets())
-    methods = methods or RUN_METHODS
+    pending = optimiser_status()
+    methods = methods or RUN_METHODS + ([] if pending else OPTIMISED)
     t0 = time.time()
     out = {"meta": {"seeds": seeds, "poses": list(poses), "targets": names, "methods": methods,
-                    "pending": {m: optimiser_status() for m in PENDING},
+                    "pending": {m: pending for m in OPTIMISED if m not in methods},
                     "t_sim": {n: sim_seconds(targets()[n]) for n in names}},
            "runs": {}}
     with mp.get_context("spawn").Pool(procs) as pool:
+        if any(m in OPTIMISED for m in methods):
+            out["optimiser"] = prepare_optimised(pool, names)
+            print("optimised", f"({time.time() - t0:.0f} s)", flush=True)
         for pose in poses:
             jobs = [(n, m, s, pose) for n in names for m in methods for s in seeds]
             res = pool.map(_job, jobs, chunksize=1)
@@ -317,9 +330,8 @@ def table(out, pose, name):
                  f"{_t(a, 't_settle')} | {gap} | {a['err_end_cm_mean']:.1f} / {a['err_end_cm_worst']:.1f} | "
                  f"{a['yaw_end_deg_worst']:.1f} | {a['overshoot_cm_worst']:.1f} | "
                  f"{a['ct_rms_cm_mean']:.1f} / {a['ct_max_cm_worst']:.1f} | {a['wheel_slip_ms_mean']:.0f} |")
-    for m in PENDING:
-        L.append(f"| {METHODS[m][0]} | {METHODS[m][1]} | {out['meta']['pending'][m] or 'not run'} |"
-                 + " |" * 8)
+    for m, why in out["meta"]["pending"].items():
+        L.append(f"| {METHODS[m][0]} | {METHODS[m][1]} | {why or 'not run'} |" + " |" * 8)
     return "\n".join(L)
 
 
@@ -368,6 +380,30 @@ def section_md(out):
                         + ("" if lg.end_speed == 0 else f" at {lg.end_speed:g} m/s") for lg in legs)
         L.append(f"| {name} | {pts} | {r['description']} |")
     L.append("")
+    if "optimiser" in out:
+        L += ["### The optimiser, rows (c) and (d)\n",
+              f"The editor's waypoint optimiser at its default budget ({BUDGET_MS / 1000:g} s = "
+              f"{BUDGET_MS // 2} plans per path file) and seed 1, on each tool's own control points, scored by that "
+              "tool's own figure: ours through `tools/optimise.mjs`; PathPlanner through `pp_objective.py`, a "
+              "line-for-line port of the same search (`optimiser.ts`) with PathPlanner's generator as the objective. "
+              "Pass-through waypoints move within 0.5 m and their tangents scale by half to double (2027: both "
+              "handles; path2 has none); the ends and waypoints with a set heading stay put. The bench has no "
+              "obstacles, so nothing stops a corridor cutting into the hub, bumps or trench arms; the same holds for "
+              "every tool. Planned time before -> after, summed over the target's path files:\n",
+              "| target | ours | PathPlanner 2027 | path2 |", "|---|---|---|---|"]
+        for name, tools in out["optimiser"].items():
+            cells = []
+            for t in ("ours", "pp2027", "path2"):
+                r = tools[t]
+                if t == "ours":
+                    pairs = [tuple(float(v) for v in x.split(": ")[1].split(" (")[0].replace(" s", "").split(" -> "))
+                             for x in r]
+                else:
+                    pairs = [(x["before"], x["after"]) for x in r]
+                b0, b1 = sum(p[0] for p in pairs), sum(p[1] for p in pairs)
+                cells.append(f"{b0:.2f} -> {b1:.2f} ({(b1 - b0) / b0:+.0%})")
+            L.append(f"| {name} | " + " | ".join(cells) + " |")
+        L.append("")
     for pose in out["runs"]:
         L.append(f"### {titles[pose]}\n")
         L.append("All targets (the 2026 routes and the existing courses):\n")
@@ -421,17 +457,81 @@ def main(seeds, procs, names=None):
     return out
 
 
-# ============================================================================================ optimiser hook
-def optimise_ours(course, budget_ms=5000, seed=1):
-    """Runs the headless optimiser on one leg: `node tools/optimise.mjs <path.json> --robot <robot.json>
-    --field <field.json> --budget-ms N --seed S`, expected to print the optimised path file on stdout."""
-    from followers.ours_v2 import robot_json, to_ours
+# ============================================================================================ the optimiser
+def _optimise_job(args):
+    name, tool = args
+    if tool == "ours":
+        return [optimise_ours(leg) for leg in targets()[name]]
+    from pp_objective import optimise_target
 
+    return optimise_target(name, tool, BUDGET_MS / 1000)
+
+
+def prepare_optimised(pool, names):
+    """Runs the optimiser once per target and tool (it is deterministic) into OPTIMISED_FILE, which the bench
+    runs read. Returns the before/after planned times per path file."""
+    jobs = [(n, t) for n in names for t in ("ours", "pp2027", "path2")]
+    res = pool.map(_optimise_job, jobs, chunksize=1)
+    store, report = {}, {}
+    for (n, t), r in zip(jobs, res):
+        if t == "ours":
+            store.setdefault(n, {})[t] = [tree for tree, _ in r]
+            report.setdefault(n, {})[t] = [info for _, info in r]
+        else:
+            store.setdefault(n, {})[t], report.setdefault(n, {})[t] = r
+    os.makedirs(OUT, exist_ok=True)
+    with open(OPTIMISED_FILE, "w") as fh:
+        json.dump({"natives": store, "report": report}, fh)
+    return report
+
+
+_optimised = None
+
+
+def optimised_native(name, key):
+    """The optimised path(s) for a target, as the row's follower takes them."""
+    global _optimised
+    if _optimised is None:
+        _optimised = json.load(open(OPTIMISED_FILE))["natives"]
+    n = _optimised[name][TOOL[key]]
+    if key == "ours_optimised":
+        from followers.ours_v2 import call_fresh, server
+
+        out = []
+        for tree in n:
+            call_fresh(op="load", path=tree, robot=_robot())
+            g = server().call(op="geometry", step=0.02)
+            out.append({"path": tree, "geometry": np.column_stack([g["x"], g["y"]])})
+        return out
+    return n
+
+
+def _robot():
+    from followers.ours_v2 import robot_json
+
+    return robot_json(0.7)
+
+
+def optimise_ours(course, budget_ms=BUDGET_MS, seed=1):
+    """The headless optimiser on one leg of ours: `node tools/optimise.mjs <path.json> --robot <robot.json>
+    --field <field.json> --budget-ms N --seed S --out <file> --pin ...`. Waypoints where the course sets a
+    heading are pinned (ours authors those headings as rotation targets, which the optimiser doesn't treat
+    as a set heading; PathPlanner's side keeps them fixed too). The field is the 2026 field for the routes
+    and a large empty one for the bench courses (they aren't laid out on the field). -> (path tree, summary)."""
+    from followers.ours_v2 import to_ours
+
+    pins = [str(i) for i, w in enumerate(course.waypoints) if w.heading_deg is not None]
+    on_field = any(course.name == leg.name for r in ROUTES.values() for leg in r["legs"])
+    field = {"field": {"length_m": 16.54, "width_m": 8.07} if on_field else {"length_m": 60.0, "width_m": 40.0},
+             "obstacles": []}
     with tempfile.TemporaryDirectory() as d:
-        p, r, f = (os.path.join(d, n) for n in ("path.json", "robot.json", "field.json"))
+        p, r, f, o = (os.path.join(d, n) for n in ("path.json", "robot.json", "field.json", "out.json"))
         json.dump(to_ours(course), open(p, "w"))
-        json.dump(robot_json(0.7), open(r, "w"))
-        json.dump({"lengthMeters": 16.54, "widthMeters": 8.07, "obstacles": []}, open(f, "w"))
-        res = subprocess.run(["node", OPTIMISER, p, "--robot", r, "--field", f, "--budget-ms", str(budget_ms),
-                              "--seed", str(seed)], capture_output=True, text=True, check=True)
-        return json.loads(res.stdout)
+        json.dump(_robot(), open(r, "w"))
+        json.dump(field, open(f, "w"))
+        cmd = ["node", OPTIMISER, p, "--robot", r, "--field", f, "--budget-ms", str(budget_ms), "--seed", str(seed),
+               "--out", o]
+        if pins:
+            cmd += ["--pin", ",".join(pins)]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return json.load(open(o)), res.stderr.strip()
