@@ -164,7 +164,7 @@ export class Optimiser {
       const scale = this.options.optimiseScales
         ? Math.round(w.tangentScale * Math.pow(2, Math.max(-1, Math.min(1, x[j * k + 2]!))) * 100) / 100
         : w.tangentScale;
-      waypoints[wi] = makeWaypoint(round5(w.xMeters + r * u), round5(w.yMeters + r * v), w.tangentRadians, scale);
+      waypoints[wi] = makeWaypoint(round5(w.xMeters + r * u), round5(w.yMeters + r * v), w.tangentRadians, scale, w.headingRadians);
     });
     // things placed by metres keep their fraction of the length
     let ratio = 1;

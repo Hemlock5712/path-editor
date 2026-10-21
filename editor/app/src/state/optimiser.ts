@@ -59,7 +59,7 @@ export function startOptimise(): void {
   const o = optimiser.get();
   const userLocks = o.locks[path.id] ?? [];
   // named points stay where they are: their waypoints are locked too
-  const locked = path.spec.waypoints.map((_, i) => userLocks[i] === true || path.links[i] !== null);
+  const locked = path.spec.waypoints.map((_, i) => userLocks[i] === true || path.pinned[i] === true || path.links[i] !== null);
   const options: OptimiseOptions = {
     ...DEFAULT_OPTIONS,
     corridorMeters: o.corridorMeters,

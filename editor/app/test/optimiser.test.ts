@@ -70,8 +70,8 @@ describe("optimiser", () => {
   });
 
   it("keeps the swept bumpers clear of obstacles", () => {
-    // a post above the dip at x = -2: the weave clears it, a straightened path would run into it
-    const post = { name: "post", polygon: [[-2.3, -0.3], [-1.7, -0.3], [-1.7, 0], [-2.3, 0]] as [number, number][] };
+    // a post above the dip at x = -2: the weave clears it (holding heading 0), a straightened path would run into it
+    const post = { name: "post", polygon: [[-2.1, -0.2], [-1.9, -0.2], [-1.9, 0], [-2.1, 0]] as [number, number][] };
     const base = analyse(input(weave, [post]));
     expect(base.ok && base.minClearanceMeters).toBeGreaterThan(0.05);
     const free = optimise(input(weave), quick);

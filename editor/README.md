@@ -37,10 +37,10 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 
 | File | What | Read by |
 | --- | --- | --- |
-| `src/main/deploy/paths/<name>.path.json` | one per path tab, written by `core`'s `writePath` (schema 2) | `PathLibrary.loadAll()` |
+| `src/main/deploy/paths/<name>.path.json` | one per path tab, written by `core`'s `writePath` (schema 3; schemas 1 and 2 still read) | `PathLibrary.loadAll()` |
 | `src/main/deploy/paths/field.json` | field size and obstacle polygons | `FieldMap.read` |
 | `src/main/deploy/paths/robot.json` | the robot (`RobotConfig`'s keys) plus `bumperLengthMeters` / `bumperWidthMeters` | `RobotFile`, `PlannerConfig.fromRobotFile` |
-| `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points and which waypoints follow them, the red-frame and enum settings, the view | the editor only |
+| `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points and which waypoints follow them, pinned waypoints, the red-frame and enum settings, the view | the editor only |
 | `src/main/java/<package>/PathName.java` | an enum of every path file (package set in the Project panel; `frc.robot` by default) | robot code |
 
 - **Only changed files are written.** `field.json` and `robot.json` are only created once you edit them.
@@ -60,27 +60,47 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 - **Blue/red view** (A). Paths are always stored for blue. The red view draws them through the
   project's red frame (a half-turn about the centre, or a mirror; set in the Project panel), and edits
   made there are converted back to blue. Obstacles are physical, so they never flip.
-- The bumper footprint is drawn along the path every 0.5, 1 or 2 m (or off). The path is coloured by
-  planned speed.
+- The path line is the robot's centre, coloured by planned speed. Every waypoint is drawn as the robot
+  there (its bumper footprint). Faint footprints between waypoints are optional (every 0.5, 1 or 2 m).
+- A one-line hint at the bottom of the field says what the current tool does. A quick start shows on the
+  first run; **?** shows it again with the keyboard shortcuts.
 
-**Tools.**
-- **Select** (V): drag waypoints, tangent handles, rotation-target heading handles, face points, named
-  points, events (they slide along the path) and obstacles. Hold Shift to snap to 5 cm and 15°.
-- **Waypoint** (W): click the path to insert a waypoint there; click elsewhere to append one.
+**Drawing a swerve path.** A swerve's heading is its own, so a waypoint is a robot pose: a position and,
+optionally, a heading.
+- **Draw** (W): click to add a point at the end; click the path to insert one. Enter or Esc when done.
+  Drag a robot to move it; Delete or right-click removes it.
+- Drag the knob on a robot's ring to turn it. Headings snap to 15° (hold Alt to turn freely); the
+  waypoint's **Heading** field takes a typed angle. Right-click a waypoint for **Set heading…**,
+  pass-through, pin and delete.
+- A waypoint without a heading is **pass-through** (dashed): the robot blends between the set headings.
+  The first and last waypoints always have one. A new end takes the old end's heading, and the old end
+  becomes pass-through.
+- **Heading** (R): click the path to add a heading partway along it (a rotation target), at the planned
+  heading there. Drag its robot along the path, or its knob to turn it.
+- The path's **Heading between set headings** is *hold* (blend between them: the default) or *face
+  travel*. Files from schemas 1 and 2 read as face travel, as they always behaved.
+- Snapping: to named points (a magnet, which also links the waypoint), to a 25 cm grid (**Grid** in the
+  tabs row), and to 5 cm with Shift.
+- **+** starts a new path where the active one ends, facing the way the robot ends up. A named point's
+  **Start a path here** starts one there, linked to it.
+- Travel direction is automatic, so clicks alone make a smooth path. **Shape the curve here** (in the
+  waypoint's panel) shows its tangent handle, to set the direction and `tangentScale` by hand; **Reset
+  to auto** undoes that.
 - **Event** (E): click the path to place a named event at the nearest point on it.
-- **Rotation** (R): click the path to add a rotation target. It starts at the planned heading there.
 - **Obstacle** (O): click corners, then double-click or press Enter to finish.
+- **Select** (V): drag robots, knobs, face points, named points, events (they slide along the path) and
+  obstacles; press on the path and drag to insert a point.
 
 **Waypoints.**
-- Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 10 cm with Shift).
-- Tangent handles set the direction and the `tangentScale` (the handle's length). A dashed handle is
-  automatic; drag it to fix it, and double-click it to make it automatic again.
+- Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 10 cm with Shift). **Pin** keeps a waypoint
+  where it is when the optimiser runs (a padlock marks it).
 - The Path panel sets the start and end speeds, the top speed and the maximum acceleration.
 - Inserting or deleting a waypoint renumbers the waypoint-relative positions of targets, zones and
   events, so each stays on the same stretch of path.
 
 **Heading.**
-- Rotation targets, by waypoint position or by metres.
+- Waypoint headings (above), and headings along the path (rotation targets), by waypoint position or
+  by metres.
 - Face-point zones, with a blend distance. New ones default to a 1 m blend: lib's README notes that
   0.5 m can turn the robot over 100° and slow the plan to 0.7 m/s.
 - Constraint zones.

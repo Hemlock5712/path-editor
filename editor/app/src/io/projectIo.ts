@@ -3,7 +3,7 @@
 //   src/main/deploy/paths/<name>.path.json   one per path, written by the core's writePath
 //   src/main/deploy/paths/field.json         obstacles, in the format the Java FieldMap reads
 //   src/main/deploy/paths/robot.json         RobotConfig (RobotFile) plus the bumper size
-//   src/main/deploy/paths/.pathproject.json  editor-only: tab order, colours, named points, links, view
+//   src/main/deploy/paths/.pathproject.json  editor-only: tab order, colours, named points, links, pins, view
 //   src/main/java/<package>/PathName.java    the generated enum
 //
 // toFiles/fromFiles are pure (text in, text out); loadFrom/saveTo move them through ProjectFiles.
@@ -117,7 +117,12 @@ export function writeRobot(robot: RobotSettings): string {
 
 interface Sidecar {
   readonly schema: number;
-  readonly paths: readonly { readonly name: string; readonly colour?: string; readonly links?: readonly (string | null)[] }[];
+  readonly paths: readonly {
+    readonly name: string;
+    readonly colour?: string;
+    readonly links?: readonly (string | null)[];
+    readonly pinned?: readonly boolean[];
+  }[];
   readonly namedPoints: readonly NamedPoint[];
   readonly settings: Partial<ProjectSettings>;
   readonly view: Partial<ViewState>;
@@ -126,7 +131,7 @@ interface Sidecar {
 export function writeSidecar(project: Project, view: ViewState): string {
   const root: JsonObject = {
     schema: SIDECAR_SCHEMA,
-    paths: project.paths.map((p) => ({ name: p.name, colour: p.colour, links: [...p.links] })),
+    paths: project.paths.map((p) => ({ name: p.name, colour: p.colour, links: [...p.links], pinned: [...p.pinned] })),
     namedPoints: project.namedPoints.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y })),
     settings: { redFrame: project.settings.redFrame, javaPackage: project.settings.javaPackage },
     view: {
@@ -135,6 +140,8 @@ export function writeSidecar(project: Project, view: ViewState): string {
       centerX: view.centerX,
       centerY: view.centerY,
       footprintSpacing: view.footprintSpacing,
+      shapeCurve: view.shapeCurve,
+      gridSnap: view.gridSnap,
     },
   };
   return writeJson(root, exact);
@@ -198,7 +205,8 @@ export function fromFiles(files: ReadonlyMap<string, string>): LoadedProject | n
       const spec = readPath(text);
       const meta = sidecar?.paths.find((p) => p.name === name);
       const links = meta?.links?.length === spec.waypoints.length ? meta.links : undefined;
-      const path = makeEditorPath(name, spec, paths.length, links);
+      const pinned = meta?.pinned?.length === spec.waypoints.length ? meta.pinned : undefined;
+      const path = makeEditorPath(name, spec, paths.length, links, pinned);
       paths.push(meta?.colour ? { ...path, colour: meta.colour } : path);
     } catch (e) {
       problems.push(`${name}${PATH_SUFFIX}: ${(e as Error).message}`);

@@ -4,6 +4,7 @@
 import { KRAKEN_X60_FOC, type Motor, type RobotConfig } from "../../../../core/src/index.ts";
 import { addNamedPoint, linkCount, linkToPoint, moveNamedPoint, removeNamedPoint, renameNamedPoint, uniquePointName } from "../../model/namedPoints.ts";
 import { DEFAULT_ROBOT_SETTINGS, type RobotSettings } from "../../model/project.ts";
+import { newPath } from "../../state/actions.ts";
 import { editProject, select } from "../../state/editor.ts";
 import { isValidPackage } from "../../io/javaEnum.ts";
 import { IconButton, NumberField, Section, SelectField, TextField, formatNumber } from "../controls.tsx";
@@ -42,6 +43,9 @@ export function PointsPanel() {
                   Link waypoint {selectedWaypoint}
                 </IconButton>
               )}
+              <IconButton label={`Start a new path at ${p.name}`} onClick={() => newPath({ x: p.x, y: p.y, heading: 0, pointId: p.id })}>
+                Start a path here
+              </IconButton>
               <IconButton label={`Delete point ${p.name}`} onClick={() => editProject("Delete point", (pr) => removeNamedPoint(pr, p.id), null)}>
                 Delete
               </IconButton>

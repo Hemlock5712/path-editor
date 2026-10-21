@@ -22,6 +22,9 @@ interface PathPlan {
   readonly name: string;
   /** x, y and optionally the tangent in degrees. */
   readonly waypoints: readonly (readonly [number, number, number?])[];
+  /** Headings set on waypoints (a swerve's waypoints are robot poses); the ends always have one. */
+  readonly headings: readonly { readonly wp: number; readonly deg: number }[];
+  /** Headings partway along the path (rotation targets), at a waypoint position. */
   readonly rotationTargets?: readonly { readonly wp: number; readonly deg: number }[];
   readonly events: readonly { readonly name: string; readonly at: At }[];
   readonly startSpeed?: number;
@@ -67,41 +70,43 @@ const SUITE: PathPlan[] = [
   {
     name: "Straight",
     waypoints: course(shift([[0, 0], [3, 0]], -6, -1)),
-    rotationTargets: held(1),
+    headings: held(1),
     events: standardEvents(1, 2.0),
   },
   {
     name: "SCurve",
     waypoints: course(shift([[0, 0], [1.25, 0], [2.5, 0.8], [3.75, 1.6], [5, 1.6]], -6, -1)),
-    rotationTargets: held(4),
+    headings: held(4),
     events: standardEvents(4, 3.5),
   },
   {
     name: "Hairpin",
     waypoints: course(shift(hairpin, -6, -2.5)),
-    rotationTargets: held(10),
+    headings: held(10),
     events: standardEvents(10, 5.0),
   },
   {
     name: "Slalom",
     waypoints: course(shift([[0, 0], [1.75, 0.4], [3.5, -0.4], [5.25, 0.4], [7, 0]], -6, 0.5)),
-    rotationTargets: held(4),
+    headings: held(4),
     events: standardEvents(4, 5.0),
   },
   {
     name: "LongAuto",
     waypoints: course(shift([[0, 0], [3, 0.5], [5.5, 2], [7.5, 3.2], [9, 2.2], [9.3, 0.3]], -7, -2)),
-    rotationTargets: [
+    // a set heading on a waypoint, and one partway along the path
+    headings: [
       { wp: 0, deg: 0 },
       { wp: 2, deg: 90 },
       { wp: 5, deg: 180 },
     ],
+    rotationTargets: [{ wp: 3.5, deg: 135 }],
     events: [...standardEvents(5, 8.0), { name: "turning", at: { wp: 1.5 } }],
   },
   {
     name: "MovingStart",
     waypoints: course(shift([[0, 0], [1.5, 0.4], [2.6, 1.4], [3, 3]], -6, -3)),
-    rotationTargets: held(3),
+    headings: held(3),
     startSpeed: 1.5,
     events: standardEvents(3, 2.5),
   },
@@ -111,7 +116,7 @@ const SUITE: PathPlan[] = [
       [-4, 2.5, 0],
       [-3.8, 2.5, 0],
     ],
-    rotationTargets: [
+    headings: [
       { wp: 0, deg: 0 },
       { wp: 1, deg: 80 },
     ],
@@ -123,7 +128,7 @@ const SUITE: PathPlan[] = [
       [-5, 3],
       [-5, 3],
     ],
-    rotationTargets: [
+    headings: [
       { wp: 0, deg: 0 },
       { wp: 1, deg: 90 },
     ],
@@ -141,6 +146,7 @@ const SUITE: PathPlan[] = [
       [-1, 1],
       [1, 2],
     ]),
+    headings: held(3),
     faceZone: { from: 1, to: 2, x: -2.5, y: 3.2, blend: 1 },
     constraintZone: { from: 2, to: 3, maxSpeed: 1.5 },
     events: standardEvents(3, 6.0),
@@ -152,7 +158,7 @@ const SUITE: PathPlan[] = [
       [-3, -2.8],
       [0, -2],
     ]),
-    rotationTargets: held(2),
+    headings: held(2),
     namedPoint: { wp: 1, x: -2.9, y: -2.7 },
     events: standardEvents(2, 4.0),
   },
@@ -162,7 +168,7 @@ const SUITE: PathPlan[] = [
       [-6, 3.2, 0],
       [-3, 3.2, 0],
     ],
-    rotationTargets: held(1),
+    headings: held(1),
     endSpeed: 1.5,
     events: standardEvents(1, 2.0),
   },
@@ -172,7 +178,7 @@ const SUITE: PathPlan[] = [
       [-3, 3.2, 0],
       [0, 2.6, 0],
     ],
-    rotationTargets: held(1),
+    headings: held(1),
     startSpeed: 1.5,
     events: standardEvents(1, 2.0),
   },
@@ -292,12 +298,22 @@ async function fieldPoint(page: Page, x: number, y: number): Promise<{ x: number
 
 const waypointGroup = (page: Page, i: number) => page.getByRole("group", { name: `Waypoint ${i}`, exact: true });
 
-async function setWaypoint(page: Page, i: number, [x, y, tangent]: readonly [number, number, number?]): Promise<void> {
+async function setWaypoint(page: Page, i: number, [x, y, tangent]: readonly [number, number, number?], heading?: number): Promise<void> {
   await page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(i).click();
   const g = waypointGroup(page, i);
   await setNumber(g.getByLabel("x", { exact: true }), x);
   await setNumber(g.getByLabel("y", { exact: true }), y);
-  if (tangent !== undefined) await setNumber(g.getByLabel("Tangent", { exact: true }), tangent);
+  // a blank heading makes a middle waypoint pass-through (the ends always keep theirs)
+  if (heading !== undefined) await setNumber(g.getByTestId("waypoint-heading"), heading);
+  else if (i > 0 && i < (await page.getByRole("list", { name: "Waypoints" }).getByRole("listitem").count()) - 1) {
+    await expect(g.getByTestId("waypoint-pass-through")).toBeChecked();
+  }
+  if (tangent !== undefined) {
+    // the travel direction is set by hand behind "Shape the curve here"
+    const shape = page.getByTestId("shape-curve");
+    if (!(await shape.isChecked())) await shape.check();
+    await setNumber(g.getByLabel("Travel direction", { exact: true }), tangent);
+  }
 }
 
 async function author(page: Page, plan: PathPlan, first: boolean): Promise<void> {
@@ -309,7 +325,7 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
 
   // waypoints: the new path has two; the rest are added from the panel, then every one is typed in
   for (let i = 2; i < plan.waypoints.length; i++) await page.getByRole("button", { name: "Add a waypoint 1 m past the end" }).click();
-  for (let i = 0; i < plan.waypoints.length; i++) await setWaypoint(page, i, plan.waypoints[i]!);
+  for (let i = 0; i < plan.waypoints.length; i++) await setWaypoint(page, i, plan.waypoints[i]!, plan.headings.find((h) => h.wp === i)?.deg);
 
   if (plan.startSpeed !== undefined) await setNumber(page.getByLabel("Start speed"), plan.startSpeed);
   if (plan.endSpeed !== undefined) await setNumber(page.getByLabel("End speed"), plan.endSpeed);
@@ -343,12 +359,12 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   await page.keyboard.press("v");
 
   if (plan.rotationTargets) {
-    await openSection(page, "Rotation targets");
+    await openSection(page, "Headings along the path");
     for (const [i, t] of plan.rotationTargets.entries()) {
-      await page.getByRole("button", { name: "Add rotation target at the end" }).click();
-      const card = page.getByRole("group", { name: `Target ${i + 1}`, exact: true });
+      await page.getByRole("button", { name: "Add a heading at the end of the path" }).click();
+      const card = page.getByRole("group", { name: `Heading ${i + 1}`, exact: true });
       await setNumber(card.getByLabel("At", { exact: true }), t.wp);
-      await setNumber(card.getByLabel("Heading"), t.deg);
+      await setNumber(card.getByLabel("Heading", { exact: true }), t.deg);
     }
   }
   if (plan.faceZone || plan.constraintZone) await openSection(page, "Zones");
@@ -381,6 +397,7 @@ test("author the end-to-end suite in the editor and save it", async ({ page }) =
   mkdirSync(PROJECT, { recursive: true });
   await exposeDisk(page);
   await page.addInitScript(installDiskFolder);
+  await page.addInitScript(() => localStorage.setItem("pathEditor.quickStartSeen", "1"));
   await page.goto("/");
 
   await page.getByTestId("open-folder").click();

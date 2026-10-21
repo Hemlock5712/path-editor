@@ -1,12 +1,13 @@
 // The active path's settings, its waypoints, and the selected waypoint's details.
 
 import { round5, round5Radians } from "../../model/positions.ts";
-import { appendWaypoint, deleteWaypoint, insertWaypoint, moveWaypoint, setTangent, withSpec } from "../../model/edits.ts";
+import { appendWaypoint, deleteWaypoint, insertWaypoint, moveWaypoint, setHeading, setPinned, setTangent, withSpec } from "../../model/edits.ts";
+import { waypointPose } from "../draw.ts";
 import { geometryOf } from "../../state/analysis.ts";
 import { isValidPathName } from "../../model/project.ts";
 import { linkToPoint, moveNamedPoint } from "../../model/namedPoints.ts";
-import { editPath, editProject, select } from "../../state/editor.ts";
-import { IconButton, NumberField, Section, TextField, formatNumber } from "../controls.tsx";
+import { editPath, editProject, select, setView } from "../../state/editor.ts";
+import { IconButton, NumberField, Section, SelectField, TextField, formatNumber } from "../controls.tsx";
 import { DEGREES, toDegrees, useActivePath, useAnalysis, useEditor } from "./common.tsx";
 
 export function PathPanel() {
@@ -64,6 +65,15 @@ export function PathPanel() {
           onCommit={(v) => editPath("End speed", (p) => withSpec(p, { endMetersPerSecond: v }))}
         />
       </div>
+      <SelectField
+        label="Heading between set headings"
+        value={spec.headingMode}
+        options={[
+          { value: "hold", label: "Hold, and blend between them (swerve)" },
+          { value: "faceTravel", label: "Face the direction of travel" },
+        ]}
+        onChange={(headingMode) => editPath("Heading mode", (p) => withSpec(p, { headingMode }))}
+      />
       <p className="stats" data-testid="path-stats">
         {a ? (
           <>
@@ -85,6 +95,15 @@ export function WaypointsPanel() {
   const selected = selection?.kind === "waypoint" ? selection.index : -1;
   const w = path.spec.waypoints[selected];
   const link = path.links[selected];
+  const shapeCurve = useEditor((s) => s.view.shapeCurve);
+  const analysisResult = useAnalysis();
+  const isEnd = selected === 0 || selected === path.spec.waypoints.length - 1;
+  const passThrough = w !== undefined && Number.isNaN(w.headingRadians);
+  /** The plan's heading at the selected waypoint, in 15° steps: where a newly set heading starts. */
+  const plannedHeading = () => {
+    const h = waypointPose({ active: path, analysis: analysisResult }, selected).heading;
+    return round5Radians(Math.round(h / (Math.PI / 12)) * (Math.PI / 12));
+  };
   // a linked waypoint follows its point, so moving it moves the point (and every waypoint on it)
   const moveTo = (x: number, y: number) =>
     link
@@ -117,6 +136,8 @@ export function WaypointsPanel() {
               onClick={() => select({ kind: "waypoint", index: i })}
             >
               <span className="idx">{i}</span>({formatNumber(p.xMeters, 2)}, {formatNumber(p.yMeters, 2)})
+              <span className="heading-tag">{Number.isNaN(p.headingRadians) ? "pass" : `${formatNumber(toDegrees(p.headingRadians), 1)}°`}</span>
+              {path.pinned[i] && <span className="tag">pinned</span>}
               {path.links[i] && <span className="tag">{points.find((q) => q.id === path.links[i])?.name}</span>}
             </button>
           </li>
@@ -131,22 +152,61 @@ export function WaypointsPanel() {
             <NumberField label="x" unit="m" value={w.xMeters} onCommit={(v) => moveTo(round5(v), w.yMeters)} />
             <NumberField label="y" unit="m" value={w.yMeters} onCommit={(v) => moveTo(w.xMeters, round5(v))} />
             <NumberField
-              label="Tangent"
+              label="Heading"
               unit="°"
-              value={toDegrees(w.tangentRadians)}
-              blank="auto"
-              blankValue={Number.NaN}
-              title="Direction of travel through this waypoint; blank = automatic"
-              onCommit={(v) => editPath("Change tangent", (p) => setTangent(p, selected, Number.isNaN(v) ? v : round5Radians(v * DEGREES), w.tangentScale))}
+              value={toDegrees(w.headingRadians)}
+              blank={isEnd ? "" : "pass-through"}
+              blankValue={isEnd ? undefined : Number.NaN}
+              testId="waypoint-heading"
+              title="Where the robot faces at this waypoint (a swerve's heading is its own); blank = pass through"
+              onCommit={(v) => editPath("Set heading", (p) => setHeading(p, selected, Number.isNaN(v) ? v : round5Radians(v * DEGREES)))}
             />
-            <NumberField
-              label="Tangent scale"
-              value={w.tangentScale}
-              min={0.01}
-              title="Above 1 holds the direction longer"
-              onCommit={(v) => editPath("Change tangent", (p) => setTangent(p, selected, w.tangentRadians, v))}
-            />
+            <div className="checks-col">
+              <label className="row" title={isEnd ? "The first and last waypoints always have a heading" : "No heading here: the robot blends between the set ones"}>
+                <input
+                  type="checkbox"
+                  checked={passThrough}
+                  disabled={isEnd}
+                  data-testid="waypoint-pass-through"
+                  onChange={(e) => editPath(e.target.checked ? "Pass through" : "Set heading", (p) => setHeading(p, selected, e.target.checked ? Number.NaN : plannedHeading()))}
+                />{" "}
+                Pass-through
+              </label>
+              <label className="row" title="The optimiser leaves a pinned waypoint where it is">
+                <input type="checkbox" checked={path.pinned[selected] === true} onChange={(e) => editPath(e.target.checked ? "Pin" : "Unpin", (p) => setPinned(p, selected, e.target.checked))} /> Pin
+              </label>
+            </div>
           </div>
+          <label className="row" title="Show this waypoint's tangent handle to bend the path by hand; otherwise travel direction is automatic">
+            <input type="checkbox" checked={shapeCurve} data-testid="shape-curve" onChange={() => setView({ shapeCurve: !shapeCurve })} /> Shape the curve here
+          </label>
+          {shapeCurve && (
+            <div className="grid2">
+              <NumberField
+                label="Travel direction"
+                unit="°"
+                value={toDegrees(w.tangentRadians)}
+                blank="auto"
+                blankValue={Number.NaN}
+                title="Direction of travel through this waypoint; blank = automatic"
+                onCommit={(v) => editPath("Change tangent", (p) => setTangent(p, selected, Number.isNaN(v) ? v : round5Radians(v * DEGREES), w.tangentScale))}
+              />
+              <NumberField
+                label="Tangent scale"
+                value={w.tangentScale}
+                min={0.01}
+                title="Above 1 holds the direction longer"
+                onCommit={(v) => editPath("Change tangent", (p) => setTangent(p, selected, w.tangentRadians, v))}
+              />
+              <IconButton
+                label="Make this waypoint's travel direction automatic again"
+                disabled={Number.isNaN(w.tangentRadians) && w.tangentScale === 1}
+                onClick={() => editPath("Automatic tangent", (p) => setTangent(p, selected, Number.NaN, 1))}
+              >
+                Reset to auto
+              </IconButton>
+            </div>
+          )}
           <label className="field">
             <span className="field-label">Named point</span>
             <span className="field-input">

@@ -11,7 +11,7 @@ export function moveNamedPoint(project: Project, id: string, x: number, y: numbe
   const paths = project.paths.map((path) => {
     if (!path.links.includes(id)) return path;
     const waypoints = path.spec.waypoints.map((w, i) =>
-      path.links[i] === id ? makeWaypoint(x, y, w.tangentRadians, w.tangentScale) : w,
+      path.links[i] === id ? makeWaypoint(x, y, w.tangentRadians, w.tangentScale, w.headingRadians) : w,
     );
     return withSpec(path, { waypoints });
   });
@@ -26,7 +26,7 @@ export function linkToPoint(project: Project, pathId: string, i: number, pointId
     const links = path.links.map((l, j) => (j === i ? pointId : l));
     if (!point) return { ...path, links };
     const w = path.spec.waypoints[i]!;
-    const waypoints = path.spec.waypoints.map((v, j) => (j === i ? makeWaypoint(point.x, point.y, w.tangentRadians, w.tangentScale) : v));
+    const waypoints = path.spec.waypoints.map((v, j) => (j === i ? makeWaypoint(point.x, point.y, w.tangentRadians, w.tangentScale, w.headingRadians) : v));
     return { ...withSpec(path, { waypoints }), links };
   });
   return { ...project, paths };

@@ -26,6 +26,8 @@ export interface EditorPath {
   readonly spec: PathSpec;
   /** Per waypoint: the NamedPoint id it follows, or null. Same length as spec.waypoints. */
   readonly links: readonly (string | null)[];
+  /** Per waypoint: pinned, so the optimiser leaves it where it is. Same length as spec.waypoints. */
+  readonly pinned: readonly boolean[];
   readonly colour: string;
 }
 
@@ -110,20 +112,35 @@ export function isValidPathName(name: string): boolean {
   return /^[A-Za-z][A-Za-z0-9_-]*$/.test(name);
 }
 
-export function makeEditorPath(name: string, spec: PathSpec, index: number, links?: readonly (string | null)[]): EditorPath {
+export function makeEditorPath(
+  name: string,
+  spec: PathSpec,
+  index: number,
+  links?: readonly (string | null)[],
+  pinned?: readonly boolean[],
+): EditorPath {
   return {
     id: newId("path"),
     name,
     spec,
     links: links ?? spec.waypoints.map(() => null),
+    pinned: pinned ?? spec.waypoints.map(() => false),
     colour: PATH_COLOURS[index % PATH_COLOURS.length]!,
   };
 }
 
-/** A new path: a short straight run out from the blue side, facing the field. */
-export function starterSpec(): PathSpec {
+/** How far a new path's first stretch runs, metres. */
+const STARTER_LENGTH = 2.5;
+
+/**
+ * A new path: a robot pose and a short straight run from it, holding that heading at both ends (the
+ * first and last waypoints always have one). By default it starts on the blue side, facing the field.
+ */
+export function starterSpec(x = -6.5, y = -1.0, headingRadians = 0): PathSpec {
+  const ex = Math.round((x + STARTER_LENGTH * Math.cos(headingRadians)) * 1e5) / 1e5;
+  const ey = Math.round((y + STARTER_LENGTH * Math.sin(headingRadians)) * 1e5) / 1e5;
   return makePathSpec({
-    waypoints: [makeWaypoint(-6.5, -1.0), makeWaypoint(-4.0, -1.0)],
+    waypoints: [makeWaypoint(x, y, Number.NaN, 1, headingRadians), makeWaypoint(ex, ey, Number.NaN, 1, headingRadians)],
     maxMetersPerSecond: 4.0,
     maxMetersPerSecondSquared: 6.0,
   });

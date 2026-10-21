@@ -128,6 +128,7 @@ export function drawField(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   drawGhost(ctx, m);
   drawFootprints(ctx, m);
   drawRotationTargets(ctx, m);
+  drawHeadingGhost(ctx, m);
   drawWaypoints(ctx, m);
   drawEvents(ctx, m);
   drawNamedPoints(ctx, m);
@@ -422,12 +423,72 @@ function drawFootprints(ctx: CanvasRenderingContext2D, m: DrawModel): void {
 }
 
 /** Where a rotation target's heading handle is (blue frame). */
+/** How far out from the robot's centre a rotate handle sits, metres. */
+export function headingReach(m: Pick<DrawModel, "project">): number {
+  return Math.max(m.project.robot.bumperLengthMeters, m.project.robot.bumperWidthMeters) / 2 + 0.25;
+}
+
+/** A rotate handle for a pose: [centre x, centre y, handle x, handle y] (blue frame). */
+function handleFor(m: Pick<DrawModel, "project">, x: number, y: number, heading: number): [number, number, number, number] {
+  const reach = headingReach(m);
+  return [x, y, x + reach * Math.cos(heading), y + reach * Math.sin(heading)];
+}
+
 export function rotationHandle(m: Pick<DrawModel, "project" | "geometry">, t: RotationTarget): [number, number, number, number] | null {
   const g = m.geometry;
   if (!g) return null;
   const p = g.sample(rotationTargetS(t, g));
-  const reach = m.project.robot.bumperLengthMeters / 2 + 0.2;
-  return [p.xMeters, p.yMeters, p.xMeters + reach * Math.cos(t.headingRadians), p.yMeters + reach * Math.sin(t.headingRadians)];
+  return handleFor(m, p.xMeters, p.yMeters, t.headingRadians);
+}
+
+/**
+ * The robot's pose at waypoint i: its set heading, or for a pass-through point the plan's heading there
+ * (from the analysis; 0 until there is one).
+ */
+export function waypointPose(m: Pick<DrawModel, "active" | "analysis">, i: number): { x: number; y: number; heading: number; set: boolean } {
+  const w = m.active.spec.waypoints[i]!;
+  if (!Number.isNaN(w.headingRadians)) return { x: w.xMeters, y: w.yMeters, heading: w.headingRadians, set: true };
+  const a = m.analysis;
+  const s = a?.waypointS[i];
+  return { x: w.xMeters, y: w.yMeters, heading: a && s !== undefined ? headingAtS(a.stations, s) : 0, set: false };
+}
+
+/** Waypoint i's rotate handle: [centre x, centre y, handle x, handle y] (blue frame). */
+export function waypointHandle(m: Pick<DrawModel, "active" | "analysis" | "project">, i: number): [number, number, number, number] {
+  const p = waypointPose(m, i);
+  return handleFor(m, p.x, p.y, p.heading);
+}
+
+/** True if a blue-frame point is inside waypoint i's bumper footprint. */
+export function insideFootprint(m: Pick<DrawModel, "active" | "analysis" | "project">, i: number, x: number, y: number): boolean {
+  const p = waypointPose(m, i);
+  const dx = x - p.x;
+  const dy = y - p.y;
+  const u = dx * Math.cos(p.heading) + dy * Math.sin(p.heading);
+  const v = -dx * Math.sin(p.heading) + dy * Math.cos(p.heading);
+  return Math.abs(u) <= m.project.robot.bumperLengthMeters / 2 && Math.abs(v) <= m.project.robot.bumperWidthMeters / 2;
+}
+
+/** A rotate handle: the ring's arc around the robot and a knob on it, in the direction it faces. */
+function drawRotateHandle(ctx: CanvasRenderingContext2D, m: DrawModel, h: [number, number, number, number], colour: string, filled: boolean, strong: boolean): void {
+  const [cx, cy] = m.view.toCanvas(h[0], h[1]);
+  const [hx, hy] = m.view.toCanvas(h[2], h[3]);
+  const r = Math.hypot(hx - cx, hy - cy);
+  const a = Math.atan2(hy - cy, hx - cx);
+  ctx.strokeStyle = colour;
+  ctx.globalAlpha = strong ? 0.9 : 0.45;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, a - 0.5, a + 0.5);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  line(ctx, cx, cy, hx, hy);
+  ctx.beginPath();
+  ctx.arc(hx, hy, strong ? 7 : 6, 0, 2 * Math.PI);
+  ctx.fillStyle = filled ? colour : COLOURS.background;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 function drawRotationTargets(ctx: CanvasRenderingContext2D, m: DrawModel): void {
@@ -435,17 +496,24 @@ function drawRotationTargets(ctx: CanvasRenderingContext2D, m: DrawModel): void 
     const h = rotationHandle(m, t);
     if (!h) return;
     const sel = m.selection?.kind === "rotation" && m.selection.index === i;
-    ctx.lineWidth = sel ? 2 : 1.25;
-    drawRobot(ctx, m, h[0], h[1], t.headingRadians, COLOURS.rotation, sel ? "rgba(34,211,238,0.18)" : null);
-    const [cx, cy] = m.view.toCanvas(h[0], h[1]);
-    const [hx, hy] = m.view.toCanvas(h[2], h[3]);
-    ctx.strokeStyle = COLOURS.rotation;
-    line(ctx, cx, cy, hx, hy);
-    ctx.fillStyle = sel ? COLOURS.selected : COLOURS.rotation;
-    ctx.beginPath();
-    ctx.arc(hx, hy, 6, 0, 2 * Math.PI);
-    ctx.fill();
+    ctx.lineWidth = sel ? 3 : 2;
+    drawRobot(ctx, m, h[0], h[1], t.headingRadians, sel ? COLOURS.selected : COLOURS.rotation, sel ? "rgba(251,191,36,0.18)" : "rgba(34,211,238,0.15)");
+    drawRotateHandle(ctx, m, h, sel ? COLOURS.selected : COLOURS.rotation, true, sel);
   });
+}
+
+/** The Rotation tool's ghost: where a click would add a heading, at the plan's heading there. */
+function drawHeadingGhost(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const a = m.analysis;
+  const g = m.geometry;
+  if (m.tool !== "rotation" || !a || !g || !Number.isFinite(m.hoverS)) return;
+  const p = g.sample(m.hoverS);
+  ctx.globalAlpha = 0.6;
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 2;
+  drawRobot(ctx, m, p.xMeters, p.yMeters, headingAtS(a.stations, m.hoverS), COLOURS.rotation, "rgba(34,211,238,0.1)");
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
 }
 
 /** Where waypoint i's tangent handle is (blue frame), with its direction. */
@@ -462,21 +530,44 @@ export function tangentHandle(m: Pick<DrawModel, "active" | "geometry">, i: numb
   return { x: w.xMeters + reach * Math.cos(angle), y: w.yMeters + reach * Math.sin(angle), angle, auto };
 }
 
+/** A small padlock: this waypoint is pinned (the optimiser leaves it). */
+function drawPin(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = "#f8fafc";
+  ctx.strokeStyle = "#f8fafc";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y - 4, 3, Math.PI, 0);
+  ctx.stroke();
+  ctx.fillRect(x - 4, y - 4, 8, 6);
+}
+
 function drawWaypoints(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const spec = m.active.spec;
   const selected = m.selection?.kind === "waypoint" ? m.selection.index : -1;
-  if (selected >= 0) {
+  // every waypoint is a robot pose: its footprint, solid where its heading is set, dashed (at the
+  // plan's heading) where the robot passes through
+  spec.waypoints.forEach((_, i) => {
+    const p = waypointPose(m, i);
+    const sel = i === selected;
+    ctx.lineWidth = sel ? 3 : 2;
+    if (!p.set) ctx.setLineDash([6, 4]);
+    const colour = sel ? COLOURS.selected : p.set ? COLOURS.waypoint : "rgba(248,250,252,0.55)";
+    drawRobot(ctx, m, p.x, p.y, p.heading, colour, sel ? "rgba(251,191,36,0.15)" : p.set ? "rgba(248,250,252,0.08)" : null);
+    ctx.setLineDash([]);
+    drawRotateHandle(ctx, m, waypointHandle(m, i), sel ? COLOURS.selected : p.set ? COLOURS.waypoint : "rgba(248,250,252,0.6)", p.set, sel);
+  });
+  if (selected >= 0 && m.view.view.shapeCurve) {
     const h = tangentHandle(m, selected);
     const w = spec.waypoints[selected]!;
     if (h) {
       const [ax, ay] = m.view.toCanvas(w.xMeters, w.yMeters);
       const [bx, by] = m.view.toCanvas(h.x, h.y);
-      ctx.strokeStyle = COLOURS.selected;
+      ctx.strokeStyle = "#a78bfa";
       ctx.lineWidth = 1.5;
       if (h.auto) ctx.setLineDash([4, 3]);
       line(ctx, ax, ay, bx, by);
       ctx.setLineDash([]);
-      ctx.fillStyle = h.auto ? COLOURS.background : COLOURS.selected;
+      ctx.fillStyle = h.auto ? COLOURS.background : "#a78bfa";
       ctx.fillRect(bx - 5, by - 5, 10, 10);
       ctx.strokeRect(bx - 5, by - 5, 10, 10);
     }
@@ -485,15 +576,16 @@ function drawWaypoints(ctx: CanvasRenderingContext2D, m: DrawModel): void {
     const [x, y] = m.view.toCanvas(w.xMeters, w.yMeters);
     const linked = m.active.links[i] !== null;
     ctx.beginPath();
-    ctx.arc(x, y, i === selected ? 8 : 6, 0, 2 * Math.PI);
+    ctx.arc(x, y, i === selected ? 7 : 5, 0, 2 * Math.PI);
     ctx.fillStyle = i === selected ? COLOURS.selected : linked ? COLOURS.linked : COLOURS.waypoint;
     ctx.fill();
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = "#e2e8f0";
-    ctx.font = "10px system-ui, sans-serif";
-    ctx.fillText(String(i), x + 9, y + 12);
+    ctx.font = i === selected ? "600 12px system-ui, sans-serif" : "11px system-ui, sans-serif";
+    ctx.fillText(String(i), x + 9, y + 13);
+    if (m.active.pinned[i]) drawPin(ctx, x - 12, y + 12);
   });
 }
 

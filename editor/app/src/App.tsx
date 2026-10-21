@@ -16,6 +16,7 @@ import { RotationPanel, ZonesPanel } from "./ui/panels/HeadingPanel.tsx";
 import { LivePanel } from "./ui/panels/LivePanel.tsx";
 import { OptimisePanel } from "./ui/panels/OptimisePanel.tsx";
 import { PathPanel, WaypointsPanel } from "./ui/panels/PathPanel.tsx";
+import { QuickStartList } from "./ui/QuickStart.tsx";
 import { onKeyDown, SHORTCUTS } from "./ui/shortcuts.ts";
 import { PathTabs, PlaybackBar, StatusLine, Toolbar } from "./ui/Toolbar.tsx";
 
@@ -51,7 +52,9 @@ function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   }, [open]);
   return (
     <dialog ref={ref} className="help" aria-labelledby="help-title" onClose={onClose}>
-      <h2 id="help-title">Keyboard shortcuts</h2>
+      <h2 id="help-title">Quick start</h2>
+      <QuickStartList />
+      <h2>Keyboard shortcuts</h2>
       <table>
         <tbody>
           {SHORTCUTS.map(([keys, what]) => (

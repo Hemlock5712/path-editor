@@ -9,14 +9,15 @@ import { bench, toggleBench } from "../state/bench.ts";
 import { downloadZip, newProject, openFolder, openUpload, save, session } from "../state/session.ts";
 import { useStore } from "../state/store.ts";
 import { formatNumber } from "./controls.tsx";
+import { TOOL_HINTS } from "./FieldCanvas.tsx";
 import { useEditor } from "./panels/common.tsx";
 
-const TOOLS: { tool: Tool; label: string; key: string; hint: string }[] = [
-  { tool: "select", label: "Select", key: "V", hint: "Select and drag; drag the empty field to pan" },
-  { tool: "waypoint", label: "Waypoint", key: "W", hint: "Click the path to insert a waypoint, elsewhere to add one at the end" },
-  { tool: "event", label: "Event", key: "E", hint: "Click the path to place a named event" },
-  { tool: "rotation", label: "Rotation", key: "R", hint: "Click the path to add a rotation target" },
-  { tool: "obstacle", label: "Obstacle", key: "O", hint: "Click corners; double-click or Enter to finish" },
+const TOOLS: { tool: Tool; label: string; key: string }[] = [
+  { tool: "select", label: "Select", key: "V" },
+  { tool: "waypoint", label: "Draw", key: "W" },
+  { tool: "rotation", label: "Heading", key: "R" },
+  { tool: "event", label: "Event", key: "E" },
+  { tool: "obstacle", label: "Obstacle", key: "O" },
 ];
 
 export function Toolbar() {
@@ -98,7 +99,7 @@ export function Toolbar() {
             role="radio"
             aria-checked={tool === t.tool}
             className={tool === t.tool ? "tool active" : "tool"}
-            title={`${t.hint} (${t.key})`}
+            title={`${TOOL_HINTS[t.tool]} (${t.key})`}
             onClick={() => setTool(t.tool)}
             data-testid={`tool-${t.tool}`}
           >
@@ -132,7 +133,7 @@ export function PathTabs({ onHelp }: { onHelp: () => void }) {
           </button>
         ))}
       </div>
-      <button type="button" onClick={newPath} title="New path" aria-label="New path" data-testid="new-path">
+      <button type="button" onClick={() => newPath()} title="New path, starting where this one ends" aria-label="New path" data-testid="new-path">
         +
       </button>
       <button type="button" onClick={duplicatePath} title="Duplicate this path">
@@ -152,10 +153,13 @@ export function PathTabs({ onHelp }: { onHelp: () => void }) {
         >
           {view.alliance === "red" ? "Red view" : "Blue view"}
         </button>
-        <label className="compact" title="Ghost robots along the path">
+        <label className="compact" title="Snap new and dragged points to a 25 cm grid (Shift: 5 cm)">
+          <input type="checkbox" checked={view.gridSnap} onChange={() => setView({ gridSnap: !view.gridSnap })} data-testid="grid-snap" /> Grid
+        </label>
+        <label className="compact" title="Faint robots along the path between waypoints">
           Footprints
           <select value={String(view.footprintSpacing)} onChange={(e) => setView({ footprintSpacing: Number(e.target.value) })}>
-            <option value="0">off</option>
+            <option value="0">waypoints only</option>
             <option value="0.5">0.5 m</option>
             <option value="1">1 m</option>
             <option value="2">2 m</option>
@@ -164,7 +168,7 @@ export function PathTabs({ onHelp }: { onHelp: () => void }) {
         <button type="button" onClick={fitView} title="Fit the field (F)">
           Fit
         </button>
-        <button type="button" onClick={onHelp} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+        <button type="button" onClick={onHelp} title="Quick start and keyboard shortcuts (?)" aria-label="Help">
           ?
         </button>
       </div>
@@ -211,7 +215,7 @@ export function StatusLine() {
   const status = useEditor((s) => s.status);
   const tool = useEditor((s) => s.tool);
   const draft = useEditor((s) => s.draftObstacle);
-  const hint = TOOLS.find((t) => t.tool === tool)?.hint ?? "";
+  const hint = TOOL_HINTS[tool];
   return (
     <footer className="statusline">
       <span role="status" aria-live="polite" className={status?.kind === "error" ? "status error" : "status"} data-testid="status">
