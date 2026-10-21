@@ -7,7 +7,9 @@
                                         # and stdout, leaves results.json and RESULTS.md alone
     python bench/run.py --md-only       # rebuild RESULTS.md's generated part from bench/out/results.json
     python bench/run.py --export-editor # bench/out/editor_bench.json for the editor's Bench view (from results.json;
-                                        # --trace-seeds 0,1,2 re-simulates traces for more seeds than seed 0)
+                                        # --trace-seeds 0,1,2 re-simulates traces for more seeds than seed 0), and
+                                        # editor/app/public/bench/results-lite.json, the small committed snapshot
+                                        # the deployed editor opens with
 
 Results: bench/out/results.json (gitignored). RESULTS.md keeps its hand-written text; only the part
 between the 'generated' markers is replaced.
@@ -275,6 +277,8 @@ def main():
 
 # ============================================================================================ editor export
 EDITOR_EXPORT = os.path.join(OUT, "editor_bench.json")
+LITE_EXPORT = os.path.join(HERE, "..", "editor", "app", "public", "bench", "results-lite.json")
+LITE_TRACE_STEP = 5  # every 5th trace sample: 0.2 s apart
 EDITOR_SCHEMA = 1
 # what the editor's tables show: name in results.json -> (label, unit)
 EDITOR_METRICS = {
@@ -341,6 +345,41 @@ def export_editor(results_path, trace_seeds, procs):
     with open(EDITOR_EXPORT, "w") as fh:
         json.dump(out, fh, separators=(",", ":"))
     print("wrote", EDITOR_EXPORT, f"({os.path.getsize(EDITOR_EXPORT) // 1024} kB)")
+    os.makedirs(os.path.dirname(LITE_EXPORT), exist_ok=True)
+    with open(LITE_EXPORT, "w", newline="\n") as fh:
+        json.dump(lite_export(out), fh, separators=(",", ":"))
+        fh.write("\n")
+    print("wrote", os.path.normpath(LITE_EXPORT), f"({os.path.getsize(LITE_EXPORT) // 1024} kB)")
+
+
+def _round(v, places):
+    """Numbers in nested lists and dicts rounded (None, NaN and strings kept)."""
+    if isinstance(v, float):
+        return v if math.isnan(v) or math.isinf(v) else round(v, places)
+    if isinstance(v, list):
+        return [_round(x, places) for x in v]
+    if isinstance(v, dict):
+        return {k: _round(x, places) for k, x in v.items()}
+    return v
+
+
+def lite_export(out):
+    """The editor export made small enough to commit and deploy: the same tables (3 decimals), geometry to the
+    millimetre, and only the trace pose's first trace seed, every LITE_TRACE_STEP-th sample (and the last)."""
+    seed = str(out["meta"]["traceSeeds"][0])
+    traces = {}
+    for c, by_seed in out["traces"].items():
+        if seed not in by_seed:
+            continue
+        traces[c] = {seed: {m: _round(tr[::LITE_TRACE_STEP] + ([tr[-1]] if (len(tr) - 1) % LITE_TRACE_STEP else []), 3)
+                            for m, tr in by_seed[seed].items()}}
+    lite = dict(out)
+    lite["source"] = out["source"] + " (lite: one trace seed, traces every 0.2 s)"
+    lite["meta"] = {**out["meta"], "traceSeeds": [int(seed)]}
+    lite["runs"] = _round(out["runs"], 3)
+    lite["geometry"] = _round(out["geometry"], 3)
+    lite["traces"] = traces
+    return lite
 
 
 def _trace_job(args):

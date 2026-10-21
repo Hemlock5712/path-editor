@@ -14,6 +14,7 @@ export interface BenchState {
   readonly shown: readonly string[];
   /** Draw the true traces (else only each method's authored geometry). */
   readonly traces: boolean;
+  readonly loadingSnapshot: boolean;
 }
 
 export const bench = createStore<BenchState>({
@@ -26,10 +27,31 @@ export const bench = createStore<BenchState>({
   seed: "0",
   shown: DEFAULT_SHOWN,
   traces: true,
+  loadingSnapshot: false,
 });
+
+/** The committed snapshot (bench/run.py --export-editor writes it): what the deployed editor opens with. */
+export const SNAPSHOT_URL = `${import.meta.env.BASE_URL}bench/results-lite.json`;
 
 export function toggleBench(): void {
   bench.set((s) => ({ open: !s.open }));
+  const s = bench.get();
+  if (s.open && !s.data && !s.loadingSnapshot) void loadSnapshot();
+}
+
+/** Fetches the committed snapshot; a file loaded meanwhile wins. */
+export async function loadSnapshot(): Promise<void> {
+  bench.set({ loadingSnapshot: true });
+  try {
+    const response = await fetch(SNAPSHOT_URL);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const text = await response.text();
+    if (!bench.get().data) loadBench(text, "results-lite.json (snapshot)");
+  } catch (e) {
+    if (!bench.get().data) bench.set({ error: `No bench snapshot (${(e as Error).message}): load an export from a file.` });
+  } finally {
+    bench.set({ loadingSnapshot: false });
+  }
 }
 
 /** Loads an export; the choices reset to its first pose source, course and seed. */

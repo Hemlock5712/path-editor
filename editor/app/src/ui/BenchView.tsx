@@ -157,11 +157,13 @@ export function BenchView() {
         <div className="section-body bench-controls">
           <h2 className="subhead">Bench comparison</h2>
           <p className="hint">
-            Read-only. Export it from the bench with <code>python bench/run.py --export-editor</code> (add <code>--trace-seeds 0,1,2</code> for more
-            seeds), then load <code>bench/out/editor_bench.json</code>.
+            Read-only. It opens with the committed snapshot (one trace seed, traces every 0.2 s). For the full export, run{" "}
+            <code>python bench/run.py --export-editor</code> (add <code>--trace-seeds 0,1,2</code> for more seeds) and load{" "}
+            <code>bench/out/editor_bench.json</code>; that also refreshes the snapshot.
           </p>
+          {s.loadingSnapshot && <p className="stats">Loading the snapshot…</p>}
           <label className="field">
-            <span className="field-label">Bench export</span>
+            <span className="field-label">Load a bench export</span>
             <input
               type="file"
               accept=".json,application/json"

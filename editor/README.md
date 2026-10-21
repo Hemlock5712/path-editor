@@ -31,6 +31,11 @@ browser download is needed. To use Playwright's own Chromium instead: `npx playw
 Opening a folder in place needs the File System Access API (Chrome or Edge). In other browsers, **Upload**
 loads a folder and **Save** downloads a zip to unpack over the robot project.
 
+**Deployed.** Vercel builds `editor/app` (`vercel.json`): `master` is https://paths.frc5712.com and `v2` gets
+preview deploys. A clean install builds with
+`npm ci --prefix editor/core && npm ci --prefix editor/app && npm --prefix editor/app run build`. On the
+https site, connecting to a robot needs the browser's permission (see **Live robot**, below).
+
 ## What it reads and writes
 
 Open the robot project's root folder (the one with `build.gradle`). The editor works in:
@@ -206,9 +211,12 @@ the in-browser optimiser byte for byte.
 
 **Bench** in the toolbar swaps the workspace for a read-only view of the bench's results.
 
-- **Getting the data.** Export it with `python bench/run.py --export-editor`, which reads `bench/out/results.json`
-  and writes `bench/out/editor_bench.json`. Seed 0's traces come from `results.json`; add
-  `--trace-seeds 0,1,2` to simulate more. Then load the export.
+- **Getting the data.** The view opens with a committed snapshot, `app/public/bench/results-lite.json`
+  (about 0.7 MB). It has the full tables, the geometry to the millimetre, and seed 0's traces every 0.2 s.
+  `python bench/run.py --export-editor` reads `bench/out/results.json` and writes both the snapshot and the
+  full export, `bench/out/editor_bench.json`; commit the snapshot to update the deployed site. To see the full
+  export, load it with the file picker. Seed 0's traces come from `results.json`; add `--trace-seeds 0,1,2` to
+  simulate more.
 - **What it shows.** For the chosen course and pose source, a table of every method's mean (and worst) time to
   done, time settled, cross-track, final error and yaw, overshoot and wheel slip. The lowest mean in each
   column is bold.
@@ -247,6 +255,28 @@ That is WPILib's ntcore as an NT4 server, from the alpha-7 jars and desktop nati
   half a round trip, with about a 1 ms round trip.
 
 It hasn't been on a robot yet.
+
+**From the deployed (https) site.** The robot speaks plain `ws://`. In Chrome 155 and Edge 155, measured from
+https://paths.frc5712.com, a `ws://` connection is not blocked as mixed content when it goes to a private IP
+(the robot's 10.TE.AM.2, or any 10.x, 172.16-31.x, 192.168.x) or to localhost. Instead it is gated by **Local
+Network Access**. The browser asks once per site: "local network" for the robot and "apps on this device" for a
+simulation on localhost. Until that is allowed, the connection fails with
+`net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`. Granting it, the same connections opened.
+
+- **What the Live panel does.** On https it checks the permission (`navigator.permissions.query` with
+  `local-network` or `loopback-network`). If the browser will ask, the panel says to allow it. If it was
+  blocked, the panel says where to re-allow it (the site settings, left of the address bar).
+- **Other browsers.** If the browser has no such permission (the query throws), it blocks `ws://` from https
+  pages outright, so the panel says to use Chrome or Edge or to run locally. A bare host name
+  (`roborio-5712-frc`) or a public address counts as mixed content too.
+- **Managed computers.** An administrator can pre-allow the site with Chrome's `LocalNetworkAccessAllowedForUrls`
+  policy.
+- **Running locally always works.** `npm --prefix editor/app run dev` serves the editor over http on this
+  computer, where none of this applies.
+- **Tests.** `e2e/https.spec.ts` serves the production build at the real site's origin and checks the panel's
+  notes, before and after the permission is granted. The Chrome background is
+  [the Local Network Access permission prompt](https://developer.chrome.com/blog/local-network-access) and
+  [its extension to WebSockets (Chrome 147)](https://groups.google.com/a/chromium.org/g/blink-dev/c/O6GMKt44Ups).
 
 ## Not done
 

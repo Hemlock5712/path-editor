@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { robotAddress } from "../../nt4/client.ts";
 import { DEFAULT_LIVE, LiveFeed, type LiveSettings } from "../../nt4/liveFeed.ts";
+import { localAccess, type LocalAccess } from "../../nt4/localAccess.ts";
 import { editor, setActivePath } from "../../state/editor.ts";
 import { live } from "../../state/live.ts";
 import { useStore } from "../../state/store.ts";
@@ -29,6 +30,17 @@ export function LivePanel() {
 
   useEffect(() => () => feed.current?.stop(), []);
 
+  // from the https site, Local Network Access stands between the page and the robot: say what to do
+  const [access, setAccess] = useState<LocalAccess>({ state: "fine", message: "" });
+  const host = robotAddress(settings.address);
+  useEffect(() => {
+    let current = true;
+    void localAccess(host).then((a) => current && setAccess(a));
+    return () => {
+      current = false;
+    };
+  }, [host, s.status]);
+
   const update = (change: Partial<LiveSettings>) => {
     const next = { ...settings, ...change };
     setSettings(next);
@@ -52,7 +64,12 @@ export function LivePanel() {
         testId="live-address"
         onCommit={(address) => update({ address })}
       />
-      <p className="hint">Connects to {robotAddress(settings.address)}. Use localhost for a simulation.</p>
+      <p className="hint">Connects to {host}. Use localhost for a simulation.</p>
+      {access.state !== "fine" && (
+        <p className={`check ${access.state === "ask" ? "warning" : "error"}`} data-testid="live-https">
+          {access.message}
+        </p>
+      )}
       <div className="grid2">
         <NumberField label="Port" decimals={0} min={1} value={settings.port} onCommit={(port) => update({ port: Math.round(port) })} />
       </div>

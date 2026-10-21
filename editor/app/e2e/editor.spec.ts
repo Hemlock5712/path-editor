@@ -236,7 +236,7 @@ test("Optimise path shortens a weave, and applying it is one undo step", async (
   await expect.poll(() => planSeconds(page)).toBe(before);
 });
 
-test("the bench view shows an export, read-only", async ({ page }) => {
+test("the bench view opens with the snapshot and shows an export, read-only", async ({ page }) => {
   await page.goto("/");
   const stat = (mean: number) => ({ mean, worst: mean * 1.5, nan: 0 });
   const metrics = { t_done: stat(2.1), t_settle: stat(2.3), ct_rms_cm: stat(0.4), ct_max_cm: stat(1), err_end_cm: stat(0.5), yaw_end_deg: stat(0.2), overshoot_cm: stat(0), wheel_slip_ms: stat(0) };
@@ -255,6 +255,9 @@ test("the bench view shows an export, read-only", async ({ page }) => {
     traces: { straight_3m: { "0": { ours_v2: [[0, 0, 0, 0], [1, 1.5, 0.01, 0], [2, 3, 0, 0]], choreo: [[0, 0, 0, 0], [2.6, 3, 0.02, 0]] } } },
   };
   await page.getByTestId("bench-toggle").click();
+  // it opens with the committed snapshot; a file replaces it
+  await expect(page.getByText(/results-lite\.json \(snapshot\): \d+ courses/)).toBeVisible();
+  await expect(page.getByTestId("bench-table")).toContainText("Ours v2");
   await page.getByTestId("bench-file").setInputFiles({ name: "editor_bench.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(exportJson)) });
   const table = page.getByTestId("bench-table");
   await expect(table).toContainText("Ours v2");
