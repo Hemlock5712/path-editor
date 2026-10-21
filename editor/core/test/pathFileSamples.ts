@@ -56,7 +56,8 @@ function spec(g: Lcg): PathSpec {
     const y = -4.0 + 8.0 * g.next();
     const tangent = g.next() < 0.4 ? (g.next() * 2.0 - 1.0) * Math.PI : Number.NaN;
     const scale = g.next() < 0.3 ? 0.5 + g.next() : 1.0;
-    waypoints.push(makeWaypoint(x, y, tangent, scale));
+    const heading = g.next() < 0.5 ? (g.next() * 2.0 - 1.0) * Math.PI : Number.NaN;
+    waypoints.push(makeWaypoint(x, y, tangent, scale, heading));
   }
 
   const rotationTargets: RotationTarget[] = [];
@@ -95,6 +96,7 @@ function spec(g: Lcg): PathSpec {
   const maxMetersPerSecondSquared = g.next() < 0.5 ? Infinity : 1.0 + g.next() * 4.0;
   const startMetersPerSecond = g.next() < 0.3 ? g.next() * 2.0 : 0.0;
   const endMetersPerSecond = g.next() < 0.3 ? g.next() * 2.0 : 0.0;
+  const headingMode = g.next() < 0.3 ? "faceTravel" : "hold";
   return makePathSpec({
     waypoints,
     rotationTargets,
@@ -105,5 +107,6 @@ function spec(g: Lcg): PathSpec {
     startMetersPerSecond,
     endMetersPerSecond,
     events,
+    headingMode,
   });
 }

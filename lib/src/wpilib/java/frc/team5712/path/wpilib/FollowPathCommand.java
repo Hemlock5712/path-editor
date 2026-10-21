@@ -74,7 +74,7 @@ public final class FollowPathCommand implements Command {
     this.fieldVelocity = fieldVelocity;
     this.fieldOutput = fieldOutput;
     this.redFrame = redFrame;
-    this.telemetry = new PathTelemetry("Path/" + name);
+    this.telemetry = new PathTelemetry(name);
     follower.onEvent(fired::add);
   }
 
@@ -135,6 +135,7 @@ public final class FollowPathCommand implements Command {
     FieldFrame frame = startFrame();
     follower.start(clock.getAsDouble(), Conversions.toPose(pose.get()), measured, frame,
         handedCommand == null ? measured : handedCommand.get());
+    telemetry.begin();
     while (true) {
       execute(coroutine);
       if (follower.isFinished()) {
@@ -145,6 +146,7 @@ public final class FollowPathCommand implements Command {
     if (!follower.rollingEnd()) {
       fieldOutput.accept(new ChassisVelocities());
     }
+    telemetry.end();
   }
 
   private void execute(Coroutine coroutine) {
@@ -153,6 +155,7 @@ public final class FollowPathCommand implements Command {
     fieldOutput.accept(Conversions.toChassisVelocities(out));
     telemetry.log(follower);
     for (String event : fired) {
+      telemetry.event(event);
       Command c = eventCommands.get(event);
       if (c == null && library != null) {
         c = library.eventCommand(event).orElse(null);
@@ -168,5 +171,6 @@ public final class FollowPathCommand implements Command {
   public void onCancel() {
     follower.cancel();
     fieldOutput.accept(new ChassisVelocities());
+    telemetry.end();
   }
 }

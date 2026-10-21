@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "isolatedModules": true
   },
-  "include": ["src", "test", "e2e", "e2e-author", "playwright.author.config.ts", "vite.config.ts", "playwright.config.ts", "../core/src"]
+  "include": ["src", "test", "e2e", "vitest.nt4.config.ts", "e2e-author", "playwright.author.config.ts", "vite.config.ts", "playwright.config.ts", "../core/src"]
 }

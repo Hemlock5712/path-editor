@@ -9,10 +9,10 @@ import {
   makeWaypoint,
   PathGeometry,
 } from "../../core/src/index.ts";
-import { deleteWaypoint, insertWaypoint, moveWaypoint, appendWaypoint } from "../src/model/edits.ts";
+import { appendWaypoint, deleteWaypoint, insertWaypoint, moveWaypoint, setHeading, setPinned } from "../src/model/edits.ts";
 import { addNamedPoint, linkToPoint, moveNamedPoint, removeNamedPoint } from "../src/model/namedPoints.ts";
 import { afterDelete, afterInsert, round5, round5Radians, waypointAtS } from "../src/model/positions.ts";
-import { emptyProject, eventNames, makeEditorPath, type Project } from "../src/model/project.ts";
+import { emptyProject, eventNames, makeEditorPath, starterSpec, type Project } from "../src/model/project.ts";
 
 const spec = makePathSpec({
   waypoints: [makeWaypoint(-4, -1), makeWaypoint(-2, 0.5), makeWaypoint(0, -0.5), makeWaypoint(2, 1)],
@@ -88,6 +88,52 @@ describe("path edits", () => {
     const longer = appendWaypoint(path, 4, 0);
     expect(longer.spec.waypoints).toHaveLength(5);
     expect(longer.links).toHaveLength(5);
+  });
+});
+
+describe("headings and pins", () => {
+  // a swerve path: set headings at both ends, one pass-through point between
+  const posed = makeEditorPath(
+    "Posed",
+    makePathSpec({ waypoints: [makeWaypoint(-4, 0, Number.NaN, 1, 0), makeWaypoint(-2, 1), makeWaypoint(0, 0, Number.NaN, 1, 1.5)] }),
+    0,
+  );
+
+  it("a new path is two robot poses facing the same way", () => {
+    const s = starterSpec(1, 2, Math.PI / 2);
+    expect(s.waypoints.map((w) => w.headingRadians)).toEqual([Math.PI / 2, Math.PI / 2]);
+    expect(s.waypoints[1]!.xMeters).toBeCloseTo(1, 12);
+    expect(s.waypoints[1]!.yMeters).toBeCloseTo(4.5, 12);
+    expect(s.headingMode).toBe("hold");
+  });
+
+  it("appending moves the end's heading to the new end; the old end passes through", () => {
+    const p = appendWaypoint(posed, 2, 1);
+    expect(p.spec.waypoints.map((w) => w.headingRadians)).toEqual([0, Number.NaN, Number.NaN, 1.5]);
+    expect(p.pinned).toEqual([false, false, false, false]);
+    // appending to a two-point path keeps the start's heading
+    const two = makeEditorPath("Two", starterSpec(0, 0, 0.5), 0);
+    expect(appendWaypoint(two, 5, 5).spec.waypoints.map((w) => w.headingRadians)).toEqual([0.5, Number.NaN, 0.5]);
+  });
+
+  it("inserted points pass through, and pins stay with their waypoints", () => {
+    const p = insertWaypoint(setPinned(posed, 1, true), 0, 0.5, -3, 0.5);
+    expect(Number.isNaN(p.spec.waypoints[1]!.headingRadians)).toBe(true);
+    expect(p.pinned).toEqual([false, false, true, false]);
+    expect(deleteWaypoint(p, 1).pinned).toEqual([false, true, false]);
+  });
+
+  it("the ends always keep a heading", () => {
+    expect(() => setHeading(posed, 0, Number.NaN)).toThrow(/always have a heading/);
+    expect(() => setHeading(posed, 2, Number.NaN)).toThrow(/always have a heading/);
+    expect(setHeading(posed, 1, 0.75).spec.waypoints[1]!.headingRadians).toBe(0.75);
+    // deleting an end hands its heading to the new end when that one passes through
+    expect(deleteWaypoint(posed, 2).spec.waypoints[1]!.headingRadians).toBe(1.5);
+    expect(deleteWaypoint(posed, 0).spec.waypoints[0]!.headingRadians).toBe(0);
+  });
+
+  it("moving a waypoint keeps its heading", () => {
+    expect(moveWaypoint(posed, 2, 1, 1).spec.waypoints[2]).toEqual(makeWaypoint(1, 1, Number.NaN, 1, 1.5));
   });
 });
 

@@ -218,7 +218,15 @@ skips them with a warning if the repo is missing.
   the alliance as a `FieldFrame` when the path starts, send zero at the end (except on a rolling
   end), and chain rolling ends with `continuingFrom(previous)`.
 - `Conversions` covers `Pose2d` and `ChassisVelocities`, and the alliance as a frame.
-  `PathTelemetry` logs the phase, progress, cross-track, reference and goal.
+  `PathTelemetry` logs, under `/Telemetry/Path/<path>/` in NetworkTables, the phase, progress, the distance left,
+  cross-track, the reference and goal (Pose2d structs, field frame), tail rebuilds and the events fired. The
+  shared `/Telemetry/PathFollower/` table says which path is running (`Active`), its `EventsFired` and the
+  `LastEvent`. The editor's live view reads these.
+- `lib/gradlew -p lib nt4Server -Pnt4Port=5810 -Pnt4Seconds=60` runs `Nt4TelemetryServer` (in `src/e2eTest`). It is
+  WPILib's ntcore as a real NT4 server, with a `PathFollower` in `FollowPathCommand` driving the simulated
+  drivetrain in real time and publishing that telemetry, the robot's pose and ntcore's clock. The editor's
+  `npm run test:nt4` tests its client against it. Note that `NetworkTablesJNI.now()` is in nanoseconds in 2027,
+  while NT4 values carry microseconds on the wire.
 - `wpilibTest` runs both commands for real: v2 by hand, v3 under an independent scheduler, with the
   desktop HAL natives extracted from the same repo. Commands v3 needs
   `--add-opens java.base/jdk.internal.vm` and `java.base/java.lang`, which GradleRIO adds on a robot.

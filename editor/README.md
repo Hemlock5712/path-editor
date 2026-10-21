@@ -19,6 +19,7 @@ npm run dev          # http://localhost:5712
 | Typecheck only | `npm run typecheck` |
 | Unit tests (vitest) | `npm test` |
 | End-to-end test (Playwright) | `npm run e2e` |
+| The NT4 client against WPILib's real ntcore server (starts the Java harness through gradle) | `npm run test:nt4` |
 | Author the phase 6 suite into `e2e/out` (Playwright) | `npm run e2e:author` |
 | The whole phase 6 chain (author, then run every path on the simulated robot) | `npm run e2e:full` |
 | The core's tests | `cd ../core && npm install && npm test` |
@@ -30,16 +31,21 @@ browser download is needed. To use Playwright's own Chromium instead: `npx playw
 Opening a folder in place needs the File System Access API (Chrome or Edge). In other browsers, **Upload**
 loads a folder and **Save** downloads a zip to unpack over the robot project.
 
+**Deployed.** Vercel builds `editor/app` (`vercel.json`): `master` is https://paths.frc5712.com and `v2` gets
+preview deploys. A clean install builds with
+`npm ci --prefix editor/core && npm ci --prefix editor/app && npm --prefix editor/app run build`. On the
+https site, connecting to a robot needs the browser's permission (see **Live robot**, below).
+
 ## What it reads and writes
 
 Open the robot project's root folder (the one with `build.gradle`). The editor works in:
 
 | File | What | Read by |
 | --- | --- | --- |
-| `src/main/deploy/paths/<name>.path.json` | one per path tab, written by `core`'s `writePath` (schema 2) | `PathLibrary.loadAll()` |
+| `src/main/deploy/paths/<name>.path.json` | one per path tab, written by `core`'s `writePath` (schema 3; schemas 1 and 2 still read) | `PathLibrary.loadAll()` |
 | `src/main/deploy/paths/field.json` | field size and obstacle polygons | `FieldMap.read` |
 | `src/main/deploy/paths/robot.json` | the robot (`RobotConfig`'s keys) plus `bumperLengthMeters` / `bumperWidthMeters` | `RobotFile`, `PlannerConfig.fromRobotFile` |
-| `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points and which waypoints follow them, the red-frame and enum settings, the view | the editor only |
+| `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points and which waypoints follow them, pinned waypoints, the red-frame and enum settings, the view | the editor only |
 | `src/main/java/<package>/PathName.java` | an enum of every path file (package set in the Project panel; `frc.robot` by default) | robot code |
 
 - **Only changed files are written.** `field.json` and `robot.json` are only created once you edit them.
@@ -59,27 +65,47 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 - **Blue/red view** (A). Paths are always stored for blue. The red view draws them through the
   project's red frame (a half-turn about the centre, or a mirror; set in the Project panel), and edits
   made there are converted back to blue. Obstacles are physical, so they never flip.
-- The bumper footprint is drawn along the path every 0.5, 1 or 2 m (or off). The path is coloured by
-  planned speed.
+- The path line is the robot's centre, coloured by planned speed. Every waypoint is drawn as the robot
+  there (its bumper footprint). Faint footprints between waypoints are optional (every 0.5, 1 or 2 m).
+- A one-line hint at the bottom of the field says what the current tool does. A quick start shows on the
+  first run; **?** shows it again with the keyboard shortcuts.
 
-**Tools.**
-- **Select** (V): drag waypoints, tangent handles, rotation-target heading handles, face points, named
-  points, events (they slide along the path) and obstacles. Hold Shift to snap to 5 cm and 15°.
-- **Waypoint** (W): click the path to insert a waypoint there; click elsewhere to append one.
+**Drawing a swerve path.** A swerve's heading is its own, so a waypoint is a robot pose: a position and,
+optionally, a heading.
+- **Draw** (W): click to add a point at the end; click the path to insert one. Enter or Esc when done.
+  Drag a robot to move it; Delete or right-click removes it.
+- Drag the knob on a robot's ring to turn it. Headings snap to 15° (hold Alt to turn freely); the
+  waypoint's **Heading** field takes a typed angle. Right-click a waypoint for **Set heading…**,
+  pass-through, pin and delete.
+- A waypoint without a heading is **pass-through** (dashed): the robot blends between the set headings.
+  The first and last waypoints always have one. A new end takes the old end's heading, and the old end
+  becomes pass-through.
+- **Heading** (R): click the path to add a heading partway along it (a rotation target), at the planned
+  heading there. Drag its robot along the path, or its knob to turn it.
+- The path's **Heading between set headings** is *hold* (blend between them: the default) or *face
+  travel*. Files from schemas 1 and 2 read as face travel, as they always behaved.
+- Snapping: to named points (a magnet, which also links the waypoint), to a 25 cm grid (**Grid** in the
+  tabs row), and to 5 cm with Shift.
+- **+** starts a new path where the active one ends, facing the way the robot ends up. A named point's
+  **Start a path here** starts one there, linked to it.
+- Travel direction is automatic, so clicks alone make a smooth path. **Shape the curve here** (in the
+  waypoint's panel) shows its tangent handle, to set the direction and `tangentScale` by hand; **Reset
+  to auto** undoes that.
 - **Event** (E): click the path to place a named event at the nearest point on it.
-- **Rotation** (R): click the path to add a rotation target. It starts at the planned heading there.
 - **Obstacle** (O): click corners, then double-click or press Enter to finish.
+- **Select** (V): drag robots, knobs, face points, named points, events (they slide along the path) and
+  obstacles; press on the path and drag to insert a point.
 
 **Waypoints.**
-- Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 10 cm with Shift).
-- Tangent handles set the direction and the `tangentScale` (the handle's length). A dashed handle is
-  automatic; drag it to fix it, and double-click it to make it automatic again.
+- Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 10 cm with Shift). **Pin** keeps a waypoint
+  where it is when the optimiser runs (a padlock marks it).
 - The Path panel sets the start and end speeds, the top speed and the maximum acceleration.
 - Inserting or deleting a waypoint renumbers the waypoint-relative positions of targets, zones and
   events, so each stays on the same stretch of path.
 
 **Heading.**
-- Rotation targets, by waypoint position or by metres.
+- Waypoint headings (above), and headings along the path (rotation targets), by waypoint position or
+  by metres.
 - Face-point zones, with a blend distance. New ones default to a 1 m blend: lib's README notes that
   0.5 m can turn the robot over 100° and slow the plan to 0.7 m/s.
 - Constraint zones.
@@ -146,18 +172,115 @@ Playwright to the file system). It reads each path's preview through `window.pat
 read-only hook that waits for the worker to plan the current document and returns the total time, the peak speed
 and each event's s and t(s). `E2E_ONLY=Straight,Hairpin` authors just those paths.
 
-## Stubbed or not done
+## Optimiser
 
-- **NT4 live robot: minimal and untested on a robot.** The client is read-only. It subscribes to a pose
-  topic (`struct:Pose2d`, or a Field2d-style `double[]` in degrees) and to `/Telemetry/Path/`: WPILib
-  2027's `Telemetry` publishes under `/Telemetry`, so `PathTelemetry("Path/<name>")` lands there. It
-  shows the pose, the follower's reference and its values. It ignores NT time sync and has only been
-  tested with hand-built frames.
-- **Not built:** these items are in PLAN.md's phase 5 but weren't in this round's brief.
-  - a follower sim preview;
-  - the optimiser;
-  - loading the bench comparison;
-  - freehand stroke to waypoints.
+Shaping a path is mostly the optimiser's job: draw the poses, then press **Optimise path** in the Path panel.
+
+- **What moves.** The pass-through points, each within a corridor (0.5 m by default), and their tangent
+  scales (half to double). Tangent directions don't change.
+- **What stays put.** The start and end poses, any waypoint with a set heading (a pose the robot must reach
+  there), pinned waypoints (**Pin** in the waypoint panel, its right-click menu, or **Optimiser settings**),
+  waypoints linked to a named point, and any that a zone starts or ends on or between. **Only between
+  waypoint … and waypoint …** in the settings optimises one segment. Events, rotation targets and zones placed
+  by waypoint keep their waypoint position; those placed by metres keep the same fraction of the path's
+  length.
+- **What it must keep.** A candidate counts only if it plans and its swept bumpers keep the clearance the path
+  had (up to the 5 cm margin). It also mustn't add heading warnings or errors.
+- **Budget and repeatability.** The budget (3 s by default) sets how many plans it tries: 500 per second of
+  budget. So the same path, budget and seed give the same result on any machine. The clock only stops a slow
+  machine at twice the budget.
+- **Results.** The field shows the best path so far, dashed. The Path panel gives the before and after times.
+  **Apply** is one undo step (it refuses if the path changed meanwhile); **Discard** keeps the path.
+- **Method.** Nelder-Mead with adaptive coefficients, restarted around the best point as it converges, in
+  `app/src/compute/optimiser.ts`. In the editor it runs in a Web Worker in chunks, so **Stop** keeps the best
+  so far. Every number comes from the core's plan.
+
+**Headless.** The same optimiser runs from the repo root under Node 22.6+ (it loads the TypeScript sources
+with type stripping):
+
+```
+node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms 3000 --seed 1     [--out <file>] [--corridor 0.5] [--pin 2,5] [--segment 1,4] [--no-scales]
+```
+
+It writes the optimised path file (to `--out`, or stdout) and a one-line summary to stderr. `--robot` and
+`--field` are the robot project's `robot.json` and `field.json`; both default to the editor's defaults. There is
+no clock here, so the result depends only on the inputs, the budget and the seed. A unit test checks it against
+the in-browser optimiser byte for byte.
+
+## Bench comparison
+
+**Bench** in the toolbar swaps the workspace for a read-only view of the bench's results.
+
+- **Getting the data.** The view opens with a committed snapshot, `app/public/bench/results-lite.json`
+  (about 0.7 MB). It has the full tables, the geometry to the millimetre, and seed 0's traces every 0.2 s.
+  `python bench/run.py --export-editor` reads `bench/out/results.json` and writes both the snapshot and the
+  full export, `bench/out/editor_bench.json`; commit the snapshot to update the deployed site. To see the full
+  export, load it with the file picker. Seed 0's traces come from `results.json`; add `--trace-seeds 0,1,2` to
+  simulate more.
+- **What it shows.** For the chosen course and pose source, a table of every method's mean (and worst) time to
+  done, time settled, cross-track, final error and yaw, overshoot and wheel slip. The lowest mean in each
+  column is bold.
+- **On the field.** Each method's authored path (dashed) and its true trace (solid) for the chosen seed: ours,
+  Choreo, PathPlanner, BLine, the old follower, and the variants. The course is moved to the middle of the
+  field.
+- **Editing.** Editing shortcuts are off while the view is open, and nothing in it touches the project.
+
+## Live robot (NT4)
+
+`nt4/client.ts` is an NT4 client following WPILib 2027's ntcore sources.
+
+- **Protocol.** WebSocket to `ws://<robot>:5810/nt/<name>` with the v4.1 subprotocol. It subscribes by prefix,
+  handles announce, unannounce and properties, and decodes MessagePack binary values.
+- **Time sync.** It sends `[-1, 0, int, its time]` and the server answers with its own clock. The client keeps
+  the shortest round trip's offset, as ntcore's client does.
+- **Connection.** It reconnects when the robot goes away. It is read-only.
+- **The panel.** The connect box takes a team number (5712 → 10.57.12.2) or an address (`localhost` for a
+  simulation) and the pose topic. The panel shows the active path, phase, progress s, the distance left,
+  cross-track, the reference, the robot's pose and its age, and the events fired.
+- **On the field.** The robot (pink), the reference, and the follower's progress, drawn on the path when the
+  editor shows the path the robot is running.
+- **Topics.** It reads what `PathTelemetry` publishes: `/Telemetry/PathFollower/{Active, EventsFired, LastEvent}`
+  and `/Telemetry/Path/<path>/{Phase, Progress, Remaining, CrossTrack, Reference, Goal}`.
+
+**Tested against the real thing.** `npm run test:nt4` starts lib's `Nt4TelemetryServer` with `gradlew nt4Server`.
+That is WPILib's ntcore as an NT4 server, from the alpha-7 jars and desktop natives, with a real `PathFollower` in
+`FollowPathCommand` running the S-curve on the simulated drivetrain in real time. The client connects and checks:
+
+- the v4.1 protocol is negotiated;
+- the telemetry arrives: the active path, progress rising inside the path's length, cross-track, and the
+  reference and robot pose as Pose2d structs;
+- a whole run's events arrive in order;
+- the time sync works. The harness publishes ntcore's own clock (ns) and flushes each loop. On arrival, the
+  client's estimate of server time sits at or just after that clock: measured median 0.8 ms, never earlier than
+  half a round trip, with about a 1 ms round trip.
+
+It hasn't been on a robot yet.
+
+**From the deployed (https) site.** The robot speaks plain `ws://`. In Chrome 155 and Edge 155, measured from
+https://paths.frc5712.com, a `ws://` connection is not blocked as mixed content when it goes to a private IP
+(the robot's 10.TE.AM.2, or any 10.x, 172.16-31.x, 192.168.x) or to localhost. Instead it is gated by **Local
+Network Access**. The browser asks once per site: "local network" for the robot and "apps on this device" for a
+simulation on localhost. Until that is allowed, the connection fails with
+`net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`. Granting it, the same connections opened.
+
+- **What the Live panel does.** On https it checks the permission (`navigator.permissions.query` with
+  `local-network` or `loopback-network`). If the browser will ask, the panel says to allow it. If it was
+  blocked, the panel says where to re-allow it (the site settings, left of the address bar).
+- **Other browsers.** If the browser has no such permission (the query throws), it blocks `ws://` from https
+  pages outright, so the panel says to use Chrome or Edge or to run locally. A bare host name
+  (`roborio-5712-frc`) or a public address counts as mixed content too.
+- **Managed computers.** An administrator can pre-allow the site with Chrome's `LocalNetworkAccessAllowedForUrls`
+  policy.
+- **Running locally always works.** `npm --prefix editor/app run dev` serves the editor over http on this
+  computer, where none of this applies.
+- **Tests.** `e2e/https.spec.ts` serves the production build at the real site's origin and checks the panel's
+  notes, before and after the permission is granted. The Chrome background is
+  [the Local Network Access permission prompt](https://developer.chrome.com/blog/local-network-access) and
+  [its extension to WebSockets (Chrome 147)](https://groups.google.com/a/chromium.org/g/blink-dev/c/O6GMKt44Ups).
+
+## Not done
+
+- A follower sim preview (being built separately) and freehand stroke to waypoints.
 - **Motor presets other than the Kraken X60 FOC** use vendor datasheet figures (stall torque, stall
   current, free speed) and haven't been checked against dyno data. The FOC numbers are the core's.
 - **No tab reordering, no multi-select, and no numeric editing of obstacle corners** (drag them on the

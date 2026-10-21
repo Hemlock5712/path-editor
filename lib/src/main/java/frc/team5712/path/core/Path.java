@@ -31,11 +31,34 @@ public final class Path {
    * existing path smoothly.
    */
   public static Path build(PathSpec spec, RobotConfig robot, double gridMeters, double startCurvature) {
-    spec = pureRotation(spec);
+    spec = pureRotation(withWaypointHeadings(spec));
     PathGeometry geometry = PathGeometry.build(spec.waypoints(), startCurvature);
-    HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones());
+    HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones(), spec.headingMode());
     VelocityProfile profile = VelocityProfile.build(geometry, heading, spec, robot, gridMeters);
     return new Path(spec, geometry, heading, profile);
+  }
+
+  /**
+   * The waypoints' headings as rotation targets at those waypoints, ahead of the authored targets, and
+   * the waypoints themselves without them: what the heading profile plans with. A spec with no waypoint
+   * headings is returned unchanged. (A rotation target at the same place as a waypoint heading makes a
+   * jump there; the editor doesn't make one.)
+   */
+  public static PathSpec withWaypointHeadings(PathSpec spec) {
+    java.util.List<RotationTarget> targets = new java.util.ArrayList<>();
+    java.util.List<Waypoint> plain = new java.util.ArrayList<>();
+    java.util.List<Waypoint> w = spec.waypoints();
+    for (int i = 0; i < w.size(); i++) {
+      if (w.get(i).hasHeading()) {
+        targets.add(RotationTarget.atWaypoint(i, w.get(i).headingRadians()));
+      }
+      plain.add(w.get(i).withHeading(Double.NaN));
+    }
+    if (targets.isEmpty()) {
+      return spec;
+    }
+    targets.addAll(spec.rotationTargets());
+    return spec.withWaypoints(plain).withRotationTargets(targets);
   }
 
   /** Length of the segment a pure rotation is planned on, metres. */
@@ -63,7 +86,7 @@ public final class Path {
     Waypoint b = new Waypoint(p.xMeters(), p.yMeters(), dir, 1.0);
     return new PathSpec(java.util.List.of(a, b), spec.rotationTargets(), spec.facePointZones(),
         spec.constraintZones(), spec.maxMetersPerSecond(), spec.maxMetersPerSecondSquared(),
-        0.0, 0.0, spec.events());
+        0.0, 0.0, spec.events(), spec.headingMode());
   }
 
   public PathSpec spec() {

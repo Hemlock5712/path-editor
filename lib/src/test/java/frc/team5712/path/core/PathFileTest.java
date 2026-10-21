@@ -85,7 +85,7 @@ class PathFileTest {
   void keysComeOutInAStableOrder() {
     String written = PathFile.write(FixturePaths.autoRoute());
     String[] order = {
-      "\"schema\"", "\"waypoints\"", "\"rotationTargets\"", "\"facePointZones\"", "\"constraintZones\"",
+      "\"schema\"", "\"headingMode\"", "\"waypoints\"", "\"rotationTargets\"", "\"facePointZones\"", "\"constraintZones\"",
       "\"events\"", "\"maxMetersPerSecond\": 4", "\"maxMetersPerSecondSquared\"", "\"startMetersPerSecond\"",
       "\"endMetersPerSecond\""
     };
@@ -111,7 +111,7 @@ class PathFileTest {
     assertThrows(IllegalArgumentException.class, () -> PathFile.read("{ \"waypoints\": [] }"));
     assertThrows(
         IllegalArgumentException.class,
-        () -> PathFile.read("{ \"schema\": 3, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
+        () -> PathFile.read("{ \"schema\": 4, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
     assertThrows(
         IllegalArgumentException.class,
         () -> PathFile.read("{ \"schema\": 1.5, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
@@ -138,7 +138,7 @@ class PathFileTest {
     assertEquals(v2.waypoints(), v1.waypoints());
     assertEquals(v2.rotationTargets(), v1.rotationTargets());
     String written = PathFile.write(v1);
-    assertTrue(written.startsWith("{\n  \"schema\": 2,"), "writes the current schema");
+    assertTrue(written.startsWith("{\n  \"schema\": 3,\n  \"headingMode\": \"faceTravel\","), "writes the current schema");
     assertTrue(written.contains("\"events\": []"), written);
   }
 
@@ -204,5 +204,46 @@ class PathFileTest {
     assertEquals(50.0, partial.massKg(), 0.0);
     assertEquals(400.0, partial.driveMotor().stallCurrentAmps(), 0.0);
     assertEquals(Motor.KRAKEN_X60_FOC.stallTorqueNewtonMeters(), partial.driveMotor().stallTorqueNewtonMeters(), 0.0);
+  }
+
+  static String exampleV2() throws IOException {
+    try (InputStream in = PathFileTest.class.getResourceAsStream("/example.v2.path.json")) {
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    }
+  }
+
+  @Test
+  void headingModesByFileSchema() throws IOException {
+    assertEquals(HeadingMode.FACE_TRAVEL, PathFile.read(exampleV1()).headingMode(), "schema 1 did face travel");
+    assertEquals(HeadingMode.FACE_TRAVEL, PathFile.read(exampleV2()).headingMode(), "schema 2 did face travel");
+    assertEquals(HeadingMode.HOLD, PathFile.read(example()).headingMode());
+    String bare = "{ \"schema\": 3, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }";
+    assertEquals(HeadingMode.HOLD, PathFile.read(bare).headingMode());
+    assertThrows(IllegalArgumentException.class, () -> PathFile.read(bare.replace("\"schema\": 3,", "\"schema\": 3, \"headingMode\": \"spin\",")));
+  }
+
+  @Test
+  void waypointHeadingsRoundTripAndBecomeTargets() {
+    PathSpec spec = PathSpec.of(List.of(new Waypoint(0, 0, Double.NaN, 1.0, Math.PI / 2), Waypoint.at(2, 1),
+        new Waypoint(4, 0, Double.NaN, 1.0, -Math.PI / 4)));
+    String text = PathFile.write(spec);
+    assertTrue(text.contains("{ \"x\": 0, \"y\": 0, \"headingDegrees\": 90 }"), text);
+    assertTrue(text.contains("{ \"x\": 2, \"y\": 1 }"), text);
+    assertEquals(text, PathFile.write(PathFile.read(text)));
+    Path path = Path.build(spec, RobotConfig.DEFAULT);
+    assertEquals(2, path.spec().rotationTargets().size());
+    assertEquals(Math.PI / 2, path.sample(0).headingRadians(), 1e-12);
+    assertEquals(-Math.PI / 4, path.sample(path.lengthMeters()).headingRadians(), 1e-12);
+  }
+
+  @Test
+  void holdKeepsTheStartDirectionWhereFaceTravelTurns() {
+    List<Waypoint> curve = List.of(Waypoint.at(0, 0), Waypoint.at(2, 1), Waypoint.at(4, 0));
+    Path hold = Path.build(PathSpec.of(curve), RobotConfig.DEFAULT);
+    Path face = Path.build(PathSpec.of(curve).withHeadingMode(HeadingMode.FACE_TRAVEL), RobotConfig.DEFAULT);
+    double mid = hold.lengthMeters() / 2;
+    assertEquals(hold.sample(0).headingRadians(), hold.sample(mid).headingRadians(), 0.0);
+    PathSample m = face.sample(mid);
+    assertEquals(Math.atan2(m.tangentY(), m.tangentX()), m.headingRadians(), 1e-12);
   }
 }

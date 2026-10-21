@@ -91,6 +91,10 @@ if (wpilibMaven.isDirectory()) {
         wpilibRuntimeOnly "org.ejml:ejml-simple:0.46.0"
         wpilibRuntimeOnly "org.ejml:ejml-core:0.46.0"
         wpilibRuntimeOnly "org.ejml:ejml-ddense:0.46.0"
+        // NetworkTables' telemetry backend writes topic properties as JSON (the NT4 harness needs it)
+        wpilibRuntimeOnly "io.avaje:avaje-json-core:3.14"
+        wpilibRuntimeOnly "io.avaje:avaje-jsonb:3.14"
+        wpilibRuntimeOnly "io.avaje:avaje-spi-core:2.17"
     }
     // Desktop (simulation) natives for the adapter tests: the v3 scheduler asks the HAL for the op mode
     configurations { wpilibNatives }
@@ -126,6 +130,19 @@ if (wpilibMaven.isDirectory()) {
         }
     }
     tasks.named('check') { dependsOn 'wpilibTest' }
+    // A real NT4 server with a simulated robot following a path, for the editor's live NT4 test
+    // (editor/app: npm run test:nt4). -Pnt4Port (default 5810), -Pnt4Seconds (default 60).
+    tasks.register('nt4Server', JavaExec) {
+        dependsOn 'extractWpilibNatives'
+        group = 'verification'
+        description = 'Runs WPILib ntcore as an NT4 server with a PathFollower publishing its telemetry.'
+        classpath = sourceSets.e2eTest.runtimeClasspath
+        mainClass = 'frc.team5712.path.e2e.Nt4TelemetryServer'
+        systemProperty 'java.library.path', nativesDir.get().asFile.absolutePath
+        jvmArgs '--add-opens=java.base/jdk.internal.vm=ALL-UNNAMED', '--add-exports=java.base/jdk.internal.vm=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang=ALL-UNNAMED', '-Xmx256m'
+        args((project.findProperty('nt4Port') ?: '5810').toString(), (project.findProperty('nt4Seconds') ?: '60').toString())
+    }
     // Not part of check: it needs the editor to have authored e2e/out first (run tools/e2e.mjs)
     tasks.register('e2eTest', Test) {
         dependsOn 'extractWpilibNatives'

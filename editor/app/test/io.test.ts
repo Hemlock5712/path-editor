@@ -64,6 +64,17 @@ describe("project files", () => {
     expect(files.has(enumPath("frc.robot"))).toBe(true);
   });
 
+  it("keeps pins and the drawing view settings in the sidecar", () => {
+    const project = sampleProject();
+    const auto = project.paths[1]!;
+    const pinned = { ...project, paths: [project.paths[0]!, { ...auto, pinned: auto.pinned.map((_, i) => i === 1) }] };
+    const loaded = fromFiles(toFiles(pinned, { ...DEFAULT_VIEW, shapeCurve: true, gridSnap: true }))!;
+    expect(loaded.project.paths[1]!.pinned).toEqual(auto.pinned.map((_, i) => i === 1));
+    expect(loaded.project.paths[0]!.pinned.every((p) => !p)).toBe(true);
+    expect(loaded.view.shapeCurve).toBe(true);
+    expect(loaded.view.gridSnap).toBe(true);
+  });
+
   it("keeps the tab order from the sidecar and adds new files after", () => {
     const files = toFiles(sampleProject(), DEFAULT_VIEW);
     files.set(`${PATHS_DIR}/Aaa.path.json`, writePath(emptyProject().paths[0]!.spec));

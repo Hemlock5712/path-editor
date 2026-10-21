@@ -60,9 +60,16 @@ export function nudge(dx: number, dy: number): void {
   }
 }
 
-export function newPath(): void {
+/**
+ * A new path starting where the active one ends, facing the way the robot ends up (a swerve auto is a
+ * chain of paths), or at a given pose.
+ */
+export function newPath(start?: { x: number; y: number; heading: number; pointId?: string }): void {
   const s = editor.get();
-  const path = makeEditorPath(uniquePathName(s.project), starterSpec(), s.project.paths.length);
+  const from = activePath(s).spec.waypoints.at(-1)!;
+  const pose = start ?? { x: from.xMeters, y: from.yMeters, heading: Number.isNaN(from.headingRadians) ? 0 : from.headingRadians };
+  let path = makeEditorPath(uniquePathName(s.project), starterSpec(pose.x, pose.y, pose.heading), s.project.paths.length);
+  if (start?.pointId) path = { ...path, links: path.links.map((l, i) => (i === 0 ? start.pointId! : l)) };
   execute(insertPath("New path", path, s.project.paths.length));
   setActivePath(path.id);
 }

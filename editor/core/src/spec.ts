@@ -11,13 +11,15 @@ export interface Vec2 {
 /**
  * A point the path passes through. tangentRadians is the direction of travel, or NaN to choose it
  * automatically. tangentScale scales the end speed |p'| of the neighbouring spline pieces (1 =
- * default; above 1 holds the direction longer).
+ * default; above 1 holds the direction longer). headingRadians is the robot's heading here (a swerve's
+ * heading is its own), or NaN for a pass-through point; Path.build turns it into a rotation target.
  */
 export interface Waypoint {
   readonly xMeters: number;
   readonly yMeters: number;
   readonly tangentRadians: number;
   readonly tangentScale: number;
+  readonly headingRadians: number;
 }
 
 /**
@@ -56,6 +58,13 @@ export interface PathEvent {
   readonly meters: number;
 }
 
+/**
+ * What the heading does where none is set. "hold" (the default) holds and blends the set headings, and
+ * with none at all holds the direction the path starts out in; "faceTravel" faces the direction of
+ * travel when none are set (the behaviour before schema 3). Port of lib's HeadingMode.
+ */
+export type HeadingMode = "hold" | "faceTravel";
+
 /** Everything a path file says. */
 export interface PathSpec {
   readonly waypoints: readonly Waypoint[];
@@ -68,6 +77,7 @@ export interface PathSpec {
   readonly endMetersPerSecond: number;
   /** Named events, in file order (the follower fires them in path order). */
   readonly events: readonly PathEvent[];
+  readonly headingMode: HeadingMode;
 }
 
 export const DEFAULT_BLEND_METERS = 0.5;
@@ -81,17 +91,24 @@ export function makeWaypoint(
   yMeters: number,
   tangentRadians = Number.NaN,
   tangentScale = 1.0,
+  headingRadians = Number.NaN,
 ): Waypoint {
   if (!Number.isFinite(xMeters) || !Number.isFinite(yMeters)) fail("waypoint position must be finite");
   if (!(tangentScale > 0.0) || !Number.isFinite(tangentScale)) {
     fail(`tangentScale must be positive, got ${tangentScale}`);
   }
-  if (tangentRadians === Infinity || tangentRadians === -Infinity) fail("tangent must be finite or NaN");
-  return { xMeters, yMeters, tangentRadians, tangentScale };
+  if (Math.abs(tangentRadians) === Infinity || Math.abs(headingRadians) === Infinity) {
+    fail("tangent and heading must be finite or NaN");
+  }
+  return { xMeters, yMeters, tangentRadians, tangentScale, headingRadians };
 }
 
 export function hasTangent(w: Waypoint): boolean {
   return !Number.isNaN(w.tangentRadians);
+}
+
+export function hasHeading(w: Waypoint): boolean {
+  return !Number.isNaN(w.headingRadians);
 }
 
 export function makeRotationTarget(waypoint: number, meters: number, headingRadians: number): RotationTarget {
@@ -153,6 +170,7 @@ export function makePathSpec(parts: Partial<PathSpec> & { waypoints: readonly Wa
     startMetersPerSecond: parts.startMetersPerSecond ?? 0.0,
     endMetersPerSecond: parts.endMetersPerSecond ?? 0.0,
     events: parts.events ?? [],
+    headingMode: parts.headingMode ?? "hold",
   };
   if (spec.waypoints.length < 2) fail("a path needs at least two waypoints");
   if (!(spec.maxMetersPerSecond > 0.0) || !(spec.maxMetersPerSecondSquared > 0.0)) {

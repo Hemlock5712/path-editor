@@ -1,11 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
-import { currentPreview } from "./state/analysis.ts";
 import "./styles.css";
+import { installTestHook } from "./testHook.ts";
 
-// Read-only, for the end-to-end suite (e2e-author): the active path's preview numbers, unrounded
-(window as unknown as { pathEditorTest: object }).pathEditorTest = { preview: currentPreview };
+// Read-only, for the browser tests: the active path's preview numbers and poses, unrounded
+installTestHook();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

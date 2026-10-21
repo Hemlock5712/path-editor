@@ -77,6 +77,8 @@ export interface Analysis {
   readonly waypointS: readonly number[];
   readonly events: readonly PlacedEvent[];
   readonly checks: readonly Check[];
+  /** Closest the swept bumpers come to any obstacle or the field wall, metres (0 = touching). */
+  readonly minClearanceMeters: number;
   readonly buildMillis: number;
 }
 
@@ -118,11 +120,12 @@ export function analyse(input: AnalysisInput): Analysis | AnalysisFailure {
     const p = path.sample(s);
     return { index, name: e.name, s, t: p.seconds, x: p.xMeters, y: p.yMeters };
   });
+  const bumpers = bumperChecks(input, stations);
   const checks = [
     ...speedChecks(input, path, stations),
     ...curvatureChecks(input, path, stations),
     ...headingChecks(input, stations),
-    ...bumperChecks(input, stations),
+    ...bumpers.checks,
     ...positionChecks(input, path),
   ];
   return {
@@ -134,6 +137,7 @@ export function analyse(input: AnalysisInput): Analysis | AnalysisFailure {
     waypointS,
     events,
     checks,
+    minClearanceMeters: bumpers.minClearance,
     buildMillis,
   };
 }
@@ -315,7 +319,7 @@ function wrapDiff(d: number): number {
 }
 
 /** The bumper rectangle swept along the plan (with its heading) against obstacles and walls. */
-function bumperChecks(input: AnalysisInput, st: Stations): Check[] {
+function bumperChecks(input: AnalysisInput, st: Stations): { checks: Check[]; minClearance: number } {
   const n = st.s.length;
   const L = input.bumperLengthMeters;
   const W = input.bumperWidthMeters;
@@ -324,10 +328,14 @@ function bumperChecks(input: AnalysisInput, st: Stations): Check[] {
   for (let i = 0; i < n; i++) bodies.push(bumperCorners(st.x[i]!, st.y[i]!, st.heading[i]!, L, W));
   const out: Check[] = [];
   const margin = CHECKS.bumperMarginMeters;
+  let minClearance = Infinity;
 
   const report = (what: string, gap: (i: number) => number) => {
     const gaps = new Float64Array(n);
-    for (let i = 0; i < n; i++) gaps[i] = gap(i);
+    for (let i = 0; i < n; i++) {
+      gaps[i] = Math.max(0, gap(i));
+      minClearance = Math.min(minClearance, gaps[i]!);
+    }
     for (const [a, b] of runs(n, (i) => gaps[i]! < margin)) {
       let worst = a;
       for (let i = a; i <= b; i++) if (gaps[i]! < gaps[worst]!) worst = i;
@@ -347,7 +355,7 @@ function bumperChecks(input: AnalysisInput, st: Stations): Check[] {
 
   for (const o of shapes) report(o.name, (i) => convexDistance(bodies[i]!, o.hull));
   report("the field wall", (i) => insideRectMargin(bodies[i]!, input.fieldLengthMeters / 2, input.fieldWidthMeters / 2));
-  return out;
+  return { checks: out, minClearance };
 }
 
 /** Events, rotation targets and zones placed off the path. */

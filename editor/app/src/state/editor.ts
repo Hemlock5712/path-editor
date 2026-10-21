@@ -28,6 +28,10 @@ export interface ViewState {
   readonly centerY: number;
   /** Ghost robot footprints along the path every this many metres; 0 = off. */
   readonly footprintSpacing: number;
+  /** Show the selected waypoint's tangent handle, to shape the curve by hand (else travel is automatic). */
+  readonly shapeCurve: boolean;
+  /** Snap new and dragged waypoints to a 0.25 m grid. */
+  readonly gridSnap: boolean;
 }
 
 export interface Status {
@@ -52,7 +56,15 @@ export interface EditorState {
   readonly redoLabel: string | null;
 }
 
-export const DEFAULT_VIEW: ViewState = { alliance: "blue", zoom: 1, centerX: 0, centerY: 0, footprintSpacing: 1.0 };
+export const DEFAULT_VIEW: ViewState = {
+  alliance: "blue",
+  zoom: 1,
+  centerX: 0,
+  centerY: 0,
+  footprintSpacing: 0,
+  shapeCurve: false,
+  gridSnap: false,
+};
 
 const history = new History<Project>();
 let gestureBase: Project | null = null;

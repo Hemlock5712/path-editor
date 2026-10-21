@@ -1,4 +1,4 @@
-// Rotation targets, face-point zones and constraint zones of the active path.
+// Headings along the path (rotation targets), face-point zones and constraint zones of the active path.
 
 import {
   makeConstraintZone,
@@ -28,13 +28,16 @@ export function RotationPanel() {
   const targets = path.spec.rotationTargets;
   const last = path.spec.waypoints.length - 1;
   return (
-    <Section title="Rotation targets" count={targets.length}>
-      <p className="hint">No targets: the robot faces the way it drives. The R tool adds one on the path.</p>
+    <Section title="Headings along the path" count={targets.length}>
+      <p className="hint">
+        Headings between waypoints (set a waypoint's own heading in its row). The Rotation tool (R) adds one where you click the path; drag
+        its robot along the path, or its knob to turn it.
+      </p>
       {targets.map((t, i) => {
         const sel = selection?.kind === "rotation" && selection.index === i;
         return (
           <fieldset key={i} className={sel ? "card selected" : "card"} onFocus={() => !sel && select({ kind: "rotation", index: i })}>
-            <legend>Target {i + 1}</legend>
+            <legend>Heading {i + 1}</legend>
             <PositionField
               label="At"
               waypoint={t.waypoint}
@@ -49,14 +52,14 @@ export function RotationPanel() {
                 editPath("Turn rotation target", (p) => updateRotationTarget(p, i, makeRotationTarget(t.waypoint, t.meters, round5Radians(v * DEGREES))))
               }
             />
-            <IconButton label={`Delete rotation target ${i + 1}`} onClick={() => editPath("Delete rotation target", (p) => removeRotationTarget(p, i), null)}>
+            <IconButton label={`Delete heading ${i + 1}`} onClick={() => editPath("Delete heading", (p) => removeRotationTarget(p, i), null)}>
               Delete
             </IconButton>
           </fieldset>
         );
       })}
       <IconButton
-        label="Add rotation target at the end"
+        label="Add a heading at the end of the path"
         onClick={() =>
           editPath("Add rotation target", (p) => addRotationTarget(p, makeRotationTarget(last, Number.NaN, 0)), {
             kind: "rotation",
@@ -64,7 +67,7 @@ export function RotationPanel() {
           })
         }
       >
-        + Target at the end
+        + Heading at the end
       </IconButton>
     </Section>
   );

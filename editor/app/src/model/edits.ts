@@ -13,6 +13,7 @@ import {
   type PathEvent,
   type PathSpec,
   type RotationTarget,
+  type Waypoint,
 } from "../../../core/src/index.ts";
 import type { EditorPath } from "./project.ts";
 import { afterDelete, afterInsert } from "./positions.ts";
@@ -33,15 +34,36 @@ function removeAt<T>(list: readonly T[], i: number): T[] {
 
 // ------------------------------------------------------------------------------ waypoints
 
+/** A copy of w with some of its fields changed (checked by the core). */
+export function changed(w: Waypoint, c: Partial<Waypoint>): Waypoint {
+  const n = { ...w, ...c };
+  return makeWaypoint(n.xMeters, n.yMeters, n.tangentRadians, n.tangentScale, n.headingRadians);
+}
+
 export function moveWaypoint(path: EditorPath, i: number, x: number, y: number): EditorPath {
   const w = path.spec.waypoints[i]!;
-  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, makeWaypoint(x, y, w.tangentRadians, w.tangentScale)) });
+  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, changed(w, { xMeters: x, yMeters: y })) });
 }
 
 /** Sets the tangent direction (NaN = automatic) and scale of waypoint i. */
 export function setTangent(path: EditorPath, i: number, radians: number, scale: number): EditorPath {
   const w = path.spec.waypoints[i]!;
-  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, makeWaypoint(w.xMeters, w.yMeters, radians, scale)) });
+  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, changed(w, { tangentRadians: radians, tangentScale: scale })) });
+}
+
+/**
+ * Sets the robot's heading at waypoint i, or NaN for a pass-through point. The first and last
+ * waypoints always keep one.
+ */
+export function setHeading(path: EditorPath, i: number, radians: number): EditorPath {
+  const n = path.spec.waypoints.length;
+  if (Number.isNaN(radians) && (i === 0 || i === n - 1)) throw new RangeError("the first and last waypoints always have a heading");
+  const w = path.spec.waypoints[i]!;
+  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, changed(w, { headingRadians: radians })) });
+}
+
+export function setPinned(path: EditorPath, i: number, pinned: boolean): EditorPath {
+  return { ...path, pinned: replaceAt(path.pinned, i, pinned) };
 }
 
 /** Maps every waypoint-relative position in the spec; zones that collapse are dropped. */
@@ -65,26 +87,44 @@ export function remapPositions(spec: PathSpec, map: (p: number) => number): Part
   return { rotationTargets, facePointZones, constraintZones, events };
 }
 
-/** Inserts a waypoint between k and k + 1, at fraction f (0..1) of that stretch's arc. */
+/** Inserts a pass-through waypoint between k and k + 1, at fraction f (0..1) of that stretch's arc. */
 export function insertWaypoint(path: EditorPath, k: number, f: number, x: number, y: number): EditorPath {
   const waypoints = path.spec.waypoints.slice();
   waypoints.splice(k + 1, 0, makeWaypoint(x, y));
   const links = path.links.slice();
   links.splice(k + 1, 0, null);
+  const pinned = path.pinned.slice();
+  pinned.splice(k + 1, 0, false);
   const fraction = Math.min(0.999, Math.max(0.001, f));
-  return { ...withSpec(path, { ...remapPositions(path.spec, (p) => afterInsert(p, k, fraction)), waypoints }), links };
+  return { ...withSpec(path, { ...remapPositions(path.spec, (p) => afterInsert(p, k, fraction)), waypoints }), links, pinned };
 }
 
-/** Adds a waypoint after the last one (the path grows; nothing is renumbered). */
+/**
+ * Adds a waypoint after the last one: it becomes the end and takes over the end's heading, and the old
+ * end becomes a pass-through point (unless it is also the start, which keeps its heading).
+ */
 export function appendWaypoint(path: EditorPath, x: number, y: number): EditorPath {
-  return { ...withSpec(path, { waypoints: [...path.spec.waypoints, makeWaypoint(x, y)] }), links: [...path.links, null] };
+  const old = path.spec.waypoints;
+  const last = old.length - 1;
+  const end = old[last]!;
+  const waypoints = old.slice();
+  if (last > 0) waypoints[last] = changed(end, { headingRadians: Number.NaN });
+  waypoints.push(makeWaypoint(x, y, Number.NaN, 1, end.headingRadians));
+  return { ...withSpec(path, { waypoints }), links: [...path.links, null], pinned: [...path.pinned, false] };
 }
 
+/** Deletes waypoint i; if it was an end, the new end inherits its heading when it has none. */
 export function deleteWaypoint(path: EditorPath, i: number): EditorPath {
   const n = path.spec.waypoints.length;
   if (n <= 2) throw new RangeError("a path needs at least two waypoints");
   const remapped = remapPositions(path.spec, (p) => afterDelete(p, i, n));
-  return { ...withSpec(path, { ...remapped, waypoints: removeAt(path.spec.waypoints, i) }), links: removeAt(path.links, i) };
+  const gone = path.spec.waypoints[i]!;
+  const waypoints = removeAt(path.spec.waypoints, i);
+  const heir = i === 0 ? 0 : i === n - 1 ? waypoints.length - 1 : -1;
+  if (heir >= 0 && Number.isNaN(waypoints[heir]!.headingRadians)) {
+    waypoints[heir] = changed(waypoints[heir]!, { headingRadians: gone.headingRadians });
+  }
+  return { ...withSpec(path, { ...remapped, waypoints }), links: removeAt(path.links, i), pinned: removeAt(path.pinned, i) };
 }
 
 export function linkWaypoint(path: EditorPath, i: number, pointId: string | null): EditorPath {

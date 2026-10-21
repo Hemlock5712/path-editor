@@ -4,7 +4,7 @@
 
 import { smoothstep5, smoothstep5Bend, smoothstep5Slope, wrap } from "./angles.ts";
 import type { GeometrySample, PathGeometry } from "./geometry.ts";
-import type { FacePointZone, RotationTarget } from "./spec.ts";
+import type { FacePointZone, HeadingMode, RotationTarget } from "./spec.ts";
 
 export interface HeadingSample {
   /** Heading, wrapped to (-π, π]. */
@@ -47,11 +47,18 @@ export class HeadingProfile {
     this.zonePointY = zonePointY;
   }
 
+  /** With no targets, "hold" holds the direction the path starts out in; "faceTravel" faces travel. */
   static build(
     geometry: PathGeometry,
     targets: readonly RotationTarget[],
     zones: readonly FacePointZone[],
+    mode: HeadingMode = "faceTravel",
   ): HeadingProfile {
+    if (mode === "hold" && targets.length === 0) {
+      // nothing set: hold the direction the path starts out in
+      const start = geometry.sample(0.0);
+      targets = [{ waypoint: Number.NaN, meters: 0.0, headingRadians: Math.atan2(start.tangentY, start.tangentX) }];
+    }
     // Resolve to metres and insertion-sort by s (stable: ties keep the authored order)
     const nt = targets.length;
     const ts = new Float64Array(nt);

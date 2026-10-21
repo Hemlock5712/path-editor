@@ -4,7 +4,7 @@ import { PathGeometry } from "./geometry.ts";
 import { HeadingProfile } from "./heading.ts";
 import { DEFAULT_GRID_METERS, VelocityProfile } from "./profile.ts";
 import type { RobotConfig } from "./robot.ts";
-import { eventByWaypoint, type PathEvent, type PathSpec } from "./spec.ts";
+import { eventByWaypoint, hasHeading, type PathEvent, type PathSpec, type RotationTarget } from "./spec.ts";
 
 /** Everything the plan says about one distance along the path. */
 export interface PathSample {
@@ -25,6 +25,24 @@ export interface PathSample {
 /** An event's metres along the path built from geometry (PathEvent.sMeters in Java). Waypoint positions clamp. */
 export function eventMeters(e: PathEvent, geometry: PathGeometry): number {
   return eventByWaypoint(e) ? geometry.sAtWaypoint(e.waypoint) : e.meters;
+}
+
+/**
+ * The waypoints' headings as rotation targets at those waypoints, ahead of the authored targets, and the
+ * waypoints themselves without them: what the heading profile plans with (Path.withWaypointHeadings in
+ * Java). A spec with no waypoint headings is returned unchanged.
+ */
+export function withWaypointHeadings(spec: PathSpec): PathSpec {
+  const targets: RotationTarget[] = [];
+  spec.waypoints.forEach((w, i) => {
+    if (hasHeading(w)) targets.push({ waypoint: i, meters: Number.NaN, headingRadians: w.headingRadians });
+  });
+  if (targets.length === 0) return spec;
+  return {
+    ...spec,
+    waypoints: spec.waypoints.map((w) => ({ ...w, headingRadians: Number.NaN })),
+    rotationTargets: [...targets, ...spec.rotationTargets],
+  };
 }
 
 /** Length of the segment a pure rotation is planned on, metres (as in Java). */
@@ -51,8 +69,9 @@ export function pureRotation(spec: PathSpec): PathSpec {
         yMeters: p.yMeters - PURE_ROTATION_METERS * Math.sin(dir),
         tangentRadians: dir,
         tangentScale: 1.0,
+        headingRadians: Number.NaN,
       },
-      { xMeters: p.xMeters, yMeters: p.yMeters, tangentRadians: dir, tangentScale: 1.0 },
+      { xMeters: p.xMeters, yMeters: p.yMeters, tangentRadians: dir, tangentScale: 1.0, headingRadians: Number.NaN },
     ],
     startMetersPerSecond: 0.0,
     endMetersPerSecond: 0.0,
@@ -73,9 +92,9 @@ export class Path {
   }
 
   static build(spec: PathSpec, robot: RobotConfig, gridMeters = DEFAULT_GRID_METERS): Path {
-    spec = pureRotation(spec);
+    spec = pureRotation(withWaypointHeadings(spec));
     const geometry = PathGeometry.build(spec.waypoints);
-    const heading = HeadingProfile.build(geometry, spec.rotationTargets, spec.facePointZones);
+    const heading = HeadingProfile.build(geometry, spec.rotationTargets, spec.facePointZones, spec.headingMode);
     const profile = VelocityProfile.build(geometry, heading, spec, robot, gridMeters);
     return new Path(spec, geometry, heading, profile);
   }
