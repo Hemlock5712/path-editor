@@ -6,6 +6,8 @@
     python bench/run.py --quick         # 2 seeds, 3 courses, tiny sweeps; prints a table to bench/out/results_quick.json
                                         # and stdout, leaves results.json and RESULTS.md alone
     python bench/run.py --md-only       # rebuild RESULTS.md's generated part from bench/out/results.json
+    python bench/run.py --export-editor # bench/out/editor_bench.json for the editor's Bench view (from results.json;
+                                        # --trace-seeds 0,1,2 re-simulates traces for more seeds than seed 0)
 
 Results: bench/out/results.json (gitignored). RESULTS.md keeps its hand-written text; only the part
 between the 'generated' markers is replaced.
@@ -179,6 +181,10 @@ def main():
     ap.add_argument("--both", action="store_true")
     ap.add_argument("--procs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--md-only", action="store_true")
+    ap.add_argument("--export-editor", action="store_true",
+                    help="write out/editor_bench.json (tables, geometry and traces) for the editor's Bench view")
+    ap.add_argument("--trace-seeds", default="0",
+                    help="with --export-editor: seeds to give traces for, e.g. 0,1,2 (seed 0 comes from results.json)")
     ap.add_argument("--pathfind-only", action="store_true",
                     help="run only the pathfinding course (both pose sources) into out/pathfind.json and its "
                          "RESULTS.md block")
@@ -196,6 +202,9 @@ def main():
         return
     if a.md_only:
         write_md(json.load(open(path)))
+        return
+    if a.export_editor:
+        export_editor(path, [int(x) for x in a.trace_seeds.split(",") if x != ""], min(a.procs, 4))
         return
     seeds = list(range(a.seeds if a.seeds else (2 if a.quick else 10)))
     courses = QUICK_COURSES if a.quick else list(COURSES)
@@ -262,6 +271,83 @@ def main():
         if "pathfind" in out:
             write_pathfind_md(out["pathfind"])
         print("wrote", MD)
+
+
+# ============================================================================================ editor export
+EDITOR_EXPORT = os.path.join(OUT, "editor_bench.json")
+EDITOR_SCHEMA = 1
+# what the editor's tables show: name in results.json -> (label, unit)
+EDITOR_METRICS = {
+    "t_done": ("time to done", "s"),
+    "t_settle": ("time settled", "s"),
+    "ct_rms_cm": ("cross-track RMS", "cm"),
+    "ct_max_cm": ("cross-track max", "cm"),
+    "err_end_cm": ("final error", "cm"),
+    "yaw_end_deg": ("final yaw", "deg"),
+    "overshoot_cm": ("overshoot", "cm"),
+    "wheel_slip_ms": ("wheel slip", "ms"),
+}
+
+
+def export_editor(results_path, trace_seeds, procs):
+    """The editor's Bench view input: per pose source, course and method the mean and worst of a few metrics,
+    each method's authored geometry, and true traces ([t, x, y, heading] every 40 ms) for the chosen seeds.
+    Seed 0's traces come from results.json; other seeds are simulated again here (same plant, same pose source)."""
+    d = json.load(open(results_path))
+    meta = d["meta"]
+    pose = meta["poses"][0]
+    courses = meta["courses"]
+    methods = [m for m in MAIN_METHODS if m in d["runs"][pose][courses[0]]]
+    runs = {}
+    for p, by_course in d["runs"].items():
+        runs[p] = {}
+        for c, by_method in by_course.items():
+            runs[p][c] = {}
+            for m, r in by_method.items():
+                row = {"n": r["n"]}
+                for k in EDITOR_METRICS:
+                    row[k] = {"mean": r.get(k + "_mean"), "worst": r.get(k + "_worst"), "nan": r.get(k + "_nan", 0)}
+                runs[p][c][m] = row
+    traces = {c: {} for c in courses}
+    extra_jobs, extra_keys = [], []
+    for c in courses:
+        for s in trace_seeds:
+            if s == 0 and c in d["traces"]:
+                traces[c]["0"] = d["traces"][c]
+                continue
+            for m in methods:
+                key, opts = resolve(m, d["tuned"])
+                extra_jobs.append(((c, key, opts, s, pose), True))
+                extra_keys.append((c, s, m))
+    if extra_jobs:
+        print(f"simulating {len(extra_jobs)} traces for seeds {trace_seeds}", flush=True)
+        with mp.get_context("spawn").Pool(procs) as pool:
+            res = pool.map(_trace_job, extra_jobs, chunksize=2)
+        for (c, s, m), r in zip(extra_keys, res):
+            traces[c].setdefault(str(s), {})[m] = r["trace"]
+    out = {
+        "schema": EDITOR_SCHEMA,
+        "source": os.path.relpath(results_path, HERE),
+        "meta": {"seeds": meta["seeds"], "courses": courses, "poses": meta["poses"], "tracePose": pose,
+                 "traceSeeds": sorted(int(k) for k in traces[courses[0]]), "tSim": meta["t_sim"]},
+        "metrics": [{"key": k, "label": v[0], "unit": v[1]} for k, v in EDITOR_METRICS.items()],
+        "methods": [{"key": m, "label": label(m)} for m in methods],
+        "courses": [{"key": c, "description": COURSES[c].description} for c in courses],
+        "runs": runs,
+        "geometry": d["geometry"],
+        "traces": traces,
+    }
+    os.makedirs(OUT, exist_ok=True)
+    with open(EDITOR_EXPORT, "w") as fh:
+        json.dump(out, fh, separators=(",", ":"))
+    print("wrote", EDITOR_EXPORT, f"({os.path.getsize(EDITOR_EXPORT) // 1024} kB)")
+
+
+def _trace_job(args):
+    from sim import run_one
+
+    job, trace = args
+    return run_one(job, trace=trace)
 
 
 # ============================================================================================ report
