@@ -6,11 +6,16 @@ import {
   makeConstraintZone,
   makePathSpec,
   makeWaypoint,
+  readPath,
   writePath,
   type PathSpec,
 } from "../../core/src/index.ts";
 import { analyse, type AnalysisInput } from "../src/compute/analysis.ts";
-import { fixedWaypoints, optimise } from "../src/compute/optimiser.ts";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { evaluationsFor, fixedWaypoints, optimise, whyFixed } from "../src/compute/optimiser.ts";
 
 function input(spec: PathSpec, obstacles: AnalysisInput["obstacles"] = []): AnalysisInput {
   return {
@@ -99,4 +104,35 @@ describe("optimiser", () => {
       expect(r.spec.events[1]!.meters / after.lengthMeters).toBeCloseTo(6 / before.lengthMeters, 4);
     }
   });
+
+  it("keeps set headings, pins and everything outside the segment where they are", () => {
+    const posed = { ...weave, waypoints: weave.waypoints.map((w, i) => (i === 2 ? makeWaypoint(w.xMeters, w.yMeters, Number.NaN, 1, 0.5) : w)) };
+    expect(whyFixed(posed, [false, false, false, true])).toEqual([
+      "the start and end poses stay put",
+      null,
+      "it has a set heading",
+      "pinned",
+      "the start and end poses stay put",
+    ]);
+    const r = optimise(input(posed), quick);
+    expect(r.free).toEqual([1, 3]);
+    expect(r.spec.waypoints[2]).toEqual(posed.waypoints[2]);
+    expect(fixedWaypoints(weave, [], [0, 2])).toEqual([true, false, true, true, true]);
+    expect(optimise(input(weave), { ...quick, segment: [2, 4] }).free).toEqual([3]);
+  });
+
+  it("runs headless from Node with the same result for the same budget and seed", () => {
+    const dir = mkdtempSync(join(tmpdir(), "optimise-"));
+    const file = join(dir, "weave.path.json");
+    const out = join(dir, "out.path.json");
+    writeFileSync(file, writePath(weave));
+    const repo = join(import.meta.dirname, "..", "..", "..");
+    const r = spawnSync(process.execPath, [join(repo, "tools", "optimise.mjs"), file, "--budget-ms", "400", "--seed", "5", "--out", out], {
+      encoding: "utf8",
+    });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stderr).toContain("% faster");
+    const here = optimise(input(readPath(writePath(weave))), { maxEvaluations: evaluationsFor(0.4), timeBudgetMs: Infinity, seed: 5 });
+    expect(readFileSync(out, "utf8")).toBe(writePath(here.spec));
+  }, 30_000);
 });

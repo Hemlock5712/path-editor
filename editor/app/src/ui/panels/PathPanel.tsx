@@ -9,6 +9,7 @@ import { linkToPoint, moveNamedPoint } from "../../model/namedPoints.ts";
 import { editPath, editProject, select, setView } from "../../state/editor.ts";
 import { IconButton, NumberField, Section, SelectField, TextField, formatNumber } from "../controls.tsx";
 import { DEGREES, toDegrees, useActivePath, useAnalysis, useEditor } from "./common.tsx";
+import { OptimiseControls } from "./OptimisePanel.tsx";
 
 export function PathPanel() {
   const path = useActivePath();
@@ -84,6 +85,7 @@ export function PathPanel() {
           "computing…"
         )}
       </p>
+      <OptimiseControls />
     </Section>
   );
 }

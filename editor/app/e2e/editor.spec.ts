@@ -207,7 +207,7 @@ async function planSeconds(page: Page): Promise<number> {
   return Number(/([\d.]+) s,/.exec(text)![1]);
 }
 
-test("the optimiser shortens a weave, and applying it is one undo step", async ({ page }) => {
+test("Optimise path shortens a weave, and applying it is one undo step", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("path-stats")).toContainText(" s,"); // the app is up and planning
   await page.keyboard.press("w");
@@ -224,11 +224,10 @@ test("the optimiser shortens a weave, and applying it is one undo step", async (
   await poses(page); // the plan has caught up with the last click
   const before = await planSeconds(page);
 
-  await page.locator("summary", { hasText: "Optimise waypoints" }).click();
-  await page.getByLabel("Time budget", { exact: true }).fill("3");
-  await page.getByLabel("Time budget", { exact: true }).press("Enter");
-  await page.getByTestId("optimise-start").click();
+  // the Path panel's Optimise path, with its default budget; the new shape shows dashed until applied
+  await page.getByTestId("optimise-path").click();
   await expect(page.getByTestId("optimise-apply")).toBeVisible({ timeout: 20_000 });
+  expect(await planSeconds(page)).toBe(before);
   await expect(page.getByTestId("optimise-status")).toContainText("faster");
   await page.getByTestId("optimise-apply").click();
   await expect.poll(() => planSeconds(page)).toBeLessThan(before * 0.95);
@@ -365,4 +364,34 @@ test("right-click a waypoint to set its heading; the panel row has the heading a
   // the ? button shows the quick start again
   await page.getByRole("button", { name: "Help" }).click();
   await expect(page.getByRole("dialog", { name: "Quick start" })).toContainText("drag the knob on its ring");
+});
+
+test("Optimise path leaves pinned and set-heading waypoints alone; Discard keeps the path", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("path-stats")).toContainText(" s,");
+  await page.keyboard.press("w");
+  for (const [x, y] of [
+    [-2, 0.2],
+    [0, -2],
+    [2, 0.5],
+  ]) {
+    await clickField(page, x!, y!);
+  }
+  await page.keyboard.press("Enter");
+  // pin waypoint 2 from its menu, and give waypoint 3 a heading: only 1 may move
+  const p = await poses(page);
+  const w2 = await fieldPoint(page, p.waypoints[2]!.x, p.waypoints[2]!.y);
+  await page.mouse.click(w2.x, w2.y, { button: "right" });
+  await page.getByRole("menuitem", { name: /^Pin/ }).click();
+  const w3 = await fieldPoint(page, p.waypoints[3]!.x, p.waypoints[3]!.y);
+  await page.mouse.click(w3.x, w3.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "Hold a heading here" }).click();
+  await expect(page.getByTestId("optimise-path")).toHaveAttribute("title", /Move the 1 pass-through point /);
+  const before = (await poses(page)).waypoints;
+  await page.getByTestId("optimise-path").click();
+  await expect(page.getByTestId("optimise-discard")).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId("optimise-discard").click();
+  const after = (await poses(page)).waypoints;
+  expect(after.map((w) => [w.x, w.y])).toEqual(before.map((w) => [w.x, w.y]));
+  await expect(page.getByTestId("optimise-status")).toHaveCount(0);
 });

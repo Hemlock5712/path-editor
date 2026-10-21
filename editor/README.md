@@ -167,23 +167,40 @@ Playwright to the file system). It reads each path's preview through `window.pat
 read-only hook that waits for the worker to plan the current document and returns the total time, the peak speed
 and each event's s and t(s). `E2E_ONLY=Straight,Hairpin` authors just those paths.
 
-## Waypoint optimiser
+## Optimiser
 
-The **Optimise waypoints** panel shortens the active path's planned time.
+Shaping a path is mostly the optimiser's job: draw the poses, then press **Optimise path** in the Path panel.
 
-- **What moves.** The free interior waypoints, each within a corridor (0.5 m by default), and their tangent
+- **What moves.** The pass-through points, each within a corridor (0.5 m by default), and their tangent
   scales (half to double). Tangent directions don't change.
-- **What stays put.** The ends, any waypoint you lock, any linked to a named point, and any a zone starts or
-  ends on or between. Events, rotation targets and zones placed by waypoint keep their waypoint position;
-  those placed by metres keep the same fraction of the path's length.
+- **What stays put.** The start and end poses, any waypoint with a set heading (a pose the robot must reach
+  there), pinned waypoints (**Pin** in the waypoint panel, its right-click menu, or **Optimiser settings**),
+  waypoints linked to a named point, and any that a zone starts or ends on or between. **Only between
+  waypoint … and waypoint …** in the settings optimises one segment. Events, rotation targets and zones placed
+  by waypoint keep their waypoint position; those placed by metres keep the same fraction of the path's
+  length.
 - **What it must keep.** A candidate counts only if it plans and its swept bumpers keep the clearance the path
   had (up to the 5 cm margin). It also mustn't add heading warnings or errors.
+- **Budget and repeatability.** The budget (3 s by default) sets how many plans it tries: 500 per second of
+  budget. So the same path, budget and seed give the same result on any machine. The clock only stops a slow
+  machine at twice the budget.
+- **Results.** The field shows the best path so far, dashed. The Path panel gives the before and after times.
+  **Apply** is one undo step (it refuses if the path changed meanwhile); **Discard** keeps the path.
 - **Method.** Nelder-Mead with adaptive coefficients, restarted around the best point as it converges, in
-  `compute/optimiser.ts`. It runs in a Web Worker in chunks, so **Cancel** stops it and keeps the best so far.
-  It is deterministic for a seed and evaluation budget; the time budget only cuts it short. Every number
-  comes from the core's plan.
-- **Results.** The field shows the best path so far, dashed. The panel gives before and after times.
-  **Apply** is one undo step; it refuses if the path changed meanwhile.
+  `app/src/compute/optimiser.ts`. In the editor it runs in a Web Worker in chunks, so **Stop** keeps the best
+  so far. Every number comes from the core's plan.
+
+**Headless.** The same optimiser runs from the repo root under Node 22.6+ (it loads the TypeScript sources
+with type stripping):
+
+```
+node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms 3000 --seed 1     [--out <file>] [--corridor 0.5] [--pin 2,5] [--segment 1,4] [--no-scales]
+```
+
+It writes the optimised path file (to `--out`, or stdout) and a one-line summary to stderr. `--robot` and
+`--field` are the robot project's `robot.json` and `field.json`; both default to the editor's defaults. There is
+no clock here, so the result depends only on the inputs, the budget and the seed. A unit test checks it against
+the in-browser optimiser byte for byte.
 
 ## Bench comparison
 

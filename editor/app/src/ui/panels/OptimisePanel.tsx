@@ -1,72 +1,52 @@
-// The waypoint optimiser: options, which waypoints may move, progress, and the result to apply.
+// The optimiser, the main way to shape a path: the Optimise path button with its progress and result
+// (in the Path panel), and its settings with which waypoints stay put (a section of their own).
 
-import { fixedWaypoints } from "../../compute/optimiser.ts";
-import { applyOptimise, cancelOptimise, discardOptimise, optimiser, setLock, startOptimise } from "../../state/optimiser.ts";
+import { whyFixed } from "../../compute/optimiser.ts";
+import { setPinned } from "../../model/edits.ts";
+import { editPath } from "../../state/editor.ts";
+import { applyOptimise, cancelOptimise, discardOptimise, optimiser, startOptimise } from "../../state/optimiser.ts";
 import { useStore } from "../../state/store.ts";
 import { formatNumber, IconButton, NumberField, Section } from "../controls.tsx";
 import { useActivePath } from "./common.tsx";
 
 const STOPPED = {
-  evaluations: "used its evaluation budget",
-  time: "used its time budget",
+  evaluations: "used its budget",
+  time: "stopped by the clock",
   converged: "converged",
-  cancelled: "cancelled",
+  cancelled: "stopped",
 };
 
-export function OptimisePanel() {
+/** Optimise path, its progress, and Apply / Discard (the field shows the new shape dashed meanwhile). */
+export function OptimiseControls() {
   const path = useActivePath();
   const o = useStore(optimiser, (s) => s);
-  const locks = o.locks[path.id] ?? [];
-  // what the optimiser keeps fixed whatever the user says: the ends and zone anchors, and named points
-  const forced = fixedWaypoints(path.spec, []);
-  const reason = (i: number) =>
-    i === 0 || i === path.spec.waypoints.length - 1
-      ? "the path's ends stay put"
-      : path.links[i] !== null
-        ? "linked to a named point"
-        : forced[i]
-          ? "a zone starts or ends here"
-          : null;
   const running = o.status === "running";
   const forThisPath = o.pathId === path.id;
   const saved = o.beforeSeconds - o.bestSeconds;
+  const locked = path.spec.waypoints.map((_, i) => path.pinned[i] === true || path.links[i] !== null);
+  const free = whyFixed(path.spec, locked, o.segment).filter((w) => w === null).length;
   return (
-    <Section title="Optimise waypoints">
-      <p className="hint">
-        Moves the free waypoints (within the corridor) and their tangent scales to shorten the planned time, keeping the bumpers clear of
-        obstacles and the heading checks as they are. Events and zones keep their places.
-      </p>
-      <div className="grid2">
-        <NumberField label="Corridor" unit="m" min={0.01} value={o.corridorMeters} onCommit={(v) => optimiser.set({ corridorMeters: v })} />
-        <NumberField label="Time budget" unit="s" min={0.5} value={o.timeBudgetSeconds} onCommit={(v) => optimiser.set({ timeBudgetSeconds: v })} />
-        <NumberField label="Seed" decimals={0} value={o.seed} onCommit={(v) => optimiser.set({ seed: Math.round(v) })} />
-      </div>
-      <label className="row">
-        <input type="checkbox" checked={o.optimiseScales} onChange={() => optimiser.set({ optimiseScales: !o.optimiseScales })} /> Tangent scales too
-      </label>
-      <fieldset className="card">
-        <legend>Lock waypoints</legend>
-        <div className="locks">
-          {path.spec.waypoints.map((_, i) => {
-            const why = reason(i);
-            return (
-              <label key={i} title={why ?? "keep this waypoint where it is"}>
-                <input type="checkbox" checked={why !== null || locks[i] === true} disabled={why !== null || running} onChange={(e) => setLock(path.id, i, e.target.checked)} />{" "}
-                {i}
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
+    <div className="optimise">
       <div className="row">
-        {running ? (
+        {running && forThisPath ? (
           <IconButton label="Stop the optimiser and keep the best so far" onClick={cancelOptimise} testId="optimise-cancel">
-            Cancel
+            Stop
           </IconButton>
         ) : (
-          <IconButton label="Optimise this path's waypoints" onClick={startOptimise} testId="optimise-start">
-            Optimise
-          </IconButton>
+          <button
+            type="button"
+            className="primary"
+            onClick={startOptimise}
+            disabled={free === 0 || (forThisPath && o.status === "done")}
+            title={
+              free === 0
+                ? "Nothing to move: only pass-through points that aren't pinned move"
+                : `Move the ${free} pass-through point${free === 1 ? "" : "s"} and their tangents to shorten the planned time (${formatNumber(o.budgetSeconds, 1)} s budget)`
+            }
+            data-testid="optimise-path"
+          >
+            Optimise path
+          </button>
         )}
       </div>
       {forThisPath && o.status !== "idle" && (
@@ -74,9 +54,9 @@ export function OptimisePanel() {
           {o.status === "error" && <span className="field-error">{o.error}</span>}
           {(running || o.status === "done") && Number.isFinite(o.bestSeconds) && (
             <>
-              {running ? `Running: ${o.evaluations} plans tried. ` : `Done: ${STOPPED[o.result?.stoppedBy ?? "converged"]}, ${o.evaluations} plans tried. `}
-              {formatNumber(o.beforeSeconds, 3)} s → <strong>{formatNumber(o.bestSeconds, 3)} s</strong>
-              {saved > 1e-9 ? ` (${formatNumber(saved, 3)} s, ${formatNumber((100 * saved) / o.beforeSeconds, 1)} % faster)` : ""}
+              {formatNumber(o.beforeSeconds, 2)} s → <strong>{formatNumber(o.bestSeconds, 2)} s</strong>
+              {saved > 1e-9 ? ` (${formatNumber((100 * saved) / o.beforeSeconds, 1)} % faster)` : ""}
+              {running ? `, ${o.evaluations} plans tried…` : `. ${STOPPED[o.result?.stoppedBy ?? "converged"]}.`}
             </>
           )}
         </div>
@@ -85,23 +65,90 @@ export function OptimisePanel() {
         <div className="row">
           {o.result.afterSeconds < o.result.beforeSeconds ? (
             <>
-              <IconButton label="Apply the optimised waypoints (one undo step)" onClick={applyOptimise} testId="optimise-apply">
+              <button type="button" className="primary" onClick={applyOptimise} title="Use the dashed path (one undo step)" data-testid="optimise-apply">
                 Apply
-              </IconButton>
-              <IconButton label="Discard the optimised waypoints" onClick={discardOptimise}>
+              </button>
+              <IconButton label="Keep the path as it was" onClick={discardOptimise} testId="optimise-discard">
                 Discard
               </IconButton>
             </>
           ) : (
             <>
               <span className="hint">No faster path within the corridor.</span>
-              <IconButton label="Close the optimiser result" onClick={discardOptimise}>
+              <IconButton label="Close the optimiser result" onClick={discardOptimise} testId="optimise-discard">
                 OK
               </IconButton>
             </>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+export function OptimisePanel() {
+  const path = useActivePath();
+  const o = useStore(optimiser, (s) => s);
+  const running = o.status === "running";
+  const linked = path.spec.waypoints.map((_, i) => path.links[i] !== null);
+  const why = whyFixed(path.spec, linked, o.segment);
+  const n = path.spec.waypoints.length;
+  const setSegment = (from: number, to: number) =>
+    optimiser.set({ segment: Number.isNaN(from) || Number.isNaN(to) ? null : [Math.round(from), Math.round(to)] });
+  return (
+    <Section title="Optimiser settings">
+      <p className="hint">
+        Optimise path moves the pass-through points (within the corridor) and their tangent scales to shorten the planned time, keeping the
+        bumpers clear of obstacles and the heading checks as they are. The start, the end, points with a set heading and pinned points stay
+        put. The budget sets how many plans it tries, so the same budget and seed give the same path every time.
+      </p>
+      <div className="grid2">
+        <NumberField label="Corridor" unit="m" min={0.01} value={o.corridorMeters} onCommit={(v) => optimiser.set({ corridorMeters: v })} />
+        <NumberField label="Budget" unit="s" min={0.2} value={o.budgetSeconds} onCommit={(v) => optimiser.set({ budgetSeconds: v })} />
+        <NumberField label="Seed" decimals={0} value={o.seed} onCommit={(v) => optimiser.set({ seed: Math.round(v) })} />
+      </div>
+      <label className="row">
+        <input type="checkbox" checked={o.optimiseScales} onChange={() => optimiser.set({ optimiseScales: !o.optimiseScales })} /> Tangent scales too
+      </label>
+      <div className="grid2" title="Only move the waypoints between these two; blank = the whole path">
+        <NumberField
+          label="Only between waypoint"
+          decimals={0}
+          blank="start"
+          blankValue={Number.NaN}
+          value={o.segment ? o.segment[0] : Number.NaN}
+          onCommit={(v) => setSegment(v, o.segment ? o.segment[1] : n - 1)}
+        />
+        <NumberField
+          label="and waypoint"
+          decimals={0}
+          blank="end"
+          blankValue={Number.NaN}
+          value={o.segment ? o.segment[1] : Number.NaN}
+          onCommit={(v) => setSegment(o.segment ? o.segment[0] : 0, v)}
+        />
+      </div>
+      <fieldset className="card">
+        <legend>Pinned waypoints</legend>
+        <div className="locks">
+          {path.spec.waypoints.map((_, i) => {
+            const pinned = path.pinned[i] === true;
+            // (linked waypoints come back as locked: say why)
+            const reason = why[i] === "pinned" ? "linked to a named point" : why[i]!;
+            return (
+              <label key={i} title={reason ?? (pinned ? "pinned: the optimiser leaves it" : "pin it to keep it where it is")}>
+                <input
+                  type="checkbox"
+                  checked={pinned || reason !== null}
+                  disabled={reason !== null || running}
+                  onChange={(e) => editPath(e.target.checked ? "Pin" : "Unpin", (p) => setPinned(p, i, e.target.checked))}
+                />{" "}
+                {i}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
     </Section>
   );
 }

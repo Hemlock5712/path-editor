@@ -2,7 +2,7 @@
 // field draws the best path so far, dashed, while it runs and until it is applied or discarded.
 
 import type { PathSpec } from "../../../core/src/index.ts";
-import { DEFAULT_OPTIONS, type OptimiseOptions, type OptimiseResult } from "../compute/optimiser.ts";
+import { DEFAULT_BUDGET_SECONDS, DEFAULT_OPTIONS, evaluationsFor, type OptimiseOptions, type OptimiseResult } from "../compute/optimiser.ts";
 import type { OptimiserRequest, OptimiserResponse } from "../compute/optimiserWorker.ts";
 import { analysisInput } from "./analysis.ts";
 import { activePath, editor, editPath, notify } from "./editor.ts";
@@ -14,11 +14,12 @@ export interface OptimiserState {
   readonly pathId: string | null;
   readonly basis: PathSpec | null;
   readonly corridorMeters: number;
-  readonly timeBudgetSeconds: number;
+  /** Sets the evaluation budget (so the result repeats); the clock stops a slow machine at twice it. */
+  readonly budgetSeconds: number;
   readonly seed: number;
   readonly optimiseScales: boolean;
-  /** Per path: waypoints the user locked. */
-  readonly locks: Readonly<Record<string, readonly boolean[]>>;
+  /** Only move the waypoints between these two (null = the whole path). */
+  readonly segment: readonly [number, number] | null;
   readonly evaluations: number;
   readonly beforeSeconds: number;
   readonly bestSeconds: number;
@@ -33,10 +34,10 @@ export const optimiser = createStore<OptimiserState>({
   pathId: null,
   basis: null,
   corridorMeters: DEFAULT_OPTIONS.corridorMeters,
-  timeBudgetSeconds: DEFAULT_OPTIONS.timeBudgetMs / 1000,
+  budgetSeconds: DEFAULT_BUDGET_SECONDS,
   seed: DEFAULT_OPTIONS.seed,
   optimiseScales: DEFAULT_OPTIONS.optimiseScales,
-  locks: {},
+  segment: null,
   evaluations: 0,
   beforeSeconds: Number.NaN,
   bestSeconds: Number.NaN,
@@ -57,16 +58,19 @@ export function startOptimise(): void {
   const s = editor.get();
   const path = activePath(s);
   const o = optimiser.get();
-  const userLocks = o.locks[path.id] ?? [];
   // named points stay where they are: their waypoints are locked too
-  const locked = path.spec.waypoints.map((_, i) => userLocks[i] === true || path.pinned[i] === true || path.links[i] !== null);
+  const locked = path.spec.waypoints.map((_, i) => path.pinned[i] === true || path.links[i] !== null);
+  const n = path.spec.waypoints.length;
+  const segment = o.segment && o.segment.every((i) => i >= 0 && i < n) ? o.segment : null;
   const options: OptimiseOptions = {
     ...DEFAULT_OPTIONS,
     corridorMeters: o.corridorMeters,
-    timeBudgetMs: o.timeBudgetSeconds * 1000,
+    maxEvaluations: evaluationsFor(o.budgetSeconds),
+    timeBudgetMs: 2000 * o.budgetSeconds,
     seed: o.seed,
     optimiseScales: o.optimiseScales,
     locked,
+    segment,
   };
   stopWorker();
   const id = ++runId;
@@ -119,14 +123,6 @@ export function applyOptimise(): void {
     return;
   }
   const spec = o.result.spec;
-  editPath("Optimise waypoints", (p) => ({ ...p, spec }));
+  editPath("Optimise path", (p) => ({ ...p, spec }));
   discardOptimise();
-}
-
-export function setLock(pathId: string, index: number, locked: boolean): void {
-  optimiser.set((s) => {
-    const current = (s.locks[pathId] ?? []).slice();
-    current[index] = locked;
-    return { locks: { ...s.locks, [pathId]: current } };
-  });
 }

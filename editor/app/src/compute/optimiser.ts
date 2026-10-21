@@ -1,14 +1,18 @@
 // The waypoint optimiser: shortens a path's planned time by moving its free interior waypoints (each
 // within a corridor around where it was) and their tangent scales. Every plan comes from the core.
+// It has no editor state, so it runs in the browser's worker and headless under Node (tools/optimise.mjs).
 //
 // Method: Nelder-Mead (adaptive coefficients for the dimension) on normalised coordinates, restarted
 // around the best point with a smaller simplex when it stalls. The start simplex's directions come
-// from a seeded generator, so a run is deterministic for a seed and an evaluation budget; the wall-clock
-// budget only cuts it short.
+// from a seeded generator, so a run is deterministic for a seed and an evaluation budget. A budget in
+// seconds is turned into evaluations (EVALUATIONS_PER_SECOND), so the same budget gives the same path on
+// any machine; the wall clock is only a cap, for a slow machine.
 //
 // What stays put:
-//   - the first and last waypoints, any the user locked, any linked to a named point, and any that a
-//     zone starts or ends on or between (so zone anchors don't move);
+//   - the first and last waypoints (the start and end poses), any with a set heading (a pose the robot
+//     must reach there), any pinned, any linked to a named point, any outside the segment being
+//     optimised, and any that a zone starts or ends on or between (so zone anchors don't move);
+//   - so only pass-through points move;
 //   - tangent directions (only the scales change);
 //   - events, rotation targets and zones by waypoint position keep that position (the same fraction of
 //     their stretch); those by metres keep the same fraction of the path's length.
@@ -29,8 +33,10 @@ import { analyse, CHECKS, type AnalysisInput } from "./analysis.ts";
 export interface OptimiseOptions {
   /** How far each waypoint may move, metres. */
   readonly corridorMeters: number;
-  /** Per waypoint: true = don't move it. */
+  /** Per waypoint: true = don't move it (pinned, or linked to a named point). */
   readonly locked: readonly boolean[];
+  /** Only move waypoints strictly between these two (null = the whole path). */
+  readonly segment: readonly [number, number] | null;
   /** Also change the free waypoints' tangent scales (within half to double). */
   readonly optimiseScales: boolean;
   readonly seed: number;
@@ -40,13 +46,27 @@ export interface OptimiseOptions {
   readonly timeBudgetMs: number;
 }
 
+/**
+ * Evaluations per second of budget: under what one evaluation costs in a browser on a short path
+ * (about 1-2 ms), so the wall-clock cap rarely cuts a run short.
+ */
+export const EVALUATIONS_PER_SECOND = 500;
+
+export const DEFAULT_BUDGET_SECONDS = 3;
+
+/** The deterministic evaluation budget for a budget in seconds. */
+export function evaluationsFor(budgetSeconds: number): number {
+  return Math.max(1, Math.round(budgetSeconds * EVALUATIONS_PER_SECOND));
+}
+
 export const DEFAULT_OPTIONS: OptimiseOptions = {
   corridorMeters: 0.5,
   locked: [],
+  segment: null,
   optimiseScales: true,
   seed: 1,
-  maxEvaluations: 3000,
-  timeBudgetMs: 5000,
+  maxEvaluations: evaluationsFor(DEFAULT_BUDGET_SECONDS),
+  timeBudgetMs: Infinity,
 };
 
 export interface OptimiseResult {
@@ -59,18 +79,37 @@ export interface OptimiseResult {
   readonly free: readonly number[];
 }
 
-/** The waypoints that must stay put: ends, locked, and zone anchors. */
-export function fixedWaypoints(spec: PathSpec, locked: readonly boolean[]): boolean[] {
+/** Why each waypoint stays put (null = the optimiser may move it). */
+export function whyFixed(
+  spec: PathSpec,
+  locked: readonly boolean[],
+  segment: readonly [number, number] | null = null,
+): (string | null)[] {
   const n = spec.waypoints.length;
-  const fixed = spec.waypoints.map((_, i) => i === 0 || i === n - 1 || locked[i] === true);
+  const why: (string | null)[] = spec.waypoints.map((w, i) =>
+    i === 0 || i === n - 1
+      ? "the start and end poses stay put"
+      : !Number.isNaN(w.headingRadians)
+        ? "it has a set heading"
+        : locked[i] === true
+          ? "pinned"
+          : segment && (i <= Math.min(...segment) || i >= Math.max(...segment))
+            ? "outside the segment"
+            : null,
+  );
   const anchor = (p: number) => {
-    for (const i of [Math.floor(p), Math.ceil(p)]) if (i >= 0 && i < n) fixed[i] = true;
+    for (const i of [Math.floor(p), Math.ceil(p)]) if (i >= 0 && i < n) why[i] ??= "a zone starts or ends here";
   };
   for (const z of [...spec.facePointZones, ...spec.constraintZones]) {
     anchor(z.fromWaypoint);
     anchor(z.toWaypoint);
   }
-  return fixed;
+  return why;
+}
+
+/** The waypoints that must stay put (see whyFixed). */
+export function fixedWaypoints(spec: PathSpec, locked: readonly boolean[], segment: readonly [number, number] | null = null): boolean[] {
+  return whyFixed(spec, locked, segment).map((w) => w !== null);
 }
 
 /** A small seeded generator (mulberry32), so runs repeat. */
@@ -108,12 +147,14 @@ export class Optimiser {
   private stalls = 0;
   private converged = false;
 
-  constructor(
-    private readonly input: AnalysisInput,
-    private readonly options: OptimiseOptions,
-  ) {
+  private readonly input: AnalysisInput;
+  private readonly options: OptimiseOptions;
+
+  constructor(input: AnalysisInput, options: OptimiseOptions) {
+    this.input = input;
+    this.options = options;
     const spec = input.spec;
-    const fixed = fixedWaypoints(spec, options.locked);
+    const fixed = fixedWaypoints(spec, options.locked, options.segment);
     this.free = spec.waypoints.map((_, i) => i).filter((i) => !fixed[i]);
     this.dims = this.free.length * (options.optimiseScales ? 3 : 2);
     const base = analyse(input);
