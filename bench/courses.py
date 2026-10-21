@@ -459,3 +459,12 @@ CHOREO_TRAJ.update({"hit_mid_path": "s_curve", "low_grip_s_curve": "s_curve", "g
 def t_end(course: Course):
     """Simulated time per run: generous for slow tails."""
     return 4.0 + NeutralPath(course).length / 1.2
+
+
+# the harder courses (courses_extra.py; what they need beyond a path is in scenarios.py). Their Choreo
+# trajectories are in bench/choreo/extra, and heavy/ (a project with the heavy robot), from choreo/make_extra.py
+from courses_extra import EXTRA_COURSES  # noqa: E402
+
+COURSES.update(EXTRA_COURSES)
+CHOREO_TRAJ.update({c: "extra/" + c for c in EXTRA_COURSES if c != "heavy_robot"})
+CHOREO_TRAJ["heavy_robot"] = "heavy/heavy_robot"

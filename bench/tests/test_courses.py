@@ -31,6 +31,8 @@ def test_old_spline_ends(name):
     c = COURSES[name]
     s = SplinePath(to_catmull(c)["points"])
     assert close(s.point(0.0), c.start_pose) and close(s.point(s.total), c.end_pose)
+    if any(w.tangent_deg is not None for w in c.waypoints):
+        return  # set directions of travel: the old editor has no such setting, so its curve differs
     assert s.total == pytest.approx(NeutralPath(c).length, abs=2e-3)
 
 
@@ -40,9 +42,9 @@ def test_bezier_is_the_same_curve(name):
     wps = to_bezier(c)["waypoints"]
     assert close(wps[0]["anchor"], c.start_pose) and close(wps[-1]["anchor"], c.end_pose)
     pts = [np.array((w.x, w.y)) for w in c.waypoints]
-    from courses import catmull_rom_tangents
+    from courses import catmull_rom_tangents, tangent_dirs
 
-    tans = catmull_rom_tangents(pts)
+    tans = catmull_rom_tangents(pts, tangent_dirs(c))
     for i in range(len(wps) - 1):
         for t in (0.1, 0.37, 0.8):
             b = cubic_lerp(wps[i]["anchor"], wps[i]["next"], wps[i + 1]["prev"], wps[i + 1]["anchor"], t)
@@ -50,7 +52,7 @@ def test_bezier_is_the_same_curve(name):
             assert close(b, h, 1e-9)
     path = PathPlannerPath(to_bezier(c))
     assert close(path.points[0].position, c.start_pose, 1e-9)
-    assert close(path.points[-1].position, c.end_pose, 1e-9)
+    assert close(path.points[-1].position, c.end_pose, 0.01)  # createPath drops a last point within 1 cm of the end
     assert path.points[-1].rotation_target[1] == pytest.approx(c.end_pose[2])
 
 

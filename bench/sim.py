@@ -17,8 +17,8 @@ from alignsim.odometry import SwerveOdometry
 from alignsim.plant import SwervePlant
 from common import LP, RP, rot
 from courses import COURSES, NeutralPath, polyline_distance, t_end
-from followers import build
 from followers.base import Start
+from scenarios import course_metrics, make_follower, plant_params
 
 SETTLE_POS, SETTLE_YAW, SETTLE_SPEED, SETTLE_HOLD = 0.02, math.radians(1.0), 0.05, 0.25
 END_RADIUS = 0.05
@@ -181,6 +181,7 @@ def run_one(job, trace=False):
     course = COURSES[cname]
     npath = NeutralPath(course)
     rp, rng = make_robot(course, seed)
+    rp = plant_params(cname, rp)
     start = course.start_pose
     v0 = course.start_velocity
     plant = DisturbedPlant(rp, start, v0, rng)
@@ -188,13 +189,13 @@ def run_one(job, trace=False):
         plant.arm(course.impulse, npath)
     if course.grip_drop is not None:
         plant.arm_grip_drop(course.grip_drop, npath)
-    cls, kw = build(mkey, opts)
-    follower = cls(**kw)
-    native = follower.adapt(course)
+    follower, native = make_follower(cname, mkey, opts, seed)
+    if getattr(follower, "needs_plant", False):  # an end that moves when it is seen needs the true pose
+        follower.plant = plant
     imu_rng = np.random.default_rng([seed, 7919])  # its own stream: the IMU changes no other number
     r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant, imu_rng)
     ts, xs, ys, ths = r["t"], r["x"], r["y"], r["th"]
-    end = course.end_pose
+    end = getattr(follower, "true_end", course.end_pose)
     dist, eth, t_5cm, t_settle = end_metrics(r, end)
     t_done, wheel_slip, gen_ms, max_step_ms = r["t_done"], r["wheel_slip"], r["gen_ms"], r["max_step_ms"]
     T = t_end(course)
@@ -205,9 +206,12 @@ def run_one(job, trace=False):
     n_ct = (reached[0] + 1) if len(reached) else len(ts)
     xy = np.column_stack([xs[:n_ct], ys[:n_ct]])
     d_neutral = d_all[:n_ct]
-    d_own = polyline_distance(cls.geometry(native), xy)
+    d_own = polyline_distance(follower.geometry(native), xy)
     tx, ty = npath.tangent_at_s(npath.length)
-    over = float(max(0.0, ((xs - end[0]) * tx + (ys - end[1]) * ty).max()))
+    # past the end along its tangent, once the robot has reached the end (a path that loops or chains may pass
+    # beyond that line earlier); the whole run if it never did
+    i0 = reached[0] if len(reached) else 0
+    over = float(max(0.0, ((xs[i0:] - end[0]) * tx + (ys[i0:] - end[1]) * ty).max()))
     out = {
         "ct_rms_cm": 100 * float(np.sqrt(np.mean(d_neutral ** 2))),
         "ct_max_cm": 100 * float(d_neutral.max()),
@@ -228,6 +232,7 @@ def run_one(job, trace=False):
         "slip_fp": r["slip_metrics"][0],
         "slip_recall": r["slip_metrics"][1],
     }
+    out.update(course_metrics(cname, r, follower))
     if trace:
         k = max(1, int(round(0.04 / LP.odom_period)))
         out["trace"] = [[round(float(a), 3), round(float(b), 4), round(float(c), 4), round(float(d), 4)]

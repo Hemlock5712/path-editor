@@ -239,7 +239,7 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 
 | Request | Reply |
 | --- | --- |
-| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}`: builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs"}` |
+| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs"}` |
 | `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()` | `{"ok", "startMicros"}` |
 | `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |

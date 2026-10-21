@@ -138,6 +138,8 @@ class OursV2(Follower):
     """Options: `mu` (planning grip, default 0.7), plus any FollowerConfig field by its Java name
     (crossTrackKp, headingKp, latencySeconds, terminalRadiusMeters, limiterFrictionCoefficient, ...)."""
 
+    robot_overrides = {}  # robot file fields that differ from the bench plant (set for the heavy_robot course)
+
     def __init__(self, mu=0.7, limits: Limits = Limits(), **follower_options):
         self.mu = mu
         self.lim = limits
@@ -159,7 +161,9 @@ class OursV2(Follower):
         return native["geometry"]
 
     def reset(self, native, start):
-        r = call_fresh(op="load", path=native["path"], robot=robot_json(self.mu), options=self.options)
+        # a path that starts after t = 0 is the next one of a chain: it keeps the run's slip-sensing session
+        r = call_fresh(op="load", path=native["path"], robot=dict(robot_json(self.mu), **self.robot_overrides),
+                       options=self.options, keepSensing=start.t > 0)
         self.srv = server()
         self.build_ms = r["buildMs"]
         self.srv.call(op="reset", t=start.t, pose=[float(v) for v in start.pose],

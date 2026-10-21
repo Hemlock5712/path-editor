@@ -121,7 +121,9 @@ public final class BenchServer {
     double buildMs = (System.nanoTime() - t0) / 1e6;
     follower = new PathFollower(path, b.build());
     goal = Optional.empty();
-    sensing = null; // a run's sensing session starts after its load (sense_reset)
+    if (!Boolean.TRUE.equals(msg.get("keepSensing"))) {
+      sensing = null; // a run's sensing session starts after its load (sense_reset)
+    } // the next path of a chain keeps the run's session
     follower.bindGoal(() -> goal);
     follower.withSlipSignal(slipSignal);
     Map<String, Object> r = new LinkedHashMap<>();

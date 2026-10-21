@@ -95,13 +95,13 @@ def main():
     a = ap.parse_args()
     with open(os.path.join(HERE, PROJECT + ".chor"), "w") as fh:
         json.dump(project(), fh, indent=1)
-    for name in sorted(set(TRAJ_FOR_COURSE.values())):
+    for name in sorted(n for n in set(TRAJ_FOR_COURSE.values()) if "/" not in n):  # the rest: make_extra.py
         with open(os.path.join(HERE, name + ".traj"), "w") as fh:
             json.dump(trajectory(name), fh, indent=1)
     if a.cli:
         subprocess.run([a.cli, "--chor", os.path.join(HERE, PROJECT + ".chor"), "--all-trajectory", "--generate"],
                        check=True)
-        for name in sorted(set(TRAJ_FOR_COURSE.values())):
+        for name in sorted(n for n in set(TRAJ_FOR_COURSE.values()) if "/" not in n):  # the rest: make_extra.py
             t = json.load(open(os.path.join(HERE, name + ".traj")))["trajectory"]
             print(f"{name}: {len(t['samples'])} samples, {t['samples'][-1]['t']:.3f} s" if t["samples"]
                   else f"{name}: NOT generated")
