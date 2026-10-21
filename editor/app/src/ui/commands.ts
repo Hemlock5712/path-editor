@@ -4,7 +4,7 @@
 import { canOpenFolders } from "../io/files.ts";
 import { cyclePath, duplicatePath, fitView, newPath, removeActivePath, toggleAlliance, togglePlay, zoomBy } from "../state/actions.ts";
 import { editor, redo, setTool, setView, undo, type Tool } from "../state/editor.ts";
-import { startOptimise } from "../state/optimiser.ts";
+import { startOptimise, startRouteAround } from "../state/optimiser.ts";
 import { downloadZip, newProject, openFolder, save } from "../state/session.ts";
 import { openSettings, setPage, ui } from "../state/ui.ts";
 
@@ -37,7 +37,8 @@ export const COMMANDS: readonly Command[] = [
   { id: "delete-path", label: "Delete this path", group: "Path", run: removeActivePath },
   { id: "prev-path", label: "Previous path", group: "Path", shortcut: "[", run: () => cyclePath(-1) },
   { id: "next-path", label: "Next path", group: "Path", shortcut: "]", run: () => cyclePath(1) },
-  { id: "optimise", label: "Optimise path", group: "Path", run: startOptimise },
+  { id: "optimise", label: "Optimise path", group: "Path", run: () => startOptimise() },
+  { id: "route-around", label: "Route around obstacles", group: "Path", run: startRouteAround },
   { id: "play", label: "Play or pause", group: "View", shortcut: "Space", run: togglePlay },
   { id: "alliance", label: "Blue or red view", group: "View", shortcut: "A", run: toggleAlliance },
   { id: "fit", label: "Fit the field", group: "View", shortcut: "F", run: fitView },

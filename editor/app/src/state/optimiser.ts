@@ -1,12 +1,16 @@
 // The optimiser's run: options, progress, the result, and applying it as one undo step. The field draws
 // the best path so far, dashed, while it runs and until it is applied or discarded (or the path is
 // edited, which drops the result). A result that couldn't clear an obstacle marks the spot on the field
-// and offers a waypoint there.
+// and offers a waypoint there. Route around obstacles is a run too: the pathfinder's corners go into a copy
+// of the path, the curves-only optimiser shapes that, and Apply puts both in as one undo step.
 
 import type { PathSpec } from "../../../core/src/index.ts";
+import { analyse } from "../compute/analysis.ts";
+import { routeAround } from "../compute/route.ts";
+import type { EditorPath } from "../model/project.ts";
 import { DEFAULT_BUDGET_SECONDS, DEFAULT_OPTIONS, evaluationsFor, type OptimiseOptions, type OptimiseResult } from "../compute/optimiser.ts";
 import type { OptimiserRequest, OptimiserResponse } from "../compute/optimiserWorker.ts";
-import { analysisInput, geometryOf } from "./analysis.ts";
+import { analysis, analysisInput, geometryOf } from "./analysis.ts";
 import { addWaypointAfter } from "../model/edits.ts";
 import { activePath, editor, editPath, notify } from "./editor.ts";
 import { createStore } from "./store.ts";
@@ -32,6 +36,8 @@ export interface OptimiserState {
   readonly preview: PathSpec | null;
   readonly result: OptimiseResult | null;
   readonly error: string | null;
+  /** A Route around run: the path with the route's corners in (what the run shapes), and how it changed. */
+  readonly routed: { readonly path: EditorPath; readonly added: number; readonly removed: number } | null;
 }
 
 export const optimiser = createStore<OptimiserState>({
@@ -50,6 +56,7 @@ export const optimiser = createStore<OptimiserState>({
   preview: null,
   result: null,
   error: null,
+  routed: null,
 });
 
 let worker: Worker | null = null;
@@ -60,17 +67,23 @@ function stopWorker(): void {
   worker = null;
 }
 
-export function startOptimise(): void {
+/**
+ * Optimises the active path, or (Route around) a routed copy of it; either way the result is shown dashed
+ * until it is applied or discarded.
+ */
+export function startOptimise(routed: OptimiserState["routed"] = null): void {
   const s = editor.get();
   const path = activePath(s);
   const o = optimiser.get();
+  const base = routed?.path ?? path;
   // named points stay where they are: their waypoints are locked too
-  const locked = path.spec.waypoints.map((_, i) => path.pinned[i] === true || path.links[i] !== null);
-  const n = path.spec.waypoints.length;
-  const segment = o.segment && o.segment.every((i) => i >= 0 && i < n) ? o.segment : null;
+  const locked = base.spec.waypoints.map((_, i) => base.pinned[i] === true || base.links[i] !== null);
+  const n = base.spec.waypoints.length;
+  const segment = !routed && o.segment && o.segment.every((i) => i >= 0 && i < n) ? o.segment : null;
   const options: OptimiseOptions = {
     ...DEFAULT_OPTIONS,
-    moveWaypoints: o.moveWaypoints,
+    // a route is shaped by its curve only: its corners are where the pathfinder put them
+    moveWaypoints: routed ? false : o.moveWaypoints,
     corridorMeters: o.corridorMeters,
     maxEvaluations: evaluationsFor(o.budgetSeconds),
     timeBudgetMs: 2000 * o.budgetSeconds,
@@ -102,11 +115,12 @@ export function startOptimise(): void {
     evaluations: 0,
     beforeSeconds: Number.NaN,
     bestSeconds: Number.NaN,
-    preview: null,
+    preview: routed?.path.spec ?? null,
     result: null,
     error: null,
+    routed,
   });
-  const request: OptimiserRequest = { type: "start", id, input: analysisInput(s.project, path.spec), options };
+  const request: OptimiserRequest = { type: "start", id, input: analysisInput(s.project, base.spec), options };
   worker.postMessage(request);
 }
 
@@ -118,7 +132,33 @@ export function cancelOptimise(): void {
 export function discardOptimise(): void {
   runId++;
   stopWorker();
-  optimiser.set({ status: "idle", preview: null, result: null, basis: null, pathId: null, error: null });
+  optimiser.set({ status: "idle", preview: null, result: null, basis: null, pathId: null, error: null, routed: null });
+}
+
+/**
+ * Route around obstacles: the pathfinder plans round the first stretch the bumpers hit, its corners go in
+ * as pass-through points, and the curves-only optimiser shapes the result (shown dashed until applied).
+ */
+export function startRouteAround(): void {
+  const s = editor.get();
+  const path = activePath(s);
+  const known = analysis.get();
+  const a = known.spec === path.spec && known.result ? known.result : analyse(analysisInput(s.project, path.spec));
+  if (!a.ok) {
+    notify(`The path can't be planned: ${a.error}`, "error");
+    return;
+  }
+  const r = routeAround(path, a, {
+    field: s.project.field,
+    robot: s.project.robot.config,
+    bumperLengthMeters: s.project.robot.bumperLengthMeters,
+    bumperWidthMeters: s.project.robot.bumperWidthMeters,
+  });
+  if (!r.ok) {
+    notify(r.reason, "error");
+    return;
+  }
+  startOptimise({ path: r.path, added: r.added, removed: r.removed });
 }
 
 /** Adds the waypoint a blocked result suggests, where the path still hits (one undo step). */
@@ -151,6 +191,8 @@ export function applyOptimise(): void {
     return;
   }
   const spec = o.result.spec;
-  editPath("Optimise path", (p) => ({ ...p, spec }));
+  const routed = o.routed;
+  if (routed) editPath("Route around obstacles", () => ({ ...routed.path, spec }));
+  else editPath("Optimise path", (p) => ({ ...p, spec }));
   discardOptimise();
 }

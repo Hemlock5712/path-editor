@@ -6,17 +6,17 @@ import { blockedMessage, whatMoves, whyFixed } from "../../compute/optimiser.ts"
 import { setPinned } from "../../model/edits.ts";
 import { isDrawn } from "../../model/project.ts";
 import { editPath } from "../../state/editor.ts";
-import { addSuggestedWaypoint, applyOptimise, cancelOptimise, discardOptimise, optimiser, startOptimise } from "../../state/optimiser.ts";
+import { addSuggestedWaypoint, applyOptimise, cancelOptimise, discardOptimise, optimiser, startOptimise, startRouteAround } from "../../state/optimiser.ts";
 import { useStore } from "../../state/store.ts";
 import { Lock, LockOpen, Plus, Route, WandSparkles } from "lucide-react";
 import { formatNumber, NumberField, Switch } from "../controls.tsx";
 import { useActivePath, useAnalysis } from "./common.tsx";
 
 const STOPPED = {
-  evaluations: "used its budget",
-  time: "stopped by the clock",
-  converged: "converged",
-  cancelled: "stopped",
+  evaluations: "Used its budget",
+  time: "Stopped by the clock",
+  converged: "Converged",
+  cancelled: "Stopped",
 };
 
 const cm = (meters: number) => `${formatNumber(Math.max(0, 100 * meters), 0)} cm`;
@@ -54,6 +54,10 @@ export function OptimiseControls() {
   // the curve can always be reshaped once there is one: never greyed out for a path with an end
   const drawn = isDrawn(path.spec);
   const blocked = forThisPath && r && !r.clear ? r : null;
+  const a = useAnalysis();
+  const hits = drawn && a !== null && a.checks.some((c) => c.kind === "bumper");
+  // a route is worth applying once it's clear, faster or not; a plain run only when it changed something
+  const applicable = o.result !== null && (o.routed ? o.result.clear : o.result.changed);
   return (
     <div className="optimise">
       <div className="row">
@@ -65,7 +69,7 @@ export function OptimiseControls() {
           <button
             type="button"
             className="btn primary big block"
-            onClick={startOptimise}
+            onClick={() => startOptimise()}
             disabled={!drawn}
             data-tip={
               drawn
@@ -81,9 +85,15 @@ export function OptimiseControls() {
       </div>
       <Clearance />
       <div className="row">
-        {/* waiting on the pathfinder's port to editor/core/src/plan */}
-        <span className="block" data-tip="Coming soon: plan a way round the obstacles with the pathfinder">
-          <button type="button" className="btn block" disabled data-testid="route-around">
+        <span
+          className="block"
+          data-tip={
+            hits
+              ? "Plan a way round the first obstacle the path hits with the robot's own pathfinder, put its corners in as pass-through points, then reshape the curve. Shown dashed until you Apply."
+              : "Nothing to route around: the path clears every obstacle by 5 cm"
+          }
+        >
+          <button type="button" className="btn block" disabled={!hits || running} onClick={startRouteAround} data-testid="route-around">
             <Route size={16} />
             Route around obstacles
           </button>
@@ -91,6 +101,12 @@ export function OptimiseControls() {
       </div>
       {forThisPath && o.status !== "idle" && (
         <div role="status" className="stats" data-testid="optimise-status">
+          {o.routed && (
+            <span className="route-note" data-testid="route-note">
+              Route around adds {o.routed.added} waypoint{o.routed.added === 1 ? "" : "s"}
+              {o.routed.removed > 0 ? ` (replacing ${o.routed.removed} pass-through point${o.routed.removed === 1 ? "" : "s"})` : ""}.{" "}
+            </span>
+          )}
           {o.status === "error" && <span className="field-error">{o.error}</span>}
           {(running || o.status === "done") && Number.isFinite(o.bestSeconds) && !blocked && (
             <>
@@ -110,9 +126,15 @@ export function OptimiseControls() {
       )}
       {forThisPath && o.status === "done" && o.result && (
         <div className="row">
-          {o.result.changed ? (
+          {applicable ? (
             <>
-              <button type="button" className="btn primary" onClick={applyOptimise} data-tip="Use the dashed path (one undo step)" data-testid="optimise-apply">
+              <button
+                type="button"
+                className="btn primary"
+                onClick={applyOptimise}
+                data-tip={o.routed ? "Use the dashed route, its new points and all (one undo step)" : "Use the dashed path (one undo step)"}
+                data-testid="optimise-apply"
+              >
                 Apply
               </button>
               <button type="button" className="btn ghost" onClick={discardOptimise} data-tip="Keep the path as it was" data-testid="optimise-discard">

@@ -275,8 +275,12 @@ inspector. It is enabled for any path with a start and an end.
 - **When it can't.** It says what and where ("Can't clear the wall by reshaping the curve between waypoints 2
   and 3: add a waypoint or move one"), marks the spot on the field with a suggested waypoint, and offers no
   Apply. **Add a waypoint here** puts that point in (one undo step); it is never added on its own.
-- **Route around obstacles** (stubbed). It will plan a way round with the pathfinder once that is ported to
-  `editor/core/src/plan`.
+- **Route around obstacles.** Enabled when the bumpers hit (or come within 5 cm of) something. The robot's
+  own pathfinder (the core's port of lib's Pathfinder, bit for bit) plans from the waypoint before the first
+  colliding stretch to the one after it. Its corners go in as unlocked pass-through waypoints, replacing the
+  plain pass-through points in between. A waypoint in between that is locked, linked to a named point or has
+  a heading is kept, and the route goes through it leg by leg. The curves-only optimiser then shapes the
+  result. It shows dashed, with how many points it adds; **Apply** puts it all in as one undo step.
 - **Budget and repeatability.** The budget (3 s by default) sets how many plans it tries: 500 per second of
   budget. So the same path, budget and seed give the same result on any machine. The clock only stops a slow
   machine at twice the budget.

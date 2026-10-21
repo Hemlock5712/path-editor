@@ -88,6 +88,19 @@ async function clickField(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.click(p.x, p.y);
 }
 
+/** Waits for the field to stop moving (the layout settles just after load), so field points land where asked. */
+async function fieldSettled(page: Page): Promise<void> {
+  let last = "";
+  await expect
+    .poll(async () => {
+      const box = JSON.stringify(await page.getByTestId("field").boundingBox());
+      const same = box === last;
+      last = box;
+      return same;
+    }, { intervals: [150] })
+    .toBe(true);
+}
+
 /** Double-clicks a field point, with Shift so it snaps to the 5 cm grid (exactly where asked). */
 async function dblField(page: Page, x: number, y: number): Promise<void> {
   const p = await fieldPoint(page, x, y);
@@ -105,6 +118,7 @@ async function listedWaypoints(page: Page): Promise<number> {
 /** On a new, empty path: double-click a start at (-6.5, -1.5) and an end 2.5 m on (both facing 0). The end stays selected. */
 async function drawStarter(page: Page): Promise<void> {
   await expect(page.getByTestId("canvas-hint")).toContainText("Double-click the field to place the start");
+  await fieldSettled(page);
   await dblField(page, -6.5, -1.5);
   await expect(page.getByTestId("canvas-hint")).toContainText("Double-click the field to place the end");
   await dblField(page, -4, -1.5);
@@ -257,6 +271,7 @@ async function planSeconds(page: Page): Promise<number> {
 
 test("Optimise path shortens a weave by reshaping its curve; the waypoints stay put; applying it is one undo step", async ({ page }) => {
   await page.goto("/");
+  await fieldSettled(page);
   // a weave across the middle of the field, clear of the hubs
   for (const [x, y] of [
     [-2.5, -2],
@@ -357,8 +372,47 @@ test("a path through the hub turns red; the curve alone can't clear it, so it sa
   await page.screenshot({ path: "test-results/obstacles-after.png" });
 });
 
+test("Route around obstacles plans round the blue hub with the robot's pathfinder, shows it dashed, and applies as one undo step", async ({ page }) => {
+  await page.goto("/");
+  await drawStarter(page);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("route-around")).toBeDisabled(); // nothing to route round yet
+  await page.getByTestId("tool-select").click();
+  await clickField(page, -4, -1.5);
+  await dblField(page, -3.65, 0.3);
+  await dblField(page, -0.5, 0);
+  await page.keyboard.press("Escape");
+  expect((await poses(page)).collisions.length).toBeGreaterThan(0);
+  const drawn = (await poses(page)).waypoints;
+
+  await page.getByTestId("route-around").click();
+  await expect(page.getByTestId("optimise-apply")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("route-note")).toContainText(/Route around adds \d+ waypoints? \(replacing 1 pass-through point\)/);
+  const added = Number(/adds (\d+)/.exec((await page.getByTestId("route-note").textContent())!)![1]);
+  // nothing changes until Apply: the route is the dashed ghost
+  expect((await poses(page)).waypoints).toHaveLength(4);
+  await page.mouse.move(2, 2);
+  await page.screenshot({ path: "test-results/route-ghost.png" });
+  await page.getByTestId("optimise-apply").click();
+  await expect.poll(async () => (await poses(page)).waypoints.length).toBe(4 - 1 + added);
+  const p = await poses(page);
+  expect(p.collisions).toEqual([]);
+  expect(p.clearanceMeters).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  // the ends and the waypoint before the hub stay put; the route's corners pass through
+  expect([p.waypoints[0], p.waypoints[1], p.waypoints.at(-1)].map((w) => [w!.x, w!.y])).toEqual(
+    [drawn[0], drawn[1], drawn[3]].map((w) => [w!.x, w!.y]),
+  );
+  expect(p.waypoints.slice(2, -1).every((w) => !w.set)).toBe(true);
+  await page.screenshot({ path: "test-results/route-after.png" });
+
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await poses(page)).waypoints.length).toBe(4);
+  expect((await poses(page)).collisions.length).toBeGreaterThan(0);
+});
+
 test("a two-point path into the wall: Optimise is on, reshapes the curve clear of it, and undo brings the hit back", async ({ page }) => {
   await page.goto("/");
+  await fieldSettled(page);
   // an empty project: two double-clicks along the near wall, the start facing 0°
   await dblField(page, -2.5, -3.45);
   await dblField(page, 1.5, -3.45);
@@ -513,6 +567,7 @@ test("usability, first run: draw a typical swerve auto in about ten actions", as
   await expect(page.getByTestId("quick-start")).toBeVisible();
   await page.getByTestId("quick-start-dismiss").click();
   await expect(page.getByTestId("quick-start")).toHaveCount(0);
+  await fieldSettled(page);
 
   let actions = 0;
   const act = async (what: () => Promise<void>) => {
