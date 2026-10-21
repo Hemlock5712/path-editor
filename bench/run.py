@@ -7,6 +7,7 @@
                                         # and stdout, leaves results.json and RESULTS.md alone
     python bench/run.py --md-only       # rebuild RESULTS.md's generated part from bench/out/results.json
     python bench/run.py --pp-compare    # PathPlanner against ours on path speed (ppcompare.py), its own block
+    python bench/run.py --mu-sweep      # ours at four planning grips against PathPlanner (musweep.py), its own block
     python bench/run.py --export-editor # bench/out/editor_bench.json for the editor's Bench view (from results.json;
                                         # --trace-seeds 0,1,2 re-simulates traces for more seeds than seed 0), and
                                         # editor/app/public/bench/results-lite.json, the small committed snapshot
@@ -206,7 +207,15 @@ def main():
     ap.add_argument("--pp-compare", action="store_true",
                     help="PathPlanner (2027 and the new-path branch's path2) against ours on path speed, over the 2026 "
                          "routes and the courses, into out/ppcompare.json and its RESULTS.md block (ppcompare.py)")
+    ap.add_argument("--mu-sweep", action="store_true",
+                    help="ours planned at mu 0.7, 0.85, 1.0 and 1.15, drawn and optimised, on the --pp-compare targets, "
+                         "into out/musweep.json and its RESULTS.md block (musweep.py; needs out/ppcompare.json)")
     a = ap.parse_args()
+    if a.mu_sweep:
+        import musweep
+
+        musweep.main(list(range(a.seeds if a.seeds else 10)), min(a.procs, 6))
+        return
     if a.pp_compare:
         import ppcompare
 
