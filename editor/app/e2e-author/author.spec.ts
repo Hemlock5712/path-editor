@@ -384,8 +384,7 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   // events: E, a click near the path, a name; then positioned exactly
   const near = plan.waypoints[Math.min(1, plan.waypoints.length - 1)]!;
   for (const [i, e] of plan.events.entries()) {
-    await page.keyboard.press("Escape"); // (E turns a selected waypoint; with nothing selected it adds an event)
-    await page.keyboard.press("e");
+    await page.keyboard.press("m");
     const p = await fieldPoint(page, near[0], near[1]);
     await page.mouse.click(p.x, p.y + 18);
     await page.getByTestId("flow-name").fill(e.name);

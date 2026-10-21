@@ -75,7 +75,7 @@ test("checks offer fixes: Route around for a hit, Snap for an event off the path
   await expect(page.getByTestId("checks-badge")).not.toHaveClass(/error/);
 
   // an event moved off the end: Snap to the path brings it back
-  await page.keyboard.press("e");
+  await page.keyboard.press("m");
   await clickField(page, -5, -1.5);
   await page.getByTestId("flow-name").fill("score");
   await page.getByTestId("flow-name").press("Enter");
@@ -107,6 +107,10 @@ test("keys: arrows nudge 1 cm (5 cm with Shift), Q and E turn 5°, Tab steps thr
   expect(w.headingDegrees).toBeCloseTo(5, 6);
   await page.keyboard.press("Shift+Tab");
   expect((await doc(page)).selection).toEqual({ kind: "waypoint", index: 1 });
+  // with nothing selected, Q and E do nothing (no other meaning)
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("e");
+  await expect(page.getByTestId("flow-bar")).toHaveCount(0);
 });
 
 test("Measure, Face next, copy and paste, and the pose offered beside the hub", async ({ page }) => {
@@ -115,7 +119,7 @@ test("Measure, Face next, copy and paste, and the pose offered beside the hub", 
     [-4, -1.5],
   ]);
   // Measure: a drag between the two robots reads 2.50 m, and changes nothing
-  await page.keyboard.press("m");
+  await page.keyboard.press("l");
   const a = await fieldPoint(page, -6.5, -1.5);
   const b = await fieldPoint(page, -4, -1.5);
   await page.mouse.move(a.x, a.y);

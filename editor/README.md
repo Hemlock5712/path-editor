@@ -134,7 +134,7 @@ optionally, a heading.
   inspector's **+** buttons all start the same flows:
   - **Heading** (R): click the path, then turn the ghost robot there by its knob (letting go sets it) or
     type an angle. Afterwards, drag its robot along the path, or its knob to turn it.
-  - **Event** (E, with nothing selected): click the path, then name it. The project's names are offered as
+  - **Event marker** (M): click the path, then name it. The project's names are offered as
     you type and as one-click chips.
   - **Constraint zone** (Z): click where it starts on the path, then where it ends, then give its top speed
     (and, optionally, its acceleration; blank is none).
@@ -157,7 +157,7 @@ optionally, a heading.
 - **Removing things.** Hover an event, a heading, a zone's chip or a named point and a small × shows by it
   (the selected one keeps its ×): click it to delete. Right-click any of them for **Delete**; the Delete key
   deletes the selection; every row in the inspector's lists has a trash icon. All of them undo.
-- **Measure** (M): drag between two points for the distance, direction and Δx, Δy. Its ends snap to
+- **Measure lengths** (L): drag between two points for the distance, direction and Δx, Δy. Its ends snap to
   waypoints and named points, and to 5 cm with Shift.
 - Hovering the path shows the stretch under the pointer: which waypoints, its length and the plan's time
   on it.

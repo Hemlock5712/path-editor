@@ -166,7 +166,7 @@ function EventsCard() {
           </li>
         ))}
       </ul>
-      <Button variant="ghost" onClick={() => startFlow("event")} label="Add an event" title="Click the path, then name it|E" testId="add-event">
+      <Button variant="ghost" onClick={() => startFlow("event")} label="Add an event" title="Click the path, then name it|M" testId="add-event">
         <Plus size={14} />
         Event
       </Button>

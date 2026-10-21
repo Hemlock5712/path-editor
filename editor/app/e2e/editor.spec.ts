@@ -180,9 +180,8 @@ test("add waypoints and an event, save, reload, and get the same file back", asy
 
   // the new path is empty: two double-clicks make a straight run along y = -1.5 from x = -6.5 to -4
   await drawStarter(page);
-  // an event on it: E (with nothing selected; with a waypoint selected E turns it), click the path, name it
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("e");
+  // an event on it: M (marker), click the path, name it
+  await page.keyboard.press("m");
   await clickField(page, -5.25, -1.5);
   await page.getByTestId("flow-name").fill("intakeDown");
   await page.getByTestId("flow-name").press("Enter");

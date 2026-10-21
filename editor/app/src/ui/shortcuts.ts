@@ -17,14 +17,14 @@ export const SHORTCUTS: [string, string][] = [
   ["Ctrl+S / Ctrl+O", "Save / open a folder"],
   ["Double-click the field", "Add a waypoint after the selected one (an empty path: the start, then the end)"],
   ["V O", "Select and Obstacle tools"],
-  ["R E Z T N", "Add a heading, an event, a constraint zone, a point-towards zone or a named point, step by step (Esc cancels)"],
+  ["R M Z T N", "Add a heading, an event marker, a constraint zone, a point-towards zone or a named point, step by step (Esc cancels)"],
   ["Alt while turning", "Turn freely (headings snap to 15° otherwise)"],
   ["Right-click a waypoint", "Set heading, pass-through, lock, delete"],
   ["Delete", "Delete the selected item"],
   ["Arrows (Shift)", "Nudge the selected waypoint or point 1 cm (5 cm)"],
-  ["Q / E", "Turn the selected waypoint, heading or named point 5° left / right (E with nothing selected adds an event)"],
+  ["Q / E", "Turn the selected waypoint, heading or named point 5° left / right"],
   ["Tab / Shift+Tab", "Select the next / previous waypoint"],
-  ["M", "Measure: drag between two points (they snap to waypoints and named points)"],
+  ["L", "Measure lengths: drag between two points (they snap to waypoints and named points)"],
   ["Ctrl+C / Ctrl+V", "Copy the selected waypoint (paste puts it after the selected one), or with nothing selected the path (paste makes a new path)"],
   ["Space", "Play or pause"],
   [", and .", "Step the playback 0.1 s"],
@@ -166,10 +166,12 @@ export function onKeyDown(e: KeyboardEvent): void {
       rotateSelection(5 * DEG);
       return;
     case "e":
-      // with something to turn selected, E turns it; otherwise it adds an event
-      if (!rotateSelection(-5 * DEG)) startFlow("event");
+      rotateSelection(-5 * DEG);
       return;
     case "m":
+      startFlow("event");
+      return;
+    case "l":
       setTool("measure");
       return;
     case "r":

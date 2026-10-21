@@ -124,11 +124,11 @@ test("a heading: click the path, turn the ghost robot's knob or type an angle", 
 
 test("an event: click the path, then a name (the project's names are offered)", async ({ page }) => {
   await drawRun(page);
-  await page.keyboard.press("e");
+  await page.keyboard.press("m");
   await clickField(page, -5, -1.5);
   await page.getByTestId("flow-name").fill("intakeDown");
   await page.getByTestId("flow-name").press("Enter");
-  await page.keyboard.press("e");
+  await page.keyboard.press("m");
   await clickField(page, -2, -1.5);
   // the name already used is one click away
   await page.screenshot({ path: "test-results/flow-event.png" });
@@ -162,7 +162,7 @@ test("a named point: click, then its name and heading", async ({ page }) => {
 test("removing things: the × on the field, right-click Delete, the Delete key and the row's trash, each undoable", async ({ page }) => {
   await drawRun(page);
   // an event and a speed zone
-  await page.keyboard.press("e");
+  await page.keyboard.press("m");
   await clickField(page, -5, -1.5);
   await page.getByTestId("flow-name").fill("intake");
   await page.getByTestId("flow-name").press("Enter");

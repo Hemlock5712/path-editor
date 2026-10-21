@@ -8,7 +8,7 @@ export const QUICK_START: readonly string[] = [
   "Every point is a robot pose: drag the knob on its ring to turn it (15° steps; Alt turns freely).",
   "Points without a heading are pass-through: the robot blends between the set ones.",
   "Drag the path to insert a point; right-click a point to set its heading, lock it or delete it.",
-  "Heading (R): click the path to turn the robot partway along it.",
+  "Add in a few clicks: R heading, M event marker, Z constraint zone, T point-towards zone, N named point (Esc cancels). Q and E turn the selected point 5°; L measures lengths.",
   "Optimise path reshapes the curves and speeds and leaves your points where they are; lock a point to keep it put even when it may move them.",
 ];
 
