@@ -1,0 +1,7 @@
+{
+  "framework": "vite",
+  "installCommand": "npm ci --prefix editor/core && npm ci --prefix editor/app",
+  "buildCommand": "npm --prefix editor/app run build",
+  "outputDirectory": "editor/app/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
