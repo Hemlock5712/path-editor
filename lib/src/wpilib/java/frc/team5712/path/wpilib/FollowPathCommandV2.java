@@ -51,7 +51,7 @@ public final class FollowPathCommandV2 extends Command {
     this.fieldVelocity = fieldVelocity;
     this.fieldOutput = fieldOutput;
     this.redFrame = redFrame;
-    this.telemetry = new PathTelemetry("Path/" + name);
+    this.telemetry = new PathTelemetry(name);
     setName(name);
     addRequirements(drive);
     follower.onEvent(fired::add);
@@ -109,6 +109,7 @@ public final class FollowPathCommandV2 extends Command {
     double now = clock.getAsDouble();
     follower.start(now, Conversions.toPose(pose.get()), measured,
         startFrame(), handedCommand == null ? measured : handedCommand.get());
+    telemetry.begin();
     step(now);
   }
 
@@ -127,6 +128,7 @@ public final class FollowPathCommandV2 extends Command {
     fieldOutput.accept(Conversions.toChassisVelocities(out));
     telemetry.log(follower);
     for (String event : fired) {
+      telemetry.event(event);
       Command c = eventCommands.get(event);
       if (c == null && library != null) {
         c = library.eventCommandV2(event).orElse(null);
@@ -151,5 +153,6 @@ public final class FollowPathCommandV2 extends Command {
     if (interrupted || !follower.rollingEnd()) {
       fieldOutput.accept(new ChassisVelocities());
     }
+    telemetry.end();
   }
 }
