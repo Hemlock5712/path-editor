@@ -119,8 +119,8 @@ Each loop, in the blue frame:
    into a curve early by `v²κτ`: the curvature feed-forward.
 4. **Across the path.** PD on the cross-track error (P 5/s, D 0), pushing along the normal at `s`.
 5. **Heading.** Feed-forward `v·dθ/ds` at `s⁺`, plus P 5/s on the planned heading at `s`.
-6. **Near the end** (0.3 m to go), the reference becomes the goal pose and DriveToPose's law takes
-   over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. The
+6. **Near the end** (0.3 m to go, and no more than `terminalTurnRadians`, 2°, left in the plan's
+   turn), the reference becomes the goal pose and DriveToPose's law takes over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. The
    ease-in line `k` is 12/s, against DriveToPose's 6/s. The bench sweep picked that value on its
    tuning seeds, and it sits inside the swept range. Both
    laws brake on the same distance with the same 6 m/s², so the hand-over has no seam.
@@ -150,10 +150,15 @@ The other pieces:
   `OverrideMode`: `RESPECT_LIMITS` replaces the wish before the limiter, `BYPASS` replaces the
   output after it.
 - **Events.** The path file's `events` are registered when the follower is made; code can add more
-  with `addEvent(name, s, action)` and `addEventAtWaypoint`. They fire in order as the robot
-  passes them; any that haven't fired by a normal finish fire then; `cancel()` drops them.
-  `onEvent(listener)` sees every name (the adapters map names to commands). `eventNames()` and
-  `eventMeters()` list them in firing order.
+  with `addEvent(name, s, action)` and `addEventAtWaypoint`. They fire in order, each on the loop
+  nearest to passing it (less than half a loop's progress ahead), so the error is at most half a loop
+  of travel either side. Events at the end of a path that stops fire when the robot gets inside the
+  finish band (2 cm and 1°), not after it settles. Any that haven't fired by a normal finish fire
+  then; `cancel()` drops them. `onEvent(listener)` adds a listener that sees every name (the adapters
+  add theirs to map names to commands). `eventNames()` and `eventMeters()` list them in firing order.
+- **Turns on the spot.** A path whose two waypoints coincide is 1 mm long, so progress comes from the
+  heading: where the planned heading reaches the measured one, never going back. The follower spins
+  as the plan does and holds the point.
 - **Robustness.** A NaN pose brakes within the limits instead of throwing.
 
 All gains are in `FollowerConfig` (defaults from DriveToPose and the hybrid prototype).
@@ -201,13 +206,15 @@ These are compiled against WPILib 2027.0.0-alpha-7 from the installer's offline 
 skips them with a warning if the repo is missing.
 
 - `PathLibrary.loadAll()` builds every `deploy/paths/*.path.json` (with `deploy/paths/robot.json` if
-  present) in robot init. A bad file fails at boot.
+  present) in robot init. A bad file fails at boot. `loadAll(File dir)` does the same for any folder.
 - `PathLibrary.bindEvent(name, command)` (a v3 or a v2 command) binds an event name from the path
   files to a command once for every path; a follow command picks the bindings up with
   `withEvents(library)`, and its own `onEvent` wins for the same name. `unboundEventNames()` lists
   the names the files use with nothing bound, which is where a typo shows up.
 - `FollowPathCommand` (Commands v3) runs the follower in its coroutine and forks event commands as
-  children. `FollowPathCommandV2` (Commands v2) schedules event commands independently. Both read
+  children. `FollowPathCommandV2` (Commands v2) schedules event commands independently, and sends its
+  first command from `initialize()`, as v3 does, so a path chained after a rolling end doesn't coast a
+  loop. Both read
   the alliance as a `FieldFrame` when the path starts, send zero at the end (except on a rolling
   end), and chain rolling ends with `continuingFrom(previous)`.
 - `Conversions` covers `Pose2d` and `ChassisVelocities`, and the alliance as a frame.
@@ -394,3 +401,28 @@ With 540°/s and 720°/s² (`ShortHopTest`):
 
 Peak spin acceleration is within 1 % of the cap. The TS port matches, with new `short_hop` and `pure_rotation`
 fixtures; parity is still exact.
+
+## End-to-end tests (phase 6)
+
+`node tools/e2e.mjs` (from the repo root) authors every test path in the editor with Playwright, saves it
+through the editor's own save flow, and runs `lib/gradlew -p lib e2eTest`. That suite (`src/e2eTest`) loads the
+folder with `PathLibrary.loadAll(dir)`, binds every event name to a recording command, and runs each path
+through Commands v3 and v2, on blue and both red flips, on a simulated drivetrain at 50 Hz (`SimDrive`: 20 ms
+latency, 40 ms first-order lag, pose and velocity noise). It also runs each path once more and cancels it
+halfway through. The results table is `e2e/RESULTS.md`, and the pass marks are in `Tolerances.java`.
+`-Pe2eTrace=<path>` prints one path's run loop by loop.
+
+**What it found, and what was fixed:**
+
+| Found | Fix |
+| --- | --- |
+| Events fired on the first loop after the robot passed them: up to 8 cm late at 4 m/s | They fire on the loop nearest to passing (`PathFollower`) |
+| A path shorter than the 0.3 m terminal radius (a 0.2 m hop with an 80° turn) ignored its plan: 1.0 m/s against 0.29 planned, with events 0.48 s off | The DriveToPose hand-over also waits until the plan has no more than `terminalTurnRadians` (2°) left to turn. At 10° the robot was still spinning too fast to stop and overshot by 7° |
+| A turn on the spot fired every event at once and stalled mid-turn: progress came from projecting onto a 1 mm segment, and the distance brake capped the spin | Progress comes from the heading; the follower spins on the plan and holds the point |
+| The first step after `start()` comes at the same timestamp, so dt clamped to 1 ms and the limiter allowed a millisecond's acceleration: every path started a loop late | That step plans for a nominal loop |
+| An event at the end fired only after the robot settled (0.1 s hold plus the ease-in) | It fires when the robot gets inside the finish band |
+| `onEvent` replaced the listener, so robot code calling it silently disconnected the adapters' event commands | Listeners add up |
+| Commands v2: a path chained after a rolling end sent nothing for one loop | `FollowPathCommandV2` steps in `initialize()` |
+
+None of these touch the core, so the fixtures are unchanged. The bench's tests pass, but its RESULTS.md numbers
+were measured before these changes and haven't been re-run.

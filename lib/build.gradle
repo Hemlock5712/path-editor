@@ -54,11 +54,18 @@ sourceSets {
         compileClasspath += sourceSets.main.output + sourceSets.wpilib.output
         runtimeClasspath += sourceSets.main.output + sourceSets.wpilib.output
     }
+    // Phase 6: every path authored in the editor (e2e/out), run through the WPILib adapters in simulation
+    e2eTest {
+        compileClasspath += sourceSets.main.output + sourceSets.wpilib.output
+        runtimeClasspath += sourceSets.main.output + sourceSets.wpilib.output
+    }
 }
 
 configurations {
     wpilibTestImplementation.extendsFrom wpilibImplementation, testImplementation
     wpilibTestRuntimeOnly.extendsFrom wpilibRuntimeOnly, testRuntimeOnly
+    e2eTestImplementation.extendsFrom wpilibImplementation, testImplementation
+    e2eTestRuntimeOnly.extendsFrom wpilibRuntimeOnly, testRuntimeOnly
 }
 
 if (wpilibMaven.isDirectory()) {
@@ -119,6 +126,29 @@ if (wpilibMaven.isDirectory()) {
         }
     }
     tasks.named('check') { dependsOn 'wpilibTest' }
+    // Not part of check: it needs the editor to have authored e2e/out first (run tools/e2e.mjs)
+    tasks.register('e2eTest', Test) {
+        dependsOn 'extractWpilibNatives'
+        systemProperty 'java.library.path', nativesDir.get().asFile.absolutePath
+        systemProperty 'e2e.dir', file('../e2e/out').absolutePath
+        systemProperty 'e2e.report', file('../e2e/RESULTS.md').absolutePath
+        if (project.hasProperty('e2eTrace')) {
+            systemProperty 'e2e.trace', project.property('e2eTrace')
+        }
+        group = 'verification'
+        description = 'Runs every path the editor authored through the WPILib adapters in simulation.'
+        testClassesDirs = sourceSets.e2eTest.output.classesDirs
+        classpath = sourceSets.e2eTest.runtimeClasspath
+        useJUnitPlatform()
+        outputs.upToDateWhen { false }
+        jvmArgs '--add-opens=java.base/jdk.internal.vm=ALL-UNNAMED', '--add-exports=java.base/jdk.internal.vm=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang=ALL-UNNAMED'
+        testLogging {
+            events 'failed'
+            showStandardStreams = true
+            exceptionFormat = 'full'
+        }
+    }
     tasks.register('wpilibJar', Jar) {
         description = 'The WPILib adapters, for a robot project that also depends on pathcore.jar.'
         archiveFileName = 'pathcore-wpilib.jar'
@@ -129,6 +159,7 @@ if (wpilibMaven.isDirectory()) {
         "Pass -PwpilibMaven=<WPILib install>/maven.")
     tasks.named('compileWpilibJava') { enabled = false }
     tasks.named('compileWpilibTestJava') { enabled = false }
+    tasks.named('compileE2eTestJava') { enabled = false }
 }
 
 // Regenerates the golden vectors in ../fixtures (commit the result)

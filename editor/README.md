@@ -19,6 +19,8 @@ npm run dev          # http://localhost:5712
 | Typecheck only | `npm run typecheck` |
 | Unit tests (vitest) | `npm test` |
 | End-to-end test (Playwright) | `npm run e2e` |
+| Author the phase 6 suite into `e2e/out` (Playwright) | `npm run e2e:author` |
+| The whole phase 6 chain (author, then run every path on the simulated robot) | `npm run e2e:full` |
 | The core's tests | `cd ../core && npm install && npm test` |
 
 The e2e test builds the app, serves it with `vite preview` and drives the installed Microsoft Edge, so no
@@ -134,6 +136,15 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 **Off the UI thread.** Building and checking the active path runs in a Web Worker. At most one job is in
 flight; a newer request replaces the one pending, so dragging stays smooth and the preview never starves.
 Hit tests and snapping use the core's geometry on the main thread, which is cheap.
+
+## The phase 6 authoring suite
+
+`e2e-author/author.spec.ts` builds the end-to-end paths entirely through the UI: the panels, plus Event-tool clicks
+on the path. The paths are the bench courses, a short hop, a turn on the spot, zones, a named point and a rolling
+pair. It saves them with the editor's save flow into a folder on disk (a directory handle whose writes go through
+Playwright to the file system). It reads each path's preview through `window.pathEditorTest.preview()`, a
+read-only hook that waits for the worker to plan the current document and returns the total time, the peak speed
+and each event's s and t(s). `E2E_ONLY=Straight,Hairpin` authors just those paths.
 
 ## Stubbed or not done
 
