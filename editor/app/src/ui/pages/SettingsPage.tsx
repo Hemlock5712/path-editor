@@ -6,7 +6,7 @@ import { Bot, Cpu, FolderCog, Hexagon, Map as MapIcon, Route, SlidersHorizontal,
 import { KRAKEN_X60_FOC, type Motor, type RobotConfig } from "../../../../core/src/index.ts";
 import { isValidPackage } from "../../io/javaEnum.ts";
 import { PATHS_DIR } from "../../io/projectIo.ts";
-import { DEFAULT_ROBOT_SETTINGS, type PathDefaults, type RobotSettings, type SimPreviewSettings } from "../../model/project.ts";
+import { DEFAULT_ROBOT_SETTINGS, DEFAULT_SIM_PREVIEW, type PathDefaults, type RobotSettings, type SimPreviewSettings } from "../../model/project.ts";
 import { editProject, select, setTool, setView } from "../../state/editor.ts";
 import { session } from "../../state/session.ts";
 import { useStore } from "../../state/store.ts";
@@ -295,23 +295,28 @@ function SimTab() {
     <section className="settings-section" aria-label="Sim preview">
       <h3>Sim preview drivetrain</h3>
       <p className="hint">
-        The simulated drivetrain the Sim preview runs the real follower on, so it shows what the robot would do, not just the plan. Saved in the
-        project's editor file, not the robot's.
+        The simulated drivetrain the Sim preview runs the robot's follower on (switch it on in the playback bar), so it shows what the robot
+        would do, not just the plan. Saved in the project's editor file, not robot.json: it describes the sim, not the robot.
       </p>
       <div className="settings-group">
         <div className="grid3">
-          <NumberField label="Latency" unit="ms" min={0} value={sim.latencyMs} title="From a command to the wheels starting to answer" onCommit={(v) => set({ latencyMs: v })} />
-          <NumberField label="Drive lag" unit="ms" min={0} value={sim.lagMs} title="The drive's first-order time constant" onCommit={(v) => set({ lagMs: v })} />
+          <NumberField label="Command latency" unit="ms" min={0} value={sim.latencyMs} title="From a command being sent to the modules acting on it" onCommit={(v) => set({ latencyMs: v })} />
+          <NumberField label="Velocity lag" unit="ms" min={1} value={sim.lagMs} title="Time constant of the chassis velocity's first-order lag" onCommit={(v) => set({ lagMs: v })} />
           <NumberField
-            label="Grip"
-            unit="× μ"
-            min={0.1}
-            max={2}
+            label="Floor grip μ"
+            blank="no cap"
+            blankValue={Number.NaN}
+            min={0.05}
             step={0.05}
-            value={sim.gripScale}
-            title="The sim's grip as a multiple of the robot's μ: below 1 is a slippier carpet than planned"
-            onCommit={(v) => set({ gripScale: v })}
+            value={sim.gripMu ?? Number.NaN}
+            title="Caps the simulated chassis's acceleration at μ·g; blank for none (as in the end-to-end suite)"
+            onCommit={(v) => set({ gripMu: Number.isFinite(v) ? v : null })}
           />
+        </div>
+        <div>
+          <Button variant="ghost" onClick={() => editProject("Sim preview", (p) => ({ ...p, settings: { ...p.settings, simPreview: DEFAULT_SIM_PREVIEW } }))}>
+            Sim defaults (the end-to-end suite's: 20 ms, 40 ms, no grip cap)
+          </Button>
         </div>
       </div>
     </section>

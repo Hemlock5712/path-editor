@@ -25,6 +25,10 @@ export class VelocityProfile {
   /** Grid spacing actually used, metres (the path length split into equal cells). */
   readonly gridMeters: number;
   private readonly cells: number;
+  /** s at each grid point, and each cell's length: uniform unless a cusp added a point (as in Java). */
+  private readonly nodeS: Float64Array;
+  private readonly cellLength: Float64Array;
+  private readonly uniform: boolean;
   private readonly velocity: Float64Array; // m/s at each grid point, cells + 1
   private readonly accel: Float64Array; // m/s² in each cell, constant across it
   private readonly time: Float64Array; // s at each grid point
@@ -32,12 +36,18 @@ export class VelocityProfile {
   private constructor(
     lengthMeters: number,
     gridMeters: number,
+    nodeS: Float64Array,
+    cellLength: Float64Array,
+    uniform: boolean,
     velocity: Float64Array,
     accel: Float64Array,
     time: Float64Array,
   ) {
     this.lengthMeters = lengthMeters;
     this.gridMeters = gridMeters;
+    this.nodeS = nodeS;
+    this.cellLength = cellLength;
+    this.uniform = uniform;
     this.cells = accel.length;
     this.velocity = velocity;
     this.accel = accel;
@@ -52,9 +62,45 @@ export class VelocityProfile {
     gridMeters = DEFAULT_GRID_METERS,
   ): VelocityProfile {
     const length = geometry.lengthMeters;
-    const cells = Math.max(MIN_CELLS, Math.ceil(length / gridMeters));
-    const ds = length / cells;
+    const uniformCells = Math.max(MIN_CELLS, Math.ceil(length / gridMeters));
+    const ds = length / uniformCells;
+
+    // The grid: uniform, plus a stopping point at each cusp (see VelocityProfile.java)
+    const extra: number[] = [];
+    const stopAt: number[] = [];
+    let lastStop = -Infinity;
+    for (const c of geometry.cusps) {
+      if (c < ds || c > length - ds || c - lastStop < ds) continue;
+      lastStop = c;
+      const i = Math.floor(c / ds);
+      if (Math.abs(c - i * ds) < 1e-6) stopAt.push(i);
+      else if (Math.abs(c - (i + 1) * ds) < 1e-6) stopAt.push(i + 1);
+      else extra.push(c);
+    }
+    const cells = uniformCells + extra.length;
     const nodes = cells + 1;
+    const nodeS = new Float64Array(nodes);
+    const cellLength = new Float64Array(cells);
+    const stop = new Uint8Array(nodes);
+    const gridIndex = new Int32Array(nodes);
+    for (let i = 0, e = 0, n = 0; i <= uniformCells; i++) {
+      const si = i === uniformCells ? length : i * ds;
+      while (e < extra.length && extra[e]! < si) {
+        nodeS[n] = extra[e]!;
+        gridIndex[n] = -1;
+        stop[n] = 1;
+        n++;
+        e++;
+      }
+      nodeS[n] = si;
+      gridIndex[n] = i;
+      stop[n] = stopAt.includes(i) ? 1 : 0;
+      n++;
+    }
+    for (let i = 0; i < cells; i++) {
+      const whole = gridIndex[i]! >= 0 && gridIndex[i + 1] === gridIndex[i]! + 1;
+      cellLength[i] = whole ? ds : nodeS[i + 1]! - nodeS[i]!;
+    }
 
     // Zones, resolved to the grid points they cap
     const zones = spec.constraintZones;
@@ -76,7 +122,7 @@ export class VelocityProfile {
     const speedCap = new Float64Array(nodes);
     const d = new Float64Array(8);
     for (let i = 0; i < nodes; i++) {
-      const s = i === cells ? length : i * ds;
+      const s = nodeS[i]!;
       geometry.evaluateAt(s, d);
       const g = toSample(s, d);
       const h = heading.sampleAt(g);
@@ -87,7 +133,9 @@ export class VelocityProfile {
       let vCap = spec.maxMetersPerSecond;
       let aCap = spec.maxMetersPerSecondSquared;
       for (let j = 0; j < zones.length; j++) {
-        if (i >= zoneFirst[j]! && i <= zoneLast[j]!) {
+        const inZone = gridIndex[i]! >= 0 ? gridIndex[i]! >= zoneFirst[j]! && gridIndex[i]! <= zoneLast[j]!
+          : s >= zoneFirst[j]! * ds && s <= zoneLast[j]! * ds;
+        if (inZone) {
           vCap = Math.min(vCap, zones[j]!.maxMetersPerSecond);
           aCap = Math.min(aCap, zones[j]!.maxMetersPerSecondSquared);
         }
@@ -97,7 +145,7 @@ export class VelocityProfile {
       if (hpp > 0.0) vCap = Math.min(vCap, Math.sqrt(spinAccelCap / hpp)); // steady speed: α = v²θ''
       const bend = kAbs + lever * hpp;
       if (bend > 0.0) vCap = Math.min(vCap, Math.sqrt(grip / bend));
-      speedCap[i] = vCap;
+      speedCap[i] = stop[i] ? 0.0 : vCap;
       budget.curvature[i] = kAbs;
       budget.spin[i] = hp;
       budget.spinBend[i] = hpp;
@@ -108,7 +156,7 @@ export class VelocityProfile {
     const forward = new Float64Array(nodes);
     forward[0] = Math.min(spec.startMetersPerSecond, speedCap[0]!);
     for (let i = 0; i < cells; i++) {
-      forward[i + 1] = step(budget, forward[i]!, i, i + 1, speedCap[i + 1]!, ds, true);
+      forward[i + 1] = step(budget, forward[i]!, i, i + 1, speedCap[i + 1]!, cellLength[i]!, true);
     }
 
     // Backward pass; the final speed is the lower of the two
@@ -116,7 +164,7 @@ export class VelocityProfile {
     let next = Math.min(spec.endMetersPerSecond, speedCap[cells]!);
     velocity[cells] = Math.min(forward[cells]!, next);
     for (let i = cells - 1; i >= 0; i--) {
-      next = step(budget, next, i + 1, i, speedCap[i]!, ds, false);
+      next = step(budget, next, i + 1, i, speedCap[i]!, cellLength[i]!, false);
       velocity[i] = Math.min(forward[i]!, next);
     }
 
@@ -126,11 +174,11 @@ export class VelocityProfile {
     for (let i = 0; i < cells; i++) {
       const v0 = velocity[i]!;
       const v1 = velocity[i + 1]!;
-      accel[i] = (v1 * v1 - v0 * v0) / (2.0 * ds);
-      if (!(v0 + v1 > 0.0)) throw new Error(`the profile stalls at s = ${i * ds} m`);
-      time[i + 1] = time[i]! + (2.0 * ds) / (v0 + v1);
+      accel[i] = (v1 * v1 - v0 * v0) / (2.0 * cellLength[i]!);
+      if (!(v0 + v1 > 0.0)) throw new Error(`the profile stalls at s = ${nodeS[i]} m`);
+      time[i + 1] = time[i]! + (2.0 * cellLength[i]!) / (v0 + v1);
     }
-    return new VelocityProfile(length, ds, velocity, accel, time);
+    return new VelocityProfile(length, ds, nodeS, cellLength, extra.length === 0, velocity, accel, time);
   }
 
   /** Time to drive the whole path, seconds. */
@@ -185,19 +233,29 @@ export class VelocityProfile {
     }
     const tau = t - this.time[lo]!;
     let d = this.velocity[lo]! * tau + 0.5 * this.accel[lo]! * tau * tau;
-    d = d < 0.0 ? 0.0 : d > this.gridMeters ? this.gridMeters : d;
-    const s = lo * this.gridMeters + d;
+    d = d < 0.0 ? 0.0 : d > this.cellLength[lo]! ? this.cellLength[lo]! : d;
+    const s = this.nodeS[lo]! + d;
     return s > this.lengthMeters ? this.lengthMeters : s;
   }
 
   private cellAt(s: number): number {
-    const i = Math.floor(s / this.gridMeters);
-    return i < 0 ? 0 : i >= this.cells ? this.cells - 1 : i;
+    if (this.uniform) {
+      const i = Math.floor(s / this.gridMeters);
+      return i < 0 ? 0 : i >= this.cells ? this.cells - 1 : i;
+    }
+    let lo = 0;
+    let hi = this.cells - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >>> 1;
+      if (this.nodeS[mid]! <= s) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
   }
 
   private clampedOffset(s: number, i: number): number {
-    const d = s - i * this.gridMeters;
-    return d < 0.0 ? 0.0 : d > this.gridMeters ? this.gridMeters : d;
+    const d = s - this.nodeS[i]!;
+    return d < 0.0 ? 0.0 : d > this.cellLength[i]! ? this.cellLength[i]! : d;
   }
 }
 

@@ -128,6 +128,10 @@ public final class PathFollower {
   private double s;
   private double lastS; // progress at the previous step, for its rate
   private double lastTime;
+  private double startTime;
+  private double headingError = Double.NaN;
+  private double measuredSpeed = Double.NaN;
+  private double measuredOmega = Double.NaN;
   private double settledSince = Double.NaN;
   private double crossTrack;
   private double refX;
@@ -265,6 +269,10 @@ public final class PathFollower {
     updateProgress(p);
     lastS = s;
     lastTime = timeSeconds;
+    startTime = timeSeconds;
+    headingError = Double.NaN;
+    measuredSpeed = Double.NaN;
+    measuredOmega = Double.NaN;
     settledSince = Double.NaN;
     phase = Phase.TRACKING;
     slipMu = Double.POSITIVE_INFINITY;
@@ -295,6 +303,8 @@ public final class PathFollower {
       return output();
     }
 
+    measuredSpeed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
+    measuredOmega = vel.omegaRadPerSec();
     pollGoal(pose);
     updateGrip(dt);
     double brakeDecel = Math.min(cfg.brakeMetersPerSecondSquared(), slipMu * RobotConfig.GRAVITY);
@@ -303,7 +313,8 @@ public final class PathFollower {
     updateProgress(pose);
     double remaining = active.lengthMeters() - s;
     if (phase == Phase.TRACKING && !rollingEnd && remaining < cfg.terminalRadiusMeters()
-        && Math.abs(Angles.wrap(goal.headingRadians() - active.heading().sample(s).radians())) <= cfg.terminalTurnRadians()) {
+        && Math.abs(Angles.wrap(goal.headingRadians() - active.heading().sample(s).radians())) <= cfg.terminalTurnRadians()
+        && Double.isNaN(active.geometry().nextCusp(s))) { // not while the path still has to double back
       phase = Phase.TERMINAL;
     }
 
@@ -351,6 +362,11 @@ public final class PathFollower {
     } else {
       VelocityProfile profile = active.profile();
       double sAhead = profile.sAtTime(profile.timeAt(s) + cfg.latencySeconds());
+      double cusp = active.geometry().nextCusp(s);
+      if (sAhead > cusp - CUSP_EDGE_METERS) {
+        // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
+        sAhead = Math.max(s, cusp - CUSP_EDGE_METERS);
+      }
       PathSample here = active.sample(s);
       PathSample ahead = active.sample(sAhead);
       double brake = StoppingLaw.brake(remaining, limiter.speed(), brakeDecel, cfg.latencySeconds(), endSpeed);
@@ -370,6 +386,8 @@ public final class PathFollower {
       refY = here.yMeters() + ny * offset;
       refHeading = here.headingRadians();
     }
+
+    headingError = Angles.wrap(refHeading - pose.headingRadians());
 
     // Raw field-axis overrides, given in the robot's frame: into blue, then before or after the limiter
     double ox = overrideX == null ? Double.NaN : overrideX.getAsDouble();
@@ -467,6 +485,10 @@ public final class PathFollower {
       return;
     }
     var geometry = active.geometry();
+    if (geometry.hasCusps()) {
+      updateProgressAroundCusps(pose, geometry);
+      return;
+    }
     Projection near = geometry.project(pose.xMeters(), pose.yMeters(), s, cfg.windowMeters());
     if (near.distanceMeters() > cfg.reprojectMeters()) {
       Projection all = geometry.projectGlobal(pose.xMeters(), pose.yMeters());
@@ -475,6 +497,34 @@ public final class PathFollower {
       }
     }
     s = near.s();
+  }
+
+  /** Progress reads no closer to a cusp than this (its tangent is undefined), and steps past it by as much. */
+  static final double CUSP_EDGE_METERS = 1e-3;
+
+  /**
+   * Progress on a path that doubles back. Around a cusp the two sides lie on top of each other, so the
+   * search stays on the robot's side of it: between the last cusp passed and the next one. The robot then
+   * crosses when it gets within the position tolerance of the cusp (the plan has stopped there), and
+   * progress carries on from the far side.
+   */
+  private void updateProgressAroundCusps(Pose pose, frc.team5712.path.core.PathGeometry geometry) {
+    double next = geometry.nextCusp(s);
+    double prev = geometry.previousCusp(s);
+    double lo = Double.isNaN(prev) ? 0.0 : prev + CUSP_EDGE_METERS;
+    double hi = Double.isNaN(next) ? geometry.lengthMeters() : next - CUSP_EDGE_METERS;
+    Projection near = geometry.projectWithin(pose.xMeters(), pose.yMeters(),
+        Math.max(lo, s - cfg.windowMeters()), Math.min(hi, s + cfg.windowMeters()));
+    if (near.distanceMeters() > cfg.reprojectMeters()) {
+      Projection all = geometry.projectGlobalWithin(pose.xMeters(), pose.yMeters(), lo, hi);
+      if (all.distanceMeters() < near.distanceMeters() - 0.05) {
+        near = all;
+      }
+    }
+    s = near.s();
+    if (!Double.isNaN(next) && next - s <= cfg.positionToleranceMeters()) {
+      s = Math.min(geometry.lengthMeters(), next + CUSP_EDGE_METERS);
+    }
   }
 
   /**
@@ -523,7 +573,8 @@ public final class PathFollower {
       PathSample end = active.sample(active.lengthMeters());
       double past = (pose.xMeters() - end.xMeters()) * end.tangentX()
           + (pose.yMeters() - end.yMeters()) * end.tangentY();
-      if (remaining <= 1e-6 || past >= 0.0) {
+      // past the end's line, once near the end (a path can start beyond that line, e.g. an on-the-fly one)
+      if (remaining <= 1e-6 || (past >= 0.0 && remaining <= cfg.windowMeters())) {
         finish();
       }
       return;
@@ -656,6 +707,51 @@ public final class PathFollower {
   /** Signed distance from the path, metres, positive to the left of travel (0 in the terminal phase). */
   public double crossTrackMeters() {
     return crossTrack;
+  }
+
+  /**
+   * How far ahead of the plan's schedule the robot is, metres: progress minus where the plan is at the
+   * time since the start (negative: behind). NaN before the start.
+   */
+  public double alongTrackMeters() {
+    if (phase == Phase.IDLE) {
+      return Double.NaN;
+    }
+    return s - active.profile().sAtTime(Math.max(0.0, lastTime - startTime));
+  }
+
+  /** The reference heading minus the measured one, radians (blue frame), at the last step. */
+  public double headingErrorRadians() {
+    return headingError;
+  }
+
+  /** The plan's speed at the robot's progress, m/s. */
+  public double plannedMetersPerSecond() {
+    return phase == Phase.IDLE ? Double.NaN : active.sample(s).metersPerSecond();
+  }
+
+  /** The plan's turn rate at the robot's progress, rad/s (blue frame). */
+  public double plannedOmegaRadPerSec() {
+    if (phase == Phase.IDLE) {
+      return Double.NaN;
+    }
+    PathSample here = active.sample(s);
+    return here.metersPerSecond() * here.headingRadiansPerMeter();
+  }
+
+  /** The measured speed over the ground at the last step, m/s. */
+  public double measuredMetersPerSecond() {
+    return measuredSpeed;
+  }
+
+  /** The measured turn rate at the last step, rad/s (blue frame). */
+  public double measuredOmegaRadPerSec() {
+    return measuredOmega;
+  }
+
+  /** Seconds since the start, at the last step. */
+  public double elapsedSeconds() {
+    return lastTime - startTime;
   }
 
   /** The pose the follower is steering for this loop, in the robot's frame. */

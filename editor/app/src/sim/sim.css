@@ -1,0 +1,67 @@
+/* The sim preview: its row in the playback bar and its inspector card. */
+
+.sim-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  padding: var(--s1) var(--s2) var(--s1) var(--s2);
+  border-bottom: 1px solid var(--border-strong);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-label {
+  color: #fb923c;
+  font-weight: 600;
+}
+
+.sim-numbers {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  color: var(--muted);
+}
+
+.sim-numbers strong {
+  color: #fb923c;
+}
+
+.sim-muted {
+  color: var(--muted);
+}
+
+.sim-error {
+  color: var(--danger);
+}
+
+.sim-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  cursor: crosshair;
+  border-radius: var(--r2);
+  background: var(--raised);
+}
+
+.sim-plan-end {
+  stroke: var(--muted);
+  stroke-dasharray: 3 2;
+}
+
+.sim-finish {
+  stroke: #fb923c;
+}
+
+.sim-shove {
+  stroke: #e879f9;
+  stroke-dasharray: 2 2;
+}
+
+.sim-cursor {
+  stroke: var(--selected);
+}
+
+.sim-events td {
+  text-align: right;
+}

@@ -2,6 +2,7 @@ package frc.team5712.path.tools;
 
 import frc.team5712.path.core.ConstraintZone;
 import frc.team5712.path.core.FacePointZone;
+import frc.team5712.path.core.HeadingMode;
 import frc.team5712.path.core.PathSpec;
 import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.core.RotationTarget;
@@ -137,6 +138,29 @@ public final class FixturePaths {
     Map<String, PathSpec> m = new LinkedHashMap<>();
     m.put("short_hop", shortHop());
     m.put("pure_rotation", pureRotation());
+    return m;
+  }
+
+  /**
+   * A real auto path (Joe's, 2026) whose end tangent points back against the approach: the curve runs 17 cm
+   * past the end, stops and comes back. One cusp, which the profile must stop at and the follower must
+   * reverse at.
+   */
+  public static PathSpec joeAutoCusp() {
+    return PathSpec.of(List.of(
+            new Waypoint(-3.89558, 3.3918, deg(3.54), 0.89, deg(-90)),
+            new Waypoint(-0.5, 2.75, deg(-48.92), 1.19, deg(-90)),
+            new Waypoint(-0.50378, 0.48882, deg(173.11), 0.44, deg(-90)),
+            new Waypoint(-2.12985, 3.35891, deg(151.77), 1.1, deg(0)),
+            new Waypoint(-3.91553, 3.39881, deg(18.87), 0.46, deg(0))))
+        .withHeadingMode(HeadingMode.HOLD)
+        .withLimits(4.0, 6.0);
+  }
+
+  /** Fixture paths that double back (planned with the default robot). */
+  public static Map<String, PathSpec> cusped() {
+    Map<String, PathSpec> m = new LinkedHashMap<>();
+    m.put("joe_auto_cusp", joeAutoCusp());
     return m;
   }
 

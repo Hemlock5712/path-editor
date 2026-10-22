@@ -91,3 +91,41 @@ export function insideRectMargin(poly: readonly Pt[], halfLength: number, halfWi
   for (const [x, y] of poly) m = Math.min(m, halfLength - Math.abs(x), halfWidth - Math.abs(y));
   return m;
 }
+
+/** How deep two convex polygons overlap: the least push along any edge normal that separates them; 0 apart. */
+export function convexPenetration(a: readonly Pt[], b: readonly Pt[]): number {
+  let least = Infinity;
+  for (const poly of [a, b]) {
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i]!;
+      const q = poly[(i + 1) % poly.length]!;
+      const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (len === 0) continue;
+      const nx = (q[1] - p[1]) / len;
+      const ny = (p[0] - q[0]) / len;
+      let minA = Infinity;
+      let maxA = -Infinity;
+      for (const v of a) {
+        const d = v[0] * nx + v[1] * ny;
+        minA = Math.min(minA, d);
+        maxA = Math.max(maxA, d);
+      }
+      let minB = Infinity;
+      let maxB = -Infinity;
+      for (const v of b) {
+        const d = v[0] * nx + v[1] * ny;
+        minB = Math.min(minB, d);
+        maxB = Math.max(maxB, d);
+      }
+      const overlap = Math.min(maxA, maxB) - Math.max(minA, minB);
+      if (overlap <= 0) return 0;
+      least = Math.min(least, overlap);
+    }
+  }
+  return Number.isFinite(least) ? least : 0;
+}
+
+/** Clearance between convex polygons, signed: the gap when apart, minus the penetration when they overlap. */
+export function signedClearance(a: readonly Pt[], b: readonly Pt[]): number {
+  return convexOverlap(a, b) ? -convexPenetration(a, b) : convexDistance(a, b);
+}

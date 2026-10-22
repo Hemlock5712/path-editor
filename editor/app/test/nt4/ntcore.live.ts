@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Nt4Client, poseOf, type Nt4Value } from "../../src/nt4/client.ts";
 import { LiveFeed } from "../../src/nt4/liveFeed.ts";
+import { Recorder, summarise } from "../../src/nt4/recorder.ts";
 import { live } from "../../src/state/live.ts";
 
 const REPO = join(import.meta.dirname, "..", "..", "..", "..");
@@ -130,6 +131,64 @@ describe("NT4 client against WPILib's ntcore", () => {
       expect(["intakeDown", "spinUp", "shoot"]).toEqual(expect.arrayContaining([...s.eventsFired]));
     } finally {
       feed.stop();
+    }
+  });
+
+  it("records a whole run as the follower logged it (the Telemetry page's recording)", async () => {
+    // the harness publishes the follower's own account of each run when it ends: [run, loops, cross-track
+    // RMS, cross-track max, final position error, final heading error, seconds]
+    const summaries: { at: number; values: number[] }[] = [];
+    let frames = 0;
+    const recorder = new Recorder("/Telemetry/Robot/Pose", 10);
+    const client = new Nt4Client({
+      host: "127.0.0.1",
+      port: PORT,
+      prefixes: ["/Telemetry/"],
+      all: true,
+      onValue: (v) => {
+        recorder.onValue(v);
+        if (v.topic.name === "/Telemetry/Harness/RunSummary") summaries.push({ at: frames, values: v.value as number[] });
+      },
+      onFrameEnd: () => {
+        frames++;
+        recorder.onFrameEnd();
+      },
+    });
+    client.connect();
+    try {
+      // a run that started after we connected, recorded from its first loop to its finish
+      await until("a whole recorded run", () => recorder.runs.some((r) => r.finished && r.samples[0] !== undefined && r.samples[0].t < 0.05), 60_000);
+      const run = recorder.runs.find((r) => r.finished && r.samples[0]!.t < 0.05)!;
+      const runIndex = recorder.runs.indexOf(run);
+      await until("the harness's account of it", () => summaries.length > 0 && recorder.runs.length > runIndex, 10_000);
+      // the account that came with this run's finish: the first after its last sample
+      const theirs = summaries.find((x) => Math.abs(x.values[1]! - run.samples.length) <= 1 && Math.abs(x.values[6]! - run.samples.at(-1)!.t) < 0.1);
+      expect(theirs, `no harness summary matches a run of ${run.samples.length} loops, ${run.samples.at(-1)!.t} s; got ${JSON.stringify(summaries.map((x) => x.values))}`).toBeDefined();
+      const [, loops, rms, max, endError, endHeading, seconds] = theirs!.values as [number, number, number, number, number, number, number];
+      const ours = summarise(run);
+      console.log(
+        `recorded run: ${ours.loops} loops (follower ${loops}), cross-track RMS ${(ours.crossTrackRms * 100).toFixed(3)} cm ` +
+          `(follower ${(rms * 100).toFixed(3)}), max ${(ours.crossTrackMax * 100).toFixed(3)} cm (${(max * 100).toFixed(3)}), ` +
+          `end ${(ours.endError * 100).toFixed(2)} cm (${(endError * 100).toFixed(2)}), ${ours.seconds.toFixed(2)} s (${seconds.toFixed(2)})`,
+      );
+      expect(Math.abs(ours.loops - loops)).toBeLessThanOrEqual(1);
+      expect(Math.abs(ours.crossTrackRms - rms)).toBeLessThan(0.001); // 1 mm
+      expect(Math.abs(ours.crossTrackMax - max)).toBeLessThan(0.001);
+      expect(Math.abs(ours.endError - endError)).toBeLessThan(0.01); // the pose a loop either side, at the finish
+      expect(Math.abs(ours.endHeadingError - endHeading)).toBeLessThan(0.01);
+      expect(Math.abs(ours.seconds - seconds)).toBeLessThan(0.1);
+      // the plan came with it, and the events fired as planned
+      expect(run.plan?.events.map((e) => e.name)).toEqual(["intakeDown", "spinUp", "shoot"]);
+      expect(ours.eventsFired).toEqual(["intakeDown", "spinUp", "shoot"]);
+      expect(run.plan!.x.length).toBeGreaterThan(100);
+      expect(ours.planSeconds).toBeGreaterThan(1);
+      // and the samples carry the new loop values
+      const mid = run.samples[Math.floor(run.samples.length / 2)]!;
+      for (const k of ["alongTrack", "headingError", "speed", "plannedSpeed", "omega", "plannedOmega"] as const) expect(Number.isFinite(mid[k]), k).toBe(true);
+      expect(mid.reference).not.toBeNull();
+      expect(mid.pose).not.toBeNull();
+    } finally {
+      client.close();
     }
   });
 });

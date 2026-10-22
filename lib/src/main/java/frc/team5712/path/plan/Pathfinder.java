@@ -119,6 +119,27 @@ public final class Pathfinder {
     return bootMicros;
   }
 
+  /**
+   * Plans {@code queries} times between free points spread over the field and throws the results away, so
+   * the JIT has compiled the planner before the first real query (a cold first plan takes tens of
+   * milliseconds; a warm one a few). Call it once at boot, after the constructor. Returns the time it took,
+   * milliseconds.
+   */
+  public double warmUp(int queries) {
+    long t0 = System.nanoTime();
+    double hx = xMax - 0.1;
+    double hy = yMax - 0.1;
+    FieldSpeeds still = new FieldSpeeds(0, 0, 0);
+    for (int i = 0; i < queries; i++) {
+      // a fixed spread of points (no randomness at boot): across the field and back along the diagonals
+      double u = (i + 0.5) / queries;
+      Pose a = new Pose(-hx + 2 * hx * u, -hy + 2 * hy * ((i * 7 % queries) + 0.5) / queries, 0.0);
+      Pose b = new Pose(hx - 2 * hx * u, hy - 2 * hy * ((i * 3 % queries) + 0.5) / queries, Math.PI / 2);
+      plan(a, still, b);
+    }
+    return (System.nanoTime() - t0) / 1e6;
+  }
+
   /** True when a robot centre at (x, y) is outside every grown obstacle and inside the moved-in walls. */
   public boolean isFree(double x, double y) {
     if (x < xMin - ConvexPolygon.EPS || x > xMax + ConvexPolygon.EPS
@@ -145,14 +166,46 @@ public final class Pathfinder {
 
   // ------------------------------------------------------------------------------ query
 
+  /** A straight approach this long (plus the braking distance from the end speed) ends a route with a set direction. */
+  public static final double APPROACH_METERS = 0.5;
+
   /** Plans from the robot's pose and field velocity to the goal pose (arriving at rest). */
   public PlanResult plan(Pose start, FieldSpeeds startVelocity, Pose goal) {
+    return plan(start, startVelocity, goal, 0.0, Double.NaN);
+  }
+
+  /**
+   * Plans from the robot's pose and field velocity to the goal pose, arriving at {@code endSpeed} m/s while
+   * travelling in direction {@code endTangent} (radians; NaN = whatever the route gives), e.g. the start of
+   * a path to hand over to. With a direction, the route ends with a straight approach along it
+   * ({@link #APPROACH_METERS} plus the braking distance from the end speed) when that stretch is free and the
+   * goal is far enough away; otherwise the direction is dropped.
+   */
+  public PlanResult plan(Pose start, FieldSpeeds startVelocity, Pose goal, double endSpeed, double endTangent) {
     long t0 = System.nanoTime();
     double[] s = snap(start.xMeters(), start.yMeters());
     double[] g = snap(goal.xMeters(), goal.yMeters());
     double startSnap = Math.hypot(s[0] - start.xMeters(), s[1] - start.yMeters());
     double goalSnap = Math.hypot(g[0] - goal.xMeters(), g[1] - goal.yMeters());
-    List<double[]> route = shortestRoute(s, g);
+    double arrive = Math.min(Math.max(0.0, endSpeed), config.maxMetersPerSecond());
+    List<double[]> route = null;
+    boolean approach = false;
+    if (Double.isFinite(endTangent) && goalSnap <= 1e-9) {
+      double len = APPROACH_METERS + arrive * arrive / (2 * config.maxMetersPerSecondSquared());
+      double[] a = {g[0] - len * StrictMath.cos(endTangent), g[1] - len * StrictMath.sin(endTangent)};
+      if (Math.hypot(g[0] - s[0], g[1] - s[1]) > 2 * len && isFree(a[0], a[1]) && visible(a[0], a[1], g[0], g[1])) {
+        List<double[]> head = shortestRoute(s, a);
+        if (head != null) {
+          route = new ArrayList<>(head);
+          route.add(g);
+          approach = true;
+        }
+      }
+    }
+    if (route == null) {
+      route = shortestRoute(s, g);
+    }
+    double endDirection = approach ? endTangent : Double.NaN;
     long t1 = System.nanoTime();
     double straight = Math.hypot(goal.xMeters() - start.xMeters(), goal.yMeters() - start.yMeters());
     if (route == null) {
@@ -176,7 +229,7 @@ public final class Pathfinder {
 
     double v = Math.hypot(startVelocity.vxMetersPerSecond(), startVelocity.vyMetersPerSecond());
     boolean moving = v > 0.1;
-    double startTangent = moving ? Math.atan2(startVelocity.vyMetersPerSecond(), startVelocity.vxMetersPerSecond())
+    double startTangent = moving ? StrictMath.atan2(startVelocity.vyMetersPerSecond(), startVelocity.vxMetersPerSecond())
         : Double.NaN;
     double startSpeed = moving ? Math.min(v, config.maxMetersPerSecond()) : 0.0;
 
@@ -185,7 +238,8 @@ public final class Pathfinder {
     Sweep sweep;
     PathSpec spec;
     while (true) {
-      spec = Path.pureRotation(spec(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians()));
+      spec = Path.pureRotation(spec(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians(),
+          endDirection, arrive));
       PathGeometry geometry = PathGeometry.build(spec.waypoints());
       HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones());
       double skipStart = startSnap > 1e-9 ? geometry.waypointS(1) : 0.0;
@@ -244,17 +298,17 @@ public final class Pathfinder {
   }
 
   private PathSpec spec(List<double[]> pts, double startTangent, double startSpeed, double startHeading,
-      double goalHeading) {
+      double goalHeading, double endTangent, double endSpeed) {
     List<Waypoint> wps = new ArrayList<>(pts.size());
     for (int i = 0; i < pts.size(); i++) {
-      double tangent = i == 0 ? startTangent : Double.NaN;
+      double tangent = i == 0 ? startTangent : i == pts.size() - 1 ? endTangent : Double.NaN;
       wps.add(new Waypoint(pts.get(i)[0], pts.get(i)[1], tangent, 1.0));
     }
     return PathSpec.of(wps)
         .withRotationTargets(List.of(RotationTarget.atWaypoint(0, startHeading),
             RotationTarget.atWaypoint(pts.size() - 1, goalHeading)))
         .withLimits(config.maxMetersPerSecond(), config.maxMetersPerSecondSquared())
-        .withEndSpeeds(startSpeed, 0.0);
+        .withEndSpeeds(startSpeed, endSpeed);
   }
 
   private static List<double[]> dedupe(List<double[]> pts) {
@@ -297,8 +351,8 @@ public final class Pathfinder {
     for (double r = 0.05; r < 8.0; r += 0.05) {
       for (int k = 0; k < 72; k++) {
         double a = k * Math.PI / 36;
-        double cx = x + r * Math.cos(a);
-        double cy = y + r * Math.sin(a);
+        double cx = x + r * StrictMath.cos(a);
+        double cy = y + r * StrictMath.sin(a);
         if (isFree(cx, cy)) {
           return new double[] {cx, cy};
         }
@@ -450,8 +504,8 @@ public final class Pathfinder {
   }
 
   private double clearance(double x, double y, double th, double reach, double[] qx, double[] qy) {
-    double c = Math.cos(th);
-    double s = Math.sin(th);
+    double c = StrictMath.cos(th);
+    double s = StrictMath.sin(th);
     double hl = config.bumperLengthMeters() / 2;
     double hw = config.bumperWidthMeters() / 2;
     double[] px = {hl, -hl, -hl, hl}; // front-left, back-left, back-right, front-right: counter-clockwise

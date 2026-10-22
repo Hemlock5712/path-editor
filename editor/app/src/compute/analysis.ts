@@ -2,6 +2,7 @@
 // in time, event and target positions, and the live checks. Pure, so it runs in the worker and in
 // tests alike. No path maths is done here; every number comes from Path.build and its samples.
 
+import { cuspWaypoint } from "./cusps.ts";
 import {
   eventMeters,
   gripMetersPerSecondSquared,
@@ -57,7 +58,7 @@ export interface PlacedEvent {
   readonly y: number;
 }
 
-export type CheckKind = "curvature" | "heading" | "bumper" | "event" | "position" | "speed";
+export type CheckKind = "cusp" | "curvature" | "heading" | "bumper" | "event" | "position" | "speed";
 
 export interface Check {
   readonly kind: CheckKind;
@@ -66,6 +67,12 @@ export interface Check {
   /** The stretch of path it applies to, metres. */
   readonly sFrom: number;
   readonly sTo: number;
+  /** What it is about, for its fix-it button: the item, a bend's cornering speed, or a path end's reachable speed. */
+  readonly ref?: { readonly kind: "event" | "rotation" | "face" | "constraint"; readonly index: number };
+  readonly capMetersPerSecond?: number;
+  readonly end?: "start" | "end";
+  /** A cusp's waypoint: the one whose curve to reset. */
+  readonly waypoint?: number;
 }
 
 export interface Analysis {
@@ -122,6 +129,7 @@ export function analyse(input: AnalysisInput): Analysis | AnalysisFailure {
   });
   const bumpers = bumperChecks(input, stations);
   const checks = [
+    ...cuspChecks(input, path),
     ...speedChecks(input, path, stations),
     ...curvatureChecks(input, path, stations),
     ...headingChecks(input, stations),
@@ -220,6 +228,18 @@ function runs(n: number, pred: (i: number) => boolean): [number, number][] {
 const f2 = (x: number) => x.toFixed(2);
 const deg = (r: number) => Math.round((r * 180) / Math.PI);
 
+/** Where the path doubles back on itself: the robot overshoots and comes back. */
+function cuspChecks(input: AnalysisInput, path: Path): Check[] {
+  return path.cusps.map((s) => ({
+    kind: "cusp",
+    severity: "error",
+    message: `The path reverses direction at s = ${f2(s)} m (a cusp): the robot will overshoot and come back.`,
+    waypoint: cuspWaypoint(input.spec, path.geometry, s),
+    sFrom: s,
+    sTo: s,
+  }));
+}
+
 /** The plan can't start or end at the authored speed (a bend or a turn caps it there). */
 function speedChecks(input: AnalysisInput, path: Path, st: Stations): Check[] {
   const out: Check[] = [];
@@ -230,6 +250,8 @@ function speedChecks(input: AnalysisInput, path: Path, st: Stations): Check[] {
       kind: "speed",
       severity: "warning",
       message: `The plan can't start at ${f2(start)} m/s; it starts at ${f2(st.v[0]!)} m/s (a bend or turn caps it there).`,
+      end: "start",
+      capMetersPerSecond: st.v[0]!,
       sFrom: 0,
       sTo: Math.min(path.lengthMeters, 0.3),
     });
@@ -239,6 +261,8 @@ function speedChecks(input: AnalysisInput, path: Path, st: Stations): Check[] {
       kind: "speed",
       severity: "warning",
       message: `The plan can't end at ${f2(end)} m/s; it ends at ${f2(st.v[n - 1]!)} m/s (a bend or turn caps it there).`,
+      end: "end",
+      capMetersPerSecond: st.v[n - 1]!,
       sFrom: Math.max(0, path.lengthMeters - 0.3),
       sTo: path.lengthMeters,
     });
@@ -262,6 +286,7 @@ function curvatureChecks(input: AnalysisInput, path: Path, st: Stations): Check[
       message:
         `Tight bend at ${f2(st.s[worst]!)} m: radius ${f2(radius)} m caps the speed at ${f2(cap(worst))} m/s ` +
         `(path top speed ${f2(top)} m/s). Spread the waypoints or lengthen the tangents.`,
+      capMetersPerSecond: cap(worst),
       sFrom: st.s[a]!,
       sTo: Math.min(path.lengthMeters, st.s[b]!),
     };
@@ -367,13 +392,14 @@ function positionChecks(input: AnalysisInput, path: Path): Check[] {
     Number.isNaN(waypoint) ? meters < 0 || meters > length + 1e-5 : waypoint < 0 || waypoint > last;
   const where = (waypoint: number, meters: number) =>
     Number.isNaN(waypoint) ? `${f2(meters)} m (the path is ${f2(length)} m)` : `waypoint ${waypoint} (the last is ${last})`;
-  input.spec.events.forEach((e) => {
+  input.spec.events.forEach((e, index) => {
     if (off(e.waypoint, e.meters)) {
       const s = Number.isNaN(e.waypoint) ? e.meters : e.waypoint < 0 ? 0 : length;
       out.push({
         kind: "event",
         severity: "error",
         message: `Event "${e.name}" is off the path, at ${where(e.waypoint, e.meters)}. The robot would fire it at the nearest end.`,
+        ref: { kind: "event", index },
         sFrom: Math.min(length, Math.max(0, s)),
         sTo: Math.min(length, Math.max(0, s)),
       });
@@ -385,21 +411,23 @@ function positionChecks(input: AnalysisInput, path: Path): Check[] {
         kind: "position",
         severity: "warning",
         message: `Rotation target ${i + 1} is off the path, at ${where(t.waypoint, t.meters)}.`,
+        ref: { kind: "rotation", index: i },
         sFrom: Number.isNaN(t.waypoint) && t.meters < 0 ? 0 : length,
         sTo: Number.isNaN(t.waypoint) && t.meters < 0 ? 0 : length,
       });
     }
   });
   const zones = [
-    ...input.spec.facePointZones.map((z, i) => ({ z, label: `Face-point zone ${i + 1}` })),
-    ...input.spec.constraintZones.map((z, i) => ({ z, label: `Constraint zone ${i + 1}` })),
+    ...input.spec.facePointZones.map((z, i) => ({ z, label: `Face-point zone ${i + 1}`, ref: { kind: "face" as const, index: i } })),
+    ...input.spec.constraintZones.map((z, i) => ({ z, label: `Constraint zone ${i + 1}`, ref: { kind: "constraint" as const, index: i } })),
   ];
-  for (const { z, label } of zones) {
+  for (const { z, label, ref } of zones) {
     if (z.fromWaypoint < 0 || z.toWaypoint > last) {
       out.push({
         kind: "position",
         severity: "warning",
         message: `${label} runs off the path (waypoints ${z.fromWaypoint} to ${z.toWaypoint}; the last is ${last}).`,
+        ref,
         sFrom: path.geometry.sAtWaypoint(z.fromWaypoint),
         sTo: path.geometry.sAtWaypoint(z.toWaypoint),
       });

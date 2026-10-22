@@ -24,7 +24,7 @@ const SLOW = { timeout: 30_000 };
 
 async function openLive(page: import("@playwright/test").Page) {
   await page.goto(`${ORIGIN}/`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("path-stats")).toContainText(" s,", SLOW);
+  await expect(page.getByTestId("path-stats")).toContainText("no path yet", SLOW); // the app is up (a new, empty path)
   await page.getByTestId("page-telemetry").click();
   await expect(page.getByTestId("live-address")).toBeVisible(SLOW);
 }

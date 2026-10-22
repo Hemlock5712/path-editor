@@ -1,11 +1,15 @@
 // The inspector's view of one selected item: a waypoint, a heading along the path, an event, a zone,
 // an obstacle or a named point. Only that item's properties, with Delete at the bottom.
 
-import { CornerDownRight, Lock, MapPin, Trash2 } from "lucide-react";
+import { useMemo } from "react";
+import { CornerDownRight, Link2, Lock, MapPin, Navigation, Trash2 } from "lucide-react";
+import { unlinkPoint } from "../../model/mirror.ts";
+import { splitZone } from "../../state/fixes.ts";
+import { faceNext, faceTargets, faceToward } from "../../state/helpers.ts";
 import { DEFAULT_BLEND_METERS, makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../../core/src/index.ts";
 import {
   deleteWaypoint,
-  insertWaypoint,
+  addWaypointAfter,
   moveWaypoint,
   removeConstraintZone,
   removeEvent,
@@ -19,7 +23,7 @@ import {
   updateFacePointZone,
   updateRotationTarget,
 } from "../../model/edits.ts";
-import { addNamedPoint, linkCount, linkToPoint, moveNamedPoint, removeNamedPoint, renameNamedPoint, uniquePointName } from "../../model/namedPoints.ts";
+import { addNamedPoint, linkCount, linkToPoint, moveNamedPoint, removeNamedPoint, renameNamedPoint, setPointHeading, uniquePointName } from "../../model/namedPoints.ts";
 import { eventNames } from "../../model/project.ts";
 import { round5, round5Radians } from "../../model/positions.ts";
 import { newPath } from "../../state/actions.ts";
@@ -50,6 +54,9 @@ export function WaypointInspector({ index }: { index: number }) {
   const link = path.links[index];
   const isEnd = index === 0 || index === n - 1;
   const passThrough = Number.isNaN(w.headingRadians);
+  const projectNow = useEditor((s) => s.project);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const targets = useMemo(() => faceTargets(), [projectNow]);
   /** The plan's heading here, in 15° steps: where a newly set heading starts. */
   const plannedHeading = () => {
     const h = waypointPose({ active: path, analysis: analysisResult }, index).heading;
@@ -58,11 +65,20 @@ export function WaypointInspector({ index }: { index: number }) {
   // a linked waypoint follows its point, so moving it moves the point (and every waypoint on it)
   const moveTo = (x: number, y: number) =>
     link ? editProject("Move point", (p) => moveNamedPoint(p, link, x, y)) : editPath("Move waypoint", (p) => moveWaypoint(p, index, x, y));
+  // the keyboard's double-click: halfway to the next waypoint, or 1 m on past the end
   const insertAfter = () => {
     const g = geometryOf(path.spec);
-    if (!g) return;
-    const mid = g.sample(g.sAtWaypoint(index + 0.5));
-    editPath("Insert waypoint", (p) => insertWaypoint(p, index, 0.5, round5(mid.xMeters), round5(mid.yMeters)), { kind: "waypoint", index: index + 1 });
+    let at: [number, number];
+    if (g && index < n - 1) {
+      const mid = g.sample(g.sAtWaypoint(index + 0.5));
+      at = [mid.xMeters, mid.yMeters];
+    } else {
+      const end = g?.sample(g.lengthMeters);
+      const h = Number.isNaN(w.headingRadians) ? 0 : w.headingRadians;
+      const [dx, dy] = end ? [end.tangentX, end.tangentY] : [Math.cos(h), Math.sin(h)];
+      at = [w.xMeters + dx, w.yMeters + dy];
+    }
+    editPath("Add waypoint", (p) => addWaypointAfter(p, index, round5(at[0]), round5(at[1])), { kind: "waypoint", index: index + 1 });
   };
   return (
     <div className="inspector-body" role="group" aria-label={`Waypoint ${index}`}>
@@ -91,15 +107,31 @@ export function WaypointInspector({ index }: { index: number }) {
           />
         </div>
       </div>
+      <div className="grid2">
+        <Button onClick={() => faceNext(index)} label={index < n - 1 ? "Face the next waypoint" : "Face the way it arrives"} testId="face-next">
+          <Navigation size={14} />
+          Face next
+        </Button>
+        <SelectField
+          label="Face target"
+          value=""
+          options={[{ value: "", label: "Face…" }, ...targets.map((t, i) => ({ value: String(i), label: t.name }))]}
+          onChange={(v) => {
+            const t = targets[Number(v)];
+            if (t) faceToward(index, t.x, t.y, `Face ${t.name}`);
+          }}
+          testId="face-target"
+        />
+      </div>
       <Switch
         label={
           <>
-            <Lock size={12} style={{ verticalAlign: -1 }} /> Pinned (the optimiser leaves it)
+            <Lock size={12} style={{ verticalAlign: -1 }} /> Locked (the optimiser never moves it)
           </>
         }
         checked={path.pinned[index] === true}
-        testId="waypoint-pin"
-        onChange={(on) => editPath(on ? "Pin" : "Unpin", (p) => setPinned(p, index, on))}
+        testId="waypoint-lock"
+        onChange={(on) => editPath(on ? "Lock" : "Unlock", (p) => setPinned(p, index, on))}
       />
       <div className="position">
         <SelectField
@@ -161,12 +193,10 @@ export function WaypointInspector({ index }: { index: number }) {
         </div>
       )}
       <div className="row">
-        {index < n - 1 && (
-          <Button onClick={insertAfter} label={`Insert a waypoint after waypoint ${index}`}>
-            <CornerDownRight size={14} />
-            Insert after
-          </Button>
-        )}
+        <Button onClick={insertAfter} label={`Add a waypoint after waypoint ${index}`} testId="add-after">
+          <CornerDownRight size={14} />
+          Add after
+        </Button>
       </div>
       <DeleteButton label="Delete waypoint" disabled={n <= 2} onClick={() => editPath("Delete waypoint", (p) => deleteWaypoint(p, index), null)} />
     </div>
@@ -264,6 +294,9 @@ export function FaceZoneInspector({ index }: { index: number }) {
           onCommit={(v) => update("Change blend", { blendMeters: v })}
         />
       </div>
+      <Button onClick={() => splitZone("face", index)} label={`Split face-point zone ${index + 1} at its middle`}>
+        Split at the middle
+      </Button>
       <DeleteButton label={`Delete face-point zone ${index + 1}`} onClick={() => editPath("Delete zone", (p) => removeFacePointZone(p, index), null)} />
     </div>
   );
@@ -295,6 +328,9 @@ export function ConstraintZoneInspector({ index }: { index: number }) {
         />
       </div>
       <p className="hint">Waypoint positions run 0 to {path.spec.waypoints.length - 1}.</p>
+      <Button onClick={() => splitZone("constraint", index)} label={`Split constraint zone ${index + 1} at its middle`}>
+        Split at the middle
+      </Button>
       <DeleteButton label={`Delete constraint zone ${index + 1}`} onClick={() => editPath("Delete zone", (p) => removeConstraintZone(p, index), null)} />
     </div>
   );
@@ -326,6 +362,7 @@ export function PointInspector({ id }: { id: string }) {
   const p = project.namedPoints.find((q) => q.id === id);
   if (!p) return null;
   const n = linkCount(project, p.id);
+  const twin = p.twin ? project.namedPoints.find((q) => q.id === p.twin!.id) : undefined;
   return (
     <div className="inspector-body" role="group" aria-label={`Point ${p.name}`}>
       <TextField
@@ -337,9 +374,28 @@ export function PointInspector({ id }: { id: string }) {
       <div className="grid2">
         <NumberField label="x" unit="m" value={p.x} onCommit={(v) => editProject("Move point", (pr) => moveNamedPoint(pr, p.id, v, p.y))} />
         <NumberField label="y" unit="m" value={p.y} onCommit={(v) => editProject("Move point", (pr) => moveNamedPoint(pr, p.id, p.x, v))} />
+        <NumberField
+          label="Heading"
+          unit="°"
+          step={15}
+          blank="none"
+          blankValue={Number.NaN}
+          value={toDegrees(p.heading ?? Number.NaN)}
+          title="The heading a robot has here (a path started here starts facing it). Blank: none"
+          onCommit={(v) => editProject("Point heading", (pr) => setPointHeading(pr, p.id, Number.isNaN(v) ? v : round5Radians(v * DEGREES)))}
+        />
       </div>
+      {twin && (
+        <p className="link-badge" data-testid="point-twin">
+          <Link2 size={11} />
+          Twin of {twin.name} ({p.twin!.transform === "flip" ? "flipped" : "mirrored"}): moving either moves both.
+          <button type="button" className="link" onClick={() => editProject("Unlink twin", (pr) => unlinkPoint(pr, p.id))} data-testid="unlink-twin">
+            Unlink
+          </button>
+        </p>
+      )}
       <p className="stats">{n === 0 ? "No waypoints linked" : n === 1 ? "1 waypoint linked" : `${n} waypoints linked`}. Moving it moves every one, in every path.</p>
-      <Button onClick={() => newPath({ x: p.x, y: p.y, heading: 0, pointId: p.id })} label={`Start a new path at ${p.name}`}>
+      <Button onClick={() => newPath({ x: p.x, y: p.y, heading: Number.isNaN(p.heading ?? Number.NaN) ? 0 : p.heading!, pointId: p.id })} label={`Start a new path at ${p.name}`}>
         Start a path here
       </Button>
       <DeleteButton label={`Delete point ${p.name}`} onClick={() => editProject("Delete point", (pr) => removeNamedPoint(pr, p.id), null)} />

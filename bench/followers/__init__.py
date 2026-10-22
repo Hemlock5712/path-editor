@@ -21,6 +21,8 @@ METHODS = {
     "ours_v2": ("followers.ours_v2", "OursV2", {}),  # as shipped: the Java FollowerConfig defaults
     "ours_tuned": ("followers.ours_v2", "OursV2", None),  # filled from the sweep (run.py)
     "ours_noadapt": ("followers.ours_v2", "OursV2", {"adaptiveGrip": 0}),  # as shipped, adaptive grip off
+    "pp_path2": ("followers.pathplanner2", "PathPlanner2", {}),  # new-path branch (pre-release), as shipped
+    "pp_path2_tuned": ("followers.pathplanner2", "PathPlanner2", None),  # filled from the sweep (run.py)
 }
 
 LABELS = {
@@ -39,6 +41,8 @@ LABELS = {
     "ours_v2": "Ours v2 (as shipped)",
     "ours_noadapt": "Ours v2 (as shipped, adaptive grip off)",
     "ours_tuned": "Ours v2 (tuned)",
+    "pp_path2": "PathPlanner path2 (new-path, pre-release), as shipped",
+    "pp_path2_tuned": "PathPlanner path2 (tuned, 6 m/s^2 cap)",
 }
 
 

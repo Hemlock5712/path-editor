@@ -94,6 +94,12 @@ public final class FollowPathCommandV2 extends Command {
     return this;
   }
 
+  /** Starts from {@code command} (read at the start) instead of the measured velocity, e.g. an on-the-fly path's end. */
+  public FollowPathCommandV2 continuingFrom(Supplier<FieldSpeeds> command) {
+    this.handedCommand = command;
+    return this;
+  }
+
   public PathFollower follower() {
     return follower;
   }
@@ -109,7 +115,7 @@ public final class FollowPathCommandV2 extends Command {
     double now = clock.getAsDouble();
     follower.start(now, Conversions.toPose(pose.get()), measured,
         startFrame(), handedCommand == null ? measured : handedCommand.get());
-    telemetry.begin();
+    telemetry.begin(follower);
     step(now);
   }
 

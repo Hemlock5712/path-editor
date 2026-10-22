@@ -9,8 +9,9 @@ import frc.team5712.path.core.RobotConfig;
  *
  * <ol>
  *   <li>spin acceleration is capped at {@code maxAlpha};
- *   <li>speeding up, the translational push is capped by the motors at the fastest wheel's speed
- *       {@code |v| + r·|ω|};
+ *   <li>speeding up, the push along the direction of travel is capped by the motors at the fastest wheel's
+ *       speed {@code |v| + r·|ω|}. Only that part: turning the velocity at a steady speed takes the tread's
+ *       grip, not motor power, so the part across the travel is left to the grip budget below;
  *   <li>{@code |a| + c·|α| ≤ μ·g} with {@code c = I/(m·r)}: if over, translation and spin scale down
  *       together, so the direction of the step is kept.
  * </ol>
@@ -70,13 +71,16 @@ final class OutputLimiter {
     alpha = Math.max(-maxAlpha, Math.min(maxAlpha, alpha));
 
     boolean speedingUp = ax * vx + ay * vy > 0.0;
-    if (speedingUp) { // the motors' push falls with wheel speed
-      double wheel = Math.sqrt(vx * vx + vy * vy) + Math.abs(omega) * robot.moduleRadiusMeters();
+    if (speedingUp) { // the motors' push along the travel falls with wheel speed
+      double speed = Math.sqrt(vx * vx + vy * vy);
+      double wheel = speed + Math.abs(omega) * robot.moduleRadiusMeters();
       double motor = robot.driveAccelMetersPerSecondSquared(wheel);
-      double a = Math.sqrt(ax * ax + ay * ay);
-      if (a > motor) {
-        ax *= motor / a;
-        ay *= motor / a;
+      double ux = vx / speed;
+      double uy = vy / speed;
+      double along = ax * ux + ay * uy;
+      if (along > motor) {
+        ax -= (along - motor) * ux;
+        ay -= (along - motor) * uy;
       }
     }
 

@@ -2,15 +2,18 @@
 // The editor's path optimiser, headless (the same code as the Optimise path button):
 //
 //   node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms N --seed S
-//        [--out <file>] [--corridor M] [--pin 2,5] [--segment 1,4] [--no-scales]
+//        [--out <file>] [--move-waypoints] [--corridor M] [--pin 2,5] [--segment 1,4] [--no-scales]
 //
 // Writes the optimised path file (schema 3, the core's writer) to --out, or to stdout; a one-line summary
 // goes to stderr. The budget is turned into a number of plans to try (500 per second of budget), so a run
 // is deterministic for a path, budget and seed on any machine; there is no wall-clock cut here.
 //
 // --robot and --field are the robot project's robot.json and field.json (both optional: defaults are the
-// editor's). --pin keeps those waypoints where they are; --segment only moves waypoints between two.
-// The start, the end, waypoints with a set heading and zone anchors always stay put.
+// editor's). By default only the curve changes (the tangents at every waypoint); waypoints and headings stay
+// exactly where they are. --move-waypoints also moves the unlocked interior waypoints within --corridor,
+// keeping their headings; --pin locks waypoints, and the start, the end and zone anchors never move.
+// --segment only changes the path between two waypoints. The result clears every obstacle and the field
+// wall by 5 cm, or (exit code 3) the path is written unchanged with what blocks it and where.
 //
 // It loads the TypeScript sources directly: Node 22.6+ (type stripping; turned on here if needed).
 
@@ -29,7 +32,7 @@ if (!process.features?.typescript) {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const load = (path) => import(pathToFileURL(join(ROOT, path)).href);
 const core = await load("editor/core/src/index.ts");
-const { optimise, evaluationsFor, DEFAULT_OPTIONS } = await load("editor/app/src/compute/optimiser.ts");
+const { blockedMessage, optimise, evaluationsFor, DEFAULT_OPTIONS } = await load("editor/app/src/compute/optimiser.ts");
 const { parseField, parseRobot } = await load("editor/app/src/io/robotField.ts");
 const { DEFAULT_FIELD, DEFAULT_ROBOT_SETTINGS } = await load("editor/app/src/model/project.ts");
 
@@ -37,7 +40,7 @@ function usage(message) {
   if (message) console.error(`optimise: ${message}`);
   console.error(
     "usage: node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms N --seed S\n" +
-      "       [--out <file>] [--corridor M] [--pin i,j] [--segment a,b] [--no-scales]",
+      "       [--out <file>] [--move-waypoints] [--corridor M] [--pin i,j] [--segment a,b] [--no-scales]",
   );
   process.exit(2);
 }
@@ -48,6 +51,7 @@ let pathFile = null;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === "--no-scales") opts.noScales = true;
+  else if (a === "--move-waypoints") opts.moveWaypoints = true;
   else if (a.startsWith("--")) {
     if (i + 1 >= args.length) usage(`${a} needs a value`);
     opts[a.slice(2)] = args[++i];
@@ -62,7 +66,7 @@ const number = (key, fallback) => {
   return v;
 };
 const list = (key) => (opts[key] === undefined ? [] : opts[key].split(",").map((s) => Number.parseInt(s, 10)));
-const known = new Set(["robot", "field", "budget-ms", "seed", "out", "corridor", "pin", "segment", "noScales"]);
+const known = new Set(["robot", "field", "budget-ms", "seed", "out", "corridor", "pin", "segment", "noScales", "moveWaypoints"]);
 for (const k of Object.keys(opts)) if (!known.has(k)) usage(`unknown option --${k}`);
 
 const spec = core.readPath(readFileSync(pathFile, "utf8"));
@@ -73,6 +77,16 @@ const segment = list("segment");
 if (opts.segment !== undefined && segment.length !== 2) usage("--segment takes two waypoint indices, a,b");
 
 const budgetMs = number("budget-ms", 3000);
+const options = {
+  moveWaypoints: opts.moveWaypoints === true,
+  corridorMeters: number("corridor", DEFAULT_OPTIONS.corridorMeters),
+  locked: spec.waypoints.map((_, i) => pins.includes(i)),
+  segment: segment.length === 2 ? segment : null,
+  optimiseScales: !opts.noScales,
+  seed: number("seed", DEFAULT_OPTIONS.seed),
+  maxEvaluations: evaluationsFor(budgetMs / 1000),
+  timeBudgetMs: Infinity,
+};
 const result = optimise(
   {
     spec,
@@ -83,15 +97,7 @@ const result = optimise(
     fieldWidthMeters: field.widthMeters,
     obstacles: field.obstacles,
   },
-  {
-    corridorMeters: number("corridor", DEFAULT_OPTIONS.corridorMeters),
-    locked: spec.waypoints.map((_, i) => pins.includes(i)),
-    segment: segment.length === 2 ? segment : null,
-    optimiseScales: !opts.noScales,
-    seed: number("seed", DEFAULT_OPTIONS.seed),
-    maxEvaluations: evaluationsFor(budgetMs / 1000),
-    timeBudgetMs: Infinity,
-  },
+  options,
 );
 
 const text = core.writePath(result.spec);
@@ -99,7 +105,13 @@ if (opts.out) writeFileSync(opts.out, text);
 else process.stdout.write(text);
 const saved = result.beforeSeconds - result.afterSeconds;
 console.error(
-  `optimise: ${result.beforeSeconds.toFixed(3)} s -> ${result.afterSeconds.toFixed(3)} s` +
-    ` (${((100 * saved) / result.beforeSeconds).toFixed(1)} % faster), ${result.evaluations} plans, ${result.stoppedBy};` +
-    ` moved waypoints ${result.free.join(", ") || "none"}`,
+  result.clear
+    ? `optimise: ${result.beforeSeconds.toFixed(3)} s -> ${result.afterSeconds.toFixed(3)} s` +
+        ` (${((100 * Math.abs(saved)) / result.beforeSeconds).toFixed(1)} % ${saved < 0 ? "slower, to get clear" : "faster"}), clear of obstacles by ${(result.clearanceMeters * 100).toFixed(1)} cm,` +
+        ` ${result.evaluations} plans, ${result.stoppedBy}; tangents at ${result.turned.length} waypoints,` +
+        ` moved waypoints ${result.free.join(", ") || "none"}`
+    : `optimise: ${blockedMessage(result, options)}` +
+        (result.blockedAt ? ` A waypoint at (${result.blockedAt.suggestX}, ${result.blockedAt.suggestY}) would help.` : "") +
+        ` The path is written unchanged (${result.evaluations} plans).`,
 );
+if (!result.clear) process.exitCode = 3;

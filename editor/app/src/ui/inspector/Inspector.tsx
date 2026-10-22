@@ -1,22 +1,21 @@
 // The right-hand inspector. With something selected it shows only that item; otherwise the path's
 // overview: Optimise path first, then collapsible cards in PathPlanner's order (waypoints open).
 
-import { ArrowLeft, ChevronLeft, ChevronRight, Lock, Plus } from "lucide-react";
-import { makeConstraintZone, makeRotationTarget } from "../../../../core/src/index.ts";
-import { addConstraintZone, addFacePointZone, addRotationTarget, appendWaypoint, withSpec } from "../../model/edits.ts";
-import { addNamedPoint, uniquePointName } from "../../model/namedPoints.ts";
-import { round5 } from "../../model/positions.ts";
-import { geometryOf } from "../../state/analysis.ts";
-import { editPath, editProject, select, setTool } from "../../state/editor.ts";
+import { ArrowLeft, ChevronLeft, ChevronRight, Link2, Lock, Plus, Trash2 } from "lucide-react";
+import { withSpec } from "../../model/edits.ts";
+import { deleteItem, unlinkActivePath } from "../../state/actions.ts";
+import { TRANSFORM_LABELS } from "../../model/mirror.ts";
+import { editPath, select } from "../../state/editor.ts";
+import { startFlow } from "../../state/flow.ts";
 import { Button, Card, formatNumber, IconButton, NumberField, SelectField } from "../controls.tsx";
 import { OptimiseControls, OptimiserSettings } from "../panels/OptimisePanel.tsx";
 import { toDegrees, useActivePath, useEditor } from "../panels/common.tsx";
 import { Pane } from "../shell.tsx";
+import { SimCard } from "../../sim/SimPanel.tsx";
 import {
   ConstraintZoneInspector,
   EventInspector,
   FaceZoneInspector,
-  NEW_FACE_ZONE,
   ObstacleInspector,
   PointInspector,
   RotationInspector,
@@ -28,14 +27,6 @@ function WaypointsCard() {
   const path = useActivePath();
   const points = useEditor((s) => s.project.namedPoints);
   const n = path.spec.waypoints.length;
-  // the same as the W tool, from the keyboard: a point 1 m on along the end's direction
-  const appendPastEnd = () => {
-    const g = geometryOf(path.spec);
-    const end = g?.sample(g.lengthMeters);
-    const last = path.spec.waypoints.at(-1)!;
-    const [dx, dy] = end ? [end.tangentX, end.tangentY] : [1, 0];
-    editPath("Add waypoint", (p) => appendWaypoint(p, round5(last.xMeters + dx), round5(last.yMeters + dy)), { kind: "waypoint", index: n });
-  };
   return (
     <Card title="Waypoints" open count={n} cardKey="waypoints">
       <ol className="item-list" aria-label="Waypoints">
@@ -48,7 +39,7 @@ function WaypointsCard() {
                 <span className="main">
                   ({formatNumber(w.xMeters, 2)}, {formatNumber(w.yMeters, 2)})
                 </span>
-                {path.pinned[i] && <Lock size={12} aria-label="pinned" />}
+                {path.pinned[i] && <Lock size={12} aria-label="locked" />}
                 {path.links[i] && <span className="tag accent">{points.find((q) => q.id === path.links[i])?.name}</span>}
                 <span className={set ? "heading-tag set" : "heading-tag"}>{set ? `${formatNumber(toDegrees(w.headingRadians), 1)}°` : "pass"}</span>
               </button>
@@ -56,15 +47,13 @@ function WaypointsCard() {
           );
         })}
       </ol>
-      <div className="add-row">
-        <Button onClick={appendPastEnd} label="Add a waypoint 1 m past the end" variant="ghost">
-          <Plus size={14} />
-          Waypoint at the end
-        </Button>
-        <Button onClick={() => setTool("waypoint")} variant="ghost" title="Draw: click the field to add points|W">
-          Draw…
-        </Button>
-      </div>
+      <p className="hint" data-testid="add-waypoint-hint">
+        {n === 0
+          ? "Double-click the field to place the start, then the end."
+          : n === 1
+            ? "Double-click the field to place the end."
+            : "Select a waypoint, then double-click the field to add one after it."}
+      </p>
     </Card>
   );
 }
@@ -128,7 +117,6 @@ function EndStateCard() {
 function RotationCard() {
   const path = useActivePath();
   const spec = path.spec;
-  const last = spec.waypoints.length - 1;
   return (
     <Card title="Rotation targets" count={spec.rotationTargets.length} cardKey="rotation">
       <SelectField
@@ -149,27 +137,14 @@ function RotationCard() {
               <span className="main">{Number.isNaN(t.waypoint) ? `${formatNumber(t.meters, 2)} m` : `waypoint ${formatNumber(t.waypoint, 2)}`}</span>
               <span className="heading-tag set">{formatNumber(toDegrees(t.headingRadians), 1)}°</span>
             </button>
+            <RowDelete label={`Delete heading ${i + 1}`} onClick={() => deleteItem({ kind: "rotation", index: i })} />
           </li>
         ))}
       </ul>
-      <div className="add-row">
-        <Button
-          variant="ghost"
-          label="Add a heading at the end of the path"
-          onClick={() =>
-            editPath("Add rotation target", (p) => addRotationTarget(p, makeRotationTarget(last, Number.NaN, 0)), {
-              kind: "rotation",
-              index: spec.rotationTargets.length,
-            })
-          }
-        >
-          <Plus size={14} />
-          Heading
-        </Button>
-        <Button variant="ghost" onClick={() => setTool("rotation")} title="Click the path to add a heading there|R">
-          Place on the path…
-        </Button>
-      </div>
+      <Button variant="ghost" onClick={() => startFlow("rotation")} label="Add a heading along the path" title="Click the path, then turn the robot there|R" testId="add-rotation">
+        <Plus size={14} />
+        Heading
+      </Button>
       <p className="hint">Waypoints carry their own headings; these turn the robot partway along.</p>
     </Card>
   );
@@ -187,10 +162,11 @@ function EventsCard() {
               <span className="main">{e.name}</span>
               <span className="heading-tag">{Number.isNaN(e.waypoint) ? `${formatNumber(e.meters, 2)} m` : `wp ${formatNumber(e.waypoint, 2)}`}</span>
             </button>
+            <RowDelete label={`Delete event ${e.name}`} onClick={() => deleteItem({ kind: "event", index: i })} />
           </li>
         ))}
       </ul>
-      <Button variant="ghost" onClick={() => setTool("event")} label="Place an event on the path" title="Then click the path|E">
+      <Button variant="ghost" onClick={() => startFlow("event")} label="Add an event" title="Click the path, then name it|M" testId="add-event">
         <Plus size={14} />
         Event
       </Button>
@@ -200,7 +176,6 @@ function EventsCard() {
 
 function ConstraintZonesCard() {
   const spec = useActivePath().spec;
-  const last = spec.waypoints.length - 1;
   return (
     <Card title="Constraint zones" count={spec.constraintZones.length} cardKey="constraint-zones">
       <ul className="item-list" aria-label="Constraint zones">
@@ -213,19 +188,11 @@ function ConstraintZonesCard() {
               </span>
               <span className="heading-tag">{Number.isFinite(z.maxMetersPerSecond) ? `${formatNumber(z.maxMetersPerSecond, 2)} m/s` : ""}</span>
             </button>
+            <RowDelete label={`Delete constraint zone ${i + 1}`} onClick={() => deleteItem({ kind: "constraint", index: i })} />
           </li>
         ))}
       </ul>
-      <Button
-        variant="ghost"
-        label="Add constraint zone"
-        onClick={() =>
-          editPath("Add constraint zone", (p) => addConstraintZone(p, makeConstraintZone(0, Math.min(1, last), 1.5, Infinity)), {
-            kind: "constraint",
-            index: spec.constraintZones.length,
-          })
-        }
-      >
+      <Button variant="ghost" label="Add a constraint zone" onClick={() => startFlow("constraint")} title="Click its start and end on the path, then set its speed limit|Z" testId="add-constraint">
         <Plus size={14} />
         Constraint zone
       </Button>
@@ -235,7 +202,6 @@ function ConstraintZonesCard() {
 
 function FaceZonesCard() {
   const spec = useActivePath().spec;
-  const last = spec.waypoints.length - 1;
   return (
     <Card title="Point-towards zones" count={spec.facePointZones.length} cardKey="face-zones">
       <ul className="item-list" aria-label="Point-towards zones">
@@ -250,14 +216,11 @@ function FaceZonesCard() {
                 ({formatNumber(z.point.x, 1)}, {formatNumber(z.point.y, 1)})
               </span>
             </button>
+            <RowDelete label={`Delete point-towards zone ${i + 1}`} onClick={() => deleteItem({ kind: "face", index: i })} />
           </li>
         ))}
       </ul>
-      <Button
-        variant="ghost"
-        label="Add face-point zone"
-        onClick={() => editPath("Add face-point zone", (p) => addFacePointZone(p, NEW_FACE_ZONE(last)), { kind: "face", index: spec.facePointZones.length })}
-      >
+      <Button variant="ghost" label="Add a point-towards zone" onClick={() => startFlow("face")} title="Click its start and end on the path, then the point to face|T" testId="add-face">
         <Plus size={14} />
         Point-towards zone
       </Button>
@@ -278,22 +241,11 @@ function PointsCard() {
                 ({formatNumber(p.x, 2)}, {formatNumber(p.y, 2)})
               </span>
             </button>
+            <RowDelete label={`Delete point ${p.name}`} onClick={() => deleteItem({ kind: "point", id: p.id })} />
           </li>
         ))}
       </ul>
-      <Button
-        variant="ghost"
-        label="New point at the field centre"
-        onClick={() => {
-          let id = "";
-          editProject("Add point", (pr) => {
-            const [withPoint, point] = addNamedPoint(pr, uniquePointName(pr), 0, 0);
-            id = point.id;
-            return withPoint;
-          });
-          if (id) select({ kind: "point", id });
-        }}
-      >
+      <Button variant="ghost" label="Add a named point" onClick={() => startFlow("point")} title="Click the spot, then name it|N" testId="add-point">
         <Plus size={14} />
         Point
       </Button>
@@ -302,10 +254,37 @@ function PointsCard() {
   );
 }
 
+/** The trash icon at the end of an item's row. */
+function RowDelete({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <IconButton label={label} onClick={onClick} className="row-delete">
+      <Trash2 size={13} />
+    </IconButton>
+  );
+}
+
+/** On a linked copy: what it follows, and Unlink. */
+function LinkedNote() {
+  const path = useActivePath();
+  const paths = useEditor((s) => s.project.paths);
+  const source = path.mirrorOf ? paths.find((p) => p.id === path.mirrorOf!.id) : undefined;
+  if (!source) return null;
+  return (
+    <p className="link-badge banner" data-testid="linked-note">
+      <Link2 size={12} />
+      A linked copy of {source.name} ({TRANSFORM_LABELS[path.mirrorOf!.transform].toLowerCase()}): it follows {source.name}, so edit that one.
+      <button type="button" className="link" onClick={() => unlinkActivePath(path.id)}>
+        Unlink to edit it on its own
+      </button>
+    </p>
+  );
+}
+
 function Overview() {
   return (
     <>
       <div className="inspector-top">
+        <LinkedNote />
         <OptimiseControls />
       </div>
       <WaypointsCard />
@@ -316,6 +295,7 @@ function Overview() {
       <ConstraintZonesCard />
       <FaceZonesCard />
       <PointsCard />
+      <SimCard />
       <Card title="Optimiser settings" cardKey="optimiser">
         <OptimiserSettings />
       </Card>

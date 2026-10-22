@@ -46,4 +46,6 @@ def test_the_committed_snapshot_is_small_and_parses():
 def test_every_course_has_a_what_to_look_at_line():
     from courses import COURSES
 
-    assert set(COURSES) <= set(run.EDITOR_LOOK)
+    # written ones for the courses so far; a new course gets one from its description until it has its own
+    assert all(len(run.look_line(c)) > 10 for c in COURSES)
+    assert run.look_line("hairpin") == run.EDITOR_LOOK["hairpin"]

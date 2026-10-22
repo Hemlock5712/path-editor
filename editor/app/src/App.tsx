@@ -3,6 +3,7 @@
 // playback clock.
 
 import { useEffect } from "react";
+import { startSim } from "./sim/state.ts";
 import { analysis, playback, startAnalysis } from "./state/analysis.ts";
 import { editor, isDirty } from "./state/editor.ts";
 import { useStore } from "./state/store.ts";
@@ -17,6 +18,7 @@ import { isTauri } from "./io/native.ts";
 import { reopenLastProject } from "./state/session.ts";
 import { listenToNativeMenu } from "./ui/nativeMenu.ts";
 import { onKeyDown } from "./ui/shortcuts.ts";
+import { TransformDialog } from "./ui/editor/TransformDialog.tsx";
 import { CommandPalette, ConfirmHost, ContextMenuHost, HelpDialog, installAppBehaviour, Splitter, Toasts, TooltipHost } from "./ui/shell.tsx";
 import { StatusBar, TopBar } from "./ui/TopBar.tsx";
 
@@ -74,6 +76,7 @@ export function App() {
   usePlaybackClock();
 
   useEffect(() => startAnalysis(), []);
+  useEffect(() => startSim(), []);
 
   useEffect(() => {
     const leave = (e: BeforeUnloadEvent) => {
@@ -124,6 +127,7 @@ export function App() {
       <CommandPalette />
       <ConfirmHost />
       <HelpDialog />
+      <TransformDialog />
     </div>
   );
 }

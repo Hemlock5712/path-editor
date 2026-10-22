@@ -2,12 +2,13 @@
 // commands; selection, tool and view don't (they aren't edits). A drag previews changes live and
 // records one command when it ends.
 
+import { syncLinked } from "../model/mirror.ts";
 import { emptyProject, type EditorPath, type Project } from "../model/project.ts";
 import { diff, type ProjectCommand } from "./commands.ts";
 import { History } from "./history.ts";
 import { createStore } from "./store.ts";
 
-export type Tool = "select" | "waypoint" | "event" | "rotation" | "obstacle";
+export type Tool = "select" | "obstacle" | "measure";
 
 export type Selection =
   | { readonly kind: "waypoint"; readonly index: number }
@@ -155,7 +156,8 @@ export function editProject(label: string, fn: (p: Project) => Project, selectio
   const before = editor.get().project;
   let after: Project;
   try {
-    after = fn(before);
+    // linked copies follow their sources (and an edit to a copy itself doesn't stick)
+    after = syncLinked(before, fn(before));
   } catch (e) {
     if (e instanceof RangeError) {
       notify(e.message, "error");
@@ -172,6 +174,16 @@ export function editProject(label: string, fn: (p: Project) => Project, selectio
 /** The same for the active path. */
 export function editPath(label: string, fn: (p: EditorPath) => EditorPath, selection?: Selection | null): boolean {
   const id = editor.get().activePathId;
+  // a linked copy's shape is its source's: only its name, colour and such change here
+  const current = activePath();
+  if (current.mirrorOf) {
+    try {
+      const next = fn(current);
+      if ((next.spec !== current.spec || next.links !== current.links) && refuseLinkedCopy()) return false;
+    } catch {
+      // (the edit reports its own problem below)
+    }
+  }
   return editProject(label, (project) => ({ ...project, paths: project.paths.map((p) => (p.id === id ? fn(p) : p)) }), selection);
 }
 
@@ -192,11 +204,21 @@ export function beginGesture(): void {
   gestureBase = editor.get().project;
 }
 
+/** Says so (and returns true) when the active path is a linked copy, which follows its source instead. */
+export function refuseLinkedCopy(): boolean {
+  const s = editor.get();
+  const link = activePath(s).mirrorOf;
+  if (!link) return false;
+  const source = s.project.paths.find((p) => p.id === link.id);
+  notify(`${activePath(s).name} is a linked copy of ${source?.name ?? "another path"}: edit that one, or Unlink this copy first.`, "error");
+  return true;
+}
+
 /** Shows a change while dragging, without recording it. Bad intermediate states are skipped. */
 export function previewProject(fn: (base: Project, current: Project) => Project): void {
   if (!gestureBase) return;
   try {
-    const project = fn(gestureBase, editor.get().project);
+    const project = syncLinked(gestureBase, fn(gestureBase, editor.get().project));
     const s = editor.get();
     editor.set(settle(project, s.activePathId, s.selection));
   } catch (e) {

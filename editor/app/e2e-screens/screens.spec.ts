@@ -16,9 +16,9 @@ async function fieldPoint(page: Page, x: number, y: number): Promise<{ x: number
   return { x: box.x + box.width / 2 + x * scale, y: box.y + box.height / 2 - y * scale };
 }
 
-async function clickField(page: Page, x: number, y: number): Promise<void> {
+async function dblField(page: Page, x: number, y: number): Promise<void> {
   const p = await fieldPoint(page, x, y);
-  await page.mouse.click(p.x, p.y);
+  await page.mouse.dblclick(p.x, p.y);
 }
 
 async function settle(page: Page): Promise<void> {
@@ -32,26 +32,42 @@ for (const size of SIZES) {
     await page.setViewportSize(size);
     await page.addInitScript(() => localStorage.removeItem("pathEditor.layout"));
     await page.goto("/");
-    await expect(page.getByTestId("path-stats")).toContainText(" s,");
+    await expect(page.getByTestId("path-stats")).toContainText("no path yet");
     await settle(page);
     await shot("1-empty-editor");
 
     await page.getByTestId("quick-start-dismiss").click();
-    await page.keyboard.press("w");
+    // double-clicks: the start, the end, then a point after the last each time
     for (const [x, y] of [
+      [-6.5, -1.5],
+      [-4, -1.5],
       [-2, 1.5],
       [1, 0.5],
       [4, 2],
     ]) {
-      await clickField(page, x!, y!);
+      await dblField(page, x!, y!);
     }
-    await page.keyboard.press("Enter");
     await page.keyboard.press("Escape");
     await page.getByTestId("charts-toggle").click();
     await settle(page);
     await shot("2-drawn-path");
 
     await page.getByTestId("charts-toggle").click();
+
+    // the sim preview: its switch and numbers in the playback bar, its card in the inspector
+    await page.getByTestId("sim-toggle").click();
+    await expect(page.getByTestId("sim-time")).toBeVisible();
+    await page.locator("button.card-head", { hasText: /^Sim preview/ }).click();
+    await page.locator("button.card-head", { hasText: /^Waypoints/ }).click();
+    await page.getByTestId("play").click();
+    await page.waitForTimeout(1500);
+    await page.getByTestId("play").click();
+    await settle(page);
+    await shot("2b-sim-preview");
+    await page.getByTestId("sim-toggle").click();
+    await page.locator("button.card-head", { hasText: /^Waypoints/ }).click();
+    await page.locator("button.card-head", { hasText: /^Sim preview/ }).click();
+
     await page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(2).click();
     await settle(page);
     await shot("3-selected-waypoint");
@@ -65,8 +81,21 @@ for (const size of SIZES) {
     await shot("5-telemetry");
 
     await page.getByTestId("page-bench").click();
-    await expect(page.getByTestId("bench-scoreboard")).toBeVisible();
+    await expect(page.getByTestId("bench-benchmark")).toBeVisible();
     await settle(page);
     await shot("6-bench");
+    await page.getByTestId("bench-charts").scrollIntoViewIfNeeded();
+    await settle(page);
+    await shot("6b-bench-charts");
+    await page.getByRole("radio", { name: "Per target" }).click();
+    await settle(page);
+    await shot("6c-bench-per-target");
+    await page.getByRole("radio", { name: "All targets" }).click();
+    await page.getByTestId("bench-optimised").scrollIntoViewIfNeeded();
+    await settle(page);
+    await shot("6d-bench-optimised");
+    await page.locator("#bench-detail").scrollIntoViewIfNeeded();
+    await settle(page);
+    await shot("6e-bench-detail");
   });
 }

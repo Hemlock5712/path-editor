@@ -92,6 +92,12 @@ final class SimDrive {
     }
   }
 
+  /** A push: adds (dvx, dvy) m/s to the chassis now (call it every loop for a sustained shove). */
+  void push(double dvx, double dvy) {
+    vx += dvx;
+    vy += dvy;
+  }
+
   double time() {
     return t;
   }

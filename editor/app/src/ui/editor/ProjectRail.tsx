@@ -1,13 +1,13 @@
 // The left rail: the project's paths as cards with a small preview of each on the field. Click to open
 // one; double-click (or F2, or Rename) to rename it; right-click for more.
 
-import { Copy, CornerDownRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, CornerDownRight, FlipHorizontal2, Link2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isValidPathName, type EditorPath, type Project } from "../../model/project.ts";
-import { duplicatePath, newPath, removeActivePath } from "../../state/actions.ts";
+import { duplicatePath, newPath, removeActivePath, unlinkActivePath } from "../../state/actions.ts";
 import { geometryOf } from "../../state/analysis.ts";
 import { editPath, notify, setActivePath } from "../../state/editor.ts";
-import { openContextMenu } from "../../state/ui.ts";
+import { openContextMenu, ui } from "../../state/ui.ts";
 import { formatNumber, IconButton } from "../controls.tsx";
 import { useEditor } from "../panels/common.tsx";
 import { Pane } from "../shell.tsx";
@@ -53,9 +53,11 @@ function Preview({ path, field }: { path: EditorPath; field: Project["field"] })
       path.spec.waypoints.forEach((w, i) => (i === 0 ? ctx.moveTo(px(w.xMeters), py(w.yMeters)) : ctx.lineTo(px(w.xMeters), py(w.yMeters))));
     }
     ctx.stroke();
-    const start = path.spec.waypoints[0]!;
-    ctx.fillStyle = "#fbbf24";
-    ctx.fillRect(px(start.xMeters) - 1.5, py(start.yMeters) - 1.5, 3, 3);
+    const start = path.spec.waypoints[0];
+    if (start) {
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillRect(px(start.xMeters) - 1.5, py(start.yMeters) - 1.5, 3, 3);
+    }
   }, [path.spec, path.colour, field]);
   return <canvas ref={ref} aria-hidden="true" />;
 }
@@ -97,6 +99,31 @@ function RenameInput({ path, paths, done }: { path: EditorPath; paths: readonly 
   );
 }
 
+/** A linked copy's badge (following its source), or a source's (followed by its copies), with Unlink. */
+function LinkBadge({ path, paths }: { path: EditorPath; paths: readonly EditorPath[] }) {
+  const source = path.mirrorOf ? paths.find((q) => q.id === path.mirrorOf!.id) : undefined;
+  const copies = paths.filter((q) => q.mirrorOf?.id === path.id);
+  if (!source && copies.length === 0) return null;
+  return (
+    <span className="link-badge" data-testid={`link-${path.name}`}>
+      <Link2 size={11} />
+      {source ? `follows ${source.name}` : `followed by ${copies.map((c) => c.name).join(", ")}`}
+      <button
+        type="button"
+        className="link"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (source) unlinkActivePath(path.id);
+          else for (const c of copies) unlinkActivePath(c.id);
+        }}
+        data-testid={`unlink-${path.name}`}
+      >
+        Unlink
+      </button>
+    </span>
+  );
+}
+
 export function ProjectRail() {
   const paths = useEditor((s) => s.project.paths);
   const field = useEditor((s) => s.project.field);
@@ -109,6 +136,7 @@ export function ProjectRail() {
       { label: "Rename", icon: <Pencil size={14} />, shortcut: "F2", run: () => setRenaming(p.id) },
       { label: "Duplicate", icon: <Copy size={14} />, run: duplicatePath },
       { label: "New path from its end", icon: <CornerDownRight size={14} />, run: () => newPath() },
+      { label: "Flip or mirror…", icon: <FlipHorizontal2 size={14} />, run: () => ui.set({ transformOpen: true }) },
       "separator",
       { label: "Delete", icon: <Trash2 size={14} />, danger: true, disabled: paths.length <= 1, run: removeActivePath },
     ]);
@@ -124,6 +152,9 @@ export function ProjectRail() {
           </IconButton>
           <IconButton label="Duplicate this path" onClick={duplicatePath} testId="duplicate-path">
             <Copy size={15} />
+          </IconButton>
+          <IconButton label="Flip or mirror this path" onClick={() => ui.set({ transformOpen: true })} testId="transform-path">
+            <FlipHorizontal2 size={15} />
           </IconButton>
           <IconButton label="Rename this path" shortcut="F2" onClick={() => setRenaming(activeId)} testId="rename-path">
             <Pencil size={15} />
@@ -178,6 +209,7 @@ export function ProjectRail() {
                     {p.spec.waypoints.length} points{g ? `, ${formatNumber(g.lengthMeters, 1)} m` : ""}
                     {p.spec.events.length > 0 ? `, ${p.spec.events.length} events` : ""}
                   </span>
+                  <LinkBadge path={p} paths={paths} />
                 </span>
               </div>
             </li>

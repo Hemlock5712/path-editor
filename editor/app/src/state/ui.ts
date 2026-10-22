@@ -18,6 +18,8 @@ export interface UiState {
   readonly chartsOpen: boolean;
   readonly paletteOpen: boolean;
   readonly helpOpen: boolean;
+  /** The Flip or mirror dialog, for the active path. */
+  readonly transformOpen: boolean;
   /** Draw the live robot (NT4) on the editor's field. */
   readonly liveOverlay: boolean;
 }
@@ -49,6 +51,7 @@ export const ui = createStore<UiState>({
   chartsOpen: false,
   paletteOpen: false,
   helpOpen: false,
+  transformOpen: false,
   liveOverlay: true,
   ...Object.fromEntries(Object.entries(remembered()).filter(([, v]) => v !== undefined)),
 });
@@ -83,14 +86,17 @@ export interface Toast {
   readonly id: number;
   readonly text: string;
   readonly kind: "info" | "ok" | "error";
+  /** A one-click follow-up, offered on the toast. */
+  readonly action?: { readonly label: string; readonly run: () => void };
 }
 
 export const toasts = createStore<{ readonly list: readonly Toast[] }>({ list: [] });
 let toastId = 0;
 
-export function toast(text: string, kind: Toast["kind"] = "info", ms = kind === "error" ? 6000 : 3200): void {
+export function toast(text: string, kind: Toast["kind"] = "info", ms = kind === "error" ? 6000 : 3200, action?: Toast["action"]): void {
   const id = ++toastId;
-  toasts.set((s) => ({ list: [...s.list.slice(-3), { id, text, kind }] }));
+  // one offer at a time: a new one replaces the last
+  toasts.set((s) => ({ list: [...s.list.filter((t) => !(action && t.action)).slice(-3), { id, text, kind, action }] }));
   setTimeout(() => toasts.set((s) => ({ list: s.list.filter((t) => t.id !== id) })), ms);
 }
 

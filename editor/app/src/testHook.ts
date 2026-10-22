@@ -1,9 +1,21 @@
 // Read-only hooks for the browser tests (e2e-author and the Playwright specs): the active path's
 // preview numbers, unrounded, and where its robots and their handles are on the field.
 
+import { writePath } from "../../core/src/index.ts";
 import { analysis, currentPreview, geometryOf } from "./state/analysis.ts";
+import { flow } from "./state/flow.ts";
+import { sim } from "./sim/state.ts";
+
+/** The sim preview's run of the active path, if it has one: when it finished, and the robot's track. */
+function simSummary() {
+  const r = sim.get().result;
+  const spec = activePath().spec;
+  if (!r || !r.ok || sim.get().input?.spec !== spec) return null;
+  return { finishSeconds: r.finishSeconds, settleSeconds: r.settleSeconds, endErrorMeters: r.endErrorMeters, x: r.x, y: r.y };
+}
+import { flowKnob } from "./ui/drawItems.ts";
 import { activePath, editor } from "./state/editor.ts";
-import { rotationHandle, rotationTargetS, waypointHandle, waypointPose } from "./ui/draw.ts";
+import { collisions, rotationHandle, rotationTargetS, waypointHandle, waypointPose } from "./ui/draw.ts";
 
 export interface Poses {
   /** Each waypoint's pose (its set heading, or the plan's there) and its rotate knob, blue frame. */
@@ -12,16 +24,29 @@ export interface Poses {
   readonly targets: readonly { s: number; x: number; y: number; heading: number; knobX: number; knobY: number }[];
   /** The plan every ~10 cm: arc length, position, heading and direction of travel (radians). */
   readonly plan: readonly { s: number; x: number; y: number; heading: number; travel: number }[];
+  /** Where the swept bumpers hit an obstacle or the wall (drawn red on the path), and the least clearance, m. */
+  readonly collisions: readonly { sFrom: number; sTo: number; message: string }[];
+  readonly clearanceMeters: number;
 }
 
-/** The active path's poses, once the plan matches the document. */
+/** The active path's poses, once the plan matches the document (a path still being drawn: just its robots). */
 export async function currentPoses(): Promise<Poses> {
-  await currentPreview();
+  const draft = activePath().spec.waypoints.length < 2;
+  if (!draft) await currentPreview();
   const s = editor.get();
   const path = activePath(s);
+  if (draft) {
+    const model = { active: path, analysis: null, project: s.project };
+    const waypoints = path.spec.waypoints.map((_, i) => {
+      const h = waypointHandle(model, i);
+      return { ...waypointPose(model, i), knobX: h[2], knobY: h[3] };
+    });
+    return { waypoints, targets: [], plan: [], collisions: [], clearanceMeters: Number.NaN };
+  }
   const a = analysis.get().result;
   if (!a || !a.ok) throw new Error("no plan");
-  const g = geometryOf(path.spec)!;
+  const g = geometryOf(path.spec);
+  if (!g) throw new Error("no path yet");
   const model = { active: path, analysis: a, project: s.project, geometry: g };
   const waypoints = path.spec.waypoints.map((_, i) => {
     const p = waypointPose(model, i);
@@ -43,9 +68,30 @@ export async function currentPoses(): Promise<Poses> {
     const travel = Math.atan2(st.y[j]! - st.y[k]!, st.x[j]! - st.x[k]!);
     plan.push({ s: st.s[i]!, x: st.x[i]!, y: st.y[i]!, heading: st.heading[i]!, travel });
   }
-  return { waypoints, targets, plan };
+  const hits = collisions(a).map((c) => ({ sFrom: c.sFrom, sTo: c.sTo, message: c.message }));
+  return { waypoints, targets, plan, collisions: hits, clearanceMeters: a.minClearanceMeters };
+}
+
+/** The document as the tests check it: the active path's file, the paths and the named points. */
+export function currentDoc() {
+  const s = editor.get();
+  const path = activePath(s);
+  return {
+    active: path.name,
+    file: path.spec.waypoints.length >= 2 ? JSON.parse(writePath(path.spec)) : null,
+    links: path.links,
+    paths: s.project.paths.map((p) => ({
+      name: p.name,
+      mirrorOf: p.mirrorOf ? (s.project.paths.find((q) => q.id === p.mirrorOf!.id)?.name ?? null) : null,
+      file: p.spec.waypoints.length >= 2 ? JSON.parse(writePath(p.spec)) : null,
+    })),
+    namedPoints: s.project.namedPoints.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, heading: p.heading ?? null, twin: p.twin?.id ?? null })),
+    selection: s.selection,
+    flow: { ...flow.get(), knob: flowKnob({ geometry: geometryOf(path.spec), project: s.project }, flow.get()) },
+    sim: simSummary(),
+  };
 }
 
 export function installTestHook(): void {
-  (window as unknown as { pathEditorTest: object }).pathEditorTest = { preview: currentPreview, poses: currentPoses };
+  (window as unknown as { pathEditorTest: object }).pathEditorTest = { preview: currentPreview, poses: currentPoses, doc: currentDoc };
 }

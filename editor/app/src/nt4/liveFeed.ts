@@ -5,6 +5,7 @@
 // Updates are gathered and written to the store at most every 50 ms.
 
 import { live, LIVE_OFF, type LiveState } from "../state/live.ts";
+import { Recorder } from "./recorder.ts";
 import { Nt4Client, NT4_PORT, poseOf, robotAddress, type Nt4Value } from "./client.ts";
 
 export interface LiveSettings {
@@ -23,15 +24,26 @@ const FLUSH_MS = 50;
 
 export class LiveFeed {
   readonly client: Nt4Client;
+  /** Every run of the follower, recorded loop by loop. */
+  readonly recorder: Recorder;
   private pending: Partial<LiveState> = {};
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly settings: LiveSettings) {
+  constructor(
+    private readonly settings: LiveSettings,
+    onRecording: (recorder: Recorder) => void = () => undefined,
+  ) {
+    this.recorder = new Recorder(settings.poseTopic, 10, () => onRecording(this.recorder));
     this.client = new Nt4Client({
       host: robotAddress(settings.address),
       port: settings.port,
       prefixes: [FOLLOWER, PATHS, settings.poseTopic],
-      onValue: (v) => this.onValue(v),
+      all: true,
+      onValue: (v) => {
+        this.recorder.onValue(v);
+        this.onValue(v);
+      },
+      onFrameEnd: () => this.recorder.onFrameEnd(),
       onStatus: (status, detail) => {
         if (status === "closed") live.set({ ...LIVE_OFF });
         else live.set({ status, message: detail, ...(status === "connecting" ? { synced: false } : {}) });

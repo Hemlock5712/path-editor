@@ -10,7 +10,9 @@ import {
   type HeadingMode,
   type PathSpec,
   type RobotConfig,
+  type Waypoint,
 } from "../../../core/src/index.ts";
+import type { Twin } from "./mirror.ts";
 
 /** A field point shared across paths. Moving it moves every waypoint linked to it. */
 export interface NamedPoint {
@@ -18,6 +20,10 @@ export interface NamedPoint {
   readonly name: string;
   readonly x: number;
   readonly y: number;
+  /** The heading a robot has there, radians (absent or NaN: none). */
+  readonly heading?: number;
+  /** Its flipped or mirrored twin, kept in step with it (see mirror.ts). */
+  readonly twin?: Twin | null;
 }
 
 export interface EditorPath {
@@ -30,6 +36,8 @@ export interface EditorPath {
   /** Per waypoint: pinned, so the optimiser leaves it where it is. Same length as spec.waypoints. */
   readonly pinned: readonly boolean[];
   readonly colour: string;
+  /** A linked copy: this path is always its source turned by the transform, and isn't edited itself. */
+  readonly mirrorOf?: Twin | null;
 }
 
 /** One obstacle polygon in field.json (metres, origin at the field centre). */
@@ -72,8 +80,8 @@ export interface SimPreviewSettings {
   readonly latencyMs: number;
   /** The drive's first-order lag (time constant), ms. */
   readonly lagMs: number;
-  /** The sim's grip as a multiple of the robot's μ (below 1: a slippier carpet than planned). */
-  readonly gripScale: number;
+  /** The floor's grip in the sim, μ (caps the simulated chassis's acceleration at μ·g); null: no cap. */
+  readonly gripMu: number | null;
 }
 
 export interface ProjectSettings {
@@ -93,10 +101,58 @@ export interface Project {
   readonly settings: ProjectSettings;
 }
 
+/**
+ * The 2026 field's (REBUILT) solid elements, as obstacles: centre origin, metres, blue at x < 0. Positions
+ * from WPILib's 2026-rebuilt-welded AprilTag layout (allwpilib fields/.../2026-rebuilt-welded.csv,
+ * c610ffd17f); sizes from the game manual's nominal dimensions.
+ *
+ *   - HUB: a 47 in square, its centre where its four faces' tags put it (x ±3.645, y 0).
+ *   - TOWER: 49.25 in wide by 45 in deep against the alliance wall, centred on its two tags (y -0.073 blue,
+ *     +0.073 red): the uprights and supports can't be driven through.
+ *   - TRENCH: robots up to 22.25 in tall drive under each arm (a 50.34 in lane along the guardrail), so the
+ *     lane is free; the rest of the 65.65 in trench, beside the BUMP, is the arm's solid support, 47 in deep
+ *     like the hub. (Taller robots: add the lanes as obstacles.)
+ *   - Not obstacles: the BUMPS (6.5 in ramps at 15°, driven over), the DEPOTS (a 1 in barrier), and the
+ *     OUTPOSTS (part of the wall; the field's size is to their inward faces). The walls themselves are
+ *     checked as the field's edge.
+ */
+const IN = 0.0254;
+const rect = (name: string, x0: number, x1: number, y0: number, y1: number): Obstacle => ({
+  name,
+  polygon: [
+    [r5(x0), r5(y0)],
+    [r5(x1), r5(y0)],
+    [r5(x1), r5(y1)],
+    [r5(x0), r5(y1)],
+  ],
+});
+function r5(v: number): number {
+  return Math.round(v * 1e5) / 1e5;
+}
+const HUB_X = 3.645;
+const HUB_HALF = (47 / 2) * IN;
+const FIELD_HALF_X = 16.54 / 2;
+const TOWER_DEPTH = 45 * IN;
+const TOWER_HALF_W = (49.25 / 2) * IN;
+const TOWER_Y = 0.073;
+const TRENCH_SUPPORT_Y0 = HUB_HALF + 73 * IN; // the bump's outer edge
+const TRENCH_SUPPORT_Y1 = 8.07 / 2 - 50.34 * IN; // where the lane under the arm begins
+
+export const FIELD_2026_OBSTACLES: readonly Obstacle[] = [
+  rect("blue hub", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, -HUB_HALF, HUB_HALF),
+  rect("red hub", HUB_X - HUB_HALF, HUB_X + HUB_HALF, -HUB_HALF, HUB_HALF),
+  rect("blue tower", -FIELD_HALF_X, -FIELD_HALF_X + TOWER_DEPTH, -TOWER_Y - TOWER_HALF_W, -TOWER_Y + TOWER_HALF_W),
+  rect("red tower", FIELD_HALF_X - TOWER_DEPTH, FIELD_HALF_X, TOWER_Y - TOWER_HALF_W, TOWER_Y + TOWER_HALF_W),
+  rect("blue trench, upper support", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, TRENCH_SUPPORT_Y0, TRENCH_SUPPORT_Y1),
+  rect("blue trench, lower support", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, -TRENCH_SUPPORT_Y1, -TRENCH_SUPPORT_Y0),
+  rect("red trench, upper support", HUB_X - HUB_HALF, HUB_X + HUB_HALF, TRENCH_SUPPORT_Y0, TRENCH_SUPPORT_Y1),
+  rect("red trench, lower support", HUB_X - HUB_HALF, HUB_X + HUB_HALF, -TRENCH_SUPPORT_Y1, -TRENCH_SUPPORT_Y0),
+];
+
 export const DEFAULT_FIELD: FieldDoc = {
   lengthMeters: 16.54,
   widthMeters: 8.07,
-  obstacles: [],
+  obstacles: FIELD_2026_OBSTACLES,
   extra: {},
   fieldExtra: {},
 };
@@ -110,7 +166,7 @@ export const DEFAULT_ROBOT_SETTINGS: RobotSettings = {
 
 export const DEFAULT_PATH_DEFAULTS: PathDefaults = { maxMetersPerSecond: 4.0, maxMetersPerSecondSquared: 6.0, headingMode: "hold" };
 
-export const DEFAULT_SIM_PREVIEW: SimPreviewSettings = { latencyMs: 20, lagMs: 40, gripScale: 1 };
+export const DEFAULT_SIM_PREVIEW: SimPreviewSettings = { latencyMs: 20, lagMs: 40, gripMu: null };
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   redFrame: "RED_HALF_TURN",
@@ -158,14 +214,44 @@ export function makeEditorPath(
   };
 }
 
+/**
+ * The spec of a path being drawn: it may have fewer than two waypoints (none yet, or just the start),
+ * so it can't be planned until it has two. Everything else is checked as usual. It isn't saved until
+ * it has two waypoints.
+ */
+export function draftSpec(parts: Partial<PathSpec> & { waypoints: readonly Waypoint[] }): PathSpec {
+  if (parts.waypoints.length >= 2) return makePathSpec(parts);
+  const checked = makePathSpec({ ...parts, waypoints: [makeWaypoint(0, 0), makeWaypoint(1, 0)] });
+  return { ...checked, waypoints: parts.waypoints };
+}
+
+/** A path can be planned (and saved) once it has a start and an end. */
+export function isDrawn(spec: PathSpec): boolean {
+  return spec.waypoints.length >= 2;
+}
+
+/**
+ * A new path to draw: just its start pose, or nothing yet. Double-clicks add the rest (the first two on
+ * an empty path make the start and the end).
+ */
+export function startSpec(start: { x: number; y: number; heading: number } | null, defaults: PathDefaults = DEFAULT_PATH_DEFAULTS): PathSpec {
+  return draftSpec({
+    waypoints: start ? [makeWaypoint(start.x, start.y, Number.NaN, 1, start.heading)] : [],
+    maxMetersPerSecond: defaults.maxMetersPerSecond,
+    maxMetersPerSecondSquared: defaults.maxMetersPerSecondSquared,
+    headingMode: defaults.headingMode,
+  });
+}
+
 /** How far a new path's first stretch runs, metres. */
 const STARTER_LENGTH = 2.5;
 
 /**
  * A new path: a robot pose and a short straight run from it, holding that heading at both ends (the
- * first and last waypoints always have one). By default it starts on the blue side, facing the field.
+ * first and last waypoints always have one). By default it starts on the blue side, facing the field,
+ * clear of the hub.
  */
-export function starterSpec(x = -6.5, y = -1.0, headingRadians = 0, defaults: PathDefaults = DEFAULT_PATH_DEFAULTS): PathSpec {
+export function starterSpec(x = -6.5, y = -1.5, headingRadians = 0, defaults: PathDefaults = DEFAULT_PATH_DEFAULTS): PathSpec {
   const ex = Math.round((x + STARTER_LENGTH * Math.cos(headingRadians)) * 1e5) / 1e5;
   const ey = Math.round((y + STARTER_LENGTH * Math.sin(headingRadians)) * 1e5) / 1e5;
   return makePathSpec({
@@ -178,7 +264,7 @@ export function starterSpec(x = -6.5, y = -1.0, headingRadians = 0, defaults: Pa
 
 export function emptyProject(): Project {
   return {
-    paths: [makeEditorPath("Path1", starterSpec(), 0)],
+    paths: [makeEditorPath("Path1", startSpec(null), 0)],
     namedPoints: [],
     field: DEFAULT_FIELD,
     robot: DEFAULT_ROBOT_SETTINGS,

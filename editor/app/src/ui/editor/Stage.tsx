@@ -7,10 +7,13 @@ import {
   ChevronRight,
   CircleAlert,
   CircleCheck,
+  Crosshair,
   Flag,
   Footprints,
+  Gauge,
   Grid3x3,
   Hexagon,
+  MapPin,
   Maximize2,
   MousePointer2,
   Pause,
@@ -18,21 +21,27 @@ import {
   Radio,
   Redo2,
   RotateCw,
+  Ruler,
   Spline,
   StepBack,
   StepForward,
   TriangleAlert,
   Undo2,
+  Wrench,
 } from "lucide-react";
 import { useRef, useState } from "react";
+import { isDrawn } from "../../model/project.ts";
 import { fitView, stepPlayback, toggleAlliance, togglePlay } from "../../state/actions.ts";
 import { analysis, playback } from "../../state/analysis.ts";
 import { redo, setTool, setView, undo, type Tool } from "../../state/editor.ts";
 import { live } from "../../state/live.ts";
 import { useStore } from "../../state/store.ts";
 import { openContextMenu, ui } from "../../state/ui.ts";
+import { SimResultRow, SimSwitch } from "../../sim/SimPanel.tsx";
 import { Charts } from "../Charts.tsx";
-import { TOOLS } from "../commands.ts";
+import { FLOWS, TOOLS } from "../commands.ts";
+import { fixesFor } from "../../state/fixes.ts";
+import { cancelFlow, flow, startFlow, type FlowKind } from "../../state/flow.ts";
 import { formatNumber, IconButton, Portal, Slider, useDismiss, usePopoverPosition } from "../controls.tsx";
 import { atS } from "../draw.ts";
 import { FieldCanvas, TOOL_HINTS } from "../FieldCanvas.tsx";
@@ -40,13 +49,20 @@ import { useActivePath, useAnalysis, useEditor } from "../panels/common.tsx";
 
 const TOOL_ICONS: Record<Tool, typeof Spline> = {
   select: MousePointer2,
-  waypoint: Spline,
+  obstacle: Hexagon,
+  measure: Ruler,
+};
+
+const FLOW_ICONS: Record<FlowKind, typeof Spline> = {
   rotation: RotateCw,
   event: Flag,
-  obstacle: Hexagon,
+  constraint: Gauge,
+  face: Crosshair,
+  point: MapPin,
 };
 
 const KIND_LABELS = {
+  cusp: "Cusp",
   curvature: "Bend",
   heading: "Turn",
   bumper: "Bumpers",
@@ -62,28 +78,53 @@ function ToolBar() {
   const undoLabel = useEditor((s) => s.undoLabel);
   const redoLabel = useEditor((s) => s.redoLabel);
   const path = useActivePath();
+  const active = useStore(flow, (f) => f.kind);
+  const toolButton = (t: (typeof TOOLS)[number]) => {
+    const Icon = TOOL_ICONS[t.tool];
+    return (
+      <button
+        key={t.tool}
+        type="button"
+        role="radio"
+        aria-checked={!active && tool === t.tool}
+        aria-label={t.label}
+        aria-keyshortcuts={t.key}
+        className="icon-btn"
+        data-tip={`${t.label}: ${TOOL_HINTS[t.tool]}|${t.key}`}
+        onClick={() => {
+          cancelFlow();
+          setTool(t.tool);
+        }}
+        data-testid={`tool-${t.tool}`}
+      >
+        <Icon size={16} />
+      </button>
+    );
+  };
   return (
     <div className="float-bar canvas-tools" role="toolbar" aria-label="Tools">
       <div role="radiogroup" aria-label="Tool" className="row" style={{ gap: 2 }}>
-        {TOOLS.map((t) => {
-          const Icon = TOOL_ICONS[t.tool];
+        {toolButton(TOOLS[0]!)}
+        {FLOWS.map((f) => {
+          const Icon = FLOW_ICONS[f.flow];
           return (
             <button
-              key={t.tool}
+              key={f.flow}
               type="button"
               role="radio"
-              aria-checked={tool === t.tool}
-              aria-label={t.label}
-              aria-keyshortcuts={t.key}
+              aria-checked={active === f.flow}
+              aria-label={f.label}
+              aria-keyshortcuts={f.key}
               className="icon-btn"
-              data-tip={`${t.label}: ${TOOL_HINTS[t.tool]}|${t.key}`}
-              onClick={() => setTool(t.tool)}
-              data-testid={`tool-${t.tool}`}
+              data-tip={`${f.label}: ${f.hint}|${f.key}`}
+              onClick={() => (active === f.flow ? cancelFlow() : startFlow(f.flow))}
+              data-testid={`flow-${f.flow}`}
             >
               <Icon size={16} />
             </button>
           );
         })}
+        {TOOLS.slice(1).map(toolButton)}
       </div>
       <span className="sep" />
       <IconButton label={undoLabel ? `Undo ${undoLabel}` : "Undo"} shortcut="Ctrl+Z" onClick={undo} disabled={!canUndo} testId="undo">
@@ -104,9 +145,12 @@ function ToolBar() {
 /** The plan's headline numbers: length, time, top speed. */
 function PathStats() {
   const a = useAnalysis();
+  const drawn = isDrawn(useActivePath().spec);
   return (
     <span className="path-stats" data-testid="path-stats">
-      {a ? (
+      {!drawn ? (
+        "no path yet"
+      ) : a ? (
         <>
           {formatNumber(a.lengthMeters, 2)} m, <strong>{formatNumber(a.totalTimeSeconds, 2)} s</strong>, top {formatNumber(Math.max(...a.stations.v), 2)} m/s
         </>
@@ -125,11 +169,12 @@ function ChecksBadge() {
   const pop = useRef<HTMLDivElement>(null);
   const style = usePopoverPosition(button, open, 360, true);
   useDismiss(open, () => setOpen(false), button, pop);
+  const drawn = isDrawn(useActivePath().spec);
   const checks = a?.checks ?? [];
   const errors = checks.filter((c) => c.severity === "error").length;
-  const level = failure || errors > 0 ? "error" : checks.length > 0 ? "warning" : "ok";
+  const level = drawn && (failure || errors > 0) ? "error" : drawn && checks.length > 0 ? "warning" : "ok";
   const Icon = level === "error" ? CircleAlert : level === "warning" ? TriangleAlert : CircleCheck;
-  const text = failure ? "Can't plan" : checks.length === 0 ? "No issues" : `${checks.length} ${checks.length === 1 ? "issue" : "issues"}`;
+  const text = !drawn ? "No path yet" : failure ? "Can't plan" : checks.length === 0 ? "No issues" : `${checks.length} ${checks.length === 1 ? "issue" : "issues"}`;
   return (
     <>
       <button
@@ -148,7 +193,8 @@ function ChecksBadge() {
       {open && (
         <Portal>
           <div ref={pop} className="popover checks-popover" style={style} role="dialog" aria-label="Checks">
-            {failure && (
+            {!drawn && <p className="hint">Double-click the field to place the start and the end.</p>}
+            {drawn && failure && (
               <p className="check error" role="alert">
                 The path can't be planned: {failure}
               </p>
@@ -164,6 +210,24 @@ function ChecksBadge() {
                   >
                     <span className="check-kind">{KIND_LABELS[c.kind]}</span> {c.message}
                   </button>
+                  <span className="fixes">
+                    {fixesFor(c).map((f, j) => (
+                      <button
+                        key={j}
+                        type="button"
+                        className="btn small"
+                        data-tip={f.tip}
+                        data-testid={`fix-${i}-${j}`}
+                        onClick={() => {
+                          setOpen(false);
+                          f.run();
+                        }}
+                      >
+                        <Wrench size={12} />
+                        {f.label}
+                      </button>
+                    ))}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -255,7 +319,9 @@ function PlaybackBar() {
   const result = useStore(analysis, (a) => a.result);
   const total = result && result.ok ? result.totalTimeSeconds : 0;
   return (
-    <div className="playback-bar" role="group" aria-label="Playback">
+    <div className="playback-overlay">
+      <SimResultRow />
+      <div className="playback-bar" role="group" aria-label="Playback">
       <IconButton label={playing ? "Pause" : "Play"} shortcut="Space" onClick={togglePlay} disabled={total === 0} testId="play">
         {playing ? <Pause size={16} /> : <Play size={16} />}
       </IconButton>
@@ -279,6 +345,9 @@ function PlaybackBar() {
       <span className="time" data-testid="time">
         {formatNumber(Math.min(t, total), 2)} / <strong>{formatNumber(total, 2)} s</strong>
       </span>
+      <span className="sep" />
+      <SimSwitch />
+      </div>
     </div>
   );
 }

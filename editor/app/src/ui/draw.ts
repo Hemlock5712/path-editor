@@ -3,10 +3,13 @@
 // and the worker's analysis for speeds, headings and checks).
 
 import { eventMeters, type PathGeometry, type RotationTarget } from "../../../core/src/index.ts";
-import type { Analysis, Stations } from "../compute/analysis.ts";
+import type { Analysis, Check, Stations } from "../compute/analysis.ts";
+import type { BlockedAt } from "../compute/optimiser.ts";
 import type { EditorPath, Project } from "../model/project.ts";
 import type { Selection, Tool } from "../state/editor.ts";
 import type { FieldView } from "./fieldView.ts";
+import type { FlowState } from "../state/flow.ts";
+import { drawDeleteHandle, drawFlow, drawZoneChips, type ItemRef } from "./drawItems.ts";
 
 /** The field image's field rectangle in image pixels (AdvantageScope's 2026 field, as on master). */
 const IMAGE_FIELD = { x: 524, y: 95, w: 3378 - 524, h: 1489 - 95 };
@@ -18,8 +21,9 @@ export const COLOURS = {
   background: "#0b0f14",
   grid: "rgba(255,255,255,0.07)",
   axis: "rgba(255,255,255,0.22)",
-  obstacle: "rgba(239,68,68,0.28)",
-  obstacleEdge: "#f87171",
+  obstacle: "rgba(248,113,113,0.13)",
+  obstacleEdge: "rgba(248,113,113,0.7)",
+  collision: "#ef4444",
   waypoint: "#f8fafc",
   selected: "#fbbf24",
   linked: "#facc15",
@@ -73,10 +77,20 @@ export interface DrawModel {
   readonly geometryOf: (spec: EditorPath["spec"]) => PathGeometry | null;
   /** The optimiser's proposal for the active path, drawn dashed with its waypoints. */
   readonly ghost: EditorPath["spec"] | null;
+  /** Where the optimiser couldn't clear an obstacle, and the waypoint it suggests there. */
+  readonly blocked?: BlockedAt | null;
   /** The item under the pointer, highlighted. */
   readonly hover?: { readonly kind: "waypoint" | "turn" | "rotation"; readonly index: number } | null;
   /** A clock (ms) for the selection outline's slow march; 0 holds it still. */
   readonly time?: number;
+  /** The item showing a delete × (under the pointer, or selected), and whether the pointer is on the ×. */
+  readonly deletable?: ItemRef | null;
+  readonly deleteHot?: boolean;
+  /** A guided flow in progress, and the field point under the pointer (its previews follow it). */
+  readonly flow?: FlowState;
+  readonly flowHover?: { readonly x: number; readonly y: number } | null;
+  /** The Measure tool's line (blue frame). */
+  readonly measure?: { readonly a: readonly [number, number]; readonly b: readonly [number, number] } | null;
 }
 
 /** Linear interpolation of a station column at s. */
@@ -129,15 +143,21 @@ export function drawField(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   drawZones(ctx, m);
   drawChecks(ctx, m);
   drawPath(ctx, m);
+  drawCollisions(ctx, m);
   drawGhost(ctx, m);
+  drawBlocked(ctx, m);
   drawFootprints(ctx, m);
   drawRotationTargets(ctx, m);
   drawHeadingGhost(ctx, m);
   drawWaypoints(ctx, m);
   drawEvents(ctx, m);
   drawNamedPoints(ctx, m);
+  drawZoneChips(ctx, m);
+  if (m.flow) drawFlow(ctx, m, m.flow, m.flowHover ?? null);
+  drawDeleteHandle(ctx, m, m.deletable ?? null, m.deleteHot === true);
   drawDraftObstacle(ctx, m);
   drawHover(ctx, m);
+  drawMeasure(ctx, m);
   if (m.showPlaybackRobot) drawPlaybackRobot(ctx, m);
   drawLive(ctx, m);
   drawLegend(ctx, m);
@@ -212,6 +232,7 @@ function line(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number,
 function drawObstacles(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   // Obstacles are fixed field features: drawn in the displayed frame without flipping
   const { view } = m;
+  const busy = busyBoxes(ctx, m);
   m.project.field.obstacles.forEach((o, i) => {
     if (o.polygon.length === 0) return;
     const selected = m.selection?.kind === "obstacle" && m.selection.index === i;
@@ -235,12 +256,31 @@ function drawObstacles(ctx: CanvasRenderingContext2D, m: DrawModel): void {
       }
     }
     const [cx, cy] = o.polygon.reduce(([sx, sy], [x, y]) => [sx + x / o.polygon.length, sy + y / o.polygon.length], [0, 0]);
-    ctx.fillStyle = "#fecaca";
     ctx.font = "10px system-ui, sans-serif";
+    const [lx, ly] = view.toCanvasRaw(cx, cy);
+    const w = ctx.measureText(o.name).width;
+    // the field's own labels give way: faded under a named point's label or a waypoint's robot
+    const box = { x0: lx - w / 2, x1: lx + w / 2, y0: ly - 10, y1: ly + 2 };
+    ctx.fillStyle = busy.some((b) => b.x0 < box.x1 && b.x1 > box.x0 && b.y0 < box.y1 && b.y1 > box.y0) ? "rgba(254,202,202,0.18)" : "rgba(254,202,202,0.75)";
     ctx.textAlign = "center";
-    ctx.fillText(o.name, ...view.toCanvasRaw(cx, cy));
+    ctx.fillText(o.name, lx, ly);
     ctx.textAlign = "left";
   });
+}
+
+/** Where the active path's robots and the named points' labels are, canvas px (the field's labels avoid them). */
+function busyBoxes(ctx: CanvasRenderingContext2D, m: DrawModel): { x0: number; x1: number; y0: number; y1: number }[] {
+  ctx.font = "10px system-ui, sans-serif";
+  const out = m.project.namedPoints.map((p) => {
+    const [x, y] = m.view.toCanvas(p.x, p.y);
+    return { x0: x - 10, x1: x + 11 + ctx.measureText(p.name).width, y0: y - 19, y1: y + 10 };
+  });
+  const r = (Math.hypot(m.project.robot.bumperLengthMeters, m.project.robot.bumperWidthMeters) / 2) * m.view.scale;
+  for (const w of m.active.spec.waypoints) {
+    const [x, y] = m.view.toCanvas(w.xMeters, w.yMeters);
+    out.push({ x0: x - r, x1: x + r, y0: y - r, y1: y + r });
+  }
+  return out;
 }
 
 /** Points along a geometry every step metres, as canvas pixels. */
@@ -288,6 +328,32 @@ function drawGhost(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   }
 }
 
+/** The spot the optimiser couldn't clear (a ring) and the waypoint it suggests (a dashed + to add). */
+function drawBlocked(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const b = m.blocked;
+  if (!b) return;
+  const [x, y] = m.view.toCanvas(b.x, b.y);
+  const [sx, sy] = m.view.toCanvas(b.suggestX, b.suggestY);
+  ctx.strokeStyle = COLOURS.collision;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(x, y, 16, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  line(ctx, x, y, sx, sy);
+  ctx.beginPath();
+  ctx.arc(sx, sy, 9, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  line(ctx, sx - 5, sy, sx + 5, sy);
+  line(ctx, sx, sy - 5, sx, sy + 5);
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.fillText("add a waypoint here?", sx + 13, sy + 4);
+}
+
 function drawPath(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const g = m.geometry;
   if (!g) return;
@@ -303,6 +369,30 @@ function drawPath(ctx: CanvasRenderingContext2D, m: DrawModel): void {
     line(ctx, x0, y0, x1, y1);
   }
   ctx.lineCap = "butt";
+}
+
+/** Where the swept bumpers hit an obstacle or the wall: the path itself turns red there, with the bumpers at the middle. */
+function drawCollisions(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const a = m.analysis;
+  const g = m.geometry;
+  if (!a || !g) return;
+  for (const c of collisions(a)) {
+    band(ctx, m, c.sFrom, c.sTo, COLOURS.collision, 5);
+    const s = (c.sFrom + c.sTo) / 2;
+    const p = g.sample(s);
+    const corners = robotOutline(m.view, p.xMeters, p.yMeters, headingAtS(a.stations, s), m.project.robot.bumperLengthMeters, m.project.robot.bumperWidthMeters);
+    ctx.strokeStyle = COLOURS.collision;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+
+/** The stretches where the swept bumpers touch an obstacle or the field wall. */
+export function collisions(a: Analysis): Check[] {
+  return a.checks.filter((c) => c.kind === "bumper" && c.severity === "error");
 }
 
 /** Draws a stretch of the active path as a wide translucent band. */
@@ -506,11 +596,11 @@ function drawRotationTargets(ctx: CanvasRenderingContext2D, m: DrawModel): void 
   });
 }
 
-/** The Rotation tool's ghost: where a click would add a heading, at the plan's heading there. */
+/** The heading flow's ghost: where a click would put the heading, at the plan's heading there. */
 function drawHeadingGhost(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const a = m.analysis;
   const g = m.geometry;
-  if (m.tool !== "rotation" || !a || !g || !Number.isFinite(m.hoverS)) return;
+  if (m.flow?.kind !== "rotation" || m.flow.step !== 0 || !a || !g || !Number.isFinite(m.hoverS)) return;
   const p = g.sample(m.hoverS);
   ctx.globalAlpha = 0.6;
   ctx.setLineDash([5, 4]);
@@ -703,6 +793,56 @@ function drawHover(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   ctx.beginPath();
   ctx.arc(x, y, 6, 0, 2 * Math.PI);
   ctx.stroke();
+  // the stretch between two waypoints under the pointer: its length and the plan's time on it
+  const a = m.analysis;
+  if (!a || m.flow?.kind || m.tool !== "select") return;
+  const ws = a.waypointS;
+  let i = 0;
+  while (i < ws.length - 2 && ws[i + 1]! <= m.hoverS) i++;
+  const from = ws[i]!;
+  const to = ws[i + 1]!;
+  if (!(to > from)) return;
+  const dt = atS(a.stations, a.stations.t, to) - atS(a.stations, a.stations.t, from);
+  label(ctx, `${i}→${i + 1}: ${(to - from).toFixed(2)} m, ${dt.toFixed(2)} s`, x + 12, y + 20);
+}
+
+/** A small dark label with light text, its top-left at (x, y). */
+function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number): void {
+  ctx.font = "600 11px system-ui, sans-serif";
+  const w = ctx.measureText(text).width + 12;
+  ctx.fillStyle = "rgba(11,14,19,0.86)";
+  ctx.beginPath();
+  ctx.roundRect(x, y - 13, w, 18, 6);
+  ctx.fill();
+  ctx.fillStyle = "#f8fafc";
+  ctx.fillText(text, x + 6, y);
+}
+
+/** The Measure tool's line: its ends, and its length and direction. */
+function drawMeasure(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const ms = m.measure;
+  if (!ms) return;
+  const [ax, ay] = m.view.toCanvas(ms.a[0], ms.a[1]);
+  const [bx, by] = m.view.toCanvas(ms.b[0], ms.b[1]);
+  ctx.strokeStyle = "#f8fafc";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  line(ctx, ax, ay, bx, by);
+  ctx.setLineDash([]);
+  for (const [x, y] of [
+    [ax, ay],
+    [bx, by],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(x!, y!, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = "#f8fafc";
+    ctx.fill();
+  }
+  const d = Math.hypot(ms.b[0] - ms.a[0], ms.b[1] - ms.a[1]);
+  const deg = (Math.atan2(ms.b[1] - ms.a[1], ms.b[0] - ms.a[0]) * 180) / Math.PI;
+  const dx = ms.b[0] - ms.a[0];
+  const dy = ms.b[1] - ms.a[1];
+  label(ctx, `${d.toFixed(2)} m · ${deg.toFixed(0)}° (Δx ${dx.toFixed(2)}, Δy ${dy.toFixed(2)})`, (ax + bx) / 2 + 10, (ay + by) / 2 - 8);
 }
 
 /** The playback sample at time t, interpolated between the worker's time samples. */

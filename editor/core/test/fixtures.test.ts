@@ -64,6 +64,10 @@ describe("fixtures", () => {
 
       expect(deviation(fx.lengthMeters, path.lengthMeters, false)).toBeLessThanOrEqual(TOLERANCE);
       expect(deviation(fx.totalTimeSeconds, path.totalTimeSeconds, false)).toBeLessThanOrEqual(TOLERANCE);
+      // cusps: only paths that double back carry the key
+      const cusps = (fx as { cusps?: number[] }).cusps ?? [];
+      expect(path.cusps.length).toBe(cusps.length);
+      cusps.forEach((c, i) => expect(deviation(c, path.cusps[i]!, false)).toBeLessThanOrEqual(TOLERANCE));
 
       const at = stations(path.lengthMeters, fx.inputs.stepMeters);
       expect(at.length).toBe(fx.samples.s!.length);

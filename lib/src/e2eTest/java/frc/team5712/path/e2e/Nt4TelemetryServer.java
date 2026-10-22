@@ -36,7 +36,11 @@ import org.wpilib.telemetry.TelemetryTable;
  *       /Telemetry/PathFollower);
  *   <li>the robot's true pose, /Telemetry/Robot/Pose (struct:Pose2d);
  *   <li>the server's own clock each loop, /Telemetry/Harness/ServerTimeNanos (ntcore's clock, in ns), so a client can check its
- *       time sync against it.
+ *       time sync against it;
+ *   <li>at the end of each run, the follower's own account of it, /Telemetry/Harness/RunSummary: [run, loops,
+ *       cross-track RMS (m), cross-track max (m), final position error (m), final heading error (rad), seconds],
+ *       from the follower's values each loop and the true pose at the finish, so a client's recording of the
+ *       run can be checked against it.
  * </ul>
  *
  * Usage (lib/build.gradle): {@code lib/gradlew -p lib nt4Server -Pnt4Port=5810 -Pnt4Seconds=60}. Prints
@@ -100,6 +104,9 @@ public final class Nt4TelemetryServer {
           .withEvents(library);
       scheduler.schedule(command);
       double finishedAt = Double.NaN;
+      double sumSq = 0.0;
+      double maxCt = 0.0;
+      int loops = 0;
       while ((System.nanoTime() - start) / 1e9 < seconds) {
         loop++;
         double now = (System.nanoTime() - start) / 1e9;
@@ -107,12 +114,23 @@ public final class Nt4TelemetryServer {
         drive.advanceTo(clock[0]);
         scheduler.run();
         robot.log("Pose", Conversions.toPose2d(drive.truePose()), Pose2d.struct);
+        if (Double.isNaN(finishedAt)) {
+          double ct = follower.crossTrackMeters();
+          sumSq += ct * ct;
+          maxCt = Math.max(maxCt, Math.abs(ct));
+          loops++;
+        }
         // NetworkTablesJNI.now() is in nanoseconds in 2027; NT4 stamps values in microseconds on the wire
         harness.log("ServerTimeNanos", NetworkTablesJNI.now());
         harness.log("Loop", loop);
         inst.flush(); // send this loop's values now, not on NT's 100 ms cycle (as low-latency robot code does)
         if (Double.isNaN(finishedAt) && !scheduler.isScheduledOrRunning(command)) {
           finishedAt = now;
+          Pose end = drive.truePose();
+          Pose goal = follower.goal();
+          harness.log("RunSummary", new double[] {run, loops, Math.sqrt(sumSq / Math.max(1, loops)), maxCt,
+              Math.hypot(end.xMeters() - goal.xMeters(), end.yMeters() - goal.yMeters()),
+              frc.team5712.path.core.Angles.wrap(goal.headingRadians() - end.headingRadians()), now - runStart});
         }
         if (!Double.isNaN(finishedAt) && now - finishedAt > 0.5) {
           break; // rest a moment on the goal, then run it again

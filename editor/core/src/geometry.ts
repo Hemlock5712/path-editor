@@ -19,6 +19,13 @@ const GL_W1 = 0.4786286704993664680412915148356382 / 2.0;
 const GL_W2 = 0.2369268850561890875142640407199173 / 2.0;
 
 const WINDOW_STEP_METERS = 0.05;
+
+/** Samples of |p'| per spline piece when looking for cusps (as in Java). */
+export const CUSP_SCAN = 64;
+/** A cusp turns the tangent more than 120° between this far before and this far after it. */
+export const CUSP_ARC_METERS = 0.02;
+const CUSP_COS = -0.5;
+const GOLDEN = 0.3819660112501051;
 const GLOBAL_STEP_METERS = 0.1;
 
 /** The path at one distance along it. Curvature is signed (positive = turning left). */
@@ -57,6 +64,8 @@ export class PathGeometry {
   private readonly pieceM0: Float64Array;
   private readonly pieceC2: Float64Array;
   private readonly pieceC3: Float64Array;
+  /** Where the path reverses (cusps and near-cusps), metres along it, ascending (PathGeometry.cusps in Java). */
+  readonly cusps: readonly number[];
 
   private constructor(spline: QuinticSpline, table: TableBuilder, waypointS: Float64Array) {
     this.spline = spline;
@@ -70,6 +79,61 @@ export class PathGeometry {
     this.pieceM0 = Float64Array.from(table.m0);
     this.pieceC2 = Float64Array.from(table.c2);
     this.pieceC3 = Float64Array.from(table.c3);
+    this.cusps = this.findCusps();
+  }
+
+  /** The first cusp after s (by more than a micrometre), or NaN. */
+  nextCusp(s: number): number {
+    for (const c of this.cusps) if (c > s + 1e-6) return c;
+    return Number.NaN;
+  }
+
+  /** The last cusp at or before s (within a micrometre), or NaN. */
+  previousCusp(s: number): number {
+    let out = Number.NaN;
+    for (const c of this.cusps) if (c <= s + 1e-6) out = c;
+    return out;
+  }
+
+  private findCusps(): number[] {
+    const out: number[] = [];
+    const spline = this.spline;
+    const v = new Float64Array(CUSP_SCAN + 1);
+    for (let k = 0; k < spline.segmentCount; k++) {
+      for (let j = 0; j <= CUSP_SCAN; j++) v[j] = spline.speed(k, j / CUSP_SCAN);
+      for (let j = 1; j < CUSP_SCAN; j++) {
+        if (!(v[j]! <= v[j - 1]! && v[j]! < v[j + 1]!)) continue;
+        let a = (j - 1.0) / CUSP_SCAN;
+        let b = (j + 1.0) / CUSP_SCAN;
+        for (let it = 0; it < 60; it++) {
+          const m1 = a + (b - a) * GOLDEN;
+          const m2 = b - (b - a) * GOLDEN;
+          if (spline.speed(k, m1) < spline.speed(k, m2)) b = m2;
+          else a = m1;
+        }
+        const s = this.sAtParameter(k, 0.5 * (a + b));
+        const before = this.sample(Math.max(0.0, s - CUSP_ARC_METERS));
+        const after = this.sample(Math.min(this.lengthMeters, s + CUSP_ARC_METERS));
+        if (before.tangentX * after.tangentX + before.tangentY * after.tangentY < CUSP_COS) out.push(s);
+      }
+    }
+    return out;
+  }
+
+  /** Metres along the path at spline piece k, parameter u: the table's own inverse, by bisection. */
+  private sAtParameter(k: number, u: number): number {
+    let lo = this.waypointDistances[k]!;
+    let hi = this.waypointDistances[k + 1]!;
+    for (let it = 0; it < 60; it++) {
+      const mid = 0.5 * (lo + hi);
+      const i = this.findPiece(mid);
+      const len = this.pieceS[i + 1]! - this.pieceS[i]!;
+      const sigma = len > 0.0 ? (mid - this.pieceS[i]!) / len : 0.0;
+      const um = this.pieceU0[i]! + sigma * (this.pieceM0[i]! + sigma * (this.pieceC2[i]! + sigma * this.pieceC3[i]!));
+      if (this.pieceSegment[i]! < k || (this.pieceSegment[i] === k && um < u)) lo = mid;
+      else hi = mid;
+    }
+    return 0.5 * (lo + hi);
   }
 
   /** Builds the spline through these waypoints and its arc-length table. */
@@ -172,6 +236,22 @@ export class PathGeometry {
   }
 
   /** Closest point on the whole path to (x, y). */
+  /** The closest point to (x, y) with s in [lo, hi] (the window's spacing): a window that stops at a cusp. */
+  projectWithin(xMeters: number, yMeters: number, lo: number, hi: number): Projection {
+    lo = Math.max(0.0, lo);
+    hi = Math.min(this.lengthMeters, hi);
+    if (hi < lo) hi = lo;
+    return this.closestBetween(xMeters, yMeters, lo, hi, WINDOW_STEP_METERS);
+  }
+
+  /** The closest point to (x, y) with s in [lo, hi], at the global search's spacing. */
+  projectGlobalWithin(xMeters: number, yMeters: number, lo: number, hi: number): Projection {
+    lo = Math.max(0.0, lo);
+    hi = Math.min(this.lengthMeters, hi);
+    if (hi < lo) hi = lo;
+    return this.closestBetween(xMeters, yMeters, lo, hi, GLOBAL_STEP_METERS);
+  }
+
   projectGlobal(xMeters: number, yMeters: number): Projection {
     return this.closestBetween(xMeters, yMeters, 0.0, this.lengthMeters, GLOBAL_STEP_METERS);
   }

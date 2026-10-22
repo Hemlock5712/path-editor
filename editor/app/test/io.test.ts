@@ -10,6 +10,7 @@ import {
   loadFrom,
   parseField,
   parseRobot,
+  PATH_SUFFIX,
   PATHS_DIR,
   ROBOT_FILE,
   saveTo,
@@ -20,8 +21,11 @@ import {
 } from "../src/io/projectIo.ts";
 import { crc32, zip } from "../src/io/zip.ts";
 import { addNamedPoint, linkToPoint } from "../src/model/namedPoints.ts";
-import { DEFAULT_ROBOT_SETTINGS, emptyProject, makeEditorPath, type Project } from "../src/model/project.ts";
+import { DEFAULT_ROBOT_SETTINGS, emptyProject, makeEditorPath, starterSpec, type Project } from "../src/model/project.ts";
 import { DEFAULT_VIEW } from "../src/state/editor.ts";
+
+/** A new project with a short drawn path (a new one in the app starts empty). */
+const starterProject = () => ({ ...emptyProject(), paths: [makeEditorPath("Path1", starterSpec(), 0)] });
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 const read = (...p: string[]) => readFileSync(join(ROOT, ...p), "utf8").replace(/\r\n/g, "\n");
@@ -29,7 +33,7 @@ const EXAMPLE = read("lib", "src", "test", "resources", "example.path.json");
 const BENCH_FIELD = read("bench", "fields", "obstacles_v1.json");
 
 function sampleProject(): Project {
-  const base = emptyProject();
+  const base = starterProject();
   const auto = makeEditorPath("AutoRoute", readPath(EXAMPLE), 1);
   let project: Project = { ...base, paths: [base.paths[0]!, auto], field: parseField(BENCH_FIELD) };
   const [withPoint, point] = addNamedPoint(project, "Start", -5.2, -2.5);
@@ -41,7 +45,13 @@ describe("project files", () => {
   it("writes each path with the core writer, byte for byte the Java format", () => {
     const files = toFiles(sampleProject(), DEFAULT_VIEW);
     expect(files.get(`${PATHS_DIR}/AutoRoute.path.json`)).toBe(EXAMPLE);
-    expect(files.get(`${PATHS_DIR}/Path1.path.json`)).toBe(writePath(emptyProject().paths[0]!.spec));
+    expect(files.get(`${PATHS_DIR}/Path1.path.json`)).toBe(writePath(starterProject().paths[0]!.spec));
+  });
+
+  it("leaves out a path still being drawn (no end yet) until it has one", () => {
+    const files = toFiles(emptyProject(), DEFAULT_VIEW);
+    expect([...files.keys()].some((k) => k.endsWith(PATH_SUFFIX))).toBe(false);
+    expect(JSON.parse(files.get(SIDECAR_FILE)!).paths).toEqual([]);
   });
 
   it("reads back what it writes, and writes it again identically", () => {
@@ -56,9 +66,17 @@ describe("project files", () => {
     for (const [path, text] of files) expect(again.get(path), path).toBe(text);
   });
 
-  it("leaves field.json and robot.json alone until they exist or are edited", () => {
-    const files = toFiles(emptyProject(), DEFAULT_VIEW);
-    expect(files.has(FIELD_FILE)).toBe(false);
+  it("always writes field.json (the robot plans around what the editor did), and robot.json once it exists or is edited", () => {
+    const files = toFiles(starterProject(), DEFAULT_VIEW);
+    // a new project's field is the 2026 field, obstacles and all, in the format the Java FieldMap reads
+    const field = parseField(files.get(FIELD_FILE)!);
+    expect(field.obstacles.map((o) => o.name)).toEqual(expect.arrayContaining(["blue hub", "red hub", "blue tower", "red tower"]));
+    expect(field.obstacles.find((o) => o.name === "blue hub")!.polygon).toEqual([
+      [-4.2419, -0.5969],
+      [-3.0481, -0.5969],
+      [-3.0481, 0.5969],
+      [-4.2419, 0.5969],
+    ]);
     expect(files.has(ROBOT_FILE)).toBe(false);
     expect(files.has(SIDECAR_FILE)).toBe(true);
     expect(files.has(enumPath("frc.robot"))).toBe(true);
@@ -77,7 +95,7 @@ describe("project files", () => {
 
   it("keeps the tab order from the sidecar and adds new files after", () => {
     const files = toFiles(sampleProject(), DEFAULT_VIEW);
-    files.set(`${PATHS_DIR}/Aaa.path.json`, writePath(emptyProject().paths[0]!.spec));
+    files.set(`${PATHS_DIR}/Aaa.path.json`, writePath(starterProject().paths[0]!.spec));
     expect(fromFiles(files)!.project.paths.map((p) => p.name)).toEqual(["Path1", "AutoRoute", "Aaa"]);
   });
 
@@ -149,7 +167,7 @@ describe("saving to a folder", () => {
 
   it("an event added in the editor survives the round trip", async () => {
     const files = new MemoryFiles("robot");
-    const project = emptyProject();
+    const project = starterProject();
     const path = project.paths[0]!;
     const withEvent = { ...project, paths: [{ ...path, spec: { ...path.spec, events: [eventAtMeters("intakeDown", 1.23457)] } }] };
     await saveTo(files, withEvent, DEFAULT_VIEW);

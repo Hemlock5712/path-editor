@@ -344,11 +344,19 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   await name.press("Enter");
   await expect(page.getByRole("tab", { name: plan.name })).toHaveAttribute("aria-selected", "true");
 
-  // waypoints: the new path has two; the rest are added from the panel, then every one is typed in
-  for (let i = 2; i < plan.waypoints.length; i++) {
-    await openSection(page, "Waypoints");
-    await page.getByRole("button", { name: "Add a waypoint 1 m past the end" }).click();
+  // waypoints: a new project's path is empty, so two double-clicks make its start and end; a new path
+  // starts with just its start (selected), and Add after makes its end. Add after on the last one adds
+  // the rest, then every one is typed in
+  if (first) {
+    for (const x of [-1, 1]) {
+      const p = await fieldPoint(page, x, 0);
+      await page.mouse.dblclick(p.x, p.y);
+    }
+    await expect(waypointGroup(page, 1)).toBeVisible();
+  } else {
+    await waypointGroup(page, 0).getByTestId("add-after").click();
   }
+  for (let i = 2; i < plan.waypoints.length; i++) await waypointGroup(page, i - 1).getByTestId("add-after").click();
   for (let i = 0; i < plan.waypoints.length; i++) await setWaypoint(page, i, plan.waypoints[i]!, plan.headings.find((h) => h.wp === i)?.deg);
 
   if (plan.startSpeed !== undefined || plan.endSpeed !== undefined) await openSection(page, "Start and end state");
@@ -367,17 +375,23 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
     await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(wp)).toContainText(`(${x}, ${y})`);
   }
 
-  // events: placed by clicking near the path with the Event tool, then named and positioned exactly
+  // the guided flows click the path: at its first two waypoints (on the path, and apart)
+  const onPath = async (wp: number) => {
+    const w = plan.waypoints[wp]!;
+    const p = await fieldPoint(page, w[0], w[1]);
+    await page.mouse.click(p.x, p.y);
+  };
+  // events: E, a click near the path, a name; then positioned exactly
   const near = plan.waypoints[Math.min(1, plan.waypoints.length - 1)]!;
   for (const [i, e] of plan.events.entries()) {
-    await page.keyboard.press("e");
+    await page.keyboard.press("m");
     const p = await fieldPoint(page, near[0], near[1]);
     await page.mouse.click(p.x, p.y + 18);
+    await page.getByTestId("flow-name").fill(e.name);
+    await page.getByTestId("flow-name").press("Enter");
     const card = page.getByTestId(`event-${i}`);
     await expect(card).toBeVisible();
-    const field = page.getByTestId(`event-name-${i}`);
-    await field.fill(e.name);
-    await field.press("Enter");
+    await expect(page.getByTestId(`event-name-${i}`)).toHaveValue(e.name);
     await choose(page, card.getByRole("combobox", { name: "At measured by" }), "m" in e.at ? "by metres" : "by waypoint");
     await setNumber(page.getByTestId(`event-at-${i}`), "m" in e.at ? e.at.m : e.at.wp);
   }
@@ -386,7 +400,10 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   if (plan.rotationTargets) {
     for (const [i, t] of plan.rotationTargets.entries()) {
       await openSection(page, "Rotation targets");
-      await page.getByRole("button", { name: "Add a heading at the end of the path" }).click();
+      await page.getByTestId("add-rotation").click();
+      await onPath(0);
+      await page.getByTestId("flow-heading").fill(String(t.deg));
+      await page.getByTestId("flow-heading").press("Enter");
       const card = page.getByRole("group", { name: `Heading ${i + 1}`, exact: true });
       await setNumber(card.getByLabel("At", { exact: true }), t.wp);
       await setNumber(card.getByLabel("Heading", { exact: true }), t.deg);
@@ -395,10 +412,17 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   if (plan.faceZone) {
     const z = plan.faceZone;
     await openSection(page, "Point-towards zones");
-    await page.getByRole("button", { name: "Add face-point zone" }).click();
+    await page.getByTestId("add-face").click();
+    await onPath(0);
+    await onPath(1);
+    const target = await fieldPoint(page, z.x, z.y);
+    await page.keyboard.down("Shift"); // (no snapping to field elements)
+    await page.mouse.click(target.x, target.y);
+    await page.keyboard.up("Shift");
     const card = page.getByRole("group", { name: "Face-point zone 1" });
-    await setNumber(card.getByLabel("From", { exact: true }), z.from);
+    // (made from waypoint 0 to 1: the end first, so the zone never ends before it starts)
     await setNumber(card.getByLabel("To", { exact: true }), z.to);
+    await setNumber(card.getByLabel("From", { exact: true }), z.from);
     await setNumber(card.getByLabel("Point x"), z.x);
     await setNumber(card.getByLabel("Point y"), z.y);
     await setNumber(card.getByLabel("Blend"), z.blend);
@@ -406,7 +430,12 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   if (plan.constraintZone) {
     const z = plan.constraintZone;
     await openSection(page, "Constraint zones");
-    await page.getByRole("button", { name: "Add constraint zone" }).click();
+    await page.getByTestId("add-constraint").click();
+    await onPath(0);
+    await onPath(1);
+    await expect(page.getByTestId("flow-speed")).toBeFocused();
+    await page.getByTestId("flow-speed").fill(String(z.maxSpeed));
+    await page.getByTestId("flow-speed").press("Enter");
     const card = page.getByRole("group", { name: "Constraint zone 1" });
     await setNumber(card.getByLabel("To", { exact: true }), z.to);
     await setNumber(card.getByLabel("From", { exact: true }), z.from);

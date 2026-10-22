@@ -16,6 +16,9 @@ export interface BenchState {
   readonly traces: boolean;
   /** List every method, not just ours and each rival's best-tuned entry. */
   readonly moreMethods: boolean;
+  /** The comparison charts: which metric, and all targets or one chart per target. */
+  readonly compareMetric: string;
+  readonly compareView: "aggregate" | "per";
   readonly loadingSnapshot: boolean;
 }
 
@@ -29,6 +32,8 @@ export const bench = createStore<BenchState>({
   seed: "0",
   shown: PRIMARY_METHODS,
   moreMethods: false,
+  compareMetric: "t_settle",
+  compareView: "aggregate",
   traces: true,
   loadingSnapshot: false,
 });
