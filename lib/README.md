@@ -120,7 +120,10 @@ Each loop, in the blue frame:
    `s⁺ = s_plan(t_plan(s) + τ)`. That is what gets a robot off a standing start, where the profile
    says 0 m/s. The speed is `min(v_plan(s⁺), sqrt(v_end² + 2·a·(d − v·τ)))`, which is DriveToPose's
    brake on the distance left `d`. The speed points along the tangent at `s⁺`, so the command turns
-   into a curve early by `v²κτ`: the curvature feed-forward.
+   into a curve early by `v²κτ`: the curvature feed-forward. On a path that starts moving (a rolling
+   hand-over), the read-ahead grows from 0 to `τ` over the first 0.3 s. The last path's command led into its own
+   end, not into this one speeding up, and taking the lead `a·τ` in one loop slipped all four wheels at the
+   hand-over (bench three_piece_chain: wheel slip 600 → 330 ms, same time).
 4. **Across the path.** PD on the cross-track error (P 5/s, D 0), pushing along the normal at `s`.
    Knocked more than 0.4 m off (`rejoinAboveMeters`), the follower builds a piece back onto the path:
    from the robot's pose, along the way it is really going (from the pose's change; after a hit the
@@ -249,8 +252,8 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 
 | Request | Reply |
 | --- | --- |
-| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs"}` |
-| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()` | `{"ok", "startMicros"}` plus `"startReplanMicros"` when the start re-planned the speeds |
+| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session) and `"startCurvature"` (fix the first waypoint's curvature, e.g. the last leg's `endCurvature`): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs", "endCurvature"}` |
+| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()`, plus optional `"handed": [vx, vy, omega]` (the last path's `endCommand`, for a rolling hand-over; default the measured velocity) | `{"ok", "startMicros"}` plus `"startReplanMicros"` when the start re-planned the speeds |
 | `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild, and `"rejoins"` and `"rejoinMicros"` after a rejoin |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
 | `{"op": "geometry", "step": 0.02}`: the built path, sampled | `{"x": [...], "y": [...]}` |
