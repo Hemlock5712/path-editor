@@ -71,7 +71,6 @@ ui.subscribe(() => {
 export function setPage(page: Page): void {
   if (ui.get().page === page) return;
   ui.set({ page });
-  bench.set({ open: page === "bench" });
   if (page === "bench" && !bench.get().data && !bench.get().loadingSnapshot) void loadSnapshot();
 }
 

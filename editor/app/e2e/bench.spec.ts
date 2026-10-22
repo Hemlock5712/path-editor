@@ -1,5 +1,5 @@
-// The Bench page on the committed snapshot: the harder courses' own measures (in the main table and the
-// course detail, best the right way round) and the optimised-paths table's labels.
+// The Bench page on the committed snapshot (public/bench/matched.json): the short version, speed, when
+// something goes wrong, without vision, course by course, and how it was tested.
 
 import { expect, test } from "@playwright/test";
 
@@ -7,57 +7,26 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("pathEditor.quickStartSeen", "1"));
 });
 
-test("course measures head the drive-through's row, sit under the wall course's, and fill the course detail", async ({ page }) => {
+test("the bench page tells the comparison in plain words", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
   await page.getByTestId("page-bench").click();
-  await expect(page.getByText(/results-lite\.json \(snapshot\): \d+ courses/)).toBeVisible();
-  const table = page.getByTestId("bench-benchmark");
-  // the drive-through never settles by design: its miss distance instead of "never", lowest in bold
-  const intake = table.locator('tr[data-row="intake_drive_through"]');
-  await expect(intake.locator("th")).toContainText("miss at the piece, cm");
-  await expect(intake).not.toContainText("never");
-  await expect(intake.locator("td.best")).toHaveCount(1);
-  // the wall course: time settled, then its closest-bumper measure (higher is better) below
-  const wall = table.locator('tr[data-row="wall_hug:wall_clear_cm"]');
-  await expect(wall.locator("th")).toContainText("closest bumper to a wall, cm ▲");
-  const values = await wall.locator("td").evaluateAll((tds) => tds.map((td) => ({ v: Number(td.textContent), best: td.classList.contains("best") })));
-  const best = values.filter((x) => Number.isFinite(x.v)).reduce((a, b) => (b.v > a.v ? b : a));
-  expect(values.find((x) => x.best)?.v).toBe(best.v);
-  await table.locator('tr[data-row="wall_hug"]').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: "test-results/bench-measures-table.png" });
-
-  // the course detail
-  await intake.locator("button.link-row").click();
-  const measures = page.getByTestId("bench-measures");
-  await expect(measures).toContainText("miss at the piece");
-  await expect(measures).toContainText("speed at the piece");
-  await measures.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: "test-results/bench-measures-detail.png" });
-
-  // the optimised table: curves-only on both sides, said so; our search on path2 only with more methods
-  const opt = page.getByTestId("bench-optimised");
-  await expect(page.getByTestId("bench-optimised-caption")).toContainText("PathPlanner's own genetic algorithm on the handles");
-  await expect(opt).toContainText("PathPlanner Bezier, its own optimiser (handles only)");
-  await expect(opt).not.toContainText("path2, our optimiser's search");
-  await page.getByTestId("bench-more-methods").click();
-  await expect(opt).toContainText("path2, our optimiser's search (path2 has none)");
-  await opt.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: "test-results/bench-optimised.png" });
-});
-
-test("the head-to-head at matched limits leads the page", async ({ page }) => {
-  await page.goto("/");
-  await page.getByTestId("page-bench").click();
-  const h2h = page.getByTestId("bench-h2h");
-  await expect(h2h.getByTestId("bench-h2h-verdict")).toContainText("Ours (optimised) settles first on");
-  await expect(h2h.getByTestId("bench-h2h-scoreboard").locator("tbody tr")).toHaveCount(6);
-  await expect(h2h.getByTestId("bench-h2h-scoreboard").locator('tr[data-method="ours_opt"]')).toContainText("0 / 100");
-  await page.screenshot({ path: "test-results/bench-h2h.png", fullPage: false });
-  await h2h.getByRole("radio", { name: "Wheel odometry" }).click();
-  await expect(h2h.getByTestId("bench-h2h-verdict")).toContainText("A shove is invisible to wheel odometry");
-  await h2h.getByRole("radio", { name: "Disturbed" }).click();
-  await expect(h2h.getByTestId("bench-h2h-courses").locator("tbody tr")).toHaveCount(3);
-  await h2h.getByTestId("bench-h2h-all").click();
-  await expect(h2h.getByTestId("bench-h2h-scoreboard").locator("tbody tr")).toHaveCount(7);
+  await expect(page.getByRole("heading", { name: "Path followers, head to head" })).toBeVisible();
+  await expect(page.getByTestId("bench-tile-finish")).toContainText("100 of 100");
+  await expect(page.getByTestId("bench-speed-bars").locator("li")).toHaveCount(6);
+  await expect(page.getByTestId("bench-speed")).toContainText("Choreo makes the fastest plans");
+  await expect(page.getByTestId("bench-disturbed-table").locator("tbody tr")).toHaveCount(3);
+  await expect(page.getByTestId("bench-shove-note")).toContainText("can't be fixed without vision");
+  await expect(page.getByTestId("bench-course-table").locator("tbody tr")).toHaveCount(10);
+  await expect(page.getByTestId("bench-course-table")).not.toContainText("✕");
+  await page.screenshot({ path: "test-results/bench-page.png" });
+  for (const id of ["bench-speed", "bench-disturbed", "bench-odometry", "bench-courses"]) {
+    await page.getByTestId(id).screenshot({ path: `test-results/${id}.png` });
+  }
+  // the other traction rule: Choreo finishes none of its runs
+  await page.getByRole("radio", { name: "Tip or grip" }).click();
+  await expect(page.getByTestId("bench-tile-finish")).toContainText("Choreo 0");
+  await expect(page.getByTestId("bench-course-table")).toContainText("never finished");
+  await page.getByTestId("bench-how").locator("summary").click();
+  await expect(page.getByTestId("bench-how")).toContainText("Equal push");
 });

@@ -3053,3 +3053,108 @@ dialog.transform legend {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
+
+/* the Bench page: headline tiles, a lead paragraph per section, and the sub-lines in table cells */
+.bench-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s3);
+}
+
+.bench-tile {
+  padding: var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.bench-tile-title {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.bench-tile-value {
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.bench-tile-value .of {
+  font-size: var(--fs-lg);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.bench-tile-detail {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.bench-section h2 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.bench-lead {
+  margin: 0;
+  max-width: 80ch;
+  font-size: var(--fs-lg);
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.bench-lead strong {
+  color: var(--text);
+}
+
+.bar-note {
+  color: var(--warning);
+}
+
+.benchmark .cell-sub {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--faint);
+}
+
+.benchmark .cell-sub.warn,
+.benchmark .cell-warn {
+  color: var(--warning);
+  font-weight: 400;
+}
+
+.bench-how summary {
+  cursor: pointer;
+  list-style: revert;
+}
+
+.bench-how summary h2 {
+  display: inline;
+}
+
+.bench-how ul {
+  margin: 0;
+  padding-left: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-width: 90ch;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.bench-how strong {
+  color: var(--text);
+}
+
+.bench-hero .bench-controls-row {
+  margin-top: var(--s4);
+  align-items: center;
+}
