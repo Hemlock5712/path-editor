@@ -45,10 +45,11 @@ MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_cap
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
                 "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_noadapt", "ours_tuned"]
 MAIN_METHODS += ["pp_path2", "pp_path2_tuned"]  # PathPlanner's new path system (new-path branch, pre-release)
+MAIN_METHODS += ["ours_equalpush"]  # ours under the library's other traction rule
 # the full-traction block: ours under each traction rule with its own acceleration (FT_OURS, on the copies with the
 # path cap raised), against the others at the shared limits (FT_OTHERS, the main grid's rows)
 # ours under each traction rule of the library (robot file setting); the first is the shipped default
-OURS_RULES = ["ours_v2"]
+OURS_RULES = ["ours_v2", "ours_equalpush"]  # tipOrGrip (the default), equalPush
 FT_OURS = OURS_RULES
 FT_OTHERS = ["pathplanner_tuned", "choreo", "choreo_hybrid"]
 TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme", "ours_tuned": "ours_v2"}
@@ -56,6 +57,8 @@ TUNED_BASE["pp_path2_tuned"] = "pp_path2"
 EXTRA = {  # registry entries that only exist in the bench driver
     "pathplanner_tuned": ("pathplanner", None, "PathPlanner (tuned) + hold"),
     "pathplanner_hold_cof09": ("pathplanner", {"hold": True, "cof": 0.9}, "PathPlanner (kP 5) + hold, wheel COF 0.9"),
+    "ours_equalpush": ("ours_v2", {"robot": {"tractionRule": "equalPush"}},
+                       "Ours v2, equal-push traction rule (robot file tractionRule)"),
 }
 SWEEP_SEEDS = [100, 101, 102]  # tuning seeds, kept apart from the evaluation seeds 0..N-1
 SWEEP_POSE = "truth"  # tune the control law, not the odometry calibration luck of three seeds
@@ -266,7 +269,8 @@ def main():
     if a.resume and os.path.exists(partial):
         prev = json.load(open(partial))
         if all(prev["meta"][k] == out["meta"][k] for k in ("seeds", "courses", "poses", "quick")):
-            out.update({k: prev[k] for k in ("sweeps", "tuned", "runs", "full_traction", "pathfind") if k in prev})
+            out.update({k: prev[k] for k in ("sweeps", "tuned", "runs", "grid_partial", "full_traction", "pathfind")
+                        if k in prev})
             print("resuming: sweeps", sorted(out["sweeps"]), "poses", sorted(out["runs"]), flush=True)
 
     def checkpoint():
@@ -289,18 +293,25 @@ def main():
         for pose in poses:
             if pose in out["runs"]:
                 continue
-            jobs, keys = [], []
-            for c in courses:
-                for m in MAIN_METHODS:
-                    key, opts = resolve(m, out["tuned"])
-                    for s in seeds:
-                        jobs.append((c, key, opts, s, pose))
-                        keys.append((c, m))
-            res = run_jobs(pool, jobs)
-            by = {}
-            for (c, m), r in zip(keys, res):
-                by.setdefault(c, {}).setdefault(m, []).append(r)
-            out["runs"][pose] = {c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()}
+            part = out.setdefault("grid_partial", {}).setdefault(pose, {})  # courses done, checkpointed
+            for i in range(0, len(courses), 3):
+                group = [c for c in courses[i:i + 3] if c not in part]
+                if not group:
+                    continue
+                jobs, keys = [], []
+                for c in group:
+                    for m in MAIN_METHODS:
+                        key, opts = resolve(m, out["tuned"])
+                        for s in seeds:
+                            jobs.append((c, key, opts, s, pose))
+                            keys.append((c, m))
+                by = {}
+                for (c, m), r in zip(keys, run_jobs(pool, jobs)):
+                    by.setdefault(c, {}).setdefault(m, []).append(r)
+                part.update({c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()})
+                checkpoint()
+            out["runs"][pose] = {c: part[c] for c in courses}
+            del out["grid_partial"][pose]
             print(pose, "grid done", f"({time.time() - t0:.0f} s)", flush=True)
             checkpoint()
         if not a.quick and "full_traction" not in out:
