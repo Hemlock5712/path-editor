@@ -178,6 +178,8 @@ export function robotFromJson(m: JsonObject): RobotConfig {
     maxWheelMetersPerSecond: num(m, "maxWheelMetersPerSecond", d.maxWheelMetersPerSecond),
     maxAngularRadPerSec: num(m, "maxAngularRadPerSec", d.maxAngularRadPerSec),
     maxAngularRadPerSecSquared: num(m, "maxAngularRadPerSecSquared", d.maxAngularRadPerSecSquared),
+    centerOfMassHeightMeters: num(m, "centerOfMassHeightMeters", d.centerOfMassHeightMeters),
+    tipDistanceMeters: num(m, "tipDistanceMeters", d.tipDistanceMeters),
   });
 }
 
@@ -196,6 +198,8 @@ export function robotToJson(r: RobotConfig): JsonObject {
   putIfFinite(m, "maxWheelMetersPerSecond", r.maxWheelMetersPerSecond);
   putIfFinite(m, "maxAngularRadPerSec", r.maxAngularRadPerSec);
   putIfFinite(m, "maxAngularRadPerSecSquared", r.maxAngularRadPerSecSquared);
+  m.centerOfMassHeightMeters = r.centerOfMassHeightMeters;
+  putIfFinite(m, "tipDistanceMeters", r.tipDistanceMeters);
   m.motor = {
     nominalVolts: r.driveMotor.nominalVolts,
     stallTorqueNewtonMeters: r.driveMotor.stallTorqueNewtonMeters,

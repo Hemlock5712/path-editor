@@ -33,7 +33,7 @@ class VelocityProfileTest {
 
   @Test
   void everyGridPointFitsTheGripAndMotorBudget() {
-    double grip = ROBOT.gripMetersPerSecondSquared();
+    double grip = ROBOT.tractionMetersPerSecondSquared();
     double c = ROBOT.spinLeverMeters();
     for (var e : FixturePaths.all().entrySet()) {
       Path path = Path.build(e.getValue(), ROBOT);
@@ -59,13 +59,13 @@ class VelocityProfileTest {
           assertTrue(Math.abs(a) <= e.getValue().maxMetersPerSecondSquared() + 1e-9);
         }
       }
-      System.out.printf("%-15s peak grip use %.3f of mu g%n", e.getKey(), worstUse);
+      System.out.printf("%-15s peak grip use %.3f of the traction limit%n", e.getKey(), worstUse);
     }
   }
 
   @Test
   void betweenGridPointsTheBudgetHoldsToTwoPercent() {
-    double grip = ROBOT.gripMetersPerSecondSquared();
+    double grip = ROBOT.tractionMetersPerSecondSquared();
     double c = ROBOT.spinLeverMeters();
     for (var e : FixturePaths.all().entrySet()) {
       Path path = Path.build(e.getValue(), ROBOT);
@@ -138,12 +138,14 @@ class VelocityProfileTest {
   }
 
   @Test
-  void lessGripIsSlower() {
+  void lessTractionIsSlower() {
     PathSpec spec = FixturePaths.hairpin();
-    double grippy = Path.build(spec, ROBOT.withFrictionCoefficient(1.0)).totalTimeSeconds();
+    // the default tips first (12.8 m/s²); with the centre of mass on the floor grip sets it (13.2 m/s²)
+    double low = Path.build(spec, ROBOT.withCenterOfMassHeightMeters(0)).totalTimeSeconds();
     double normal = Path.build(spec, ROBOT).totalTimeSeconds();
+    double tall = Path.build(spec, ROBOT.withCenterOfMassHeightMeters(0.4)).totalTimeSeconds();
     double slippy = Path.build(spec, ROBOT.withFrictionCoefficient(0.4)).totalTimeSeconds();
-    assertTrue(grippy < normal && normal < slippy, grippy + " " + normal + " " + slippy);
+    assertTrue(low < normal && normal < tall && tall < slippy, low + " " + normal + " " + tall + " " + slippy);
   }
 
   @Test

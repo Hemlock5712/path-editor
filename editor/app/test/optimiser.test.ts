@@ -70,7 +70,9 @@ const wallRun = makePathSpec({
 
 describe("optimiser", () => {
   it("by default reshapes only the curve: positions and headings stay exactly where they were", () => {
-    const r = optimise(input(weave), quick);
+    // on carpet grip (μ 0.7, no tipping limit), where the weave's bends cost enough time to win back
+    const carpet = { ...input(weave), robot: { ...DEFAULT_ROBOT, frictionCoefficient: 0.7, centerOfMassHeightMeters: 0 } };
+    const r = optimise(carpet, quick);
     expect(r.afterSeconds).toBeLessThan(r.beforeSeconds * 0.97);
     expect(r.free).toEqual([]);
     expect(r.turned).toEqual([0, 1, 2, 3, 4]);
@@ -80,7 +82,7 @@ describe("optimiser", () => {
     );
     expect(reshaped).toBe(true);
     // its reported time is the core's plan of what it returns
-    const a = analyse(input(r.spec));
+    const a = analyse({ ...carpet, spec: r.spec });
     expect(a.ok && a.totalTimeSeconds).toBe(r.afterSeconds);
     expect(whatMoves(weave, { moveWaypoints: false, locked: [], segment: null, corridorMeters: 0.5 })).toBe(
       "Reshape the curve at 5 waypoints (tangent directions and scales; the speeds follow). Waypoints and headings stay where they are.",

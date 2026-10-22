@@ -76,14 +76,20 @@ describe("checks", () => {
   });
 
   it("finds the fast face-point blend in the auto route (the plan drops to about 0.7 m/s)", () => {
-    const before = ok(AUTO_ROUTE);
+    // on carpet grip (μ 0.7, no tipping limit): Spike Grip corners hard enough to take most of the crawl out
+    const carpet = (spec: PathSpec): Analysis => {
+      const a = analyse({ ...input(spec), robot: { ...DEFAULT_ROBOT, frictionCoefficient: 0.7, centerOfMassHeightMeters: 0 } });
+      if (!a.ok) throw new Error(a.error);
+      return a;
+    };
+    const before = carpet(AUTO_ROUTE);
     const turns = kinds(before.checks, "heading");
     const degrees = (c: Check) => Number(/turns (\d+)°/.exec(c.message)![1]);
     const slowest = (c: Check) => Number(/slows to (\d+\.\d+) m\/s/.exec(c.message)![1]);
     expect(turns.some((c) => degrees(c) > 100 && slowest(c) < 0.8), turns.map((c) => c.message).join(" | ")).toBe(true);
     // a longer blend spreads the turn: the plan no longer crawls, and the path is faster
     const zone = AUTO_ROUTE.facePointZones[0]!;
-    const gentle = ok({ ...AUTO_ROUTE, facePointZones: [makeFacePointZone(zone.fromWaypoint, zone.toWaypoint, zone.point, 2.0)] });
+    const gentle = carpet({ ...AUTO_ROUTE, facePointZones: [makeFacePointZone(zone.fromWaypoint, zone.toWaypoint, zone.point, 2.0)] });
     expect(kinds(gentle.checks, "heading").every((c) => slowest(c) > 1.0)).toBe(true);
     expect(gentle.totalTimeSeconds).toBeLessThan(before.totalTimeSeconds - 0.5);
   });

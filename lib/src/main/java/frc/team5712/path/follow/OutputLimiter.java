@@ -30,9 +30,9 @@ final class OutputLimiter {
   private double vy;
   private double omega;
 
-  OutputLimiter(RobotConfig robot, double frictionCoefficient, double maxAlphaRadPerSecSquared) {
+  OutputLimiter(RobotConfig robot, double budgetMetersPerSecondSquared, double maxAlphaRadPerSecSquared) {
     this.robot = robot;
-    this.nominalGrip = frictionCoefficient * RobotConfig.GRAVITY;
+    this.nominalGrip = budgetMetersPerSecondSquared;
     this.grip = nominalGrip;
     this.brakeGrip = nominalGrip;
     this.lever = robot.spinLeverMeters();

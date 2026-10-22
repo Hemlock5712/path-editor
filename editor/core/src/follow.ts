@@ -16,6 +16,7 @@ import {
   GRAVITY,
   driveAccelMetersPerSecondSquared,
   spinLeverMeters,
+  tractionMetersPerSecondSquared,
   type RobotConfig,
 } from "./robot.ts";
 
@@ -41,6 +42,7 @@ export interface FollowerConfig {
   readonly maxAlphaRadPerSecSquared: number;
   readonly headingEaseInPerSecond: number;
   readonly headingDeadbandRadians: number;
+  /** The limiter's budget as a μ; NaN = the robot's traction limit. */
   readonly limiterFrictionCoefficient: number;
   readonly positionToleranceMeters: number;
   readonly headingToleranceRadians: number;
@@ -77,7 +79,7 @@ export function followerConfig(robot: RobotConfig, options: Partial<Omit<Followe
     maxAlphaRadPerSecSquared: 720.0 * DEG,
     headingEaseInPerSecond: 5.0,
     headingDeadbandRadians: 0.3 * DEG,
-    limiterFrictionCoefficient: 1.0,
+    limiterFrictionCoefficient: Number.NaN,
     positionToleranceMeters: 0.02,
     headingToleranceRadians: 1.0 * DEG,
     settledMetersPerSecond: 0.05,
@@ -126,9 +128,9 @@ export class OutputLimiter {
   vy = 0;
   omega = 0;
 
-  constructor(robot: RobotConfig, frictionCoefficient: number, maxAlphaRadPerSecSquared: number) {
+  constructor(robot: RobotConfig, budgetMetersPerSecondSquared: number, maxAlphaRadPerSecSquared: number) {
     this.robot = robot;
-    this.grip = frictionCoefficient * GRAVITY;
+    this.grip = budgetMetersPerSecondSquared;
     this.lever = spinLeverMeters(robot);
     this.maxAlpha = maxAlphaRadPerSecSquared;
   }
@@ -199,6 +201,12 @@ const MIN_MOVING_SPEED = 0.1;
 const MIN_POSE_DT = 0.005;
 const MAX_POSE_SPEED_RATIO = 1.5;
 
+/** The output limiter's budget, m/s²: the robot's traction limit, or the configured μ·g (PathFollower.limiterBudget). */
+export function limiterBudget(cfg: FollowerConfig): number {
+  return Number.isNaN(cfg.limiterFrictionCoefficient) ? tractionMetersPerSecondSquared(cfg.robot)
+    : cfg.limiterFrictionCoefficient * GRAVITY;
+}
+
 /** One controller from path to pose (PathFollower.java; see there for the design). */
 export class PathFollower {
   readonly path: Path;
@@ -253,7 +261,7 @@ export class PathFollower {
     this.active = path;
     this.track = path;
     this.cfg = config;
-    this.limiter = new OutputLimiter(config.robot, config.limiterFrictionCoefficient, config.maxAlphaRadPerSecSquared);
+    this.limiter = new OutputLimiter(config.robot, limiterBudget(config), config.maxAlphaRadPerSecSquared);
     this.endSpeed = path.spec.endMetersPerSecond;
     this.rollingEnd = this.endSpeed > 0.0;
     const end = path.sample(path.lengthMeters);

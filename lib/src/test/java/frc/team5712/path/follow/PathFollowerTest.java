@@ -509,7 +509,7 @@ class PathFollowerTest {
     FieldSpeeds firstOut = fb.step(ra.seconds() + DT, atEnd, handed);
     double jump = Math.hypot(firstOut.vxMetersPerSecond() - handed.vxMetersPerSecond(),
         firstOut.vyMetersPerSecond() - handed.vyMetersPerSecond());
-    assertTrue(jump <= CFG.limiterFrictionCoefficient() * RobotConfig.GRAVITY * DT + 1e-9,
+    assertTrue(jump <= PathFollower.limiterBudget(CFG) * DT + 1e-9,
         "no drop at the hand-off: the second path starts from the handed velocity");
     assertTrue(firstOut.vxMetersPerSecond() > 1.0);
   }
@@ -619,7 +619,7 @@ class PathFollowerTest {
     PathFollower respect = new PathFollower(path, CFG).overrideY(() -> 1.0, OverrideMode.RESPECT_LIMITS);
     respect.start(0, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0), FieldFrame.BLUE);
     double vy = respect.step(DT, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0)).vyMetersPerSecond();
-    assertTrue(vy > 0 && vy <= CFG.limiterFrictionCoefficient() * RobotConfig.GRAVITY * DT + 1e-9, "ramps: " + vy);
+    assertTrue(vy > 0 && vy <= PathFollower.limiterBudget(CFG) * DT + 1e-9, "ramps: " + vy);
 
     PathFollower off = new PathFollower(path, CFG).overrideOmega(() -> Double.NaN, OverrideMode.BYPASS);
     off.start(0, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0), FieldFrame.BLUE);
@@ -710,7 +710,7 @@ class PathFollowerTest {
     Run r = run(path, f, FieldFrame.BLUE, 30, (t, plant, ff) -> {
       boolean slipping = t > 1.0 && t < 1.5;
       slip.confidence = slipping ? 0.9 : 0.0;
-      slip.achieved = 3.5; // m/s²: what the slick floor gave
+      slip.achieved = 5.0; // m/s²: what the slick floor gave
       if (Math.abs(t - 1.4) < 1e-9) {
         muDuring[0] = ff.slipFrictionCoefficient();
       }
@@ -722,7 +722,7 @@ class PathFollowerTest {
       }
       last[0] = plant.velocity();
     });
-    double expected = 3.5 / RobotConfig.GRAVITY * (1 - CFG.slipMargin());
+    double expected = 5.0 / RobotConfig.GRAVITY * (1 - CFG.slipMargin());
     assertEquals(expected, muDuring[0], 1e-9);
     // speeding up is held to the lowered grip; braking may still use slipBrakeFriction
     assertTrue(worstAccel[0] <= CFG.slipBrakeFriction() * RobotConfig.GRAVITY + 1e-6, "accel " + worstAccel[0]);

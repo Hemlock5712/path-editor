@@ -7,7 +7,7 @@ import type { HeadingProfile } from "./heading.ts";
 import {
   brakeAccelMetersPerSecondSquared,
   driveAccelMetersPerSecondSquared,
-  gripMetersPerSecondSquared,
+  tractionMetersPerSecondSquared,
   spinLeverMeters,
   wheelSpeedCapMetersPerSecond,
   type RobotConfig,
@@ -111,7 +111,7 @@ export class VelocityProfile {
       zoneLast[j] = Math.ceil(snapToGrid(geometry.sAtWaypoint(zones[j]!.toWaypoint) / ds));
     }
 
-    const grip = gripMetersPerSecondSquared(robot);
+    const grip = tractionMetersPerSecondSquared(robot);
     const lever = spinLeverMeters(robot);
     const moduleRadius = robot.moduleRadiusMeters;
     const wheelCap = wheelSpeedCapMetersPerSecond(robot);
@@ -316,7 +316,7 @@ class Budget {
 
   constructor(robot: RobotConfig, nodes: number) {
     this.robot = robot;
-    this.grip = gripMetersPerSecondSquared(robot);
+    this.grip = tractionMetersPerSecondSquared(robot);
     this.lever = spinLeverMeters(robot);
     this.moduleRadius = robot.moduleRadiusMeters;
     this.brake = brakeAccelMetersPerSecondSquared(robot);
