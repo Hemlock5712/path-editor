@@ -29,8 +29,9 @@ import frc.team5712.path.core.RobotConfig;
  * @param maxAlphaRadPerSecSquared spin acceleration cap, also the heading stopping law's
  * @param headingEaseInPerSecond the heading ease-in line, rad/s per radian left
  * @param headingDeadbandRadians ask for zero spin inside this
- * @param limiterFrictionCoefficient the output limiter's grip, μ·g shared by translation and spin.
- *     The plan uses the robot's μ; this is usually a little higher so feedback has room.
+ * @param limiterFrictionCoefficient the output limiter's budget as a μ (μ·g shared by translation and
+ *     spin); NaN, the default, = the robot's traction limit {@code 0.9 · min(μ·g, g · tip / h)}
+ *     ({@link frc.team5712.path.core.RobotConfig#tractionMetersPerSecondSquared})
  * @param positionToleranceMeters finish: this close
  * @param headingToleranceRadians finish: this well aligned
  * @param settledMetersPerSecond finish: slower than this (measured)
@@ -41,11 +42,12 @@ import frc.team5712.path.core.RobotConfig;
  *     the grip the limiter, the brake and the speed plan use to what the floor gave, then recover
  * @param slipConfidence the slip signal's confidence that counts as slipping
  * @param slipMargin take this share off the acceleration achieved when slip began
- * @param slipRecoveryPerSecond how fast the lowered μ climbs back, μ per second
- * @param minSlipFriction never plan below this μ
+ * @param slipRecoveryPerSecond how fast the lowered μ climbs back, μ per second (0.065: the 0.05 tuned on a
+ *     μ 1.15 floor, scaled with the tread to 1.5)
+ * @param minSlipFriction never plan below this μ (0.39: 0.3 scaled the same way)
  * @param slipBrakeFriction while slip has lowered the grip, the limiter still lets braking use at
  *     least this μ: the brake law plans with the lowered μ (braking early), and the limiter does not
- *     forbid the robot from braking harder if it must
+ *     forbid the robot from braking harder if it must (1.11: 0.85 scaled the same way)
  * @param replanStartFromMeasuredVelocity at start, when the robot is already moving (not backwards along the
  *     path), re-plan the path's speeds from its measured speed, as PathPlanner does, instead of from rest. Only
  *     the speed profile is rebuilt (the curve stays as drawn): the one bit of path work at go, tens of
@@ -156,7 +158,7 @@ public record FollowerConfig(
     private double maxAlphaRadPerSecSquared = Math.toRadians(720.0);
     private double headingEaseInPerSecond = 5.0;
     private double headingDeadbandRadians = Math.toRadians(0.3);
-    private double limiterFrictionCoefficient = 1.0;
+    private double limiterFrictionCoefficient = Double.NaN;
     private double positionToleranceMeters = 0.02;
     private double headingToleranceRadians = Math.toRadians(1.0);
     private double settledMetersPerSecond = 0.05;
@@ -166,9 +168,9 @@ public record FollowerConfig(
     private boolean adaptiveGrip = true;
     private double slipConfidence = 0.3;
     private double slipMargin = 0.1;
-    private double slipRecoveryPerSecond = 0.05;
-    private double minSlipFriction = 0.3;
-    private double slipBrakeFriction = 0.85;
+    private double slipRecoveryPerSecond = 0.065;
+    private double minSlipFriction = 0.39;
+    private double slipBrakeFriction = 1.11;
     private boolean replanStartFromMeasuredVelocity = false;
     private double rejoinAboveMeters = 0.4;
 

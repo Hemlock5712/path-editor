@@ -48,7 +48,7 @@ class LawsTest {
 
   @Test
   void limiterLetsSmallStepsThroughUntouched() {
-    OutputLimiter lim = new OutputLimiter(RobotConfig.DEFAULT, 1.0, 12);
+    OutputLimiter lim = new OutputLimiter(RobotConfig.DEFAULT, 1.0 * RobotConfig.GRAVITY, 12);
     lim.reset(1, 0, 0);
     lim.limit(1.05, 0.02, 0.1, 0.02);
     assertEquals(1.05, lim.vx(), 1e-12);
@@ -59,7 +59,7 @@ class LawsTest {
   @Test
   void limiterKeepsTheMotorCurveWhenSpeedingUp() {
     RobotConfig r = RobotConfig.DEFAULT;
-    OutputLimiter lim = new OutputLimiter(r, 5.0, 12); // grip out of the way
+    OutputLimiter lim = new OutputLimiter(r, 5.0 * RobotConfig.GRAVITY, 12); // grip out of the way
     double v = 4.3;
     lim.reset(v, 0, 0);
     lim.limit(10, 0, 0, 0.02);
@@ -69,7 +69,7 @@ class LawsTest {
   @Test
   void aLoweredGripLimitsSpeedingUpButNotBraking() {
     RobotConfig r = RobotConfig.DEFAULT;
-    OutputLimiter lim = new OutputLimiter(r, 1.0, 12);
+    OutputLimiter lim = new OutputLimiter(r, 1.0 * RobotConfig.GRAVITY, 12);
     lim.setFrictionCoefficient(0.3);
     lim.setBrakeFrictionCoefficient(0.85);
     lim.reset(2.0, 0, 0);
