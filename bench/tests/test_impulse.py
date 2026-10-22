@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 from common import RP
-from courses import COURSES, Course, Impulse, NeutralPath, Waypoint
+from courses import COURSES, SHOVE_N, Course, Impulse, NeutralPath, Waypoint
 from sim import DisturbedPlant, run_one
 
 
@@ -22,7 +22,7 @@ def _hold_still(impulse):
 
 
 def test_impulse_moves_robot():
-    p = _hold_still(Impulse(at_fraction=0.0, force_n=800.0, duration=0.3))
+    p = _hold_still(Impulse(at_fraction=0.0, force_n=SHOVE_N, duration=0.3))
     assert p.fired_at is not None
     assert p.y > 0.10  # pushed to the left of travel (+y), well past tread creep
     assert abs(p.x) < 0.02

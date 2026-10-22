@@ -8,6 +8,7 @@ import pytest
 from courses import CHOREO_TRAJ, COURSES, NeutralPath
 from courses_extra import EXTRA_COURSES, EXTRAS, THREE_PIECE_LEGS, WALL_X, WALL_Y
 from scenarios import BUMPER_HALF, MovingEnd, make_follower, plant_params
+from common import RP
 from sim import make_robot, run_one
 
 
@@ -44,9 +45,9 @@ def test_the_wall_hug_path_leaves_15_cm_to_each_wall():
 def test_the_heavy_robot_reaches_the_plant_and_the_methods_with_a_robot_model():
     rp, _ = make_robot(COURSES["heavy_robot"], 0)
     rp = plant_params("heavy_robot", rp)
-    assert (rp.mass, rp.inertia, rp.stator_limit) == (68.0, 6.8, 96.0)
+    assert (rp.mass, rp.inertia, rp.stator_limit) == (68.0, 6.8, 0.8 * RP.stator_limit)
     pp, _ = make_follower("heavy_robot", "pathplanner", None)
-    assert (pp.cfg.mass, pp.cfg.moi, pp.cfg.current_limit) == (68.0, 6.8, 96.0)
+    assert (pp.cfg.mass, pp.cfg.moi, pp.cfg.current_limit) == (68.0, 6.8, 0.8 * RP.stator_limit)
     ours, _ = make_follower("heavy_robot", "ours_v2", None)
     assert ours.robot_overrides["massKg"] == 68.0
     plain, _ = make_follower("s_curve", "ours_v2", None)
@@ -95,7 +96,7 @@ def test_a_bline_leg_with_a_rolling_end_finishes_moving():
 
 def test_ours_runs_a_chain_with_slip_aware_odometry():
     r = run_one(("three_piece_chain", "ours_v2", None, 0, "slipodom"))
-    assert r["err_end_cm"] < 3.0 and r["overshoot_cm"] < 2.0
+    assert r["err_end_cm"] < 3.0 and r["overshoot_cm"] < 2.0  # the session survives the handoffs
 
 
 def test_overshoot_counts_only_after_the_end_is_reached():

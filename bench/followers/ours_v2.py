@@ -10,8 +10,8 @@ The neutral course becomes our path file:
 - every heading in the course (waypoint headings and fractional heading targets) becomes a rotation target
   at the same waypoint-relative position; between targets the heading follows the minimum-jerk blend;
 - the shared limits: 4 m/s and 6 m/s^2 for the path, 540 deg/s and 720 deg/s^2 for the follower;
-- the robot file is the bench plant's numbers (mass, inertia, module radius, gearing, Kraken curve, 120 A),
-  with the planning grip mu as an option (as shipped: 0.7, the library default).
+- the robot file is the bench plant's numbers (mass, inertia, module radius, gearing, Kraken curve, stator limit),
+  with the grip mu as an option (OURS_MU: the tread's 1.5).
 
 reset() sends `load` (the Java side builds the path: the robot-init work, timed here as path prep) and
 then `reset` (the start, which does no path work).
@@ -34,6 +34,10 @@ MAIN = "frc.team5712.path.tools.BenchServer"
 LOG_DIR = os.path.join(ROOT, "bench", "out")  # BenchServer stderr, one file per worker (gitignored)
 
 _server = None
+
+# The robot file's frictionCoefficient: the tread's mu. The library plans and limits at 0.9 x min(mu g, g tip / h)
+# (lib/README.md, Traction); before that change it planned at this mu directly (shipped 0.7).
+OURS_MU = 1.5
 
 
 class _Server:
@@ -107,6 +111,7 @@ def robot_json(mu):
         "driveMotorCount": 4,
         "statorCurrentLimitAmps": RP.stator_limit,
         "frictionCoefficient": mu,
+        "centerOfMassHeightMeters": RP.cg_height,  # the library's tip limit (tip distance: the square base's)
         "maxAngularRadPerSec": Limits().max_omega,
         "motor": {"nominalVolts": 12.0, "stallTorqueNewtonMeters": RP.motor_kt * stall_current,
                   "stallCurrentAmps": stall_current, "freeSpeedRadPerSec": RP.motor_kv * 12.0},
@@ -135,13 +140,15 @@ def to_ours(course):
 
 
 class OursV2(Follower):
-    """Options: `mu` (planning grip, default 0.7), plus any FollowerConfig field by its Java name
+    """Options: `mu` (the robot file's grip, default OURS_MU), `robot` (extra robot file fields), plus any FollowerConfig field by its Java name
     (crossTrackKp, headingKp, latencySeconds, terminalRadiusMeters, limiterFrictionCoefficient, ...)."""
 
     robot_overrides = {}  # robot file fields that differ from the bench plant (set for the heavy_robot course)
 
-    def __init__(self, mu=0.7, limits: Limits = Limits(), **follower_options):
+    def __init__(self, mu=OURS_MU, limits: Limits = Limits(), robot=None, **follower_options):
         self.mu = mu
+        if robot:  # robot file fields beyond the plant's (e.g. the traction rule)
+            self.robot_overrides = dict(robot)
         self.lim = limits
         self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
                         "brakeMetersPerSecondSquared": limits.max_accel}
@@ -152,7 +159,7 @@ class OursV2(Follower):
     @staticmethod
     def adapt(course):
         path = to_ours(course)
-        call_fresh(op="load", path=path, robot=robot_json(0.7))
+        call_fresh(op="load", path=path, robot=robot_json(OURS_MU))
         g = server().call(op="geometry", step=0.02)
         return {"path": path, "geometry": np.column_stack([g["x"], g["y"]])}
 
@@ -166,8 +173,9 @@ class OursV2(Follower):
                        options=self.options, keepSensing=start.t > 0)
         self.srv = server()
         self.build_ms = r["buildMs"]
+        extra = {} if start.handed is None else {"handed": [float(v) for v in start.handed]}
         self.srv.call(op="reset", t=start.t, pose=[float(v) for v in start.pose],
-                      vel=[float(v) for v in start.vel])
+                      vel=[float(v) for v in start.vel], **extra)
         self.finished = False
 
     def step(self, t, pose, vel):

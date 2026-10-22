@@ -21,7 +21,7 @@ one at a time, each with the full budget. A candidate counts if it plans: the be
 clear of, and neither PathPlanner has the heading checks ours has.
 
 The score is the planned time as in ppcompare.planned_seconds: PathPlanner 2027's trajectory generator (as
-shipped, wheel COF 1.15) or path2's GUI simulation (as shipped).
+shipped, wheel COF = the plant's static mu) or path2's GUI simulation (as shipped).
 """
 
 import json

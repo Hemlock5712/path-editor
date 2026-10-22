@@ -32,8 +32,9 @@ if HERE not in sys.path:
 
 import numpy as np  # noqa: E402
 
-from courses import COURSES, QUICK_COURSES, NeutralPath, t_end  # noqa: E402
-from courses_extra import EXTRA_COURSES, EXTRAS  # noqa: E402
+from courses import COURSES, MAIN_COURSES, QUICK_COURSES, NeutralPath, t_end  # noqa: E402
+from courses_extra import EXTRA_COURSES, EXTRAS, FULL_TRACTION, FULL_TRACTION_ACCEL  # noqa: E402
+from common import Limits  # noqa: E402
 from followers import LABELS, METHODS, build  # noqa: E402
 
 OUT = os.path.join(HERE, "out")
@@ -44,6 +45,12 @@ MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_cap
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
                 "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_noadapt", "ours_tuned"]
 MAIN_METHODS += ["pp_path2", "pp_path2_tuned"]  # PathPlanner's new path system (new-path branch, pre-release)
+# the full-traction block: ours under each traction rule with its own acceleration (FT_OURS, on the copies with the
+# path cap raised), against the others at the shared limits (FT_OTHERS, the main grid's rows)
+# ours under each traction rule of the library (robot file setting); the first is the shipped default
+OURS_RULES = ["ours_v2"]
+FT_OURS = OURS_RULES
+FT_OTHERS = ["pathplanner_tuned", "choreo", "choreo_hybrid"]
 TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme", "ours_tuned": "ours_v2"}
 TUNED_BASE["pp_path2_tuned"] = "pp_path2"
 EXTRA = {  # registry entries that only exist in the bench driver
@@ -71,17 +78,17 @@ def pp_grid(quick):
     if quick:
         return [{"kp": kp, "kp_rot": 5.0, "hold": True} for kp in (5.0, 10.0)]
     return [{"kp": kp, "kp_rot": kr, "hold": True, "cof": cof} for kp in (5.0, 7.0, 10.0, 15.0, 20.0)
-            for kr in (5.0, 10.0) for cof in (0.4, 0.5, 0.6, 0.7, 0.9, 1.15)]
+            for kr in (5.0, 10.0) for cof in (0.4, 0.5, 0.6, 0.7, 0.9, 1.15, 1.5)]
 
 
 def ours_grid(quick):
-    """Ours v2 (lib/ PathFollower): the end's ease-in line, the latency allowance and the output limiter's grip.
-    The other FollowerConfig gains stay at their defaults."""
+    """Ours v2 (lib/ PathFollower): the end's ease-in line and the latency allowance. The grip is the robot's
+    (traction rule in the library, limiter at the same limit); the other FollowerConfig gains stay at their
+    defaults."""
     if quick:
         return [{"easeInPerSecond": e} for e in (6.0, 12.0)]
-    # planning mu 0.7 was the interior optimum in phase 3's sweep, so it stays fixed here
-    return [{"easeInPerSecond": e, "latencySeconds": lat, "limiterFrictionCoefficient": lim}
-            for e in (9.0, 12.0, 16.0) for lat in (0.03, 0.05, 0.07) for lim in (1.0, 1.4, 2.0)]
+    return [{"easeInPerSecond": e, "latencySeconds": lat}
+            for e in (9.0, 12.0, 16.0) for lat in (0.03, 0.05, 0.07)]
 
 
 def path2_grid(quick):
@@ -246,7 +253,7 @@ def main():
         export_editor(path, [int(x) for x in a.trace_seeds.split(",") if x != ""], min(a.procs, 4), a.trace_pose)
         return
     seeds = list(range(a.seeds if a.seeds else (2 if a.quick else 10)))
-    courses = QUICK_COURSES if a.quick else list(COURSES)
+    courses = QUICK_COURSES if a.quick else list(MAIN_COURSES)
     poses = ["odom", "slipodom", "truth"] if a.both else (["truth"] if a.perfect_pose else ["odom"])
     t0 = time.time()
     out = {"meta": {"seeds": seeds, "sweep_seeds": SWEEP_SEEDS, "courses": courses, "poses": poses,
@@ -259,7 +266,7 @@ def main():
     if a.resume and os.path.exists(partial):
         prev = json.load(open(partial))
         if all(prev["meta"][k] == out["meta"][k] for k in ("seeds", "courses", "poses", "quick")):
-            out.update({k: prev[k] for k in ("sweeps", "tuned", "runs", "pathfind") if k in prev})
+            out.update({k: prev[k] for k in ("sweeps", "tuned", "runs", "full_traction", "pathfind") if k in prev})
             print("resuming: sweeps", sorted(out["sweeps"]), "poses", sorted(out["runs"]), flush=True)
 
     def checkpoint():
@@ -295,6 +302,23 @@ def main():
                 by.setdefault(c, {}).setdefault(m, []).append(r)
             out["runs"][pose] = {c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()}
             print(pose, "grid done", f"({time.time() - t0:.0f} s)", flush=True)
+            checkpoint()
+        if not a.quick and "full_traction" not in out:
+            ft = list(FULL_TRACTION)
+            out["full_traction"] = {}
+            for pose in poses:
+                jobs, keys = [], []
+                for c in ft:
+                    for m in FT_OURS:
+                        key, opts = resolve(m, out["tuned"])
+                        for s in seeds:
+                            jobs.append((c, key, opts, s, pose))
+                            keys.append((c, m))
+                by = {}
+                for (c, m), r in zip(keys, run_jobs(pool, jobs)):
+                    by.setdefault(c, {}).setdefault(m, []).append(r)
+                out["full_traction"][pose] = {c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()}
+            print("full traction done", f"({time.time() - t0:.0f} s)", flush=True)
             checkpoint()
         if not a.quick and "pathfind" not in out:
             out["pathfind"] = pathfind_grid(pool, seeds, poses)
@@ -667,6 +691,36 @@ def _winner(rows, key, lowest=True, valid=None):
     return best
 
 
+def full_traction_md(out):
+    """Ours with its own traction on the original nine (FULL_TRACTION), against the others at the shared limits."""
+    ft = out.get("full_traction")
+    if not ft:
+        return "Not run (--quick, or a run from before the block existed).\n"
+    titles = {"truth": "Perfect pose", "odom": "Wheel odometry + gyro", "slipodom": "Slip-aware odometry + IMU"}
+    L = [f"Ours on the original nine courses with the path's acceleration cap raised from {Limits().max_accel:g} to "
+         f"{FULL_TRACTION_ACCEL:g} m/s^2, so its own traction rule decides (speed cap {Limits().max_speed:g} m/s), "
+         f"against {', '.join(label(m) for m in FT_OTHERS)} at the shared limits (the main grid's rows). Each cell: "
+         "time settled s (runs settled), mean wheel slip ms, mean end error cm.\n"]
+    cols = [("ft", m) for m in FT_OURS] + [("shared", m) for m in ["ours_v2"] + FT_OTHERS]
+
+    def cell(a):
+        if a is None:
+            return "-"
+        n, ns = a["n"], a["t_settle_nan"]
+        st = "never" if ns == n else f"{a['t_settle_mean']:.2f} ({n - ns}/{n})"
+        return f"{st}, {a['wheel_slip_ms_mean']:.0f} ms, {a['err_end_cm_mean']:.1f} cm"
+    for pose in ft:
+        L.append(f"### {titles[pose]}\n")
+        L.append("| course | " + " | ".join(f"{label(m)}{' (own traction)' if k == 'ft' else ' (shared limits)'}"
+                                         for k, m in cols) + " |")
+        L.append("|---|" + "---|" * len(cols))
+        for c, ms in ft[pose].items():
+            base = out["runs"][pose].get(c[3:], {})
+            L.append(f"| {c[3:]} | " + " | ".join(cell(ms.get(m) if k == "ft" else base.get(m)) for k, m in cols) + " |")
+        L.append("")
+    return "\n".join(L)
+
+
 def harder_md(out):
     """The harder courses: what each tests, how each method meets it, and per pose source the winner on each
     course with ours' numbers next to it."""
@@ -890,6 +944,7 @@ def write_md(out):
         "is only loading the .traj, its solver time is in the geometry section).\n",
         tables(out),
         "## Harder courses\n", harder_md(out),
+        "## Full traction\n", full_traction_md(out),
         "## Pathfinding course\n", pathfind_md(out),
         "## Geometry each method authored\n", geometry_md(out), END])
     text = open(MD).read() if os.path.exists(MD) else f"# Path-following bench: results\n\n{START}\n{END}\n"
