@@ -4,11 +4,15 @@
 // from the PathPlanner comparison, and then the course detail (the field, the scoreboard, every metric).
 
 import { ChevronDown } from "lucide-react";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import {
   aggregate,
+  bestOf,
   cell,
+  cellMethod,
   commonRows,
+  courseMetricStat,
+  courseMetricsFor,
   COLUMNS,
   COMPARE_METRICS,
   END_TOLERANCE_CM,
@@ -16,6 +20,7 @@ import {
   perTarget,
   POSE_LABELS,
   PP_PREFIX,
+  rowHeadline,
   rowWinner,
   rows,
   tableFor,
@@ -66,11 +71,56 @@ function CellText({ data, pose, c, r }: { data: BenchData; pose: string; c: Colu
   return <span>{x.value.toFixed(2)}</span>;
 }
 
+/** A course measure's mean in a column (NaN: not run). */
+function measure(data: BenchData, pose: string, c: Column, r: Row, key: string): number {
+  const method = cellMethod(c, r);
+  const v = method ? courseMetricStat(data, pose, r.key, method, key)?.mean : null;
+  return typeof v === "number" ? v : Number.NaN;
+}
+
+/** The column that wins a row: on its headline (time settled, or the course's own measure). */
+function winnerOf(data: BenchData, pose: string, cols: readonly Column[], r: Row): string | null {
+  const head = rowHeadline(data, pose, cols, r);
+  if (!head) return rowWinner(data, pose, cols, r, "t_settle");
+  return bestOf(cols.map((c) => ({ id: c.id, value: measure(data, pose, c, r, head.key) })), head.higherIsBetter);
+}
+
+/** A course's own measures below its row (all but the one that heads the row). */
+function MeasureRows({ data, pose, cols, r }: { data: BenchData; pose: string; cols: readonly Column[]; r: Row }) {
+  const head = rowHeadline(data, pose, cols, r);
+  const extra = courseMetricsFor(data, r.key).filter((m) => m.key !== head?.key);
+  return (
+    <>
+      {extra.map((m) => {
+        const values = cols.map((c) => ({ id: c.id, value: measure(data, pose, c, r, m.key) }));
+        const bestId = bestOf(values, m.higherIsBetter);
+        // a tie (as shown) is bold too
+        const shown = values.find((x) => x.id === bestId);
+        const isBest = (v: number) => shown !== undefined && Number.isFinite(v) && fmt(v, m.unit) === fmt(shown.value, m.unit);
+        return (
+          <tr key={m.key} className="measure-row" data-row={`${r.key}:${m.key}`}>
+            <th scope="row" className="target">
+              <span className="measure-label" data-tip={m.higherIsBetter ? "Higher is better" : "Lower is better"}>
+                ↳ {m.label}, {m.unit} {m.higherIsBetter ? "▲" : "▼"}
+              </span>
+            </th>
+            {values.map((x, i) => (
+              <td key={x.id} className={[cols[i]!.id === "ours" ? "ours" : "", isBest(x.value) ? "best" : ""].filter(Boolean).join(" ") || undefined} data-column={x.id}>
+                {Number.isFinite(x.value) ? fmt(x.value, m.unit) : <span className="na">–</span>}
+              </td>
+            ))}
+          </tr>
+        );
+      })}
+    </>
+  );
+}
+
 function BenchmarkTable({ data, pose, cols }: { data: BenchData; pose: string; cols: readonly Column[] }) {
   const rs = rows(data);
   const wins = new Map<string, number>();
   for (const r of rs) {
-    const w = rowWinner(data, pose, cols, r, "t_settle");
+    const w = winnerOf(data, pose, cols, r);
     if (w) wins.set(w, (wins.get(w) ?? 0) + 1);
   }
   const common = commonRows(data, pose, cols, rs, "t_settle", true);
@@ -83,7 +133,10 @@ function BenchmarkTable({ data, pose, cols }: { data: BenchData; pose: string; c
   return (
     <div className="bench-table-scroll">
       <table className="benchmark" data-testid="bench-benchmark">
-        <caption className="sr-only">Time settled in seconds, by target and method</caption>
+        <caption className="bench-caption">
+          Time settled, s, by target and method; bold is the best valid time. A course where nothing settles by design shows its own measure
+          instead, and the harder courses add their own measures below their row (↳; ▲ higher is better, ▼ lower is better), bold where best.
+        </caption>
         <thead>
           <tr>
             <th scope="col" className="target">
@@ -98,9 +151,11 @@ function BenchmarkTable({ data, pose, cols }: { data: BenchData; pose: string; c
         </thead>
         <tbody>
           {rs.map((r) => {
-            const winner = rowWinner(data, pose, cols, r, "t_settle");
+            const winner = winnerOf(data, pose, cols, r);
+            const head = rowHeadline(data, pose, cols, r);
             return (
-              <tr key={r.key} data-row={r.key}>
+              <Fragment key={r.key}>
+              <tr data-row={r.key}>
                 <th scope="row" className="target">
                   <button
                     type="button"
@@ -113,14 +168,29 @@ function BenchmarkTable({ data, pose, cols }: { data: BenchData; pose: string; c
                   >
                     {r.label}
                     {r.route && <span className="tag">2026 route</span>}
+                    {head && (
+                      <span className="tag" data-tip={`Nothing settles here by design: ${head.label} instead (${head.higherIsBetter ? "higher" : "lower"} is better)`}>
+                        {head.label}, {head.unit}
+                      </span>
+                    )}
                   </button>
                 </th>
                 {cols.map((c) => (
                   <td key={c.id} className={[c.id === "ours" ? "ours" : "", winner === c.id ? "best" : ""].filter(Boolean).join(" ") || undefined} data-column={c.id}>
-                    <CellText data={data} pose={pose} c={c} r={r} />
+                    {head ? (
+                      Number.isFinite(measure(data, pose, c, r, head.key)) ? (
+                        fmt(measure(data, pose, c, r, head.key), head.unit)
+                      ) : (
+                        <span className="na">–</span>
+                      )
+                    ) : (
+                      <CellText data={data} pose={pose} c={c} r={r} />
+                    )}
                   </td>
                 ))}
               </tr>
+              <MeasureRows data={data} pose={pose} cols={cols} r={r} />
+              </Fragment>
             );
           })}
         </tbody>
@@ -254,19 +324,21 @@ function CompareCharts({ data, pose, cols }: { data: BenchData; pose: string; co
   );
 }
 
-function OptimisedTable({ data, pose }: { data: BenchData; pose: string }) {
+function OptimisedTable({ data, pose, more }: { data: BenchData; pose: string; more: boolean }) {
   const pp = data.ppcompare;
   if (!pp) return null;
-  const cols = OPTIMISED_COLUMNS.filter((c) => pp.methods.some((m) => m.key === c.method));
+  const cols = OPTIMISED_COLUMNS.filter((c) => (more || !c.more) && pp.methods.some((m) => m.key === c.method));
   const t = (key: string) => tableFor(data, PP_PREFIX + key);
   return (
     <section className="bench-section" aria-labelledby="bench-opt-title">
       <div className="bench-section-head">
         <h2 id="bench-opt-title">Optimised paths</h2>
       </div>
-      <p className="hint">
-        The PathPlanner comparison: the same waypoints as drawn, and after each one&apos;s own optimiser (ours with <code>tools/optimise.mjs</code>,
-        PathPlanner&apos;s control points with a port of the same search). Each cell: time settled, and the planned time under it.
+      <p className="hint" data-testid="bench-optimised-caption">
+        The PathPlanner comparison: the same waypoints as drawn, and after each tool&apos;s own optimiser, curves only on both sides. Ours reshapes
+        the tangents and keeps the waypoints (<code>tools/optimise.mjs</code>, as it ships); PathPlanner Bezier&apos;s is PathPlanner&apos;s own
+        genetic algorithm on the handles. path2 has no optimiser of its own. With &ldquo;more methods&rdquo;: the waypoint-moving runs, all by
+        our search. Each cell: time settled, and the planned time under it.
       </p>
       {!pp.meta.poses.includes(pose) && <p className="check warning">The PathPlanner comparison wasn't run with {POSE_LABELS[pose] ?? pose}.</p>}
       <div className="bench-table-scroll">
@@ -402,7 +474,7 @@ export function BenchView() {
               )}
             </section>
             <CompareCharts data={data} pose={s.pose} cols={cols} />
-            <OptimisedTable data={data} pose={s.pose} />
+            <OptimisedTable data={data} pose={s.pose} more={s.moreMethods} />
             <CourseDetail data={data} />
           </>
         )}

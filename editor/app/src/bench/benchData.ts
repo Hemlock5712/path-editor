@@ -4,6 +4,14 @@
 
 export const BENCH_SCHEMA = 1;
 
+/** One of a course's own measures. */
+export interface CourseMetric {
+  readonly key: string;
+  readonly label: string;
+  readonly unit: string;
+  readonly higherIsBetter: boolean;
+}
+
 export interface Stat {
   readonly mean: number | null;
   readonly worst: number | null;
@@ -30,6 +38,14 @@ export interface BenchData {
   readonly geometry: Readonly<Record<string, Readonly<Record<string, readonly (readonly number[])[]>>>>;
   /** course → seed → method → [[t, x, y, heading], ...] */
   readonly traces: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, readonly (readonly number[])[]>>>>>>;
+  /**
+   * The harder courses' own measures (wall clearance, a drive-through's miss, ...), apart from the metrics
+   * above because some are better higher: course → its measures, and pose → course → method → key → stat.
+   */
+  readonly courseMetrics?: {
+    readonly metrics: Readonly<Record<string, readonly CourseMetric[]>>;
+    readonly runs: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, Stat>>>>>>>>;
+  };
   /** The PathPlanner comparison (run.py --pp-compare), when it has been run: rows only, and the 2026 routes. */
   readonly ppcompare?: {
     readonly source: string;
@@ -467,12 +483,59 @@ export function perTarget(data: BenchData, pose: string, cols: readonly Column[]
   return bars.sort((a, b) => a.value - b.value);
 }
 
-/** The optimised-paths table: as drawn and after the optimiser, from the PathPlanner comparison. */
-export const OPTIMISED_COLUMNS: readonly { readonly method: string; readonly label: string; readonly ours: boolean }[] = [
+/**
+ * The optimised-paths table: as drawn and after each tool's own optimiser, curves only (ours reshapes the
+ * tangents; PathPlanner's genetic algorithm moves the Bezier handles). The waypoint-moving runs are extras,
+ * all by our search, shown with "more methods".
+ */
+export const OPTIMISED_COLUMNS: readonly { readonly method: string; readonly label: string; readonly ours: boolean; readonly more?: boolean }[] = [
   { method: "ours_v2", label: "Ours, as drawn", ours: true },
-  { method: "ours_optimised", label: "Ours, optimised", ours: true },
+  { method: "ours_optimised", label: "Ours, its optimiser (curves only)", ours: true },
   { method: "pp2027_hold", label: "PathPlanner Bezier, as drawn", ours: false },
-  { method: "pp2027_optimised", label: "PathPlanner Bezier, optimised", ours: false },
+  { method: "pp2027_optimised", label: "PathPlanner Bezier, its own optimiser (handles only)", ours: false },
   { method: "pp_path2", label: "PathPlanner path2, as drawn", ours: false },
-  { method: "pp_path2_optimised", label: "PathPlanner path2, optimised", ours: false },
+  { method: "ours_optimised_moved", label: "Ours, our search moving waypoints", ours: true, more: true },
+  { method: "pp2027_optimised_moved", label: "PathPlanner Bezier, our search moving anchors and handles", ours: false, more: true },
+  { method: "pp_path2_optimised", label: "path2, our optimiser's search (path2 has none)", ours: false, more: true },
 ];
+
+// ------------------------------------------------------------------------------ the courses' own measures
+
+/** A course's own measures (none for most). */
+export function courseMetricsFor(data: BenchData, course: string): readonly CourseMetric[] {
+  return data.courseMetrics?.metrics[course] ?? [];
+}
+
+export function courseMetricStat(data: BenchData, pose: string, course: string, method: string, key: string): Stat | null {
+  return data.courseMetrics?.runs[pose]?.[course]?.[method]?.[key] ?? null;
+}
+
+/** Which of some values is best (null: none finite), higher or lower as the measure says. */
+export function bestOf<T>(items: readonly { readonly id: T; readonly value: number }[], higherIsBetter: boolean): T | null {
+  let best: T | null = null;
+  let at = higherIsBetter ? -Infinity : Infinity;
+  for (const x of items) {
+    if (!Number.isFinite(x.value)) continue;
+    if (higherIsBetter ? x.value > at : x.value < at) {
+      at = x.value;
+      best = x.id;
+    }
+  }
+  return best;
+}
+
+/**
+ * A row's headline in the main table: time settled, or, on a course where nothing settles by design (a
+ * drive-through), its first own measure instead.
+ */
+export function rowHeadline(data: BenchData, pose: string, cols: readonly Column[], row: Row): CourseMetric | null {
+  if (row.route) return null;
+  const own = courseMetricsFor(data, row.key);
+  if (own.length === 0) return null;
+  const settles = cols.some((c) => {
+    const m = cellMethod(c, row);
+    const st = m ? tableStat(tableFor(data, row.key), pose, row.key, m, "t_settle") : null;
+    return st !== null && typeof st.mean === "number";
+  });
+  return settles ? null : own[0]!;
+}

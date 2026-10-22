@@ -543,7 +543,8 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
   const head = page.getByTestId("bench-benchmark");
   await expect(head.locator('tbody tr[data-row="straight_3m"] td.best')).toHaveAttribute("data-column", "ours");
   // one bold cell per row at most, and never a run that doesn't count
-  for (const row of await head.locator("tbody tr").all()) expect(await row.locator("td.best").count()).toBeLessThanOrEqual(1);
+  // (a course measure row bolds every value that ties with the best as shown)
+  for (const row of await head.locator("tbody tr:not(.measure-row)").all()) expect(await row.locator("td.best").count()).toBeLessThanOrEqual(1);
   await expect(head.locator("tbody td.best .void-cell")).toHaveCount(0);
   await expect(head.locator('tfoot tr[data-row="wins"]')).toContainText("Targets won");
   // the mean says which targets it covers; a cell that wasn't run says so, with a footnote
@@ -554,13 +555,14 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
   await page.getByRole("radio", { name: "Final error" }).click();
   await expect(page.getByTestId("bench-bars").locator("li").first()).toHaveAttribute("data-column", "ours");
   await page.getByRole("radio", { name: "Per target" }).click();
-  await expect(page.getByTestId("bench-multiples").locator("figure")).toHaveCount(await head.locator("tbody tr").count());
+  await expect(page.getByTestId("bench-multiples").locator("figure")).toHaveCount(await head.locator("tbody tr:not(.measure-row)").count());
   await page.getByRole("radio", { name: "All targets" }).click();
   // the pose switch drives the table and the verdict: on odometry nothing settles inside 2 cm of the true goal
   await page.getByRole("radio", { name: "Odometry" }).click();
   await expect(page.getByTestId("bench-pose-explain")).toContainText("odometry");
   await expect(page.getByTestId("bench-verdict")).toContainText("No method settles");
-  await expect(head.locator("tbody td.best")).toHaveCount(0);
+  // (no time is bold; the courses' own measures, like the drive-through's miss, still have a best)
+  await expect(head.locator('tbody tr:not(.measure-row):not([data-row="intake_drive_through"]) td.best')).toHaveCount(0);
   await page.getByRole("radio", { name: "Perfect" }).click();
   // read fairly: perfect pose, ours ticked first, a "what to look at" line, a ranked scoreboard
   await expect(page.getByRole("radio", { name: "Perfect" })).toHaveAttribute("aria-checked", "true");

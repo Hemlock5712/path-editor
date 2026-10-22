@@ -392,7 +392,15 @@ The **Bench** page is a read-only view of the bench's results, laid out like a m
   method, so none is flattered by skipping the hard ones. **Per target** shows one small chart per course and
   route.
 - **Optimised paths.** The PathPlanner comparison (`run.py --pp-compare`): the same waypoints as drawn and after
-  each one's own optimiser. Each cell gives the time settled and the planned time.
+  each tool's own optimiser, curves only on both sides. Ours reshapes the tangents, as it ships. PathPlanner
+  Bezier's is PathPlanner's own genetic algorithm on the handles. path2 has no optimiser. The waypoint-moving
+  runs (all by our search, path2's included) show with "more methods". Each cell gives the time settled and the
+  planned time.
+- **The courses' own measures.** The harder courses export measures of their own (`courseMetrics`: the closest
+  bumper to a wall, the miss at a game piece, the speed there, and so on), some better higher. They sit under
+  their course's row in the main table and in the course detail, with ▲ or ▼ for which way is better, and the
+  best (and any tie, as shown) in bold. A course where nothing settles by design (the drive-through) shows its
+  first measure in place of the time settled.
 - **Course detail.** The field with each method's authored path (dashed) and true trace (solid), the
   "what to look at" line, a scoreboard ranked by time settled, then seeds settled, then final error, and
   every metric.
