@@ -232,8 +232,11 @@ describe("the sim store", () => {
 
   it("defaults to the end-to-end suite's drivetrain and turns settings into inputs", () => {
     // the drivetrain is the project's (Settings > Sim preview, in the sidecar)
-    expect(driveOf(DEFAULT_SIM_PREVIEW)).toEqual(DEFAULT_DRIVE);
-    expect(driveOf({ ...DEFAULT_SIM_PREVIEW, gripMu: 0.5 }).gripMetersPerSecondSquared).toBeCloseTo(0.5 * GRAVITY, 12);
+    expect(driveOf(DEFAULT_SIM_PREVIEW, DEFAULT_ROBOT)).toEqual(DEFAULT_DRIVE);
+    expect(driveOf({ ...DEFAULT_SIM_PREVIEW, gripMu: 0.5 }, DEFAULT_ROBOT).gripMetersPerSecondSquared).toBeCloseTo(0.5 * GRAVITY, 12);
+    // a Spike Grip floor: the default robot tips (g · 0.29 m / 0.2 m) before its tread slides (1.5 g)
+    expect(driveOf({ ...DEFAULT_SIM_PREVIEW, gripMu: 1.5 }, DEFAULT_ROBOT).gripMetersPerSecondSquared).toBeCloseTo((GRAVITY * 0.29) / 0.2, 9);
+    expect(driveOf({ ...DEFAULT_SIM_PREVIEW, gripMu: 1.5 }, { ...DEFAULT_ROBOT, centerOfMassHeightMeters: 0 }).gripMetersPerSecondSquared).toBeCloseTo(1.5 * GRAVITY, 12);
     expect(shoveOf(DEFAULT_SIM_SETTINGS)).toBeNull();
     expect(shoveOf({ ...DEFAULT_SIM_SETTINGS, shoveOn: true })).toEqual({ atSeconds: 1.0, dvx: 0, dvy: 1.5 });
   });

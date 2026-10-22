@@ -7,8 +7,10 @@ import { canOpenFolders, DirectoryFiles, filesFromUpload, pickFolder, type Proje
 import { loadFrom, PATH_SUFFIX, PATHS_DIR, saveTo, toFiles } from "../io/projectIo.ts";
 import { download, zip } from "../io/zip.ts";
 import { emptyProject } from "../model/project.ts";
-import { editor, isDirty, loadProject, markSaved, notify } from "./editor.ts";
+import { hasOldDefaultMu, SPIKE_GRIP_MU } from "../model/traction.ts";
+import { editor, editProject, isDirty, loadProject, markSaved, notify } from "./editor.ts";
 import { createStore } from "./store.ts";
+import { openSettings, toast } from "./ui.ts";
 
 export interface SessionState {
   readonly files: ProjectFiles | null;
@@ -52,6 +54,7 @@ async function openFiles(files: ProjectFiles, writable: boolean): Promise<void> 
           : `Opened ${files.label}: ${n} ${n === 1 ? "path" : "paths"}.`,
         loaded.problems.length > 0 ? "error" : "info",
       );
+      if (loaded.hadRobot && hasOldDefaultMu(loaded.project.robot.config)) offerTreadMu();
     } else {
       loadProject(emptyProject());
       session.set({ files, writable, hadField: false, hadRobot: false, knownPathFiles: new Set() });
@@ -62,6 +65,17 @@ async function openFiles(files: ProjectFiles, writable: boolean): Promise<void> 
   } finally {
     session.set({ busy: false });
   }
+}
+
+/** robot.json still has the old 0.7 planning μ: offer the tread's 1.5 (Settings > Robot keeps the offer). */
+function offerTreadMu(): void {
+  toast("robot.json has μ 0.7, the old planning default. Spike Grip tread is about 1.5, and the plan now keeps its own 0.9 margin.", "info", 12000, {
+    label: "Use 1.5",
+    run: () => {
+      editProject("Tread μ", (p) => ({ ...p, robot: { ...p.robot, config: { ...p.robot.config, frictionCoefficient: SPIKE_GRIP_MU } } }));
+      openSettings("robot");
+    },
+  });
 }
 
 /** Opens a robot project folder (Chrome and Edge). */
