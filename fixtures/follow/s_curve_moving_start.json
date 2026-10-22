@@ -31,6 +31,7 @@
       "statorCurrentLimitAmps": 120,
       "frictionCoefficient": 1.5,
       "centerOfMassHeightMeters": 0.2,
+      "tractionRule": "tipOrGrip",
       "motor": { "nominalVolts": 12, "stallTorqueNewtonMeters": 9.362, "stallCurrentAmps": 476.1, "freeSpeedRadPerSec": 605.8037833672317 }
     },
     "follower": { "latencySeconds": 0.06999999999999999, "replanStartFromMeasuredVelocity": 1 },

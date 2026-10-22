@@ -4,7 +4,7 @@
 // read, as "faceTravel" (what they did); writing always gives the current schema.
 
 import { fixed5, writeJson, type JsonValue } from "./json.ts";
-import { DEFAULT_ROBOT, checkRobot, type Motor, type RobotConfig } from "./robot.ts";
+import { DEFAULT_ROBOT, checkRobot, type Motor, type RobotConfig, type TractionRule } from "./robot.ts";
 import {
   DEFAULT_BLEND_METERS,
   eventByWaypoint,
@@ -180,6 +180,7 @@ export function robotFromJson(m: JsonObject): RobotConfig {
     maxAngularRadPerSecSquared: num(m, "maxAngularRadPerSecSquared", d.maxAngularRadPerSecSquared),
     centerOfMassHeightMeters: num(m, "centerOfMassHeightMeters", d.centerOfMassHeightMeters),
     tipDistanceMeters: num(m, "tipDistanceMeters", d.tipDistanceMeters),
+    tractionRule: m.tractionRule === undefined || m.tractionRule === null ? d.tractionRule : (String(m.tractionRule) as TractionRule),
   });
 }
 
@@ -200,6 +201,7 @@ export function robotToJson(r: RobotConfig): JsonObject {
   putIfFinite(m, "maxAngularRadPerSecSquared", r.maxAngularRadPerSecSquared);
   m.centerOfMassHeightMeters = r.centerOfMassHeightMeters;
   putIfFinite(m, "tipDistanceMeters", r.tipDistanceMeters);
+  m.tractionRule = r.tractionRule;
   m.motor = {
     nominalVolts: r.driveMotor.nominalVolts,
     stallTorqueNewtonMeters: r.driveMotor.stallTorqueNewtonMeters,

@@ -6,10 +6,16 @@ package frc.team5712.path.core;
  * 120 A stator limit, SDS MK5 Spike Grip tread (μ = 1.5) and the centre of mass 0.2 m up (to be
  * measured).
  *
- * <p>Acceleration and cornering are limited to 90 % of whichever comes first, the tread's grip or
- * tipping over ({@link #tractionMetersPerSecondSquared}): {@code 0.9 · min(μ·g, g · tip / h)}, the rule
- * Precision-Drive's AccelerationLimiter uses. The planner's grip circle and the follower's output
- * limiter both come from it.
+ * <p>Acceleration and cornering are limited to 90 % of a traction limit
+ * ({@link #tractionMetersPerSecondSquared}), by one of two rules ({@link TractionRule}):
+ * <ul>
+ *   <li>{@code TIP_OR_GRIP} (the default, Joe's spec and Precision-Drive's AccelerationLimiter):
+ *       {@code 0.9 · min(μ·g, g·x/h)}, whichever comes first, the tread's grip or tipping over;
+ *   <li>{@code EQUAL_PUSH}: {@code 0.9 · μ·g / (1 + μ·h/x)}. Swerve velocity control pushes all four
+ *       wheels about equally, so the wheels that weight transfer unloads slip first.
+ * </ul>
+ * x is the tip distance and h the centre of mass's height. The planner's grip circle and the follower's
+ * output limiter both come from the rule chosen.
  *
  * @param massKg robot mass with battery and bumpers
  * @param momentOfInertiaKgM2 yaw moment of inertia
@@ -25,6 +31,11 @@ package frc.team5712.path.core;
  * @param maxAngularRadPerSecSquared spin acceleration cap for the planned heading (+∞ = only grip and
  *     motors). With a cap, a fast turn over a short distance slows the plan down instead of asking
  *     for more spin than the follower will give.
+ * @param centerOfMassHeightMeters height of the centre of mass above the floor (0 = no load transfer)
+ * @param tipDistanceMeters how far the centre is from the nearest tipping edge, {@code min(|module x|,
+ *     |module y|)}: one value for every direction (for a square base the wheelbase and the track are
+ *     the same); NaN = a square base, {@code moduleRadiusMeters / √2}
+ * @param tractionRule which traction rule sets the limit
  */
 public record RobotConfig(
     double massKg,
@@ -40,7 +51,47 @@ public record RobotConfig(
     double maxAngularRadPerSec,
     double maxAngularRadPerSecSquared,
     double centerOfMassHeightMeters,
-    double tipDistanceMeters) {
+    double tipDistanceMeters,
+    TractionRule tractionRule) {
+
+  /** How the traction limit is worked out ({@link #tractionMetersPerSecondSquared}). */
+  public enum TractionRule {
+    /** 0.9 · min(μ·g, g·x/h): grip or tipping, whichever comes first (wheel forces follow the load). */
+    TIP_OR_GRIP("tipOrGrip"),
+    /** 0.9 · μ·g / (1 + μ·h/x): every wheel pushes the same, so the unloaded ones slip first. */
+    EQUAL_PUSH("equalPush");
+
+    private final String fileName;
+
+    TractionRule(String fileName) {
+      this.fileName = fileName;
+    }
+
+    /** The name in robot files. */
+    public String fileName() {
+      return fileName;
+    }
+
+    /** The rule with this robot-file name. */
+    public static TractionRule fromFileName(String name) {
+      for (TractionRule r : values()) {
+        if (r.fileName.equals(name)) {
+          return r;
+        }
+      }
+      throw new IllegalArgumentException("unknown tractionRule '" + name + "' (tipOrGrip or equalPush)");
+    }
+  }
+
+  /** What sets the traction limit. */
+  public enum TractionLimit {
+    /** The tread's grip, μ·g (also either rule with the centre of mass at 0). */
+    GRIP,
+    /** Tipping over, g·x/h ({@code TIP_OR_GRIP} with a tall robot). */
+    TIPPING,
+    /** The wheels that weight transfer unloads, μ·g / (1 + μ·h/x) ({@code EQUAL_PUSH}). */
+    EQUAL_PUSH
+  }
 
   public static final double GRAVITY = 9.81; // m/s²
 
@@ -68,7 +119,8 @@ public record RobotConfig(
           Double.POSITIVE_INFINITY,
           Double.POSITIVE_INFINITY,
           DEFAULT_CENTER_OF_MASS_HEIGHT_METERS,
-          Double.NaN);
+          Double.NaN,
+          TractionRule.TIP_OR_GRIP);
 
   public RobotConfig {
     if (!(massKg > 0.0) || !(momentOfInertiaKgM2 > 0.0) || !(moduleRadiusMeters > 0.0)
@@ -86,6 +138,9 @@ public record RobotConfig(
     if (!Double.isNaN(tipDistanceMeters) && !(tipDistanceMeters > 0.0)) {
       throw new IllegalArgumentException("tipDistanceMeters must be positive or NaN");
     }
+    if (tractionRule == null) {
+      throw new IllegalArgumentException("tractionRule must be set");
+    }
   }
 
   /** With the default centre-of-mass height and a square base. */
@@ -95,7 +150,8 @@ public record RobotConfig(
       double maxAngularRadPerSec, double maxAngularRadPerSecSquared) {
     this(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters, driveGearRatio, driveMotor,
         driveMotorCount, statorCurrentLimitAmps, frictionCoefficient, maxWheelMetersPerSecond,
-        maxAngularRadPerSec, maxAngularRadPerSecSquared, DEFAULT_CENTER_OF_MASS_HEIGHT_METERS, Double.NaN);
+        maxAngularRadPerSec, maxAngularRadPerSecSquared, DEFAULT_CENTER_OF_MASS_HEIGHT_METERS, Double.NaN,
+        TractionRule.TIP_OR_GRIP);
   }
 
   /** Without a spin acceleration cap (the record before it had one). */
@@ -112,37 +168,49 @@ public record RobotConfig(
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, mu,
         maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters,
-        tipDistanceMeters);
+        tipDistanceMeters, tractionRule);
   }
 
   public RobotConfig withMaxWheelMetersPerSecond(double speed) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        speed, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters, tipDistanceMeters);
+        speed, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters, tipDistanceMeters,
+        tractionRule);
   }
 
   public RobotConfig withMaxAngularRadPerSec(double omega) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        maxWheelMetersPerSecond, omega, maxAngularRadPerSecSquared, centerOfMassHeightMeters, tipDistanceMeters);
+        maxWheelMetersPerSecond, omega, maxAngularRadPerSecSquared, centerOfMassHeightMeters, tipDistanceMeters,
+        tractionRule);
   }
 
   public RobotConfig withMaxAngularRadPerSecSquared(double alpha) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        maxWheelMetersPerSecond, maxAngularRadPerSec, alpha, centerOfMassHeightMeters, tipDistanceMeters);
+        maxWheelMetersPerSecond, maxAngularRadPerSec, alpha, centerOfMassHeightMeters, tipDistanceMeters,
+        tractionRule);
   }
 
   public RobotConfig withCenterOfMassHeightMeters(double h) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, h, tipDistanceMeters);
+        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, h, tipDistanceMeters,
+        tractionRule);
   }
 
   public RobotConfig withTipDistanceMeters(double d) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters, d);
+        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters, d,
+        tractionRule);
+  }
+
+  public RobotConfig withTractionRule(TractionRule rule) {
+    return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
+        driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
+        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters,
+        tipDistanceMeters, rule);
   }
 
   /** The tread's grip, μ·g, m/s². */
@@ -161,17 +229,35 @@ public record RobotConfig(
         : Double.POSITIVE_INFINITY;
   }
 
-  /**
-   * The most the robot accelerates or corners, all directions combined: {@code 0.9 · min(μ·g, g · tip / h)},
-   * m/s². Both the planner's grip circle and the follower's output limiter use it.
-   */
-  public double tractionMetersPerSecondSquared() {
+  /** The {@code TIP_OR_GRIP} limit, {@code 0.9 · min(μ·g, g·x/h)}, m/s². */
+  public double tipOrGripMetersPerSecondSquared() {
     return TRACTION_MARGIN * Math.min(gripMetersPerSecondSquared(), tipMetersPerSecondSquared());
   }
 
-  /** Whether tipping, not grip, sets {@link #tractionMetersPerSecondSquared}. */
-  public boolean tippingLimited() {
-    return tipMetersPerSecondSquared() < gripMetersPerSecondSquared();
+  /** The {@code EQUAL_PUSH} limit, {@code 0.9 · μ·g / (1 + μ·h/x)}, m/s². */
+  public double equalPushMetersPerSecondSquared() {
+    return TRACTION_MARGIN * gripMetersPerSecondSquared()
+        / (1.0 + frictionCoefficient * centerOfMassHeightMeters / tipDistanceInUseMeters());
+  }
+
+  /**
+   * The most the robot accelerates or corners, all directions combined, m/s², by {@link #tractionRule}.
+   * Both the planner's grip circle and the follower's output limiter use it.
+   */
+  public double tractionMetersPerSecondSquared() {
+    return tractionRule == TractionRule.EQUAL_PUSH ? equalPushMetersPerSecondSquared()
+        : tipOrGripMetersPerSecondSquared();
+  }
+
+  /** What sets {@link #tractionMetersPerSecondSquared} (with the centre of mass at 0, grip either way). */
+  public TractionLimit tractionLimit() {
+    if (!(centerOfMassHeightMeters > 0.0)) {
+      return TractionLimit.GRIP;
+    }
+    if (tractionRule == TractionRule.EQUAL_PUSH) {
+      return TractionLimit.EQUAL_PUSH;
+    }
+    return tipMetersPerSecondSquared() < gripMetersPerSecondSquared() ? TractionLimit.TIPPING : TractionLimit.GRIP;
   }
 
   /** Wheel speed at the motor's free speed, m/s. */

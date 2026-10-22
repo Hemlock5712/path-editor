@@ -40,7 +40,17 @@ export interface RobotConfig {
   readonly maxAngularRadPerSecSquared: number;
   readonly centerOfMassHeightMeters: number;
   readonly tipDistanceMeters: number;
+  readonly tractionRule: TractionRule;
 }
+
+/**
+ * How the traction limit is worked out (RobotConfig.TractionRule): "tipOrGrip" = 0.9 · min(μ·g, g·x/h);
+ * "equalPush" = 0.9 · μ·g / (1 + μ·h/x), every wheel pushing the same so the unloaded ones slip first.
+ */
+export type TractionRule = "tipOrGrip" | "equalPush";
+
+/** What sets the traction limit (RobotConfig.TractionLimit). */
+export type TractionLimit = "grip" | "tipping" | "equalPush";
 
 /** The share of the grip-or-tip limit the robot uses (the rest is margin). */
 export const TRACTION_MARGIN = 0.9;
@@ -60,6 +70,7 @@ export const DEFAULT_ROBOT: RobotConfig = {
   maxAngularRadPerSecSquared: Infinity,
   centerOfMassHeightMeters: 0.2,
   tipDistanceMeters: Number.NaN,
+  tractionRule: "tipOrGrip",
 };
 
 /** Checks a config the way RobotConfig's constructor does. */
@@ -81,6 +92,9 @@ export function checkRobot(r: RobotConfig): RobotConfig {
   if (!Number.isNaN(r.tipDistanceMeters) && !(r.tipDistanceMeters > 0.0)) {
     throw new RangeError("tipDistanceMeters must be positive or NaN");
   }
+  if (r.tractionRule !== "tipOrGrip" && r.tractionRule !== "equalPush") {
+    throw new RangeError("unknown tractionRule '" + String(r.tractionRule) + "' (tipOrGrip or equalPush)");
+  }
   return r;
 }
 
@@ -99,14 +113,27 @@ export function tipMetersPerSecondSquared(r: RobotConfig): number {
   return r.centerOfMassHeightMeters > 0.0 ? (GRAVITY * tipDistanceInUseMeters(r)) / r.centerOfMassHeightMeters : Infinity;
 }
 
-/** The most the robot accelerates or corners: 0.9 · min(μ·g, g · tip / h), m/s² (planner and limiter). */
-export function tractionMetersPerSecondSquared(r: RobotConfig): number {
+/** The "tipOrGrip" limit, 0.9 · min(μ·g, g·x/h), m/s². */
+export function tipOrGripMetersPerSecondSquared(r: RobotConfig): number {
   return TRACTION_MARGIN * Math.min(gripMetersPerSecondSquared(r), tipMetersPerSecondSquared(r));
 }
 
-/** Whether tipping, not grip, sets the traction limit. */
-export function tippingLimited(r: RobotConfig): boolean {
-  return tipMetersPerSecondSquared(r) < gripMetersPerSecondSquared(r);
+/** The "equalPush" limit, 0.9 · μ·g / (1 + μ·h/x), m/s². */
+export function equalPushMetersPerSecondSquared(r: RobotConfig): number {
+  return (TRACTION_MARGIN * gripMetersPerSecondSquared(r))
+    / (1.0 + (r.frictionCoefficient * r.centerOfMassHeightMeters) / tipDistanceInUseMeters(r));
+}
+
+/** The most the robot accelerates or corners, by its traction rule, m/s² (planner and limiter). */
+export function tractionMetersPerSecondSquared(r: RobotConfig): number {
+  return r.tractionRule === "equalPush" ? equalPushMetersPerSecondSquared(r) : tipOrGripMetersPerSecondSquared(r);
+}
+
+/** What sets the traction limit (with the centre of mass at 0, grip either way). */
+export function tractionLimit(r: RobotConfig): TractionLimit {
+  if (!(r.centerOfMassHeightMeters > 0.0)) return "grip";
+  if (r.tractionRule === "equalPush") return "equalPush";
+  return tipMetersPerSecondSquared(r) < gripMetersPerSecondSquared(r) ? "tipping" : "grip";
 }
 
 /** Wheel speed at the motor's free speed, m/s. */
