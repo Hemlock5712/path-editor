@@ -163,7 +163,7 @@ public final class PathFollower {
   public PathFollower(Path path, FollowerConfig config) {
     this.basePath = path;
     this.cfg = config;
-    this.limiter = new OutputLimiter(config.robot(), config.limiterFrictionCoefficient(), config.maxAlphaRadPerSecSquared());
+    this.limiter = new OutputLimiter(config.robot(), limiterBudget(config), config.maxAlphaRadPerSecSquared());
     this.endSpeed = path.spec().endMetersPerSecond();
     this.rollingEnd = endSpeed > 0.0;
     PathSample end = path.sample(path.lengthMeters());
@@ -436,7 +436,7 @@ public final class PathFollower {
     pollGoal(pose);
     updateGrip(dt);
     double brakeDecel = Math.min(cfg.brakeMetersPerSecondSquared(), slipMu * RobotConfig.GRAVITY);
-    double planMu = cfg.robot().frictionCoefficient();
+    double planMu = cfg.robot().tractionMetersPerSecondSquared() / RobotConfig.GRAVITY; // the plan's grip as a μ
     double gripScale = slipMu < planMu ? Math.sqrt(slipMu / planMu) : 1.0;
     updateProgress(pose);
     if (head != null && headJoinS < track.lengthMeters() - 1e-9 && headDone(pose)) {
@@ -617,6 +617,18 @@ public final class PathFollower {
 
   // ------------------------------------------------------------------------------ pieces
 
+  /** The output limiter's budget, m/s²: the robot's traction limit, or the configured μ·g. */
+  static double limiterBudget(FollowerConfig cfg) {
+    return Double.isNaN(cfg.limiterFrictionCoefficient()) ? cfg.robot().tractionMetersPerSecondSquared()
+        : cfg.limiterFrictionCoefficient() * RobotConfig.GRAVITY;
+  }
+
+  /** The μ at which adaptive grip stops limiting anything: the tread's, or the limiter's if that is higher. */
+  private double slipCeiling() {
+    double mu = cfg.robot().frictionCoefficient();
+    return Double.isNaN(cfg.limiterFrictionCoefficient()) ? mu : Math.max(cfg.limiterFrictionCoefficient(), mu);
+  }
+
   /** Adaptive grip: latch the achieved acceleration when slip begins, recover slowly after. */
   private void updateGrip(double dt) {
     if (slipSignal == null || !cfg.adaptiveGrip()) {
@@ -629,11 +641,11 @@ public final class PathFollower {
       double mu = Math.max(cfg.minSlipFriction(),
           slipSignal.achievedAccelMetersPerSecondSquared() / RobotConfig.GRAVITY * (1.0 - cfg.slipMargin()));
       slipMu = wasSlipping ? Math.max(slipMu, mu) : Math.min(slipMu, mu);
-      slipMu = Math.min(slipMu, Math.max(cfg.limiterFrictionCoefficient(), cfg.robot().frictionCoefficient()));
+      slipMu = Math.min(slipMu, slipCeiling());
     } else if (Double.isFinite(slipMu) && phase != Phase.TERMINAL) {
       // recover, but not while stopping: a floor that slid on the way in still slides at the end
       slipMu += cfg.slipRecoveryPerSecond() * dt;
-      if (slipMu >= Math.max(cfg.limiterFrictionCoefficient(), cfg.robot().frictionCoefficient())) {
+      if (slipMu >= slipCeiling()) {
         slipMu = Double.POSITIVE_INFINITY;
       }
     }

@@ -1,6 +1,7 @@
 package frc.team5712.path.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,7 +37,24 @@ class RobotConfigTest {
   @Test
   void spinLeverAndGrip() {
     assertEquals(6.0 / (60.0 * Math.sqrt(2 * 0.29 * 0.29)), R.spinLeverMeters(), 1e-12);
-    assertEquals(0.7 * 9.81, R.gripMetersPerSecondSquared(), 1e-12);
+    assertEquals(1.5 * 9.81, R.gripMetersPerSecondSquared(), 1e-12);
+  }
+
+  @Test
+  void tractionIsNinetyPercentOfGripOrTipWhicheverComesFirst() {
+    // the default: modules at ±0.29 m (tip 0.29 m), centre of mass 0.2 m up: tipping first
+    assertEquals(0.29, R.tipDistanceInUseMeters(), 1e-12);
+    assertEquals(9.81 * 0.29 / 0.2, R.tipMetersPerSecondSquared(), 1e-12);
+    assertEquals(0.9 * 9.81 * 0.29 / 0.2, R.tractionMetersPerSecondSquared(), 1e-12);
+    assertTrue(R.tippingLimited());
+    // Joe's numbers: 0.254 m modules, 0.9 · min(14.7, 12.46) = 11.2 m/s²
+    RobotConfig joe = R.withTipDistanceMeters(0.254);
+    assertEquals(0.9 * Math.min(1.5 * 9.81, 9.81 * 0.254 / 0.2), joe.tractionMetersPerSecondSquared(), 1e-12);
+    assertEquals(11.21, joe.tractionMetersPerSecondSquared(), 0.01);
+    // a low centre of mass: grip first; at 0 no tipping limit at all
+    assertEquals(0.9 * 1.5 * 9.81, R.withCenterOfMassHeightMeters(0.1).tractionMetersPerSecondSquared(), 1e-12);
+    assertEquals(Double.POSITIVE_INFINITY, R.withCenterOfMassHeightMeters(0).tipMetersPerSecondSquared());
+    assertFalse(R.withCenterOfMassHeightMeters(0).tippingLimited());
   }
 
   @Test
@@ -53,5 +71,7 @@ class RobotConfigTest {
     assertThrows(IllegalArgumentException.class, () -> R.withFrictionCoefficient(0));
     assertThrows(IllegalArgumentException.class, () -> R.withMaxWheelMetersPerSecond(-1));
     assertThrows(IllegalArgumentException.class, () -> R.withMaxAngularRadPerSec(0));
+    assertThrows(IllegalArgumentException.class, () -> R.withCenterOfMassHeightMeters(-0.1));
+    assertThrows(IllegalArgumentException.class, () -> R.withTipDistanceMeters(0));
   }
 }

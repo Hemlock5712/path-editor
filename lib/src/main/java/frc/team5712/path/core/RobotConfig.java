@@ -3,7 +3,13 @@ package frc.team5712.path.core;
 /**
  * The robot numbers the velocity profile plans with. Defaults match the bench plant ({@code
  * alignsim}): 60 kg, 6 kg·m², modules at (±0.29, ±0.29) m, 2 in wheels, 6.75:1, Kraken X60 FOC,
- * 120 A stator limit, and grip μ = 0.7 (a measured value belongs here; 1.0 spins the wheels).
+ * 120 A stator limit, SDS MK5 Spike Grip tread (μ = 1.5) and the centre of mass 0.2 m up (to be
+ * measured).
+ *
+ * <p>Acceleration and cornering are limited to 90 % of whichever comes first, the tread's grip or
+ * tipping over ({@link #tractionMetersPerSecondSquared}): {@code 0.9 · min(μ·g, g · tip / h)}, the rule
+ * Precision-Drive's AccelerationLimiter uses. The planner's grip circle and the follower's output
+ * limiter both come from it.
  *
  * @param massKg robot mass with battery and bumpers
  * @param momentOfInertiaKgM2 yaw moment of inertia
@@ -13,7 +19,7 @@ package frc.team5712.path.core;
  * @param driveMotor drive motor model
  * @param driveMotorCount number of drive motors
  * @param statorCurrentLimitAmps drive stator current limit
- * @param frictionCoefficient grip: the robot can accelerate at most μ·g, all directions combined
+ * @param frictionCoefficient the tread's friction coefficient μ (1.5 for Spike Grip on carpet)
  * @param maxWheelMetersPerSecond fastest any wheel may be asked to roll; NaN = the motor's free speed
  * @param maxAngularRadPerSec spin cap for the planned heading (+∞ = only the wheel-speed cap)
  * @param maxAngularRadPerSecSquared spin acceleration cap for the planned heading (+∞ = only grip and
@@ -32,9 +38,20 @@ public record RobotConfig(
     double frictionCoefficient,
     double maxWheelMetersPerSecond,
     double maxAngularRadPerSec,
-    double maxAngularRadPerSecSquared) {
+    double maxAngularRadPerSecSquared,
+    double centerOfMassHeightMeters,
+    double tipDistanceMeters) {
 
   public static final double GRAVITY = 9.81; // m/s²
+
+  /** The share of the grip-or-tip limit the robot uses (the rest is margin). */
+  public static final double TRACTION_MARGIN = 0.9;
+
+  /** Spike Grip on carpet. */
+  public static final double DEFAULT_FRICTION_COEFFICIENT = 1.5;
+
+  /** A guess until it's measured. */
+  public static final double DEFAULT_CENTER_OF_MASS_HEIGHT_METERS = 0.2;
 
   public static final RobotConfig DEFAULT =
       new RobotConfig(
@@ -46,10 +63,12 @@ public record RobotConfig(
           Motor.KRAKEN_X60_FOC,
           4,
           120.0,
-          0.7,
+          DEFAULT_FRICTION_COEFFICIENT,
           Double.NaN,
           Double.POSITIVE_INFINITY,
-          Double.POSITIVE_INFINITY);
+          Double.POSITIVE_INFINITY,
+          DEFAULT_CENTER_OF_MASS_HEIGHT_METERS,
+          Double.NaN);
 
   public RobotConfig {
     if (!(massKg > 0.0) || !(momentOfInertiaKgM2 > 0.0) || !(moduleRadiusMeters > 0.0)
@@ -61,6 +80,22 @@ public record RobotConfig(
     if (!Double.isNaN(maxWheelMetersPerSecond) && !(maxWheelMetersPerSecond > 0.0)) {
       throw new IllegalArgumentException("maxWheelMetersPerSecond must be positive or NaN");
     }
+    if (!(centerOfMassHeightMeters >= 0.0) || centerOfMassHeightMeters == Double.POSITIVE_INFINITY) {
+      throw new IllegalArgumentException("centerOfMassHeightMeters must be 0 or more");
+    }
+    if (!Double.isNaN(tipDistanceMeters) && !(tipDistanceMeters > 0.0)) {
+      throw new IllegalArgumentException("tipDistanceMeters must be positive or NaN");
+    }
+  }
+
+  /** With the default centre-of-mass height and a square base. */
+  public RobotConfig(double massKg, double momentOfInertiaKgM2, double moduleRadiusMeters,
+      double wheelRadiusMeters, double driveGearRatio, Motor driveMotor, int driveMotorCount,
+      double statorCurrentLimitAmps, double frictionCoefficient, double maxWheelMetersPerSecond,
+      double maxAngularRadPerSec, double maxAngularRadPerSecSquared) {
+    this(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters, driveGearRatio, driveMotor,
+        driveMotorCount, statorCurrentLimitAmps, frictionCoefficient, maxWheelMetersPerSecond,
+        maxAngularRadPerSec, maxAngularRadPerSecSquared, DEFAULT_CENTER_OF_MASS_HEIGHT_METERS, Double.NaN);
   }
 
   /** Without a spin acceleration cap (the record before it had one). */
@@ -76,30 +111,67 @@ public record RobotConfig(
   public RobotConfig withFrictionCoefficient(double mu) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, mu,
-        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared);
+        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters,
+        tipDistanceMeters);
   }
 
   public RobotConfig withMaxWheelMetersPerSecond(double speed) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        speed, maxAngularRadPerSec, maxAngularRadPerSecSquared);
+        speed, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters, tipDistanceMeters);
   }
 
   public RobotConfig withMaxAngularRadPerSec(double omega) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        maxWheelMetersPerSecond, omega, maxAngularRadPerSecSquared);
+        maxWheelMetersPerSecond, omega, maxAngularRadPerSecSquared, centerOfMassHeightMeters, tipDistanceMeters);
   }
 
   public RobotConfig withMaxAngularRadPerSecSquared(double alpha) {
     return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
         driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
-        maxWheelMetersPerSecond, maxAngularRadPerSec, alpha);
+        maxWheelMetersPerSecond, maxAngularRadPerSec, alpha, centerOfMassHeightMeters, tipDistanceMeters);
   }
 
-  /** Grip budget μ·g, m/s². */
+  public RobotConfig withCenterOfMassHeightMeters(double h) {
+    return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
+        driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
+        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, h, tipDistanceMeters);
+  }
+
+  public RobotConfig withTipDistanceMeters(double d) {
+    return new RobotConfig(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters,
+        driveGearRatio, driveMotor, driveMotorCount, statorCurrentLimitAmps, frictionCoefficient,
+        maxWheelMetersPerSecond, maxAngularRadPerSec, maxAngularRadPerSecSquared, centerOfMassHeightMeters, d);
+  }
+
+  /** The tread's grip, μ·g, m/s². */
   public double gripMetersPerSecondSquared() {
     return frictionCoefficient * GRAVITY;
+  }
+
+  /** The tip distance in use: the given one, or a square base's {@code moduleRadiusMeters / √2}. */
+  public double tipDistanceInUseMeters() {
+    return Double.isNaN(tipDistanceMeters) ? moduleRadiusMeters / Math.sqrt(2.0) : tipDistanceMeters;
+  }
+
+  /** The acceleration that would tip the robot over, {@code g · tip / h}, m/s² (+∞ with the centre of mass at 0). */
+  public double tipMetersPerSecondSquared() {
+    return centerOfMassHeightMeters > 0.0 ? GRAVITY * tipDistanceInUseMeters() / centerOfMassHeightMeters
+        : Double.POSITIVE_INFINITY;
+  }
+
+  /**
+   * The most the robot accelerates or corners, all directions combined: {@code 0.9 · min(μ·g, g · tip / h)},
+   * m/s². Both the planner's grip circle and the follower's output limiter use it.
+   */
+  public double tractionMetersPerSecondSquared() {
+    return TRACTION_MARGIN * Math.min(gripMetersPerSecondSquared(), tipMetersPerSecondSquared());
+  }
+
+  /** Whether tipping, not grip, sets {@link #tractionMetersPerSecondSquared}. */
+  public boolean tippingLimited() {
+    return tipMetersPerSecondSquared() < gripMetersPerSecondSquared();
   }
 
   /** Wheel speed at the motor's free speed, m/s. */

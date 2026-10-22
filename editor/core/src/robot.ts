@@ -21,7 +21,9 @@ export const GRAVITY = 9.81; // m/s²
 /**
  * maxAngularRadPerSecSquared: Infinity = only grip and motors cap the planned spin acceleration.
  * maxWheelMetersPerSecond: NaN = the motor's free speed. maxAngularRadPerSec: Infinity = only the
- * wheel-speed cap. Defaults match the bench plant with grip μ = 0.7.
+ * wheel-speed cap. frictionCoefficient is the tread's μ (1.5, Spike Grip); centerOfMassHeightMeters 0 =
+ * no tipping limit; tipDistanceMeters NaN = a square base (moduleRadiusMeters / √2). Acceleration and
+ * cornering are limited to tractionMetersPerSecondSquared (RobotConfig.java).
  */
 export interface RobotConfig {
   readonly massKg: number;
@@ -36,7 +38,12 @@ export interface RobotConfig {
   readonly maxWheelMetersPerSecond: number;
   readonly maxAngularRadPerSec: number;
   readonly maxAngularRadPerSecSquared: number;
+  readonly centerOfMassHeightMeters: number;
+  readonly tipDistanceMeters: number;
 }
+
+/** The share of the grip-or-tip limit the robot uses (the rest is margin). */
+export const TRACTION_MARGIN = 0.9;
 
 export const DEFAULT_ROBOT: RobotConfig = {
   massKg: 60.0,
@@ -47,10 +54,12 @@ export const DEFAULT_ROBOT: RobotConfig = {
   driveMotor: KRAKEN_X60_FOC,
   driveMotorCount: 4,
   statorCurrentLimitAmps: 120.0,
-  frictionCoefficient: 0.7,
+  frictionCoefficient: 1.5,
   maxWheelMetersPerSecond: Number.NaN,
   maxAngularRadPerSec: Infinity,
   maxAngularRadPerSecSquared: Infinity,
+  centerOfMassHeightMeters: 0.2,
+  tipDistanceMeters: Number.NaN,
 };
 
 /** Checks a config the way RobotConfig's constructor does. */
@@ -66,12 +75,38 @@ export function checkRobot(r: RobotConfig): RobotConfig {
   if (!Number.isNaN(r.maxWheelMetersPerSecond) && !(r.maxWheelMetersPerSecond > 0.0)) {
     throw new RangeError("maxWheelMetersPerSecond must be positive or NaN");
   }
+  if (!(r.centerOfMassHeightMeters >= 0.0) || r.centerOfMassHeightMeters === Infinity) {
+    throw new RangeError("centerOfMassHeightMeters must be 0 or more");
+  }
+  if (!Number.isNaN(r.tipDistanceMeters) && !(r.tipDistanceMeters > 0.0)) {
+    throw new RangeError("tipDistanceMeters must be positive or NaN");
+  }
   return r;
 }
 
-/** Grip budget μ·g, m/s². */
+/** The tread's grip, μ·g, m/s². */
 export function gripMetersPerSecondSquared(r: RobotConfig): number {
   return r.frictionCoefficient * GRAVITY;
+}
+
+/** The tip distance in use: the given one, or a square base's moduleRadiusMeters / √2. */
+export function tipDistanceInUseMeters(r: RobotConfig): number {
+  return Number.isNaN(r.tipDistanceMeters) ? r.moduleRadiusMeters / Math.sqrt(2.0) : r.tipDistanceMeters;
+}
+
+/** The acceleration that would tip the robot over, g · tip / h, m/s² (Infinity with the centre of mass at 0). */
+export function tipMetersPerSecondSquared(r: RobotConfig): number {
+  return r.centerOfMassHeightMeters > 0.0 ? (GRAVITY * tipDistanceInUseMeters(r)) / r.centerOfMassHeightMeters : Infinity;
+}
+
+/** The most the robot accelerates or corners: 0.9 · min(μ·g, g · tip / h), m/s² (planner and limiter). */
+export function tractionMetersPerSecondSquared(r: RobotConfig): number {
+  return TRACTION_MARGIN * Math.min(gripMetersPerSecondSquared(r), tipMetersPerSecondSquared(r));
+}
+
+/** Whether tipping, not grip, sets the traction limit. */
+export function tippingLimited(r: RobotConfig): boolean {
+  return tipMetersPerSecondSquared(r) < gripMetersPerSecondSquared(r);
 }
 
 /** Wheel speed at the motor's free speed, m/s. */

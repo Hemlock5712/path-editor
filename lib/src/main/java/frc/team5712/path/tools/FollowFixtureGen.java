@@ -68,10 +68,11 @@ public final class FollowFixtureGen {
         new FollowerSim.Shove(1.0, 0.0, 1.5)));
     m.put("auto_route_red", new Case(FixturePaths.autoRoute(), RobotConfig.DEFAULT, FieldFrame.RED_HALF_TURN, null));
     m.put("slalom_mirror", new Case(FixturePaths.slalom(), RobotConfig.DEFAULT, FieldFrame.RED_MIRROR, null));
-    // a slick floor under the drivetrain (half the plan's grip): the robot slides where it's asked for more
+    // a slick floor under the drivetrain (half the plan's traction): the robot slides where it's asked for more
     FollowerSim.Drive d = FollowerSim.Drive.DEFAULT;
     m.put("s_curve_slick", new Case(FixturePaths.sCurve(), RobotConfig.DEFAULT, FieldFrame.BLUE, null,
-        new FollowerSim.Drive(d.latencySeconds(), d.lagSeconds(), d.substepSeconds(), 0.35 * RobotConfig.GRAVITY)));
+        new FollowerSim.Drive(d.latencySeconds(), d.lagSeconds(), d.substepSeconds(),
+            0.5 * RobotConfig.DEFAULT.tractionMetersPerSecondSquared())));
     // a path that doubles back: the follower stops at the cusp and reverses
     m.put("joe_auto_cusp", new Case(FixturePaths.joeAutoCusp(), RobotConfig.DEFAULT, FieldFrame.BLUE, null));
     // already moving at the start (a shove before the first loop), with the speeds re-planned from it

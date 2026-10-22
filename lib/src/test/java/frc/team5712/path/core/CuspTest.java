@@ -140,7 +140,9 @@ class CuspTest {
     System.out.printf("Joe's path: past the tip %.3f m, fastest within 3 cm of it %.2f m/s, end error %.3f m%n",
         furthest, fastestNearTip, Math.hypot(tr.x.get(last) - end.xMeters(), tr.y.get(last) - end.yMeters()));
     assertTrue(furthest < 0.03, "went " + furthest + " m past the cusp");
-    assertTrue(fastestNearTip < 0.6, "moving " + fastestNearTip + " m/s at the cusp");
+    // stopping at the traction limit, the robot is still doing sqrt(2·a·3 cm) 3 cm out
+    double atThreeCm = Math.sqrt(2 * RobotConfig.DEFAULT.tractionMetersPerSecondSquared() * 0.03);
+    assertTrue(fastestNearTip < atThreeCm, "moving " + fastestNearTip + " m/s at the cusp");
     assertEquals(end.xMeters(), tr.x.get(last), 0.02);
     assertEquals(end.yMeters(), tr.y.get(last), 0.02);
   }

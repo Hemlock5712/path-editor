@@ -164,7 +164,7 @@ public final class VelocityProfile {
       zoneLast[j] = (int) Math.ceil(snapToGrid(geometry.sAtWaypoint(zones.get(j).toWaypoint()) / ds));
     }
 
-    double grip = robot.gripMetersPerSecondSquared();
+    double grip = robot.tractionMetersPerSecondSquared();
     double lever = robot.spinLeverMeters();
     double moduleRadius = robot.moduleRadiusMeters();
     double wheelCap = robot.wheelSpeedCapMetersPerSecond();
@@ -306,7 +306,7 @@ public final class VelocityProfile {
 
     Budget(RobotConfig robot, int nodes) {
       this.robot = robot;
-      this.grip = robot.gripMetersPerSecondSquared();
+      this.grip = robot.tractionMetersPerSecondSquared();
       this.lever = robot.spinLeverMeters();
       this.moduleRadius = robot.moduleRadiusMeters();
       this.brake = robot.brakeAccelMetersPerSecondSquared();

@@ -27,9 +27,10 @@
       "driveGearRatio": 6.75,
       "driveMotorCount": 4,
       "statorCurrentLimitAmps": 120,
-      "frictionCoefficient": 0.7,
+      "frictionCoefficient": 1.5,
       "maxAngularRadPerSec": 9.42477796076938,
       "maxAngularRadPerSecSquared": 12.566370614359172,
+      "centerOfMassHeightMeters": 0.2,
       "motor": { "nominalVolts": 12, "stallTorqueNewtonMeters": 9.362, "stallCurrentAmps": 476.1, "freeSpeedRadPerSec": 605.8037833672317 }
     },
     "gridMeters": 0.03,

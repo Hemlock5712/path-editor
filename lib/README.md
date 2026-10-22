@@ -62,8 +62,14 @@ inside the zone.
 16 m example), constant acceleration per cell so v(s), t(s) and s(t) are exact between grid points.
 The model (also in the class comment):
 
-- grip, for the worst wheel: `√(a² + (v²κ)²) + c·|α| ≤ μg`, with `α = a·θ' + v²·θ''`,
-  `c = I/(m·r)` and μ = 0.7 by default;
+- traction, for the worst wheel: `√(a² + (v²κ)²) + c·|α| ≤ A`, with `α = a·θ' + v²·θ''`,
+  `c = I/(m·r)` and `A = 0.9 · min(μ·g, g · tip / h)`: 90 % of whichever comes first, the tread's grip
+  or tipping over (Joe's rule, as in Precision-Drive's AccelerationLimiter). The defaults are SDS MK5
+  Spike Grip (μ 1.5), the centre of mass 0.2 m up (to be measured) and modules at ±0.29 m (tip
+  0.29 m), so `A = 0.9 · min(14.7, 14.2) = 12.8 m/s²`: tipping comes first. In the robot file:
+  `frictionCoefficient`, `centerOfMassHeightMeters` (0 = no tipping limit) and the optional
+  `tipDistanceMeters`, which is min(|module x|, |module y|) and defaults to a square base's
+  `moduleRadiusMeters / √2`. The plan and the limiter (below) use the same `A`;
 - motors, speeding up: `a + c·|α| ≤` the Kraken X60 FOC push at the fastest wheel's speed
   `v·(1 + r|θ'|)` (12 V minus back-EMF, capped by the stator limit). The sideways `v²κ` comes from
   tyre side-grip, not torque. Braking: only the stator limit;
@@ -138,12 +144,11 @@ Each loop, in the blue frame:
    tuning seeds, and it sits inside the swept range. Both
    laws brake on the same distance with the same 6 m/s², so the hand-over has no seam.
 7. **One limiter.** Every output goes through `OutputLimiter`. It caps spin acceleration, then caps
-   the motors' push at the fastest wheel's speed when speeding up. Then `|a| + c·|α| ≤ μ·g`
-   (c = I/(m·r), the profile's grip model), scaling translation and spin together. Its μ defaults
-   to 1.0, above the plan's 0.7, so feedback has room. The phase 3 sweep preferred 2.0, which
-   effectively switches the grip check off. With a perfect pose that saved 0.02 s per run. With
-   wheel odometry it doubled wheel slip and left the moving start 19.8 cm off instead of 3.9 cm,
-   because the robot outran its grip and the odometry over-read. So 1.0 ships.
+   the motors' push at the fastest wheel's speed when speeding up. Then `|a| + c·|α| ≤ A`
+   (c = I/(m·r), the profile's model), scaling translation and spin together. `A` is the robot's
+   traction limit, the same as the plan's (`limiterFrictionCoefficient` NaN, the default; a number
+   sets μ·g instead). Before the μ 1.5 change the plan used μ 0.7 and the limiter 1.0 on a 1.15
+   floor; see "Traction: μ 1.5 and tipping" below for why one limit for both now.
 8. **Finished.** Within 2 cm and 1°, measured slower than 5 cm/s, held 0.1 s. A rolling end (end
    speed above 0) never stops: it finishes as the robot passes the end, and `endCommand()` is the
    velocity to hand to the next follower (`start(..., handedCommand)`).
@@ -178,6 +183,39 @@ All gains are in `FollowerConfig` (defaults from DriveToPose and the hybrid prot
 `FollowerConfig.Builder.set(name, value)` sets a field by its name, which is how the bench passes
 options.
 
+### Traction: μ 1.5 and tipping
+
+The robot runs SDS MK5 Spike Grip, μ 1.5. Acceleration and cornering are held to 90 % of whichever
+comes first, grip or tipping: `A = 0.9 · min(μ·g, g · tip / h)` (`RobotConfig.tractionMetersPerSecondSquared`).
+The planner's grip circle and the follower's output limiter both use `A`, so the editor's plan is what
+the robot will try. Before this change they were separate: the plan used μ 0.7 and the limiter 1.0, on a
+1.15 / 1.0 bench floor. Scaled to the 1.5 tread, that 0.7 plan would be 0.7 of `A` and the limiter about
+`A`.
+
+Whether the plan needs its own margin under `A` was checked on the bench plant set to 1.5 / 1.3, low grip
+0.91 / 0.79, and the centre of mass 0.2 m up (weight transfer on). The figures below are ours over all 16
+courses that stop, 10 seeds, perfect pose: the sum of the settle times, and the mean wheel slip per run.
+
+| plan at | as shipped (adaptive grip) | adaptive grip off |
+|---|---|---|
+| 1.0 · A | 45.4 s, slip 1.58 s | 41.5 s, slip 2.55 s |
+| 0.85 · A | 43.6 s, slip 1.77 s | 41.8 s, slip 2.34 s |
+| 0.7 · A | 43.6 s, slip 1.70 s | 42.5 s, slip 2.06 s |
+| 0.55 · A | 44.5 s, slip 1.33 s | 44.0 s, slip 1.55 s |
+| old: μ 0.7 plan, limiter 1.0, on the 1.15 floor without weight transfer | 44.9 s, slip 0.58 s | 44.8 s, slip 1.14 s |
+
+No fraction wins outright, so the plan uses `A` itself, with no extra margin. Most of the slip comes from
+weight transfer, not from cornering:
+- On this plant the straight 3 m slips for 0.34 s at the path's 6 m/s², against none with the centre of
+  mass at 0.
+- Every module pushes about the same, so the wheels that unload slip first. That happens at about
+  `μ·g / (1 + μ·h / tip)`: 7.2 m/s² static for these numbers, well under `A`'s 12.8.
+- So the rule's `min(grip, tip)` is generous for a tall robot. A real centre-of-mass height and a slip
+  check on the real robot should come before trusting it.
+
+Adaptive grip costs time at `1.0 · A` (45.4 s against 41.5 s off). It latches the acceleration at which the
+light wheels let go as the floor's μ. Its thresholds need another look on bench-builder's final plant.
+
 ### Slip: detection, adaptive grip and slip-aware odometry (`frc.team5712.path.slip`)
 
 - **`SlipDetector`** takes one sample per odometry update: wheel speeds and angles, the gyro
@@ -193,14 +231,15 @@ options.
   together, so the per-module residuals rarely stand out.
 - **Adaptive grip** in `PathFollower` (`withSlipSignal`, on by default; `adaptiveGrip(false)` turns
   it off). Once the confidence reaches 0.3, it takes the acceleration achieved, less 10 %, as the
-  floor's μ (never below 0.3). The limiter's budget for speeding up, the brake law's deceleration
-  and the planned speed (× sqrt(μ_slip / μ_plan)) all follow it. Braking keeps a limiter budget of
-  at least μ 0.85 (`slipBrakeFriction`): the brake law plans with the low μ, so the robot starts
+  floor's μ (never below 0.39). The limiter's budget for speeding up, the brake law's deceleration
+  and the planned speed (× sqrt(μ_slip / μ_plan), μ_plan = A/g) all follow it. Braking keeps a limiter budget of
+  at least μ 1.11 (`slipBrakeFriction`): the brake law plans with the low μ, so the robot starts
   braking early, but the limiter never forbids it to brake harder. Capping braking at the measured
   μ made the robot overshoot when the floor turned slick mid-run (up to 24.9 cm on the bench's grip
   drop). The μ it measured was below what a sliding tread still gives, so it braked too gently.
-  Afterwards μ_slip climbs back at 0.05 μ/s, but never in the terminal phase. The profile is not
-  rebuilt.
+  Afterwards μ_slip climbs back at 0.065 μ/s, but never in the terminal phase. The profile is not
+  rebuilt. The three μ values were 0.3, 0.85 and 0.05 μ/s, tuned on a 1.15 / 1.0 floor; they are scaled
+  with the tread (× 1.5 / 1.15).
 - **`SlipAwareOdometry`** is optional and replaces `SwerveDriveOdometry`:
   - The wheels' least-squares step down-weights slipping modules (weight 0.01).
   - On a clean run it equals WPILib's odometry exactly (tested to 1e-9).
@@ -323,7 +362,7 @@ shares. See the notes below for what that means for the boot budget.
   Zone ends snap to the grid within a millionth of a cell. Before that, a zone starting exactly on
   a grid point (common on symmetric paths) could cap a different cell on red than on blue.
 - **Face-point blends can be fast.** In the auto route the default 0.5 m blend turns the robot by
-  over 100° and the profile slows to 0.7 m/s for it. That is correct, but the editor should show
+  over 100° and the profile slows to 0.7 m/s for it (at the old μ 0.7; about 0.9 m/s at μ 1.5). That is correct, but the editor should show
   it and maybe default to a longer blend.
 - **Boot time is not a constraint.** The first path costs 23-65 ms in a fresh JVM on this PC
   and about 2 ms each after that until the JIT warms up. The robot waits far longer than that for
@@ -336,9 +375,8 @@ shares. See the notes below for what that means for the boot budget.
   curvature term is applied by pointing the speed along the tangent one latency ahead. That adds
   `v²κτ` sideways, rather than a separate acceleration feed-forward.
 - **Cross-track is PD with D = 0 by default.** The bench sweeps didn't need the D term.
-- **The limiter's grip (1.0) is above the plan's (0.7) on purpose,** so feedback has room. The bench
-  sweep prefers it even looser, but that costs odometry accuracy (see bench/RESULTS.md), so the
-  default stays 1.0.
+- **The limiter and the plan now share one traction limit** (see below). Before the μ 1.5 change
+  the limiter's grip (1.0) sat above the plan's (0.7) so feedback had room.
 - **A rebuilt tail drops the zones in that stretch.** Its heading blends from the planned heading to
   the goal's starting at zero spin rate, so ω can kink at the join if the old plan was mid-turn.
 - **Events were set in code only in phase 3.** Phase 5 added them to the path file (schema 2).
