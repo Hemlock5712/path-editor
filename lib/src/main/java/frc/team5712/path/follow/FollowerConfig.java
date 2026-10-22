@@ -52,6 +52,10 @@ import frc.team5712.path.core.RobotConfig;
  *     path), re-plan the path's speeds from its measured speed, as PathPlanner does, instead of from rest. Only
  *     the speed profile is rebuilt (the curve stays as drawn): the one bit of path work at go, tens of
  *     microseconds. Off by default until it's decided whether start() may do any
+ * @param expectedSlipShare adaptive grip ignores slip that the tread's own weight transfer explains: slip in a
+ *     spell that has asked for at least this share of the equal-push onset {@code μ·g / (1 + μ·h/x)}. Every
+ *     wheel pushes about the same, so above that the light wheels slip on a good floor too; it says nothing
+ *     about the floor. Slip while asking for less does
  * @param rejoinAboveMeters knocked further than this off the path, build a piece from where the robot is, the
  *     way it is really going (from the pose's change: after a hit the wheels slide), back onto the path
  *     {@code REJOIN_METERS} ahead with matching position, tangent and curvature, or straight to the goal when
@@ -88,7 +92,8 @@ public record FollowerConfig(
     double minSlipFriction,
     double slipBrakeFriction,
     boolean replanStartFromMeasuredVelocity,
-    double rejoinAboveMeters) {
+    double rejoinAboveMeters,
+    double expectedSlipShare) {
 
   /** How far ahead (along the path) a rejoining piece meets it. */
   public static final double REJOIN_METERS = 1.0;
@@ -137,6 +142,7 @@ public record FollowerConfig(
     b.slipBrakeFriction = slipBrakeFriction;
     b.replanStartFromMeasuredVelocity = replanStartFromMeasuredVelocity;
     b.rejoinAboveMeters = rejoinAboveMeters;
+    b.expectedSlipShare = expectedSlipShare;
     return b;
   }
 
@@ -173,6 +179,7 @@ public record FollowerConfig(
     private double slipBrakeFriction = 1.11;
     private boolean replanStartFromMeasuredVelocity = false;
     private double rejoinAboveMeters = 0.4;
+    private double expectedSlipShare = 0.8;
 
     private Builder(RobotConfig robot) {
       this.robot = robot;
@@ -208,6 +215,7 @@ public record FollowerConfig(
     public Builder slipBrakeFriction(double v) { slipBrakeFriction = v; return this; }
     public Builder replanStartFromMeasuredVelocity(boolean v) { replanStartFromMeasuredVelocity = v; return this; }
     public Builder rejoinAboveMeters(double v) { rejoinAboveMeters = v; return this; }
+    public Builder expectedSlipShare(double v) { expectedSlipShare = v; return this; }
 
     /**
      * Sets a field by its name (the record component's name), for option maps such as the bench's.
@@ -245,6 +253,7 @@ public record FollowerConfig(
         case "slipBrakeFriction" -> slipBrakeFriction = v;
         case "replanStartFromMeasuredVelocity" -> replanStartFromMeasuredVelocity = v != 0.0;
         case "rejoinAboveMeters" -> rejoinAboveMeters = v;
+        case "expectedSlipShare" -> expectedSlipShare = v;
         default -> {
           return false;
         }
@@ -260,7 +269,8 @@ public record FollowerConfig(
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
           headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,
           goalMoveRadians, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
-          minSlipFriction, slipBrakeFriction, replanStartFromMeasuredVelocity, rejoinAboveMeters);
+          minSlipFriction, slipBrakeFriction, replanStartFromMeasuredVelocity, rejoinAboveMeters,
+          expectedSlipShare);
     }
   }
 }

@@ -231,13 +231,12 @@ public record RobotConfig(
 
   /** The {@code TIP_OR_GRIP} limit, {@code 0.9 · min(μ·g, g·x/h)}, m/s². */
   public double tipOrGripMetersPerSecondSquared() {
-    return TRACTION_MARGIN * Math.min(gripMetersPerSecondSquared(), tipMetersPerSecondSquared());
+    return tipOrGrip(frictionCoefficient);
   }
 
   /** The {@code EQUAL_PUSH} limit, {@code 0.9 · μ·g / (1 + μ·h/x)}, m/s². */
   public double equalPushMetersPerSecondSquared() {
-    return TRACTION_MARGIN * gripMetersPerSecondSquared()
-        / (1.0 + frictionCoefficient * centerOfMassHeightMeters / tipDistanceInUseMeters());
+    return equalPush(frictionCoefficient);
   }
 
   /**
@@ -248,6 +247,16 @@ public record RobotConfig(
     return tractionRule == TractionRule.EQUAL_PUSH ? equalPushMetersPerSecondSquared()
         : tipOrGripMetersPerSecondSquared();
   }
+
+
+  private double tipOrGrip(double mu) {
+    return TRACTION_MARGIN * Math.min(mu * GRAVITY, tipMetersPerSecondSquared());
+  }
+
+  private double equalPush(double mu) {
+    return TRACTION_MARGIN * (mu * GRAVITY) / (1.0 + mu * centerOfMassHeightMeters / tipDistanceInUseMeters());
+  }
+
 
   /** What sets {@link #tractionMetersPerSecondSquared} (with the centre of mass at 0, grip either way). */
   public TractionLimit tractionLimit() {

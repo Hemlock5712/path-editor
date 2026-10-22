@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from common import MU_STATIC as RP_MU
 from common import Limits, wrap
 
 # ============================================================================================ data
@@ -410,6 +411,10 @@ def _hairpin():
     return tuple(wps)
 
 
+# The shove keeps its size against the grip: 800 N on the old mu 1.15 plant, scaled with mu (at mu 1.5, 800 N is
+# under the 883 N static grip of a 60 kg robot and would not slide it at all)
+SHOVE_N = round(800.0 * RP_MU / 1.15)
+
 S_CURVE = (Waypoint(0.0, 0.0, 0.0), Waypoint(1.25, 0.0), Waypoint(2.5, 0.8), Waypoint(3.75, 1.6),
            Waypoint(5.0, 1.6, 0.0))
 
@@ -439,14 +444,14 @@ COURSES = {
         start_velocity=(0.0, 2.0, 0.0),
         description="starts moving 2 m/s sideways (+y), path heads +x then curves left"),
     "hit_mid_path": Course(
-        "hit_mid_path", S_CURVE, impulse=Impulse(at_fraction=0.5, force_n=800.0, duration=0.3),
+        "hit_mid_path", S_CURVE, impulse=Impulse(at_fraction=0.5, force_n=SHOVE_N, duration=0.3),
         description="the S-curve with a 0.3 s lateral shove (to the left of travel) at half distance"),
     "low_grip_s_curve": Course(
-        "low_grip_s_curve", S_CURVE, grip=(0.70, 0.61),
-        description="the S-curve on mu 0.70 static / 0.61 kinetic"),
+        "low_grip_s_curve", S_CURVE, grip=(0.91, 0.79),
+        description="the S-curve on mu 0.91 static / 0.79 kinetic (61 % of normal grip)"),
     "grip_drop_s_curve": Course(
-        "grip_drop_s_curve", S_CURVE, grip_drop=(0.5, 0.70, 0.61),
-        description="the S-curve; halfway along, the floor drops from mu 1.15 / 1.0 to 0.70 / 0.61 (a worn carpet seam)"),
+        "grip_drop_s_curve", S_CURVE, grip_drop=(0.5, 0.91, 0.79),
+        description="the S-curve; halfway along, the floor drops from mu 1.5 / 1.3 to 0.91 / 0.79 (a worn carpet seam)"),
 }
 
 QUICK_COURSES = ["straight_3m", "s_curve", "moving_start"]
@@ -468,3 +473,9 @@ from courses_extra import EXTRA_COURSES  # noqa: E402
 COURSES.update(EXTRA_COURSES)
 CHOREO_TRAJ.update({c: "extra/" + c for c in EXTRA_COURSES if c != "heavy_robot"})
 CHOREO_TRAJ["heavy_robot"] = "heavy/heavy_robot"
+
+# the full-traction block's copies of the original nine (run.py runs ours on them, apart from the main grid)
+from courses_extra import FULL_TRACTION  # noqa: E402
+
+COURSES.update(FULL_TRACTION)
+MAIN_COURSES = [c for c in COURSES if c not in FULL_TRACTION]

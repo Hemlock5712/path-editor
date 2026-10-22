@@ -1,6 +1,7 @@
 """Where ours loses on the harder courses, and what closes the gap: `python bench/losses.py [--pose truth|odom]`.
 
-figure_eight: ours planned at mu 0.7 (as shipped), 0.85 and 1.0, against Choreo and PathPlanner + hold at COF 0.9.
+figure_eight: ours with the robot file's grip as shipped (OURS_MU), 1.0 and 0.7, against Choreo and PathPlanner
++ hold at COF 0.9.
 three_piece_chain: ours as the chain the course defines (2 m/s handoffs, 90 deg at both joins), as one path
 through every waypoint, and as a chain planned jointly (chain_plan.joint_legs: each join's speed and, optionally,
 direction of travel from the one path's profile).
@@ -21,6 +22,7 @@ sys.path.insert(0, HERE)
 import courses  # noqa: E402
 import courses_extra  # noqa: E402
 from chain_plan import joint_legs  # noqa: E402
+from followers.ours_v2 import OURS_MU  # noqa: E402
 from sim import run_one  # noqa: E402
 
 SEEDS = range(10)
@@ -46,9 +48,9 @@ def main():
     a = ap.parse_args()
     hdr = "| variant | settled s (n/N) | to 5 cm s | end error cm | cross-track RMS cm | wheel slip ms |\n|---|---|---|---|---|---|"
     print(f"**figure_eight** ({a.pose})\n\n{hdr}")
-    row("ours, planning mu 0.7 (as shipped)", "figure_eight", "ours_v2", None, a.pose)
-    row("ours, planning mu 0.85", "figure_eight", "ours_v2", {"mu": 0.85}, a.pose)
-    row("ours, planning mu 1.0", "figure_eight", "ours_v2", {"mu": 1.0}, a.pose)
+    row(f"ours, grip mu {OURS_MU:g} (as shipped)", "figure_eight", "ours_v2", None, a.pose)
+    row("ours, grip mu 1.0", "figure_eight", "ours_v2", {"mu": 1.0}, a.pose)
+    row("ours, grip mu 0.7", "figure_eight", "ours_v2", {"mu": 0.7}, a.pose)
     row("Choreo + ChoreoLib", "figure_eight", "choreo", None, a.pose)
     row("PathPlanner + hold, COF 0.9", "figure_eight", "pathplanner", {"hold": True, "cof": 0.9}, a.pose)
     print(f"\n**three_piece_chain** ({a.pose})\n\n{hdr}")

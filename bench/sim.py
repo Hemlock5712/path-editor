@@ -209,8 +209,9 @@ def run_one(job, trace=False):
     d_own = polyline_distance(follower.geometry(native), xy)
     tx, ty = npath.tangent_at_s(npath.length)
     # past the end along its tangent, once the robot has reached the end (a path that loops or chains may pass
-    # beyond that line earlier); the whole run if it never did
-    i0 = reached[0] if len(reached) else 0
+    # beyond that line earlier); if it never got within 5 cm, from where it came within 0.5 m of the end
+    near = np.flatnonzero(dist < 0.5)
+    i0 = reached[0] if len(reached) else (near[0] if len(near) else 0)
     over = float(max(0.0, ((xs[i0:] - end[0]) * tx + (ys[i0:] - end[1]) * ty).max()))
     out = {
         "ct_rms_cm": 100 * float(np.sqrt(np.mean(d_neutral ** 2))),

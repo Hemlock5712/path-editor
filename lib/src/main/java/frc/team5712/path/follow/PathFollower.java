@@ -119,6 +119,11 @@ public final class PathFollower {
   private SlipSignal slipSignal;
   private double slipMu = Double.POSITIVE_INFINITY; // the floor's grip as measured; +∞ = no slip seen
   private boolean wasSlipping;
+  private double spellStartMu = Double.POSITIVE_INFINITY; // slipMu before the current slip spell
+  private double spellStart; // when it began
+  private double commandedAccel; // filtered |commanded acceleration|, m/s²
+  private double spellMaxCommanded; // the most the current spell has asked for
+  private boolean spellLatched; // it has lowered slipMu
 
   // Per-run state
   private FieldFrame frame = FieldFrame.BLUE;
@@ -298,8 +303,11 @@ public final class PathFollower {
     phase = Phase.TRACKING;
     slipMu = Double.POSITIVE_INFINITY;
     wasSlipping = false;
-    limiter.setFrictionCoefficient(Double.POSITIVE_INFINITY);
-    limiter.setBrakeFrictionCoefficient(Double.POSITIVE_INFINITY);
+    spellStartMu = Double.POSITIVE_INFINITY;
+    spellLatched = false;
+    commandedAccel = 0.0;
+    limiter.setSpeedingUpBudget(Double.POSITIVE_INFINITY);
+    limiter.setBrakeBudget(Double.POSITIVE_INFINITY);
     System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
     java.util.Arrays.fill(eventFired, false);
     head = null;
@@ -434,10 +442,11 @@ public final class PathFollower {
     measuredSpeed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
     measuredOmega = vel.omegaRadPerSec();
     pollGoal(pose);
-    updateGrip(dt);
-    double brakeDecel = Math.min(cfg.brakeMetersPerSecondSquared(), slipMu * RobotConfig.GRAVITY);
-    double planMu = cfg.robot().tractionMetersPerSecondSquared() / RobotConfig.GRAVITY; // the plan's grip as a μ
-    double gripScale = slipMu < planMu ? Math.sqrt(slipMu / planMu) : 1.0;
+    updateGrip(timeSeconds, dt);
+    double slipBudget = slipBudget();
+    double brakeDecel = Math.min(cfg.brakeMetersPerSecondSquared(), slipBudget);
+    double planned = cfg.robot().tractionMetersPerSecondSquared();
+    double gripScale = slipBudget < planned ? Math.sqrt(slipBudget / planned) : 1.0;
     updateProgress(pose);
     if (head != null && headJoinS < track.lengthMeters() - 1e-9 && headDone(pose)) {
       active = track; // the piece has met the track: on along it
@@ -563,7 +572,12 @@ public final class PathFollower {
     if (overrideOmegaMode == OverrideMode.RESPECT_LIMITS && !Double.isNaN(oo)) {
       wantOmega = over.omegaRadPerSec();
     }
+    double lastVx = limiter.vx();
+    double lastVy = limiter.vy();
     limiter.limit(wantVx, wantVy, wantOmega, dt);
+    // the commanded acceleration as the robot will feel it: lagged by the response delay and filtered
+    double cmdAccel = Math.hypot(limiter.vx() - lastVx, limiter.vy() - lastVy) / dt;
+    commandedAccel += (cmdAccel - commandedAccel) * Math.min(1.0, dt / (cfg.latencySeconds() + COMMAND_FILTER_SECONDS));
     if (!Double.isNaN(ox) && overrideXMode == OverrideMode.BYPASS
         || !Double.isNaN(oy) && overrideYMode == OverrideMode.BYPASS
         || !Double.isNaN(oo) && overrideOmegaMode == OverrideMode.BYPASS) {
@@ -630,19 +644,43 @@ public final class PathFollower {
   }
 
   /** Adaptive grip: latch the achieved acceleration when slip begins, recover slowly after. */
-  private void updateGrip(double dt) {
+  private void updateGrip(double timeSeconds, double dt) {
     if (slipSignal == null || !cfg.adaptiveGrip()) {
       return;
     }
     boolean slipping = slipSignal.confidence() >= cfg.slipConfidence();
+    double floorMu = Double.POSITIVE_INFINITY;
+    boolean expected = false;
     if (slipping) {
+      if (!wasSlipping) { // a new spell
+        spellStartMu = slipMu;
+        spellStart = timeSeconds;
+        spellLatched = false;
+        spellMaxCommanded = 0.0;
+      }
+      // Every wheel pushes about the same, so on the tread's own floor the wheels that weight transfer
+      // unloads let go once the robot asks for μ·g / (1 + μ·h/x) (the equal-push onset). Slip while the
+      // spell has asked for at least expectedSlipShare of that is expected, not a slick floor: it changes
+      // nothing. Slip while asking for less says the floor grips worse than the tread. The commanded
+      // acceleration is filtered and lagged like the robot's response, and it lags the spell's start, so
+      // expected slip early in a spell also undoes what the spell's first samples latched.
+      floorMu = slipSignal.achievedAccelMetersPerSecondSquared() / RobotConfig.GRAVITY;
+      spellMaxCommanded = Math.max(spellMaxCommanded, commandedAccel);
+      double onset = cfg.robot().equalPushMetersPerSecondSquared() / RobotConfig.TRACTION_MARGIN;
+      expected = spellMaxCommanded >= cfg.expectedSlipShare() * onset;
+      if (expected && timeSeconds - spellStart <= SPELL_ONSET_SECONDS) {
+        slipMu = spellStartMu;
+        spellLatched = false;
+      }
+    }
+    if (slipping && !expected) {
       // what the floor is giving now, less the margin; during a spell the best of it counts, since a
       // sliding tread still delivers kinetic friction and the filtered IMU lags the onset
-      double mu = Math.max(cfg.minSlipFriction(),
-          slipSignal.achievedAccelMetersPerSecondSquared() / RobotConfig.GRAVITY * (1.0 - cfg.slipMargin()));
-      slipMu = wasSlipping ? Math.max(slipMu, mu) : Math.min(slipMu, mu);
+      double mu = Math.max(cfg.minSlipFriction(), floorMu * (1.0 - cfg.slipMargin()));
+      slipMu = spellLatched ? Math.max(slipMu, mu) : Math.min(slipMu, mu);
       slipMu = Math.min(slipMu, slipCeiling());
-    } else if (Double.isFinite(slipMu) && phase != Phase.TERMINAL) {
+      spellLatched = true;
+    } else if (!slipping && Double.isFinite(slipMu) && phase != Phase.TERMINAL) {
       // recover, but not while stopping: a floor that slid on the way in still slides at the end
       slipMu += cfg.slipRecoveryPerSecond() * dt;
       if (slipMu >= slipCeiling()) {
@@ -650,8 +688,14 @@ public final class PathFollower {
       }
     }
     wasSlipping = slipping;
-    limiter.setFrictionCoefficient(slipMu);
-    limiter.setBrakeFrictionCoefficient(Math.max(slipMu, cfg.slipBrakeFriction()));
+    double budget = slipBudget();
+    limiter.setSpeedingUpBudget(budget);
+    limiter.setBrakeBudget(Math.max(budget, cfg.slipBrakeFriction() * RobotConfig.GRAVITY));
+  }
+
+  /** The acceleration the measured floor allows, μ_slip·g, m/s² (+∞ when no slip has lowered it). */
+  private double slipBudget() {
+    return slipMu * RobotConfig.GRAVITY;
   }
 
   private void updateProgress(Pose pose) {
@@ -694,6 +738,12 @@ public final class PathFollower {
     prevY = pose.yMeters();
     prevPoseTime = t;
   }
+
+  /** The slip signal's own filter on the achieved acceleration, matched on the commanded one. */
+  private static final double COMMAND_FILTER_SECONDS = 0.03;
+
+  /** How long a slip spell's start counts as its onset, while the filtered acceleration catches up. */
+  private static final double SPELL_ONSET_SECONDS = 0.1;
 
   /** Shorter steps than this don't give a velocity from the pose (the measured one is used). */
   private static final double MIN_POSE_DT = 0.005;
@@ -1007,7 +1057,7 @@ public final class PathFollower {
     return frame;
   }
 
-  /** The grip μ adaptive grip has measured (+∞ when no slip has lowered it). */
+  /** The floor's μ adaptive grip has measured (+∞ when no slip has lowered it). */
   public double slipFrictionCoefficient() {
     return slipMu;
   }

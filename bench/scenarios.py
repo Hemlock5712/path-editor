@@ -71,14 +71,16 @@ def _give_robot(f, r):
                             wheel_cof=f.cfg.wheel_cof)
         f.gen = SetpointGenerator(f.cfg, f.gen.steer_rate, f.gen.constraints)
     elif name == "OursV2":
-        f.robot_overrides = {"massKg": r["mass"], "momentOfInertiaKgM2": r["inertia"],
-                             "statorCurrentLimitAmps": r["stator_limit"]}
+        f.robot_overrides = dict(f.robot_overrides, massKg=r["mass"], momentOfInertiaKgM2=r["inertia"],
+                                 statorCurrentLimitAmps=r["stator_limit"])
 
 
 def make_follower(cname, key, opts, seed=0):
     """-> (follower, native path) for registry key `key` with options `opts` on course `cname`."""
     course = COURSES[cname]
     ex = extras(cname)
+    if course.limits != Limits():  # the course's own limits reach the follower as well as its path
+        opts = dict(opts or {}, limits=course.limits)
     cls, kw = build(key, opts)
     if ex.get("legs") and cls.__name__ not in WHOLE_ROUTE:
         from followers.chain import Chain
@@ -221,7 +223,7 @@ class MovingEnd(Follower):
         if self.f.done() and self.mode == "handoff" and self.goal is not None:
             from followers.drive_to_pose_chain import DriveToPoseChain
 
-            self.dtp = DriveToPoseChain(limits=Limits())
+            self.dtp = DriveToPoseChain(limits=getattr(self.inner, "lim", Limits()))
             self.dtp.reset({"goals": [self.goal]}, Start(t, pose, vel))
             self.end_output = self.dtp.end_output
             return self.dtp.step(t, pose, vel)

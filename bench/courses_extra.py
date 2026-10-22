@@ -17,8 +17,10 @@ Each entry of EXTRAS says what is special about a course:
 
 import math
 
-from common import Limits
-from courses import S_CURVE, Course, Waypoint
+from common import STATOR_LIMIT, Limits
+
+HEAVY_AMPS = 0.8 * STATOR_LIMIT  # the heavy_robot course's current limit: 20 % below the robot's
+from courses import S_CURVE, Course, Waypoint  # noqa: F401 (courses imports this module at its end)
 
 
 def W(x, y, h=None, t=None):
@@ -90,6 +92,26 @@ def _joined(legs):
     return tuple(wps)
 
 
+# The full-traction block (run.py): ours on the original nine courses with the path's acceleration cap raised to
+# 11.2 m/s^2 (0.9 x min(mu g, tip) for the team's modules), so its own traction rule decides, the speed cap
+# unchanged; every other method stays at the shared limits (the main grid's rows).
+FULL_TRACTION_ACCEL = 11.2
+
+
+def _full_traction():
+    from dataclasses import replace
+
+    from courses import COURSES
+
+    out = {}
+    for n, c in list(COURSES.items())[:9]:
+        out["ft_" + n] = replace(c, name="ft_" + n, limits=replace(c.limits, max_accel=FULL_TRACTION_ACCEL),
+                                 description=c.description + f"; shared acceleration {FULL_TRACTION_ACCEL:g} m/s^2")
+    return out
+
+
+FULL_TRACTION = _full_traction()
+
 EXTRA_COURSES = {
     "spin_while_driving": Course(
         "spin_while_driving",
@@ -116,7 +138,7 @@ EXTRA_COURSES = {
         description="an 8 m gentle curve with a 5 m/s cap (above the robot's 4.57 m/s free speed)"),
     "heavy_robot": Course(
         "heavy_robot", S_CURVE,
-        description="the S-curve with a 68 kg robot (MOI 6.8) and a 96 A current limit (20 % lower)"),
+        description=f"the S-curve with a 68 kg robot (MOI 6.8) and a {HEAVY_AMPS:g} A current limit (20 % lower)"),
 }
 
 EXTRAS = {
@@ -139,6 +161,6 @@ EXTRAS = {
     "fast_long": {
         "look": "who can use the top speed: time on a long gentle curve with the cap above what the robot can do"},
     "heavy_robot": {
-        "robot": {"mass": 68.0, "inertia": 6.8, "stator_limit": 96.0},
+        "robot": {"mass": 68.0, "inertia": 6.8, "stator_limit": HEAVY_AMPS},
         "look": "a heavier, weaker robot: who plans with the right robot and still settles cleanly"},
 }

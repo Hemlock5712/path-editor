@@ -104,10 +104,10 @@ ROUTES = {
 def targets():
     """Every row target: the 2026 routes, then the existing courses (one leg each)."""
     out = {name: r["legs"] for name, r in ROUTES.items()}
-    from courses_extra import EXTRA_COURSES
+    from courses_extra import EXTRA_COURSES, FULL_TRACTION
 
     for name, c in COURSES.items():
-        if name not in EXTRA_COURSES:  # the harder courses need more than a path (scenarios.py)
+        if name not in EXTRA_COURSES and name not in FULL_TRACTION:  # the harder courses need more than a path
             out[name] = [c]
     return out
 
@@ -153,28 +153,29 @@ BUDGET_MS = 3000  # the optimiser's default budget (1500 plans), for every tool
 OPTIMISED_FILE = os.path.join(OUT, "ppcompare_optimised.json")
 MU_FILE = os.path.join(OUT, "musweep_optimised.json")
 
-# The planning-grip sweep (`run.py --mu-sweep`): ours planned at mu 0.85, 1.0 and 1.15 as well as the shipped
-# 0.7, as drawn and optimised. The output limiter's grip stays as shipped (1.0) unless the plan asks for more
-# (planning mu 1.15): then it matches the plan, or the limiter would clip the plan's own corners.
-MU_SWEEP = (0.7, 0.85, 1.0, 1.15)
+# The grip sweep (`run.py --mu-sweep`): ours with the robot file's grip at the shipped OURS_MU and lower, as
+# drawn and optimised. The output limiter takes the same traction limit as the plan (the library's default).
+from followers.ours_v2 import OURS_MU  # noqa: E402
+
+MU_SWEEP = (OURS_MU, 1.25, 1.0, 0.7)  # the shipped grip first
 
 
 def mu_key(mu, optimised=False):
-    if mu == 0.7:
+    if mu == OURS_MU:
         return "ours_optimised" if optimised else "ours_v2"
     return f"ours_mu{round(mu * 100):03d}" + ("_optimised" if optimised else "")
 
 
 for _mu in MU_SWEEP[1:]:
     METHODS[mu_key(_mu)] = ("(b)", f"Ours v2, planning mu {_mu:g}", ("chain", "ours_v2", {
-        "mu": _mu, "limiterFrictionCoefficient": max(1.0, _mu)}))
+        "mu": _mu}))
     METHODS[mu_key(_mu, True)] = ("(c)", f"Ours v2 optimised, planning mu {_mu:g}", ("optimised", f"ours@{_mu:g}"))
     BASE[mu_key(_mu, True)] = mu_key(_mu)
     TOOL[mu_key(_mu, True)] = f"ours@{_mu:g}"
 
 
 def tool_mu(tool):
-    return float(tool.split("@")[1]) if "@" in tool else 0.7
+    return float(tool.split("@")[1]) if "@" in tool else OURS_MU
 TUNED_FILES = [os.path.join(OUT, "results.json"), os.path.join(OUT, "ppcompare_tuned.json")]
 
 
@@ -238,7 +239,7 @@ def planned_seconds(key, legs, native):
     if kind[1] == "ours_v2":
         from followers.ours_v2 import call_fresh, robot_json
 
-        mu = kind[2].get("mu", 0.7)
+        mu = kind[2].get("mu", OURS_MU)
         return sum(call_fresh(op="load", path=n["path"], robot=robot_json(mu))["totalTimeSeconds"] for n in native)
     from followers.pathplanner import PathPlannerPath, RobotConfig, generate_trajectory
 
@@ -567,13 +568,13 @@ def optimised_native(name, key):
     return n
 
 
-def _robot(mu=0.7):
+def _robot(mu=OURS_MU):
     from followers.ours_v2 import robot_json
 
     return robot_json(mu)
 
 
-def optimise_ours(course, budget_ms=BUDGET_MS, seed=1, mu=0.7, move_waypoints=False):
+def optimise_ours(course, budget_ms=BUDGET_MS, seed=1, mu=OURS_MU, move_waypoints=False):
     """The headless optimiser on one leg of ours: `node tools/optimise.mjs <path.json> --robot <robot.json>
     --field <field.json> --budget-ms N --seed S --out <file> --pin ...`. Waypoints where the course sets a
     heading are pinned (ours authors those headings as rotation targets, which the optimiser doesn't treat

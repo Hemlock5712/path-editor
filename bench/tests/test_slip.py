@@ -38,7 +38,7 @@ def test_imu_reads_the_true_acceleration_plus_noise():
 
 def test_grip_drop_fires_halfway():
     plant_course = COURSES["grip_drop_s_curve"]
-    assert plant_course.grip_drop == (0.5, 0.70, 0.61)
+    assert plant_course.grip_drop == (0.5, 0.91, 0.79)
     r = run_one(("grip_drop_s_curve", "drive_to_pose_chain", None, 0, "truth"))
     assert r["t_settle"] > 0 or math.isnan(r["t_settle"])  # it ran
 
@@ -46,11 +46,11 @@ def test_grip_drop_fires_halfway():
 def test_grip_drop_changes_the_floor():
     npath = NeutralPath(COURSES["grip_drop_s_curve"])
     plant = DisturbedPlant(RP, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), None)
-    plant.arm_grip_drop((0.5, 0.70, 0.61), npath)
+    plant.arm_grip_drop((0.5, 0.91, 0.79), npath)
     plant.poll((0.5, 0.0))
     assert plant.rp.mu_static == RP.mu_static and plant.grip_dropped_at is None
     plant.poll((3.0, 1.0))
-    assert plant.rp.mu_static == 0.70 and plant.rp.mu_kinetic == 0.61
+    assert plant.rp.mu_static == 0.91 and plant.rp.mu_kinetic == 0.79
     assert plant.grip_dropped_at is not None
 
 

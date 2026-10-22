@@ -11,7 +11,7 @@ A genetic algorithm over the path's Bezier handles. It never moves an anchor:
   each handle's length by a uniform -0.1..+0.1 m (at least Waypoint.minControlLength, 0.25 m). Every
   waypoint mutates, the start and end included; the first population is the path with every waypoint mutated;
 - fitness is the PathPlannerTrajectory total time (here ppcompare.planned_seconds: the bench's port of the
-  generator, as shipped, wheel COF 1.15);
+  generator, as shipped, wheel COF = the plant's static mu);
 - if every anchor keeps the robot (radius = half its diagonal) inside the field, a candidate whose path points
   would take it outside scores infinity;
 - the result is the best individual seen at the start of any generation (the GUI reports the same). The GUI

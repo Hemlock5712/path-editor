@@ -17,8 +17,9 @@ from common import BASE_R, RP, clamp
 class Start:
     """Start state handed to reset(): time, measured pose and measured field velocity."""
 
-    def __init__(self, t, pose, vel):
+    def __init__(self, t, pose, vel, handed=None):
         self.t, self.pose, self.vel = t, tuple(pose), tuple(vel)
+        self.handed = None if handed is None else tuple(handed)  # the previous command's last output, in a chain
 
 
 class Follower:
