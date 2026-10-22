@@ -91,9 +91,11 @@ export class Path {
     this.profile = profile;
   }
 
-  static build(spec: PathSpec, robot: RobotConfig, gridMeters = DEFAULT_GRID_METERS): Path {
+  /** Builds the path; the curvature at the first and the last waypoint is fixed when given (NaN = free). */
+  static build(spec: PathSpec, robot: RobotConfig, gridMeters = DEFAULT_GRID_METERS, startCurvature = Number.NaN,
+    endCurvature = Number.NaN): Path {
     spec = pureRotation(withWaypointHeadings(spec));
-    const geometry = PathGeometry.build(spec.waypoints);
+    const geometry = PathGeometry.build(spec.waypoints, startCurvature, endCurvature);
     const heading = HeadingProfile.build(geometry, spec.rotationTargets, spec.facePointZones, spec.headingMode);
     const profile = VelocityProfile.build(geometry, heading, spec, robot, gridMeters);
     return new Path(spec, geometry, heading, profile);
@@ -101,6 +103,16 @@ export class Path {
 
   get lengthMeters(): number {
     return this.geometry.lengthMeters;
+  }
+
+  /**
+   * The same path planned to start at startSpeed instead (the geometry and heading are reused; only the
+   * velocity profile is built again).
+   */
+  withStartSpeed(startSpeed: number, robot: RobotConfig): Path {
+    const s2: PathSpec = { ...this.spec, startMetersPerSecond: Math.min(startSpeed, this.spec.maxMetersPerSecond) };
+    return new Path(s2, this.geometry, this.heading,
+      VelocityProfile.build(this.geometry, this.heading, s2, robot, this.profile.gridMeters));
   }
 
   /** Where the path reverses, metres along it (PathGeometry.cusps); the profile stops the robot at each. */

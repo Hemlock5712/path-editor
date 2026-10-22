@@ -104,7 +104,11 @@ through `StrictMath` in Java and `Math` in V8, both fdlibm.
 `PathFollower` (`frc.team5712.path.follow`) is one controller from path to pose. Build the path in
 robot init, make the follower there too, then `start()` when the path begins, `step()` each loop and
 stop when `isFinished()`. `start()` does no path work: no building, no flipping, no copying (a test
-counts geometry and profile builds across `start()` and a second of steps, on both alliances).
+counts geometry and profile builds across `start()` and a second of steps, on both alliances). The
+one exception is opt-in: with `replanStartFromMeasuredVelocity`, a robot that is already moving (not
+backwards along the path) gets the path's speeds re-planned from its measured speed, as PathPlanner
+does. Only the profile is rebuilt, never the curve: 0.2-0.3 ms warm for the 16 m route on this PC,
+less on shorter paths. On the bench's moving start it saves 0.06-0.09 s, at the cost of more wheel slip.
 
 Each loop, in the blue frame:
 
@@ -118,6 +122,12 @@ Each loop, in the blue frame:
    brake on the distance left `d`. The speed points along the tangent at `s⁺`, so the command turns
    into a curve early by `v²κτ`: the curvature feed-forward.
 4. **Across the path.** PD on the cross-track error (P 5/s, D 0), pushing along the normal at `s`.
+   Knocked more than 0.4 m off (`rejoinAboveMeters`), the follower builds a piece back onto the path:
+   from the robot's pose, along the way it is really going (from the pose's change; after a hit the
+   wheels slide, so their velocity misleads), at that speed, meeting the path 1 m ahead with matching
+   position, tangent and curvature. Near the end it goes straight for the goal instead. The join has to
+   be ahead of the robot, and at most one piece is tried each 0.5 s. Progress, events and the finish
+   carry on in the path's own metres.
 5. **Heading.** Feed-forward `v·dθ/ds` at `s⁺`, plus P 5/s on the planned heading at `s`.
 6. **Near the end** (0.3 m to go, and no more than `terminalTurnRadians`, 2°, left in the plan's
    turn), the reference becomes the goal pose and DriveToPose's law takes over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. The
@@ -260,8 +270,8 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 | Request | Reply |
 | --- | --- |
 | `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs"}` |
-| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()` | `{"ok", "startMicros"}` |
-| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild |
+| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()` | `{"ok", "startMicros"}` plus `"startReplanMicros"` when the start re-planned the speeds |
+| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild, and `"rejoins"` and `"rejoinMicros"` after a rejoin |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
 | `{"op": "geometry", "step": 0.02}`: the built path, sampled | `{"x": [...], "y": [...]}` |
 | `{"op": "pathfind", "field": <field file tree>, "start": pose, "vel": vel, "goal": pose}` plus optional `"robot"`, `"options"`, `"margin"`, `"maxSpeed"`, `"maxAccel"`: plans with our pathfinder and loads the result like `load` | `{"ok", "lengthMeters", "totalTimeSeconds", "planMs", "searchMs", "smoothMs", "profileMs", "routeLengthMeters", "straightLineMeters", "startSnapMeters", "goalSnapMeters", "refits", "clear", "minClearanceMeters", "waypoints"}`, plus `"bootMs"` when the pathfinder was (re)built |
@@ -286,6 +296,7 @@ zone.
 | `PathFollower.step()`, warm (16 m route, red) | 2.2 µs mean, 260 µs worst in 8,300 steps (GC/JIT) | |
 | `PathFollower.start()`: warm / first call in a fresh JVM | 12 µs / 1.4 ms (class loading, no path work) | |
 | Tail rebuild for a moved goal (8.8 m tail), warm | 186-265 µs mean, 109-116 µs best | |
+| `start()` re-planning the speeds from 2 m/s (16.4 m route, `replanStartFromMeasuredVelocity`), warm | 296 µs mean, 203 µs best | |
 
 The cold number is mostly the JVM loading and linking classes, which every path after the first
 shares. See the notes below for what that means for the boot budget.

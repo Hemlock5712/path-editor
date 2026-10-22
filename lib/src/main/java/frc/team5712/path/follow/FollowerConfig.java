@@ -46,6 +46,14 @@ import frc.team5712.path.core.RobotConfig;
  * @param slipBrakeFriction while slip has lowered the grip, the limiter still lets braking use at
  *     least this μ: the brake law plans with the lowered μ (braking early), and the limiter does not
  *     forbid the robot from braking harder if it must
+ * @param replanStartFromMeasuredVelocity at start, when the robot is already moving (not backwards along the
+ *     path), re-plan the path's speeds from its measured speed, as PathPlanner does, instead of from rest. Only
+ *     the speed profile is rebuilt (the curve stays as drawn): the one bit of path work at go, tens of
+ *     microseconds. Off by default until it's decided whether start() may do any
+ * @param rejoinAboveMeters knocked further than this off the path, build a piece from where the robot is, the
+ *     way it is really going (from the pose's change: after a hit the wheels slide), back onto the path
+ *     {@code REJOIN_METERS} ahead with matching position, tangent and curvature, or straight to the goal when
+ *     that's near; at most once per {@code REJOIN_COOLDOWN_SECONDS} (+∞ = never)
  */
 public record FollowerConfig(
     RobotConfig robot,
@@ -76,7 +84,15 @@ public record FollowerConfig(
     double slipMargin,
     double slipRecoveryPerSecond,
     double minSlipFriction,
-    double slipBrakeFriction) {
+    double slipBrakeFriction,
+    boolean replanStartFromMeasuredVelocity,
+    double rejoinAboveMeters) {
+
+  /** How far ahead (along the path) a rejoining piece meets it. */
+  public static final double REJOIN_METERS = 1.0;
+
+  /** At most one rejoin per this long. */
+  public static final double REJOIN_COOLDOWN_SECONDS = 0.5;
 
   /** The defaults for a robot. */
   public static FollowerConfig defaults(RobotConfig robot) {
@@ -117,6 +133,8 @@ public record FollowerConfig(
     b.slipRecoveryPerSecond = slipRecoveryPerSecond;
     b.minSlipFriction = minSlipFriction;
     b.slipBrakeFriction = slipBrakeFriction;
+    b.replanStartFromMeasuredVelocity = replanStartFromMeasuredVelocity;
+    b.rejoinAboveMeters = rejoinAboveMeters;
     return b;
   }
 
@@ -151,6 +169,8 @@ public record FollowerConfig(
     private double slipRecoveryPerSecond = 0.05;
     private double minSlipFriction = 0.3;
     private double slipBrakeFriction = 0.85;
+    private boolean replanStartFromMeasuredVelocity = false;
+    private double rejoinAboveMeters = 0.4;
 
     private Builder(RobotConfig robot) {
       this.robot = robot;
@@ -184,6 +204,8 @@ public record FollowerConfig(
     public Builder slipRecoveryPerSecond(double v) { slipRecoveryPerSecond = v; return this; }
     public Builder minSlipFriction(double v) { minSlipFriction = v; return this; }
     public Builder slipBrakeFriction(double v) { slipBrakeFriction = v; return this; }
+    public Builder replanStartFromMeasuredVelocity(boolean v) { replanStartFromMeasuredVelocity = v; return this; }
+    public Builder rejoinAboveMeters(double v) { rejoinAboveMeters = v; return this; }
 
     /**
      * Sets a field by its name (the record component's name), for option maps such as the bench's.
@@ -219,6 +241,8 @@ public record FollowerConfig(
         case "slipRecoveryPerSecond" -> slipRecoveryPerSecond = v;
         case "minSlipFriction" -> minSlipFriction = v;
         case "slipBrakeFriction" -> slipBrakeFriction = v;
+        case "replanStartFromMeasuredVelocity" -> replanStartFromMeasuredVelocity = v != 0.0;
+        case "rejoinAboveMeters" -> rejoinAboveMeters = v;
         default -> {
           return false;
         }
@@ -234,7 +258,7 @@ public record FollowerConfig(
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
           headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,
           goalMoveRadians, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
-          minSlipFriction, slipBrakeFriction);
+          minSlipFriction, slipBrakeFriction, replanStartFromMeasuredVelocity, rejoinAboveMeters);
     }
   }
 }

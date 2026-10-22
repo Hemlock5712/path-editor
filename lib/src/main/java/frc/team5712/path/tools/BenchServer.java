@@ -213,6 +213,9 @@ public final class BenchServer {
     Map<String, Object> r = new LinkedHashMap<>();
     r.put("ok", Boolean.TRUE);
     r.put("startMicros", (System.nanoTime() - t0) / 1e3);
+    if (!Double.isNaN(follower.lastStartReplanMicros())) {
+      r.put("startReplanMicros", follower.lastStartReplanMicros());
+    }
     return line(r);
   }
 
@@ -234,6 +237,10 @@ public final class BenchServer {
     if (!Double.isNaN(follower.lastTailRebuildMicros())) {
       r.put("rebuilds", (double) follower.tailRebuildCount());
       r.put("rebuildMicros", follower.lastTailRebuildMicros());
+    }
+    if (follower.rejoinCount() > 0) {
+      r.put("rejoins", (double) follower.rejoinCount());
+      r.put("rejoinMicros", follower.lastRejoinMicros());
     }
     return line(r);
   }

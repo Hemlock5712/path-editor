@@ -2,12 +2,26 @@ package frc.team5712.path.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import frc.team5712.path.tools.FixturePaths;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PathTest {
+  @Test
+  void withStartSpeedIsTheSamePathPlannedFromThatSpeed() {
+    Path path = Path.build(FixturePaths.sCurve(), RobotConfig.DEFAULT);
+    Path moving = path.withStartSpeed(1.8, RobotConfig.DEFAULT);
+    Path built = Path.build(path.spec().withEndSpeeds(1.8, path.spec().endMetersPerSecond()), RobotConfig.DEFAULT);
+    assertTrue(moving.geometry() == path.geometry(), "the curve is reused");
+    for (double s = 0; s <= path.lengthMeters(); s += 0.25) {
+      assertEquals(built.sample(s).metersPerSecond(), moving.sample(s).metersPerSecond(), 0.0);
+    }
+    assertEquals(path.spec().maxMetersPerSecond(),
+        path.withStartSpeed(99.0, RobotConfig.DEFAULT).spec().startMetersPerSecond(), 0.0);
+  }
+
   private static final Path PATH = Path.build(FixturePaths.autoRoute(), RobotConfig.DEFAULT);
 
   @Test

@@ -37,10 +37,18 @@ public final class FollowFixtureGen {
 
   private FollowFixtureGen() {}
 
-  /** One case: a path, its robot, the frame it runs in, an optional shove and the drivetrain. */
-  public record Case(PathSpec spec, RobotConfig robot, FieldFrame frame, FollowerSim.Shove shove, FollowerSim.Drive drive) {
+  /**
+   * One case: a path, its robot, the frame it runs in, an optional shove, the drivetrain and any follower
+   * settings beyond the fixtures' own ({@link #followerOptions}).
+   */
+  public record Case(PathSpec spec, RobotConfig robot, FieldFrame frame, FollowerSim.Shove shove, FollowerSim.Drive drive,
+      Map<String, Double> options) {
     Case(PathSpec spec, RobotConfig robot, FieldFrame frame, FollowerSim.Shove shove) {
       this(spec, robot, frame, shove, FollowerSim.Drive.DEFAULT);
+    }
+
+    Case(PathSpec spec, RobotConfig robot, FieldFrame frame, FollowerSim.Shove shove, FollowerSim.Drive drive) {
+      this(spec, robot, frame, shove, drive, Map.of());
     }
   }
 
@@ -66,6 +74,9 @@ public final class FollowFixtureGen {
         new FollowerSim.Drive(d.latencySeconds(), d.lagSeconds(), d.substepSeconds(), 0.35 * RobotConfig.GRAVITY)));
     // a path that doubles back: the follower stops at the cusp and reverses
     m.put("joe_auto_cusp", new Case(FixturePaths.joeAutoCusp(), RobotConfig.DEFAULT, FieldFrame.BLUE, null));
+    // already moving at the start (a shove before the first loop), with the speeds re-planned from it
+    m.put("s_curve_moving_start", new Case(FixturePaths.sCurve(), RobotConfig.DEFAULT, FieldFrame.BLUE,
+        new FollowerSim.Shove(0.0, 1.0, 1.5), FollowerSim.Drive.DEFAULT, Map.of("replanStartFromMeasuredVelocity", 1.0)));
     return m;
   }
 
@@ -83,6 +94,7 @@ public final class FollowFixtureGen {
         PathFile.asMap(Json.parse(Json.write(PathFile.toJson(c.spec()), Json::exact)), "path");
     Path path = Path.build(PathFile.fromJson(pathTree), c.robot());
     Map<String, Object> options = followerOptions(drive);
+    options.putAll(c.options());
     FollowerConfig.Builder b = FollowerConfig.builder(c.robot());
     for (Map.Entry<String, Object> e : options.entrySet()) {
       b.set(e.getKey(), ((Number) e.getValue()).doubleValue());
