@@ -31,8 +31,14 @@ public final class Path {
    * existing path smoothly.
    */
   public static Path build(PathSpec spec, RobotConfig robot, double gridMeters, double startCurvature) {
+    return build(spec, robot, gridMeters, startCurvature, Double.NaN);
+  }
+
+  /** Builds with the curvature at the first and the last waypoint fixed (NaN = free). */
+  public static Path build(PathSpec spec, RobotConfig robot, double gridMeters, double startCurvature,
+      double endCurvature) {
     spec = pureRotation(withWaypointHeadings(spec));
-    PathGeometry geometry = PathGeometry.build(spec.waypoints(), startCurvature);
+    PathGeometry geometry = PathGeometry.build(spec.waypoints(), startCurvature, endCurvature);
     HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones(), spec.headingMode());
     VelocityProfile profile = VelocityProfile.build(geometry, heading, spec, robot, gridMeters);
     return new Path(spec, geometry, heading, profile);
@@ -107,6 +113,15 @@ public final class Path {
 
   public double lengthMeters() {
     return geometry.lengthMeters();
+  }
+
+  /**
+   * The same path planned to start at {@code startSpeed} instead (the geometry and heading are reused; only the
+   * velocity profile is built again).
+   */
+  public Path withStartSpeed(double startSpeed, RobotConfig robot) {
+    PathSpec s2 = spec.withEndSpeeds(Math.min(startSpeed, spec.maxMetersPerSecond()), spec.endMetersPerSecond());
+    return new Path(s2, geometry, heading, VelocityProfile.build(geometry, heading, s2, robot, profile.gridMeters()));
   }
 
   /** Where the path reverses, metres along it ({@link PathGeometry#cusps}); the profile stops the robot at each. */

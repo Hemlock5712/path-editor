@@ -29,8 +29,11 @@ export class QuinticSpline {
     this.knotKappa = new Float64Array(segmentCount + 1);
   }
 
-  /** Builds the spline through these waypoints. */
-  static through(waypoints: readonly Waypoint[]): QuinticSpline {
+  /**
+   * Builds the spline through these waypoints, with the curvature at the first and at the last waypoint
+   * fixed when given (NaN = chosen like the rest): a piece that joins an existing path matches its curvature.
+   */
+  static through(waypoints: readonly Waypoint[], startCurvature = Number.NaN, endCurvature = Number.NaN): QuinticSpline {
     const n = waypoints.length - 1;
     if (n < 1) throw new RangeError("a spline needs at least two waypoints");
     const spline = new QuinticSpline(n);
@@ -148,6 +151,20 @@ export class QuinticSpline {
       upper[k] = upper[k]! + weight * -3.0 * a0sq * a1sq * (n0x * n1x + n0y * n1y);
       rhs[k] = rhs[k]! - weight * a0sq * (-60.0 * chordDotN0 + 24.0 * v1DotN0);
       rhs[k + 1] = rhs[k + 1]! - weight * a1sq * (60.0 * chordDotN1 - 24.0 * v0DotN1);
+    }
+    if (!Number.isNaN(startCurvature)) {
+      // A fixed κ0: move its column to the right-hand side and make row 0 say κ0 = startCurvature
+      rhs[1] = rhs[1]! - upper[0]! * startCurvature;
+      diag[0] = 1.0;
+      upper[0] = 0.0;
+      rhs[0] = startCurvature;
+    }
+    if (!Number.isNaN(endCurvature)) {
+      // the same for κn
+      rhs[n - 1] = rhs[n - 1]! - upper[n - 1]! * endCurvature;
+      upper[n - 1] = 0.0;
+      diag[n] = 1.0;
+      rhs[n] = endCurvature;
     }
     // Thomas algorithm
     for (let i = 1; i <= n; i++) {
