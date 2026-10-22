@@ -596,5 +596,13 @@ def optimise_ours(course, budget_ms=BUDGET_MS, seed=1, mu=0.7, move_waypoints=Fa
             cmd += ["--pin", ",".join(pins)]
         if move_waypoints:
             cmd.append("--move-waypoints")
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 3:  # blocked: the optimiser writes the path unchanged and says what blocks it
+            from followers.ours_v2 import call_fresh
+
+            tree = json.load(open(o))
+            t = call_fresh(op="load", path=tree, robot=_robot(mu))["totalTimeSeconds"]
+            return tree, f"optimise: {t:.3f} s -> {t:.3f} s (unchanged: {res.stderr.strip()})"
+        if res.returncode != 0:
+            raise subprocess.CalledProcessError(res.returncode, cmd, res.stdout, res.stderr)
         return json.load(open(o)), res.stderr.strip()
