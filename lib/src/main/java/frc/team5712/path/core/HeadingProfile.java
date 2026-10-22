@@ -12,9 +12,12 @@ import java.util.List;
  *   <li><b>Base.</b> With no rotation targets, {@link HeadingMode#HOLD} (the default) holds the
  *       direction the path starts out in; {@link HeadingMode#FACE_TRAVEL} faces the direction of travel
  *       (θ = tangent angle, dθ/ds = κ, d²θ/ds² = dκ/ds). With targets, the heading holds the first
- *       target before it, the last after it, and between two targets turns the shortest way with the
- *       minimum-jerk blend {@code 10τ³ − 15τ⁴ + 6τ⁵} over the whole stretch, so dθ/ds and d²θ/ds²
- *       are continuous and zero at each target.
+ *       target before it, the last after it, and between two targets turns the shortest way with a
+ *       quintic over the whole stretch. At the first and the last target, and wherever the turn
+ *       reverses, the spin stops there (dθ/ds = 0: the minimum-jerk blend {@code 10τ³ − 15τ⁴ + 6τ⁵}).
+ *       Where the turn carries on the same way, the robot passes the target still turning, at the
+ *       harmonic mean of the two stretches' average rates ({@link #passThroughSlopes}), which never
+ *       overshoots a target. d²θ/ds² is zero at every target, so dθ/ds and d²θ/ds² are continuous.
  *   <li><b>Face-point zones,</b> in order. Inside a zone the heading is pulled to the direction from
  *       the path point to the zone's point, eased in and out with the same blend.
  * </ol>
@@ -24,6 +27,7 @@ public final class HeadingProfile {
   // Rotation targets sorted by s, headings unwrapped so each step is the shortest turn
   private final double[] targetS;
   private final double[] targetRadians;
+  private final double[] targetSlope; // dθ/ds at each target (passThroughSlopes)
   // Face-point zones in authored order
   private final double[] zoneStartS;
   private final double[] zoneEndS;
@@ -63,6 +67,7 @@ public final class HeadingProfile {
     this.tableS = tableS;
     this.tableRadians = tableRadians;
     this.tableSlope = tableSlope;
+    this.targetSlope = passThroughSlopes(targetS, targetRadians);
     this.geometry = geometry;
     this.targetS = targetS;
     this.targetRadians = targetRadians;
@@ -183,6 +188,31 @@ public final class HeadingProfile {
     return new HeadingSample(theta, d1 / h, d2 / (h * h));
   }
 
+  /**
+   * dθ/ds at each target: zero at the first and the last, and where the turn reverses or pauses (the
+   * stretches either side turn opposite ways, or one doesn't turn); otherwise the harmonic mean of the
+   * two stretches' average rates, {@code 2·δa·δb / (δa + δb)}. That is at most twice the smaller rate,
+   * and a quintic with zero d²θ/ds² at its ends and end rates within twice its own average rate turns
+   * one way only, so the heading never overshoots a target.
+   */
+  static double[] passThroughSlopes(double[] s, double[] radians) {
+    int n = s.length;
+    double[] m = new double[n];
+    for (int i = 1; i < n - 1; i++) {
+      double la = s[i] - s[i - 1];
+      double lb = s[i + 1] - s[i];
+      if (!(la > 0.0) || !(lb > 0.0)) {
+        continue; // a jump at a shared position: stop there
+      }
+      double da = (radians[i] - radians[i - 1]) / la;
+      double db = (radians[i + 1] - radians[i]) / lb;
+      if (da * db > 0.0) {
+        m[i] = 2.0 * da * db / (da + db);
+      }
+    }
+    return m;
+  }
+
   private static double clamp(double s, PathGeometry g) {
     return s < 0.0 ? 0.0 : (s > g.lengthMeters() ? g.lengthMeters() : s);
   }
@@ -222,9 +252,21 @@ public final class HeadingProfile {
       double length = targetS[j + 1] - targetS[j];
       double turn = targetRadians[j + 1] - targetRadians[j];
       double tau = (s - targetS[j]) / length;
-      theta = targetRadians[j] + turn * Angles.smoothstep5(tau);
-      dTheta = turn * Angles.smoothstep5Slope(tau) / length;
-      ddTheta = turn * Angles.smoothstep5Bend(tau) / (length * length);
+      // quintic Hermite: the targets, the rates m0 and m1 there, zero d²θ/ds² at both
+      double m0 = targetSlope[j];
+      double m1 = targetSlope[j + 1];
+      double t2 = tau * tau;
+      double t3 = t2 * tau;
+      double t4 = t3 * tau;
+      double h1 = tau - 6.0 * t3 + 8.0 * t4 - 3.0 * t4 * tau;
+      double h4 = -4.0 * t3 + 7.0 * t4 - 3.0 * t4 * tau;
+      double h1d = 1.0 - 18.0 * t2 + 32.0 * t3 - 15.0 * t4;
+      double h4d = -12.0 * t2 + 28.0 * t3 - 15.0 * t4;
+      double h1dd = -36.0 * tau + 96.0 * t2 - 60.0 * t3;
+      double h4dd = -24.0 * tau + 84.0 * t2 - 60.0 * t3;
+      theta = targetRadians[j] + turn * Angles.smoothstep5(tau) + length * (m0 * h1 + m1 * h4);
+      dTheta = turn * Angles.smoothstep5Slope(tau) / length + m0 * h1d + m1 * h4d;
+      ddTheta = turn * Angles.smoothstep5Bend(tau) / (length * length) + (m0 * h1dd + m1 * h4dd) / length;
     }
 
     for (int j = 0; j < zoneStartS.length; j++) {

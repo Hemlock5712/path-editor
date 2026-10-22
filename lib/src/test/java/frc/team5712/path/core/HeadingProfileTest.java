@@ -157,4 +157,47 @@ class HeadingProfileTest {
     PathGeometry g = PathGeometry.build(FixturePaths.autoRoute().waypoints());
     assertEquals(h.sample(g.sample(7.3)), h.sample(7.3));
   }
+
+  private static final PathGeometry LINE = PathGeometry.build(List.of(Waypoint.at(0, 0), Waypoint.at(4, 0)));
+
+  @Test
+  void passesATargetStillTurningWhenTheTurnCarriesOn() {
+    // 0 -> 90 -> 180 deg over equal metres: through the middle target at the average rate, no stop
+    HeadingProfile h = HeadingProfile.build(LINE, List.of(RotationTarget.atMeters(0.0, 0.0),
+        RotationTarget.atMeters(2.0, Math.PI / 2), RotationTarget.atMeters(4.0, Math.PI)), List.of());
+    assertEquals(Math.PI / 2, h.sample(2.0).radians(), 1e-12);
+    assertEquals(Math.PI / 4, h.sample(2.0).radiansPerMeter(), 1e-12);
+    assertEquals(0.0, h.sample(2.0).radiansPerMeterSquared(), 1e-12);
+    assertEquals(0.0, h.sample(0.0).radiansPerMeter(), 1e-12);
+    assertEquals(0.0, h.sample(4.0).radiansPerMeter(), 1e-12);
+  }
+
+  @Test
+  void stopsAtATargetWhereTheTurnReverses() {
+    HeadingProfile h = HeadingProfile.build(LINE, List.of(RotationTarget.atMeters(0.0, 0.0),
+        RotationTarget.atMeters(2.0, 1.0), RotationTarget.atMeters(4.0, 0.2)), List.of());
+    assertEquals(0.0, h.sample(2.0).radiansPerMeter(), 1e-12);
+    assertEquals(1.0, h.sample(2.0).radians(), 1e-12);
+  }
+
+  @Test
+  void neverOvershootsATarget() {
+    // uneven stretches and turns: the rate never changes sign between targets, and is continuous
+    double[] at = {0.0, 0.3, 1.9, 2.2, 4.0};
+    double[] deg = {0, 80, 100, 260, 270};
+    List<RotationTarget> t = new java.util.ArrayList<>();
+    for (int i = 0; i < at.length; i++) {
+      t.add(RotationTarget.atMeters(at[i], Math.toRadians(deg[i])));
+    }
+    HeadingProfile h = HeadingProfile.build(LINE, t, List.of());
+    for (double s = 0.0; s <= 4.0; s += 0.001) {
+      assertTrue(h.sample(s).radiansPerMeter() >= -1e-12, "turns one way only at s = " + s);
+    }
+    for (double a : at) {
+      HeadingSample before = h.sample(a - 1e-9);
+      HeadingSample after = h.sample(a + 1e-9);
+      assertEquals(before.radiansPerMeter(), after.radiansPerMeter(), 1e-6, "rate continuous at " + a);
+      assertEquals(before.radiansPerMeterSquared(), after.radiansPerMeterSquared(), 1e-3, "bend continuous at " + a);
+    }
+  }
 }
