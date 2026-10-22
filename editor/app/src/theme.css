@@ -1852,6 +1852,41 @@ dialog::backdrop {
   font-weight: 600;
 }
 
+/* an offer about a setting (robot.json's old μ): text, then its one-click fix */
+.settings-note {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--warning);
+  border-radius: var(--r2);
+  background: var(--warning-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.settings-note > span {
+  flex: 1;
+}
+
+.traction-rules {
+  margin: var(--s1) 0 0;
+  padding-left: 1.2em;
+}
+
+.traction-rules li.in-use {
+  color: var(--text);
+}
+
+.hint .calibrate {
+  margin: var(--s1) 0 0;
+  padding-left: 1.2em;
+}
+
+.hint .calibrate li + li {
+  margin-top: var(--s1);
+}
+
 .telemetry-page {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);

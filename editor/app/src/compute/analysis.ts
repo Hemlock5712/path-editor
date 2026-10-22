@@ -5,9 +5,9 @@
 import { cuspWaypoint } from "./cusps.ts";
 import {
   eventMeters,
-  gripMetersPerSecondSquared,
   makeRotationTarget,
   Path,
+  tractionMetersPerSecondSquared,
   wheelSpeedCapMetersPerSecond,
   type PathSpec,
   type RobotConfig,
@@ -270,9 +270,9 @@ function speedChecks(input: AnalysisInput, path: Path, st: Stations): Check[] {
   return out;
 }
 
-/** Bends whose steady cornering speed sqrt(μg/|κ|) is well under the path's top speed. */
+/** Bends whose steady cornering speed sqrt(traction/|κ|) is well under the path's top speed (the plan's grip circle). */
 function curvatureChecks(input: AnalysisInput, path: Path, st: Stations): Check[] {
-  const grip = gripMetersPerSecondSquared(input.robot);
+  const grip = tractionMetersPerSecondSquared(input.robot);
   const top = Math.min(input.spec.maxMetersPerSecond, wheelSpeedCapMetersPerSecond(input.robot));
   const limit = CHECKS.tightBendShare * top;
   const cap = (i: number) => Math.sqrt(grip / Math.max(1e-12, Math.abs(st.kappa[i]!)));

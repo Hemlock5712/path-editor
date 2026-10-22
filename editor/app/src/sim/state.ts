@@ -3,8 +3,9 @@
 // project's (Settings > Sim preview, saved in the editor's sidecar file, not robot.json: it describes the
 // sim, not the robot); whether the preview is on and the shove are this browser's.
 
-import { DEFAULT_DRIVE, GRAVITY, type DriveSettings, type PathSpec, type Shove } from "../../../core/src/index.ts";
+import { DEFAULT_DRIVE, type DriveSettings, type PathSpec, type RobotConfig, type Shove } from "../../../core/src/index.ts";
 import { isDrawn, type Project, type SimPreviewSettings } from "../model/project.ts";
+import { simFloorCapMetersPerSecondSquared } from "../model/traction.ts";
 import { activePath, editor } from "../state/editor.ts";
 import { createStore } from "../state/store.ts";
 import type { SimInput, SimResult } from "./preview.ts";
@@ -63,13 +64,16 @@ export interface SimState {
 
 export const sim = createStore<SimState>({ input: null, result: null });
 
-/** The project's sim drivetrain as the core's DriveSettings. */
-export function driveOf(d: SimPreviewSettings): DriveSettings {
+/**
+ * The project's sim drivetrain as the core's DriveSettings. The floor's tread μ caps the chassis at
+ * min(μ·g, g·tip/h) with the robot's centre of mass (simFloorCapMetersPerSecondSquared).
+ */
+export function driveOf(d: SimPreviewSettings, robot: RobotConfig): DriveSettings {
   return {
     latencySeconds: d.latencyMs / 1000,
     lagSeconds: Math.max(0.001, d.lagMs / 1000),
     substepSeconds: DEFAULT_DRIVE.substepSeconds,
-    ...(d.gripMu !== null ? { gripMetersPerSecondSquared: d.gripMu * GRAVITY } : {}),
+    ...(d.gripMu !== null ? { gripMetersPerSecondSquared: simFloorCapMetersPerSecondSquared(d.gripMu, robot) } : {}),
   };
 }
 
@@ -78,7 +82,7 @@ export function shoveOf(s: SimSettings): Shove | null {
 }
 
 export function simInput(project: Project, spec: PathSpec, s: SimSettings): SimInput {
-  return { spec, robot: project.robot.config, drive: driveOf(project.settings.simPreview), shove: shoveOf(s) };
+  return { spec, robot: project.robot.config, drive: driveOf(project.settings.simPreview, project.robot.config), shove: shoveOf(s) };
 }
 
 /** Starts feeding the sim worker; returns a stop function. */

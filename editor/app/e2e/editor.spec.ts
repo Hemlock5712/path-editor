@@ -748,3 +748,71 @@ test("Optimise path never moves a locked waypoint, moves none by default, and Di
   expect([after[0]!.x, after[0]!.y, after[4]!.x, after[4]!.y]).toEqual([before[0]![0], before[0]![1], before[4]![0], before[4]![1]]); // the ends
   expect([after[3]!.heading, after[3]!.set]).toEqual([before[3]![2], true]); // its heading kept
 });
+
+test("an old robot.json's μ 0.7: the editor offers Spike Grip's 1.5, Settings shows the traction limit live, and the Sim floor caps the chassis", async ({ page }) => {
+  const text = readFileSync(join(import.meta.dirname, "..", "test", "fixtures", "joe_cusp.path.json"), "utf8");
+  const robot = JSON.stringify({ massKg: 60, frictionCoefficient: 0.7, bumperLengthMeters: 0.85, bumperWidthMeters: 0.85 });
+  await page.addInitScript(installMockFolder);
+  await page.addInitScript(
+    ([t, r]) => {
+      if (!localStorage.getItem("mockFolder")) {
+        localStorage.setItem("mockFolder", JSON.stringify({ "src/main/deploy/paths/JoeAuto.path.json": t, "src/main/deploy/paths/robot.json": r }));
+      }
+    },
+    [text, robot],
+  );
+  const shot = async (name: string) => {
+    if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `${name}.png`) });
+  };
+  await page.goto("/");
+  await page.getByTestId("open-folder").click();
+  await expect(page.getByTestId("status")).toContainText("Opened robot-project: 1 path");
+
+  // the old planning μ: one click takes the tread's
+  await expect(page.getByText("robot.json has μ 0.7")).toBeVisible();
+  await shot("traction-toast");
+  // Settings keeps the offer after the toast has gone
+  await page.getByTestId("settings").click();
+  await page.getByTestId("settings-robot").click();
+  await expect(page.getByTestId("old-mu-note")).toContainText("μ 0.7 is the old planning default");
+  if (process.env.SHOTS) await page.getByRole("group", { name: "Traction" }).or(page.locator('[aria-label="Traction"]')).first().screenshot({ path: join(process.env.SHOTS, "traction-old.png") });
+  await page.getByTestId("toast-action").filter({ hasText: "Use 1.5" }).click();
+  await expect(page.getByTestId("settings-page")).toBeVisible();
+  await expect(page.getByTestId("tread-mu")).toHaveValue("1.5");
+  await expect(page.getByTestId("old-mu-note")).toHaveCount(0);
+  const limit = page.getByTestId("traction-limit");
+  await expect(limit).toContainText("Traction limit 12.8 m/s², tipping limits first");
+  await expect(page.getByTestId("com-height")).toHaveValue("0.2");
+  await expect(page.getByTestId("tip-distance")).toHaveAttribute("placeholder", "auto (square base)");
+  await expect(page.getByTestId("traction-calibrate")).toContainText("luggage scale");
+  await expect(page.getByTestId("traction-calibrate")).toContainText("0.29 m on this base");
+  if (process.env.SHOTS) await page.locator('[aria-label="Traction"]').screenshot({ path: join(process.env.SHOTS, "traction-settings.png") });
+
+  // the other rule, and back
+  await page.getByRole("radio", { name: "Equal push" }).click();
+  await expect(limit).toContainText("Traction limit 6.5 m/s², the front wheels slip first");
+  await shot("traction-equal-push");
+  await page.getByRole("radio", { name: "Tip or grip" }).click();
+  await expect(limit).toContainText("12.8 m/s², tipping limits first");
+
+  // the Sim preview's floor: no cap until given a μ, then min(μg, g·tip/h) with this robot
+  await page.getByTestId("settings-sim").click();
+  await expect(page.getByTestId("sim-floor-cap")).toContainText("No floor cap");
+  await page.getByTestId("sim-floor-mu").fill("1.5");
+  await page.getByTestId("sim-floor-mu").press("Enter");
+  await expect(page.getByTestId("sim-floor-cap")).toContainText("Caps the chassis at 14.2 m/s²");
+  await expect(page.getByTestId("sim-floor-cap")).toContainText("start slipping at 7.2 m/s²");
+  await shot("traction-sim");
+
+  // no tipping limit: grip sets it, live
+  await page.getByTestId("settings-robot").click();
+  await page.getByTestId("com-height").fill("0");
+  await page.getByTestId("com-height").press("Enter");
+  await expect(limit).toContainText("Traction limit 13.2 m/s², grip limits first");
+
+  await page.keyboard.press("Control+s");
+  await expect(page.getByTestId("status")).toContainText("Saved to robot-project");
+  const saved = JSON.parse((await folderFile(page, "src/main/deploy/paths/robot.json"))!) as Record<string, unknown>;
+  expect(saved).toMatchObject({ frictionCoefficient: 1.5, centerOfMassHeightMeters: 0, tractionRule: "tipOrGrip" });
+  expect(saved).not.toHaveProperty("tipDistanceMeters");
+});

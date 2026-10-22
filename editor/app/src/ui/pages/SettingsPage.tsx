@@ -3,10 +3,19 @@
 // preview's drivetrain, and the editor's own preferences.
 
 import { Bot, Cpu, FolderCog, Hexagon, Map as MapIcon, Route, SlidersHorizontal, Trash2 } from "lucide-react";
-import { KRAKEN_X60_FOC, type Motor, type RobotConfig } from "../../../../core/src/index.ts";
+import { checkRobot, KRAKEN_X60_FOC, tipDistanceInUseMeters, type Motor, type RobotConfig } from "../../../../core/src/index.ts";
 import { isValidPackage } from "../../io/javaEnum.ts";
 import { PATHS_DIR } from "../../io/projectIo.ts";
 import { DEFAULT_ROBOT_SETTINGS, DEFAULT_SIM_PREVIEW, type PathDefaults, type RobotSettings, type SimPreviewSettings } from "../../model/project.ts";
+import {
+  equalPushSlipMetersPerSecondSquared,
+  hasOldDefaultMu,
+  simFloorCapMetersPerSecondSquared,
+  SPIKE_GRIP_MU,
+  equalPushWorking,
+  tipOrGripWorking,
+  tractionHeadline,
+} from "../../model/traction.ts";
 import { editProject, select, setTool, setView } from "../../state/editor.ts";
 import { session } from "../../state/session.ts";
 import { useStore } from "../../state/store.ts";
@@ -55,7 +64,7 @@ function motorKey(m: Motor): string {
 function checkedRobot(r: RobotConfig): RobotConfig {
   const positive = [r.massKg, r.momentOfInertiaKgM2, r.moduleRadiusMeters, r.wheelRadiusMeters, r.driveGearRatio, r.statorCurrentLimitAmps, r.frictionCoefficient];
   if (positive.some((v) => !(v > 0)) || r.driveMotorCount < 1) throw new RangeError("robot numbers must be positive");
-  return r;
+  return checkRobot(r);
 }
 
 function RobotSettingsTab() {
@@ -97,13 +106,13 @@ function RobotSettingsTab() {
           <NumberField label="Gear ratio" unit=":1" min={0.1} value={c.driveGearRatio} onCommit={(v) => set("Gear ratio", { driveGearRatio: v })} />
           <NumberField label="Wheel radius" unit="m" min={0.001} step={0.001} value={c.wheelRadiusMeters} onCommit={(v) => set("Wheel radius", { wheelRadiusMeters: v })} />
           <NumberField label="Stator limit" unit="A" min={1} value={c.statorCurrentLimitAmps} onCommit={(v) => set("Current limit", { statorCurrentLimitAmps: v })} />
-          <NumberField label="Grip μ" min={0.05} step={0.05} value={c.frictionCoefficient} title="Measured traction; around 0.7 for carpet" onCommit={(v) => set("Grip", { frictionCoefficient: v })} />
         </div>
         <p className="stats">
           Motor: {formatNumber(c.driveMotor.stallTorqueNewtonMeters, 3)} N·m stall, {formatNumber(c.driveMotor.stallCurrentAmps, 1)} A,{" "}
           {formatNumber(rpm(c.driveMotor.freeSpeedRadPerSec), 0)} rpm free
         </p>
       </div>
+      <TractionGroup config={c} set={set} />
       <div className="settings-group">
         <h4>Limits</h4>
         <div className="grid3">
@@ -134,6 +143,86 @@ function RobotSettingsTab() {
         </Button>
       </div>
     </section>
+  );
+}
+
+/**
+ * Tread μ, centre of mass height, tip distance and the traction rule, and the limit they make: the plan
+ * and the follower accelerate and corner at no more than it.
+ */
+function TractionGroup({ config: c, set }: { config: RobotConfig; set: (label: string, change: Partial<RobotConfig>) => void }) {
+  return (
+    <div className="settings-group" aria-label="Traction">
+      <h4>Traction</h4>
+      <div className="grid3">
+        <NumberField
+          label="Tread μ (1.5 for Spike Grip)"
+          min={0.05}
+          step={0.05}
+          value={c.frictionCoefficient}
+          title="The tread's friction on carpet: about 1.5 for SDS MK5 Spike Grip"
+          testId="tread-mu"
+          onCommit={(v) => set("Tread μ", { frictionCoefficient: v })}
+        />
+        <NumberField
+          label="Centre of mass height"
+          unit="m"
+          min={0}
+          step={0.01}
+          value={c.centerOfMassHeightMeters}
+          title="Above the floor. 0 = no tipping limit"
+          testId="com-height"
+          onCommit={(v) => set("Centre of mass height", { centerOfMassHeightMeters: v })}
+        />
+        <NumberField
+          label="Tip distance"
+          unit="m"
+          blank="auto (square base)"
+          blankValue={Number.NaN}
+          min={0.01}
+          step={0.01}
+          value={c.tipDistanceMeters}
+          title="Centre to the line the robot tips over: the nearer of the modules' x and y. Blank = module radius ÷ √2"
+          testId="tip-distance"
+          onCommit={(v) => set("Tip distance", { tipDistanceMeters: v })}
+        />
+      </div>
+      <Segmented
+        label="Traction rule"
+        value={c.tractionRule}
+        options={[
+          { value: "tipOrGrip", label: "Tip or grip", tip: "0.9 × the lower of μ·g and g·tip/h: the tread slides or the robot tips, whichever first" },
+          { value: "equalPush", label: "Equal push", tip: "0.9 × μ·g ÷ (1 + μ·h/tip): every wheel pushes the same, so the unloaded ones slip first" },
+        ]}
+        onChange={(tractionRule) => set("Traction rule", { tractionRule })}
+      />
+      <div className="stats" data-testid="traction-limit">
+        <strong>{tractionHeadline(c)}</strong>
+        <ul className="traction-rules">
+          <li className={c.tractionRule === "tipOrGrip" ? "in-use" : undefined}>{tipOrGripWorking(c)}</li>
+          <li className={c.tractionRule === "equalPush" ? "in-use" : undefined}>{equalPushWorking(c)}</li>
+        </ul>
+      </div>
+      {hasOldDefaultMu(c) && (
+        <div className="settings-note" role="note" data-testid="old-mu-note">
+          <span>μ 0.7 is the old planning default. μ is now the tread's own (about 1.5 for Spike Grip), and the plan takes 0.9 of the limit it makes.</span>
+          <Button onClick={() => set("Tread μ", { frictionCoefficient: SPIKE_GRIP_MU })}>Use 1.5</Button>
+        </div>
+      )}
+      <div className="hint" data-testid="traction-calibrate">
+        <strong>Estimates: calibrate on your robot.</strong>
+        <ul className="calibrate">
+          <li>
+            <strong>μ</strong>: brake the wheels and pull the robot slowly across carpet with a luggage scale. μ = the peak pull ÷ the
+            robot's weight (both in kg).
+          </li>
+          <li>
+            <strong>Centre of mass height</strong>: lift the front until the robot balances on its back wheels. h = the back wheels'
+            distance from the centre ({formatNumber(tipDistanceInUseMeters(c), 2)} m on this base) ÷ tan(the tilt).
+          </li>
+        </ul>
+      </div>
+    </div>
   );
 }
 
@@ -293,6 +382,7 @@ function ProjectTab() {
 
 function SimTab() {
   const sim = useEditor((s) => s.project.settings.simPreview);
+  const robot = useEditor((s) => s.project.robot.config);
   const set = (change: Partial<SimPreviewSettings>) => editProject("Sim preview", (p) => ({ ...p, settings: { ...p.settings, simPreview: { ...p.settings.simPreview, ...change } } }));
   return (
     <section className="settings-section" aria-label="Sim preview">
@@ -306,19 +396,34 @@ function SimTab() {
           <NumberField label="Command latency" unit="ms" min={0} value={sim.latencyMs} title="From a command being sent to the modules acting on it" onCommit={(v) => set({ latencyMs: v })} />
           <NumberField label="Velocity lag" unit="ms" min={1} value={sim.lagMs} title="Time constant of the chassis velocity's first-order lag" onCommit={(v) => set({ lagMs: v })} />
           <NumberField
-            label="Floor grip μ"
+            label="Floor tread μ"
             blank="no cap"
             blankValue={Number.NaN}
             min={0.05}
             step={0.05}
             value={sim.gripMu ?? Number.NaN}
-            title="Caps the simulated chassis's acceleration at μ·g; blank for none (as in the end-to-end suite)"
+            title="The tread's μ on the simulated floor (1.5 for Spike Grip); blank for no cap (as in the end-to-end suite)"
+            testId="sim-floor-mu"
             onCommit={(v) => set({ gripMu: Number.isFinite(v) ? v : null })}
           />
         </div>
+        <p className="stats" data-testid="sim-floor-cap">
+          {sim.gripMu === null ? (
+            <>No floor cap: the chassis gets whatever the follower asks for.</>
+          ) : (
+            <>
+              <strong>
+                Caps the chassis at {formatNumber(simFloorCapMetersPerSecondSquared(sim.gripMu, robot), 1)} m/s²
+              </strong>
+              : the lower of μ·g and tipping, with the Robot tab's centre of mass and tip distance, and no margin. The sim moves the chassis
+              as one body, so it doesn't show wheel slip: with all four wheels pushing equally, the light wheels start slipping at{" "}
+              {formatNumber(equalPushSlipMetersPerSecondSquared(sim.gripMu, robot), 1)} m/s².
+            </>
+          )}
+        </p>
         <div>
           <Button variant="ghost" onClick={() => editProject("Sim preview", (p) => ({ ...p, settings: { ...p.settings, simPreview: DEFAULT_SIM_PREVIEW } }))}>
-            Sim defaults (the end-to-end suite's: 20 ms, 40 ms, no grip cap)
+            Sim defaults (the end-to-end suite's: 20 ms, 40 ms, no floor cap)
           </Button>
         </div>
       </div>
