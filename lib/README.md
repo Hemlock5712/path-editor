@@ -64,10 +64,11 @@ The model (also in the class comment):
 
 - traction, for the worst wheel: `√(a² + (v²κ)²) + c·|α| ≤ A`, with `α = a·θ' + v²·θ''`,
   `c = I/(m·r)` and `A` the traction limit, by the robot file's `tractionRule`:
-  - `"tipOrGrip"` (the default for now, Joe's spec and Precision-Drive's AccelerationLimiter):
-    `A = 0.9 · min(μ·g, g·x/h)`, whichever comes first, the tread's grip or tipping over;
-  - `"equalPush"`: `A = 0.9 · μ·g / (1 + μ·h/x)`. Swerve velocity control pushes every wheel about
-    equally, so the wheels that weight transfer unloads slip first.
+  - `"equalPush"` (the default; old robot files without the key get it too): `A = 0.9 · μ·g / (1 + μ·h/x)`.
+    Swerve velocity control pushes every wheel about equally, so the wheels that weight transfer unloads
+    slip first;
+  - `"tipOrGrip"` (opt-in, Precision-Drive's AccelerationLimiter): `A = 0.9 · min(μ·g, g·x/h)`, whichever
+    comes first, the tread's grip or tipping over.
 
   The defaults are SDS MK5 Spike Grip (μ 1.5), the centre of mass 0.2 m up (to be measured) and
   modules at ±0.29 m (x = 0.29 m), giving `tipOrGrip` 12.8 m/s² (tipping first) and `equalPush`
@@ -119,10 +120,13 @@ through `StrictMath` in Java and `Math` in V8, both fdlibm.
 robot init, make the follower there too, then `start()` when the path begins, `step()` each loop and
 stop when `isFinished()`. `start()` does no path work: no building, no flipping, no copying (a test
 counts geometry and profile builds across `start()` and a second of steps, on both alliances). The
-one exception is opt-in: with `replanStartFromMeasuredVelocity`, a robot that is already moving (not
-backwards along the path) gets the path's speeds re-planned from its measured speed, as PathPlanner
-does. Only the profile is rebuilt, never the curve: 0.2-0.3 ms warm for the 16 m route on this PC,
-less on shorter paths. On the bench's moving start it saves 0.06-0.09 s, at the cost of more wheel slip.
+one exception is `replanStartFromMeasuredVelocity`, on by default. A path planned from rest, started with
+the robot already moving (not backwards along the path), gets its speeds re-planned from the measured
+speed, as PathPlanner does. Only the profile is rebuilt, never the curve: 0.2-0.3 ms warm for the 16 m
+route on this PC, less on shorter paths. At rest it does nothing. It also does nothing on paths that plan
+their own start speed (rolling hand-overs, on-the-fly paths). Under equalPush on the bench it changes only
+the moving start: 2.39 → 2.32 s with a perfect pose, wheel slip 1.69 → 1.06 s, and 3.6 → 3.4 cm end error
+with odometry. three_piece_chain and the courses that start at rest give the same runs to the bit.
 
 Each loop, in the blue frame:
 
@@ -194,9 +198,20 @@ options.
 ### Traction: μ 1.5 and tipping
 
 The robot runs SDS MK5 Spike Grip, μ 1.5. Acceleration and cornering are held to a traction limit `A`
-(`RobotConfig.tractionMetersPerSecondSquared`). By default that's 90 % of whichever comes first, grip or
-tipping, `0.9 · min(μ·g, g·x/h)`. The other rule, `equalPush`, is `0.9 · μ·g / (1 + μ·h/x)`. Joe picks
-the default once bench-builder has re-baselined both.
+(`RobotConfig.tractionMetersPerSecondSquared`). By default that's the equal-push rule,
+`0.9 · μ·g / (1 + μ·h/x)`: 6.5 m/s² for the defaults, 6.1 m/s² with Joe's ±0.254 m modules. The other rule,
+`tipOrGrip`, is 90 % of whichever comes first, grip or tipping, `0.9 · min(μ·g, g·x/h)`. That's 12.8 and
+11.2 m/s².
+
+Joe chose `equalPush` from bench-builder's re-baseline of ours under both rules (240 A plant, 1.5 / 1.3,
+centre of mass 0.2 m, bench/out/rebaseline/rules.md). Under wheel odometry, equalPush:
+- ends 8.5 cm off on average against 11.2 cm;
+- settles 24 runs of 90 against 17;
+- on the grip drop, ends 4.2 cm off against 10.2 cm.
+
+With a perfect pose `tipOrGrip` is faster on most clean courses, because the loaded wheels make up for the
+slipping light ones. That costs wheel slip and so odometry. `tipOrGrip` is worth trying once the centre of
+mass's height is measured and slip has been checked on the real robot, with vision correcting the pose.
 The planner's grip circle and the follower's output limiter both use `A`, so the editor's plan is what
 the robot will try. Before this change they were separate: the plan used μ 0.7 and the limiter 1.0, on a
 1.15 / 1.0 bench floor. Scaled to the 1.5 tread, that 0.7 plan would be 0.7 of `A` and the limiter about

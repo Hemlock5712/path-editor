@@ -318,11 +318,14 @@ public final class PathFollower {
     FieldSpeeds v = frame.toBlue(measuredVelocity);
     double speed = Math.hypot(v.vxMetersPerSecond(), v.vyMetersPerSecond());
     PathSample first = basePath.sample(0.0);
-    if (cfg.replanStartFromMeasuredVelocity() && !pureRotation && speed > MIN_MOVING_SPEED
+    if (cfg.replanStartFromMeasuredVelocity() && !pureRotation && basePath.spec().startMetersPerSecond() == 0.0
+        && speed > MIN_MOVING_SPEED
         && v.vxMetersPerSecond() * first.tangentX() + v.vyMetersPerSecond() * first.tangentY() > 0.0) {
-      // Already moving (not backwards along the path): the speeds are re-planned from the measured speed, all
-      // of it, as PathPlanner does. Turning the velocity onto the path costs grip, not speed, and the limiter
-      // shares the grip between the two. Only the profile is rebuilt; the curve stays as drawn.
+      // A path planned from rest, started while already moving (not backwards along the path): the speeds
+      // are re-planned from the measured speed, all of it, as PathPlanner does. Turning the velocity onto
+      // the path costs grip, not speed, and the limiter shares the grip between the two. Only the profile
+      // is rebuilt; the curve stays as drawn. A path that starts moving (a rolling hand-over, an on-the-fly
+      // path) already plans its start speed, so it is left alone.
       long t0 = System.nanoTime();
       track = basePath.withStartSpeed(speed, cfg.robot());
       lastStartReplanMicros = (System.nanoTime() - t0) / 1e3;

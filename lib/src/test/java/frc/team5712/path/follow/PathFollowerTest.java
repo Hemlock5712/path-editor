@@ -84,7 +84,11 @@ class PathFollowerTest {
       double miss = Math.hypot(end.xMeters() - goal.xMeters(), end.yMeters() - goal.yMeters());
       assertTrue(miss < CFG.positionToleranceMeters(), e.getKey() + " ends " + miss + " m off");
       assertTrue(Math.abs(Angles.wrap(end.headingRadians() - goal.headingRadians())) < CFG.headingToleranceRadians());
-      assertTrue(r.worstCrossTrack() < 0.05, e.getKey() + " strays " + r.worstCrossTrack() + " m");
+      // Under equal push the limiter holds the plan's own limit, so where the plan uses all of it (the auto
+      // route's last bend, braking) feedback has no room: 9.3 cm there in this plant (2.4 cm with the limiter
+      // at the equal-push onset, A / 0.9), against 4 cm or less everywhere else
+      double allowed = e.getKey().equals("auto_route") ? 0.10 : 0.05;
+      assertTrue(r.worstCrossTrack() < allowed, e.getKey() + " strays " + r.worstCrossTrack() + " m");
       // finishing takes the plan plus the settle, not much more
       assertTrue(r.seconds() < path.totalTimeSeconds() + 0.8,
           e.getKey() + " took " + r.seconds() + " s for a " + path.totalTimeSeconds() + " s plan");
@@ -209,9 +213,54 @@ class PathFollowerTest {
     f.start(0.0, p, new FieldSpeeds(-1.0, 1.5, 0.0), FieldFrame.BLUE);
     assertTrue(f.activePath() == path);
     assertTrue(Double.isNaN(f.lastStartReplanMicros()));
-    PathFollower off = new PathFollower(path, CFG);
+    PathFollower off = new PathFollower(path, CFG.toBuilder().replanStartFromMeasuredVelocity(false).build());
     off.start(0.0, p, new FieldSpeeds(1.0, 1.5, 0.0), FieldFrame.BLUE);
-    assertTrue(off.activePath() == path, "off by default");
+    assertTrue(off.activePath() == path, "switched off");
+    // on by default, and a no-op at rest
+    PathFollower byDefault = new PathFollower(path, CFG);
+    byDefault.start(0.0, p, new FieldSpeeds(1.0, 1.5, 0.0), FieldFrame.BLUE);
+    assertTrue(byDefault.activePath() != path, "on by default");
+    byDefault.start(0.0, p, new FieldSpeeds(0, 0, 0), FieldFrame.BLUE);
+    assertTrue(byDefault.activePath() == path, "nothing to do at rest");
+  }
+
+  @Test
+  void aPathThatPlansItsOwnStartSpeedIsLeftAlone() {
+    // tangent scales starts at 1.2 m/s: a rolling hand-over or an on-the-fly path already plans the speed
+    Path path = Path.build(FixturePaths.tangentScales(), ROBOT);
+    PathSample s0 = path.sample(0);
+    PathFollower f = new PathFollower(path, CFG);
+    f.start(0.0, new Pose(s0.xMeters(), s0.yMeters(), s0.headingRadians()),
+        new FieldSpeeds(1.3 * s0.tangentX(), 1.3 * s0.tangentY(), 0.0), FieldFrame.BLUE);
+    assertTrue(f.activePath() == path);
+    assertTrue(Double.isNaN(f.lastStartReplanMicros()));
+  }
+
+  @Test
+  void coastingFromTeleopTheRePlannedStartArrivesSooner() {
+    // driven in teleop at 2 m/s along the path, then the auto command starts a path planned from rest
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    PathSample s0 = path.sample(0);
+    FieldSpeeds coasting = new FieldSpeeds(2.0 * s0.tangentX(), 2.0 * s0.tangentY(), 0.0);
+    double[] seconds = new double[2];
+    double[] worst = new double[2];
+    for (int k = 0; k < 2; k++) {
+      PathFollower f = new PathFollower(path, CFG.toBuilder().replanStartFromMeasuredVelocity(k == 1).build());
+      KinematicPlant plant = new KinematicPlant(new Pose(s0.xMeters(), s0.yMeters(), s0.headingRadians()), coasting);
+      f.start(0.0, plant.pose(), plant.velocity(), FieldFrame.BLUE);
+      double t = 0;
+      while (t < 20 && !f.isFinished()) {
+        t += DT;
+        FieldSpeeds cmd = f.step(t, plant.pose(), plant.velocity());
+        worst[k] = Math.max(worst[k], Math.abs(f.crossTrackMeters()));
+        plant.step(cmd, DT);
+      }
+      assertTrue(f.isFinished());
+      seconds[k] = t;
+    }
+    System.out.printf("coasting at 2 m/s into a from-rest S-curve: %.2f s planned from rest, %.2f s re-planned "
+        + "(worst cross-track %.3f / %.3f m)%n", seconds[0], seconds[1], worst[0], worst[1]);
+    assertTrue(seconds[1] < seconds[0], "re-planned " + seconds[1] + " s, from rest " + seconds[0] + " s");
   }
 
   @Test
@@ -751,8 +800,10 @@ class PathFollowerTest {
       slip.achieved = 5.0;
       lowest[0] = Math.min(lowest[0], ff.slipFrictionCoefficient());
     };
-    Path hard = Path.build(FixturePaths.straight().withLimits(4.0, 9.0), ROBOT);
-    run(hard, new PathFollower(hard, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
+    RobotConfig tipOrGrip = ROBOT.withTractionRule(RobotConfig.TractionRule.TIP_OR_GRIP); // a plan that reaches 9
+    FollowerConfig tipCfg = FollowerConfig.defaults(tipOrGrip);
+    Path hard = Path.build(FixturePaths.straight().withLimits(4.0, 9.0), tipOrGrip);
+    run(hard, new PathFollower(hard, tipCfg).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
     assertEquals(Double.POSITIVE_INFINITY, lowest[0], "a hard launch's slip is expected");
     lowest[0] = Double.POSITIVE_INFINITY;
     Path gentle = Path.build(FixturePaths.straight().withLimits(4.0, 2.0), ROBOT);
@@ -761,7 +812,7 @@ class PathFollowerTest {
     // the hard launch again, but the wheels spin up 5 m/s² faster than the chassis: all of them slide
     slip.gap = 5.0;
     lowest[0] = Double.POSITIVE_INFINITY;
-    run(hard, new PathFollower(hard, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
+    run(hard, new PathFollower(hard, tipCfg).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
     assertTrue(lowest[0] < 1.0, "a slide lowers the grip whatever the robot asked for: " + lowest[0]);
   }
 

@@ -121,9 +121,13 @@ describe("path files", () => {
   });
 
   it("works out both traction rules the way RobotConfig.java does", () => {
-    // the default: tip 0.29 m, centre of mass 0.2 m: tipping before grip
-    expect(tractionMetersPerSecondSquared(DEFAULT_ROBOT)).toBe(0.9 * Math.min(1.5 * 9.81, (9.81 * 0.29) / 0.2));
-    expect(tractionLimit(DEFAULT_ROBOT)).toBe("tipping");
+    // the default is equal push; tip-or-grip (tip 0.29 m, centre of mass 0.2 m) tips before it grips
+    expect(DEFAULT_ROBOT.tractionRule).toBe("equalPush");
+    expect(tractionMetersPerSecondSquared(DEFAULT_ROBOT)).toBe(equalPushMetersPerSecondSquared(DEFAULT_ROBOT));
+    expect(tractionLimit(DEFAULT_ROBOT)).toBe("equalPush");
+    const tipOrGrip = { ...DEFAULT_ROBOT, tractionRule: "tipOrGrip" as const };
+    expect(tractionMetersPerSecondSquared(tipOrGrip)).toBe(0.9 * Math.min(1.5 * 9.81, (9.81 * 0.29) / 0.2));
+    expect(tractionLimit(tipOrGrip)).toBe("tipping");
     // Joe's 0.254 m modules: 11.2 m/s² by tip-or-grip, 6.1 m/s² by equal push
     const joe = { ...DEFAULT_ROBOT, tipDistanceMeters: 0.254 };
     expect(tipOrGripMetersPerSecondSquared(joe)).toBeCloseTo(11.21, 2);

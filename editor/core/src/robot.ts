@@ -70,7 +70,7 @@ export const DEFAULT_ROBOT: RobotConfig = {
   maxAngularRadPerSecSquared: Infinity,
   centerOfMassHeightMeters: 0.2,
   tipDistanceMeters: Number.NaN,
-  tractionRule: "tipOrGrip",
+  tractionRule: "equalPush",
 };
 
 /** Checks a config the way RobotConfig's constructor does. */

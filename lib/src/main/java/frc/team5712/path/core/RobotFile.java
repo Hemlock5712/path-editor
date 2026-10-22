@@ -18,7 +18,7 @@ import java.util.Map;
  * </pre>
  *
  * {@code tipDistanceMeters} is optional (a square base without it); {@code tractionRule} is
- * {@code "tipOrGrip"} (the default) or {@code "equalPush"}. The bumper keys aren't part of {@link RobotConfig}; {@code PlannerConfig.fromRobotFile} reads them.
+ * {@code "equalPush"} (the default) or {@code "tipOrGrip"}. The bumper keys aren't part of {@link RobotConfig}; {@code PlannerConfig.fromRobotFile} reads them.
  */
 public final class RobotFile {
   private RobotFile() {}

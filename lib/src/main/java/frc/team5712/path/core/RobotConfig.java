@@ -9,10 +9,12 @@ package frc.team5712.path.core;
  * <p>Acceleration and cornering are limited to 90 % of a traction limit
  * ({@link #tractionMetersPerSecondSquared}), by one of two rules ({@link TractionRule}):
  * <ul>
- *   <li>{@code TIP_OR_GRIP} (the default, Joe's spec and Precision-Drive's AccelerationLimiter):
- *       {@code 0.9 · min(μ·g, g·x/h)}, whichever comes first, the tread's grip or tipping over;
- *   <li>{@code EQUAL_PUSH}: {@code 0.9 · μ·g / (1 + μ·h/x)}. Swerve velocity control pushes all four
- *       wheels about equally, so the wheels that weight transfer unloads slip first.
+ *   <li>{@code EQUAL_PUSH} (the default, Joe's call after the bench re-baseline): {@code 0.9 · μ·g / (1 + μ·h/x)}.
+ *       Swerve velocity control pushes all four wheels about equally, so the wheels that weight transfer
+ *       unloads slip first;
+ *   <li>{@code TIP_OR_GRIP} (Precision-Drive's AccelerationLimiter): {@code 0.9 · min(μ·g, g·x/h)}, whichever
+ *       comes first, the tread's grip or tipping over. Planning above the equal-push limit leaves the loaded
+ *       wheels to make up for the light ones.
  * </ul>
  * x is the tip distance and h the centre of mass's height. The planner's grip circle and the follower's
  * output limiter both come from the rule chosen.
@@ -120,7 +122,7 @@ public record RobotConfig(
           Double.POSITIVE_INFINITY,
           DEFAULT_CENTER_OF_MASS_HEIGHT_METERS,
           Double.NaN,
-          TractionRule.TIP_OR_GRIP);
+          TractionRule.EQUAL_PUSH);
 
   public RobotConfig {
     if (!(massKg > 0.0) || !(momentOfInertiaKgM2 > 0.0) || !(moduleRadiusMeters > 0.0)
@@ -151,7 +153,7 @@ public record RobotConfig(
     this(massKg, momentOfInertiaKgM2, moduleRadiusMeters, wheelRadiusMeters, driveGearRatio, driveMotor,
         driveMotorCount, statorCurrentLimitAmps, frictionCoefficient, maxWheelMetersPerSecond,
         maxAngularRadPerSec, maxAngularRadPerSecSquared, DEFAULT_CENTER_OF_MASS_HEIGHT_METERS, Double.NaN,
-        TractionRule.TIP_OR_GRIP);
+        TractionRule.EQUAL_PUSH);
   }
 
   /** Without a spin acceleration cap (the record before it had one). */

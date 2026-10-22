@@ -84,7 +84,7 @@ export function followerConfig(robot: RobotConfig, options: Partial<Omit<Followe
     headingToleranceRadians: 1.0 * DEG,
     settledMetersPerSecond: 0.05,
     debounceSeconds: 0.1,
-    replanStartFromMeasuredVelocity: false,
+    replanStartFromMeasuredVelocity: true,
     rejoinAboveMeters: 0.4,
     ...options,
   };
@@ -321,9 +321,11 @@ export class PathFollower {
     const v = flipSpeeds(frame, measuredVelocity);
     const speed = javaHypot(v.vxMetersPerSecond, v.vyMetersPerSecond);
     const first = this.path.sample(0.0);
-    if (this.cfg.replanStartFromMeasuredVelocity && !this.pureRotation && speed > MIN_MOVING_SPEED
+    if (this.cfg.replanStartFromMeasuredVelocity && !this.pureRotation && this.path.spec.startMetersPerSecond === 0.0
+      && speed > MIN_MOVING_SPEED
       && v.vxMetersPerSecond * first.tangentX + v.vyMetersPerSecond * first.tangentY > 0.0) {
-      // already moving: the speeds are re-planned from the measured speed (only the profile is rebuilt)
+      // a path planned from rest, started while moving: the speeds are re-planned from the measured speed
+      // (only the profile is rebuilt; a path that starts moving already plans its start speed)
       this.track = this.path.withStartSpeed(speed, this.cfg.robot);
       this.active = this.track;
     }

@@ -140,7 +140,7 @@ class VelocityProfileTest {
   @Test
   void lessTractionIsSlower() {
     PathSpec spec = FixturePaths.hairpin();
-    // the default tips first (12.8 m/s²); with the centre of mass on the floor grip sets it (13.2 m/s²)
+    // the default: equal push, 6.5 m/s²; with the centre of mass on the floor grip sets it (13.2 m/s²)
     double low = Path.build(spec, ROBOT.withCenterOfMassHeightMeters(0)).totalTimeSeconds();
     double normal = Path.build(spec, ROBOT).totalTimeSeconds();
     double tall = Path.build(spec, ROBOT.withCenterOfMassHeightMeters(0.4)).totalTimeSeconds();

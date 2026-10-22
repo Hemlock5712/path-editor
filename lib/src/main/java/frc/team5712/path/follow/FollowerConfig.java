@@ -48,10 +48,11 @@ import frc.team5712.path.core.RobotConfig;
  * @param slipBrakeFriction while slip has lowered the grip, the limiter still lets braking use at
  *     least this μ: the brake law plans with the lowered μ (braking early), and the limiter does not
  *     forbid the robot from braking harder if it must (1.11: 0.85 scaled the same way)
- * @param replanStartFromMeasuredVelocity at start, when the robot is already moving (not backwards along the
- *     path), re-plan the path's speeds from its measured speed, as PathPlanner does, instead of from rest. Only
- *     the speed profile is rebuilt (the curve stays as drawn): the one bit of path work at go, tens of
- *     microseconds. Off by default until it's decided whether start() may do any
+ * @param replanStartFromMeasuredVelocity at start, when a path planned from rest is started with the robot
+ *     already moving (not backwards along the path), re-plan its speeds from the measured speed, as PathPlanner
+ *     does. Only the speed profile is rebuilt (the curve stays as drawn): the one bit of path work at go, a few
+ *     hundred microseconds at most. On by default (Joe's call); at rest, and on paths that plan their own start
+ *     speed (rolling hand-overs, on-the-fly paths), it does nothing
  * @param expectedSlipShare adaptive grip ignores slip that the tread's own weight transfer explains: slip in a
  *     spell that has asked for at least this share of the equal-push onset {@code μ·g / (1 + μ·h/x)}. Every
  *     wheel pushes about the same, so above that the light wheels slip on a good floor too; it says nothing
@@ -181,7 +182,7 @@ public record FollowerConfig(
     private double slipRecoveryPerSecond = 0.065;
     private double minSlipFriction = 0.39;
     private double slipBrakeFriction = 1.11;
-    private boolean replanStartFromMeasuredVelocity = false;
+    private boolean replanStartFromMeasuredVelocity = true;
     private double rejoinAboveMeters = 0.4;
     private double expectedSlipShare = 0.8;
     private double slideGapMetersPerSecondSquared = 3.5;
