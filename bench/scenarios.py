@@ -15,6 +15,8 @@ TRUE robot to the true end, applied to the MEASURED pose at that moment.
 - BLine: for a tag, its path finishes on the map pose and a DriveToPose command then drives to the new goal
   (the handoff the bench gives every method without a moving end). For a piece, a new two-point path from
   the robot to the piece built in code (BLine paths can be), with the rolling end's minimum velocity.
+- PathPlanner path2 (pre-release): no in-path way to move the end and no rolling end to a path, so it is
+  treated like Choreo below.
 - Choreo + ChoreoLib and the old FollowPath: trajectories and paths are fixed when made (Choreo solves
   offline), so a tag gets the DriveToPose handoff after the path and a piece gets nothing: they drive
   through where the map put it.
@@ -37,7 +39,8 @@ from followers import build
 from followers.base import Follower, Start
 
 BUMPER_HALF = 0.425  # m: the 0.85 m square robot with bumpers
-WHOLE_ROUTE = ("ChoreoLib", "ChoreoHybrid", "DriveToPoseChain")  # one plan for a whole chain of paths
+# one plan for a whole chain of paths (path2 makes one path of the legs: its handoffs inside a path roll)
+WHOLE_ROUTE = ("ChoreoLib", "ChoreoHybrid", "DriveToPoseChain", "PathPlanner2")
 KEEPS_GOING = 1.0  # m/s: at least this at the piece counts as driving through it
 
 
@@ -60,6 +63,13 @@ def _give_robot(f, r):
 
         f.cfg = RobotConfig(mass=r["mass"], moi=r["inertia"], current_limit=r["stator_limit"],
                             wheel_cof=f.cfg.wheel_cof)
+    elif name == "PathPlanner2":
+        from followers.pathplanner import RobotConfig
+        from followers.pathplanner2 import SetpointGenerator
+
+        f.cfg = RobotConfig(mass=r["mass"], moi=r["inertia"], current_limit=r["stator_limit"],
+                            wheel_cof=f.cfg.wheel_cof)
+        f.gen = SetpointGenerator(f.cfg, f.gen.steer_rate, f.gen.constraints)
     elif name == "OursV2":
         f.robot_overrides = {"massKg": r["mass"], "momentOfInertiaKgM2": r["inertia"],
                              "statorCurrentLimitAmps": r["stator_limit"]}

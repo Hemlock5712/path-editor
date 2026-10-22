@@ -199,6 +199,9 @@ def main():
     ap.add_argument("--both", action="store_true")
     ap.add_argument("--procs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--md-only", action="store_true")
+    ap.add_argument("--resume", action="store_true",
+                    help="carry on from out/results.partial.json (saved after each sweep and pose grid) if its "
+                         "seeds, courses and pose sources match")
     ap.add_argument("--export-editor", action="store_true",
                     help="write out/editor_bench.json (tables, geometry and traces) for the editor's Bench view")
     ap.add_argument("--trace-pose", default="truth",
@@ -252,23 +255,33 @@ def main():
                                     f"{TIME_PER_METRE_CT:g} s per metre of RMS cross-track"},
            "sweeps": {}, "tuned": {}, "runs": {}, "geometry": {}, "traces": {}}
     sweep_courses = [c for c in courses if c not in EXTRA_COURSES]  # tuned on the original nine
+    partial = os.path.join(OUT, "results.partial.json")
+    if a.resume and os.path.exists(partial):
+        prev = json.load(open(partial))
+        if all(prev["meta"][k] == out["meta"][k] for k in ("seeds", "courses", "poses", "quick")):
+            out.update({k: prev[k] for k in ("sweeps", "tuned", "runs", "pathfind") if k in prev})
+            print("resuming: sweeps", sorted(out["sweeps"]), "poses", sorted(out["runs"]), flush=True)
+
+    def checkpoint():
+        os.makedirs(OUT, exist_ok=True)
+        with open(partial, "w") as fh:
+            json.dump(out, fh)
+
     with mp.get_context("spawn").Pool(a.procs) as pool:
-        best, table = sweep(pool, "bline_readme", bline_grid(a.quick), sweep_courses)
-        out["tuned"]["bline_tuned"], out["sweeps"]["bline"] = best, table
-        print("BLine tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
-        best, table = sweep(pool, "bline_readme", bline_grid(a.quick, caps=True), sweep_courses)
-        out["tuned"]["bline_tuned_caps"], out["sweeps"]["bline_caps"] = best, table
-        print("BLine tuned with caps:", best, f"({time.time() - t0:.0f} s)", flush=True)
-        best, table = sweep(pool, "pathplanner", pp_grid(a.quick), sweep_courses)
-        out["tuned"]["pathplanner_tuned"], out["sweeps"]["pathplanner"] = best, table
-        print("PathPlanner tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
-        best, table = sweep(pool, "ours_v2", ours_grid(a.quick), sweep_courses)
-        out["tuned"]["ours_tuned"], out["sweeps"]["ours"] = best, table
-        print("Ours v2 tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
-        best, table = sweep(pool, "pp_path2", path2_grid(a.quick), courses)
-        out["tuned"]["pp_path2_tuned"], out["sweeps"]["pp_path2"] = best, table
-        print("PathPlanner path2 tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
+        for name, key, base, grid in (("bline", "bline_tuned", "bline_readme", bline_grid(a.quick)),
+                                      ("bline_caps", "bline_tuned_caps", "bline_readme", bline_grid(a.quick, caps=True)),
+                                      ("pathplanner", "pathplanner_tuned", "pathplanner", pp_grid(a.quick)),
+                                      ("ours", "ours_tuned", "ours_v2", ours_grid(a.quick)),
+                                      ("pp_path2", "pp_path2_tuned", "pp_path2", path2_grid(a.quick))):
+            if name in out["sweeps"]:
+                continue
+            best, table = sweep(pool, base, grid, sweep_courses)
+            out["tuned"][key], out["sweeps"][name] = best, table
+            print(f"{key}:", best, f"({time.time() - t0:.0f} s)", flush=True)
+            checkpoint()
         for pose in poses:
+            if pose in out["runs"]:
+                continue
             jobs, keys = [], []
             for c in courses:
                 for m in MAIN_METHODS:
@@ -282,9 +295,11 @@ def main():
                 by.setdefault(c, {}).setdefault(m, []).append(r)
             out["runs"][pose] = {c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()}
             print(pose, "grid done", f"({time.time() - t0:.0f} s)", flush=True)
-        if not a.quick:
+            checkpoint()
+        if not a.quick and "pathfind" not in out:
             out["pathfind"] = pathfind_grid(pool, seeds, poses)
             print("pathfinding done", f"({time.time() - t0:.0f} s)", flush=True)
+            checkpoint()
     # geometry each method authored, and one true path per method/course (seed 0, odometry)
     from scenarios import make_follower
     from sim import run_one
