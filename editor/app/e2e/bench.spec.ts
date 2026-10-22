@@ -45,3 +45,19 @@ test("course measures head the drive-through's row, sit under the wall course's,
   await opt.scrollIntoViewIfNeeded();
   await page.screenshot({ path: "test-results/bench-optimised.png" });
 });
+
+test("the head-to-head at matched limits leads the page", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("page-bench").click();
+  const h2h = page.getByTestId("bench-h2h");
+  await expect(h2h.getByTestId("bench-h2h-verdict")).toContainText("Ours (optimised) settles first on");
+  await expect(h2h.getByTestId("bench-h2h-scoreboard").locator("tbody tr")).toHaveCount(6);
+  await expect(h2h.getByTestId("bench-h2h-scoreboard").locator('tr[data-method="ours_opt"]')).toContainText("0 / 100");
+  await page.screenshot({ path: "test-results/bench-h2h.png", fullPage: false });
+  await h2h.getByRole("radio", { name: "Wheel odometry" }).click();
+  await expect(h2h.getByTestId("bench-h2h-verdict")).toContainText("A shove is invisible to wheel odometry");
+  await h2h.getByRole("radio", { name: "Disturbed" }).click();
+  await expect(h2h.getByTestId("bench-h2h-courses").locator("tbody tr")).toHaveCount(3);
+  await h2h.getByTestId("bench-h2h-all").click();
+  await expect(h2h.getByTestId("bench-h2h-scoreboard").locator("tbody tr")).toHaveCount(7);
+});

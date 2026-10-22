@@ -1,4 +1,5 @@
-// The Bench page (read-only), laid out like a model launch page: a verdict written from the data, one
+// The Bench page (read-only). First the head-to-head at matched limits (HeadToHead); then the earlier bench,
+// laid out like a model launch page: a verdict written from the data, one
 // benchmark table across every course and route (methods as columns, ours tinted, the best valid result
 // per row in bold), bar charts comparing the methods on one metric at a time, the optimised-paths table
 // from the PathPlanner comparison, and then the course detail (the field, the scoreboard, every metric).
@@ -37,6 +38,7 @@ import { bench, loadBench } from "../state/bench.ts";
 import { useStore } from "../state/store.ts";
 import { formatNumber, Segmented, Switch } from "./controls.tsx";
 import { CourseDetail } from "./bench/CourseDetail.tsx";
+import { HeadToHead } from "./bench/HeadToHead.tsx";
 
 const POSE_SHORT: Record<string, string> = { truth: "Perfect pose", odom: "Wheel odometry", slipodom: "Slip-aware" };
 
@@ -414,6 +416,17 @@ export function BenchView() {
       <div className="bench-doc">
         <header className="bench-hero">
           <h1>How the followers compare</h1>
+        </header>
+        <HeadToHead />
+        <section className="bench-section bench-earlier" aria-labelledby="bench-earlier-title">
+          <div className="bench-section-head">
+            <h2 id="bench-earlier-title">The earlier bench: each library's own limits</h2>
+          </div>
+          <p className="hint" data-testid="bench-earlier-note">
+            Kept for the rest of its detail (more methods, routes, slip-aware odometry, traces). Its limits are not matched: every method got
+            &quot;6 m/s²&quot;, which caps Choreo's and BLine's whole acceleration but only ours' and PathPlanner's speeding up and braking,
+            so ours cornered up to twice as hard. Use the section above for who is faster.
+          </p>
           {s.loadingSnapshot && <p className="stats">Loading the snapshot…</p>}
           {s.error && (
             <p className="check error" role="alert">
@@ -454,7 +467,7 @@ export function BenchView() {
               </div>
             </>
           )}
-        </header>
+        </section>
         {data && (
           <>
             <section className="bench-section" aria-labelledby="bench-table-title">

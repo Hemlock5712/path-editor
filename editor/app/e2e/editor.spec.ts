@@ -560,14 +560,14 @@ test("the bench view opens with the snapshot and shows an export, read-only", as
   await expect(page.getByTestId("bench-multiples").locator("figure")).toHaveCount(await head.locator("tbody tr:not(.measure-row)").count());
   await page.getByRole("radio", { name: "All targets" }).click();
   // the pose switch drives the table and the verdict: on odometry nothing settles inside 2 cm of the true goal
-  await page.getByRole("radio", { name: "Odometry" }).click();
+  await page.getByRole("radio", { name: "Odometry", exact: true }).click();
   await expect(page.getByTestId("bench-pose-explain")).toContainText("odometry");
   await expect(page.getByTestId("bench-verdict")).toContainText("No method settles");
   // (no time is bold; the courses' own measures, like the drive-through's miss, still have a best)
   await expect(head.locator('tbody tr:not(.measure-row):not([data-row="intake_drive_through"]) td.best')).toHaveCount(0);
-  await page.getByRole("radio", { name: "Perfect" }).click();
+  await page.getByRole("radio", { name: "Perfect", exact: true }).click();
   // read fairly: perfect pose, ours ticked first, a "what to look at" line, a ranked scoreboard
-  await expect(page.getByRole("radio", { name: "Perfect" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("radio", { name: "Perfect", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("show-ours_v2")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("bench-look")).toContainText("What to look at");
   const board = page.getByTestId("bench-scoreboard");

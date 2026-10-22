@@ -50,6 +50,9 @@ OUT = os.path.join(HERE, "out")
 CHOREO_DIR = os.path.join(HERE, "choreo", "matched")
 BASE = ["straight_3m", "s_curve", "hairpin", "slalom", "long_auto", "figure_eight", "wall_hug",
         "spin_while_driving", "fast_long", "heavy_robot"]
+# the S-curve with the plant disturbed (a shove, low grip, a grip drop): the S-curve's Choreo trajectory and optimised path
+DISTURB = ["hit_mid_path", "low_grip_s_curve", "grip_drop_s_curve"]
+POSES = ["truth", "odom"]
 RULES = {"ep": "equalPush", "tg": "tipOrGrip"}
 CHOREO_G = 9.8  # trajoptlib swerve_trajectory_generator.cpp: normal force = mass * 9.8 / wheels
 OURS_G, MARGIN = 9.81, 0.9  # RobotConfig.GRAVITY, TRACTION_MARGIN
@@ -82,6 +85,20 @@ def register():
             CHOREO_TRAJ[n] = f"matched/{folder}/{b}"
             if b in EXTRAS:
                 EXTRAS[n] = EXTRAS[b]
+        for b in DISTURB:
+            c = COURSES[b]
+            n = name(tag, b)
+            COURSES[n] = replace(c, name=n, limits=replace(c.limits, max_accel=a),
+                                 description=c.description + f"; matched limits, {rule} {a:.2f} m/s^2")
+            CHOREO_TRAJ[n] = f"matched/{tag}/s_curve"
+
+
+def plan_name(n):
+    """The course whose plan a matched course uses: the disturbed ones fly the S-curve's."""
+    for b in DISTURB:
+        if n.endswith("_" + b):
+            return n[: -len(b)] + "s_curve"
+    return n
 
 
 register()
@@ -268,7 +285,7 @@ class OursOptimised(OursV2):
     def adapt(course):
         from followers.ours_v2 import call_fresh, robot_json, server, OURS_MU
 
-        tree = _optimised()[course.name]["path"]
+        tree = _optimised()[plan_name(course.name)]["path"]
         call_fresh(op="load", path=tree, robot=robot_json(OURS_MU))
         g = server().call(op="geometry", step=0.02)
         return {"path": tree, "geometry": np.column_stack([g["x"], g["y"]])}
@@ -287,7 +304,30 @@ _register_methods()
 # ============================================================================================ run
 # method key in the results -> (registry key, whether it takes ours' traction rule)
 RUN_METHODS = {"choreo": ("choreo", False), "choreo_hybrid": ("choreo_hybrid", False), "ours": ("ours_v2", True),
-               "ours_on_choreo": ("ours_on_choreo", True), "ours_opt": ("ours_opt", True)}
+               "ours_on_choreo": ("ours_on_choreo", True), "ours_opt": ("ours_opt", True),
+               "pathplanner": ("pathplanner", "pp"), "pp_path2": ("pp_path2", "pp2"), "bline": ("bline_readme", "bline")}
+# The rivals keep the gains the main sweep tuned (run.py, out/results.json "tuned"), and plan to the shared limit:
+# PathPlanner and path2 get wheel COF = traction / 9.8 (their friction model's g) in place of the tuned COF, path2's
+# acceleration cap is the traction limit; BLine's acceleration cap is the course's (the traction limit), applied
+# to the whole command vector like Choreo's.
+TUNED = {"pp": {"kp": 10.0, "kp_rot": 10.0, "hold": True},
+         "pp2": {"kp": 2.0, "kp_ct": 2.0, "handoff": 0.75, "end_distance": 0.02, "end_degrees": 1.0},
+         "bline": {"kp": 2.0, "kp_ct": 6.0, "tol": 0.01, "radius": 0.6, "caps": True}}
+
+
+def run_options(m, rule):
+    """-> (registry key, options) for a results method under a traction rule."""
+    key, kind = RUN_METHODS[m]
+    a = traction(rule)
+    if kind is True:
+        return key, {"robot": {"tractionRule": rule}}
+    if kind == "pp":
+        return key, dict(TUNED["pp"], cof=a / CHOREO_G)
+    if kind == "pp2":
+        return key, dict(TUNED["pp2"], cof=a / CHOREO_G, accel_cap=a)
+    if kind == "bline":
+        return key, dict(TUNED["bline"])
+    return key, None
 RESULTS = os.path.join(OUT, "matched.json")
 
 
@@ -297,28 +337,91 @@ def _job(job):
     return job, run_one(job)
 
 
-def run(procs, seeds, methods):
-    res = json.load(open(RESULTS)) if os.path.exists(RESULTS) else {}
+def _load_results():
+    """out/matched.json: {pose: {course: {method: [run rows]}}} (an older file without poses is the truth runs)."""
+    if not os.path.exists(RESULTS):
+        return {}
+    res = json.load(open(RESULTS))
+    if res and not set(res) <= set(POSES):
+        res = {"truth": res}
+    return res
+
+
+def run(procs, seeds, methods, poses, courses):
+    res = _load_results()
     jobs, keys = [], []
-    for tag, rule in RULES.items():
-        for b in BASE:
-            n = name(tag, b)
-            for m in methods:
-                key, ruled = RUN_METHODS[m]
-                if len(res.get(n, {}).get(m, [])) == seeds:
-                    continue  # already run
-                for s in range(seeds):
-                    jobs.append((n, key, {"robot": {"tractionRule": rule}} if ruled else None, s, "truth"))
-                    keys.append(m)
+    for pose in poses:
+        for tag, rule in RULES.items():
+            for b in courses:
+                n = name(tag, b)
+                for m in methods:
+                    key, opts = run_options(m, rule)
+                    if len(res.get(pose, {}).get(n, {}).get(m, [])) == seeds:
+                        continue  # already run
+                    for sd in range(seeds):
+                        jobs.append((n, key, opts, sd, pose))
+                        keys.append(m)
+    print(len(jobs), "runs", flush=True)
     with mp.get_context("spawn").Pool(procs) as pool:
         rows = pool.map(_job, jobs, chunksize=2)
     fresh = {}
-    for m, ((n, _, _, s, _), r) in zip(keys, rows):
-        fresh.setdefault((n, m), []).append({k: v for k, v in r.items() if k != "trace"})
-    for (n, m), rs in fresh.items():
-        res.setdefault(n, {})[m] = rs
+    for m, ((n, _, _, _, pose), r) in zip(keys, rows):
+        fresh.setdefault((pose, n, m), []).append({k: v for k, v in r.items() if k != "trace"})
+    for (pose, n, m), rs in fresh.items():
+        res.setdefault(pose, {}).setdefault(n, {})[m] = rs
     json.dump(res, open(RESULTS, "w"), indent=1)
     return res
+
+
+# ============================================================================================ export
+EXPORT = os.path.join(os.path.dirname(HERE), "editor", "app", "public", "bench", "matched.json")
+EXPORT_METHODS = {"ours_opt": "Ours, optimised", "ours": "Ours, as drawn", "choreo": "Choreo + ChoreoLib",
+                  "pathplanner": "PathPlanner (tuned) + hold", "pp_path2": "PathPlanner path2 (tuned)",
+                  "bline": "BLine (tuned, corner caps)", "ours_on_choreo": "Ours following Choreo's plan"}
+STATS = ("t_5cm", "t_settle", "err_end_cm", "ct_own_rms_cm", "ct_own_max_cm", "wheel_slip_ms", "overshoot_cm")
+
+
+def _stats(rows):
+    out = {"n": len(rows)}
+    for k in STATS:
+        a = np.array([r[k] for r in rows], dtype=float)
+        g = a[~np.isnan(a)]
+        out[k] = round(float(g.mean()), 4) if len(g) else None
+        out[k + "_worst"] = round(float(g.max()), 4) if len(g) else None
+        out[k + "_nan"] = int(np.isnan(a).sum())
+    return out
+
+
+def export():
+    """The Bench page's head-to-head snapshot: the plans and the run statistics per rule, pose, course and method."""
+    P = json.load(open(os.path.join(OUT, "matched_plans.json")))
+    R = _load_results()
+    out = {"schema": 1, "source": "bench/matched.py (see bench/MATCHED.md)", "seeds": None,
+           "methods": [{"key": k, "label": v} for k, v in EXPORT_METHODS.items()],
+           "courses": {"plan": BASE, "disturbed": DISTURB},
+           "courseLabels": {b: COURSES[b].description for b in BASE + DISTURB},
+           "settleRule": "within 2 cm and 1 deg of the end pose, true speed under 5 cm/s, held 0.25 s",
+           "rules": {}}
+    for tag, rule in RULES.items():
+        r_out = {"traction": round(traction(rule), 3), "plans": {}, "runs": {}}
+        for b in BASE:
+            p = P[name(tag, b)]
+            r_out["plans"][b] = {"choreo": round(p["choreo"]["T"], 4), "ours": round(p["ours"]["T"], 4),
+                                 "ours_opt": round(p["ours_opt"]["T"], 4),
+                                 "ours_on_choreo": round(p["ours_on_choreo"]["T"], 4)}
+        for pose in POSES:
+            r_out["runs"][pose] = {}
+            for b in BASE + DISTURB:
+                by = R.get(pose, {}).get(name(tag, b), {})
+                r_out["runs"][pose][b] = {m: _stats(by[m]) for m in EXPORT_METHODS if m in by}
+                if out["seeds"] is None and by:
+                    out["seeds"] = len(next(iter(by.values())))
+        out["rules"][rule] = r_out
+    os.makedirs(os.path.dirname(EXPORT), exist_ok=True)
+    with open(EXPORT, "w") as fh:
+        json.dump(out, fh, separators=(",", ":"))
+        fh.write("\n")
+    print("wrote", EXPORT, f"({os.path.getsize(EXPORT) // 1024} kB)")
 
 
 # ============================================================================================ md
@@ -336,7 +439,7 @@ RUN_COLS = [("choreo", "Choreo + ChoreoLib"), ("choreo_hybrid", "hybrid prototyp
 
 def md():
     P = json.load(open(os.path.join(OUT, "matched_plans.json")))
-    R = json.load(open(RESULTS)) if os.path.exists(RESULTS) else {}
+    R = _load_results().get("truth", {})
     lines = ["# Choreo and ours at matched limits", "",
              "Generated by `bench/matched.py` (see its docstring for how the limits are matched).", ""]
     for tag, rule in RULES.items():
@@ -375,11 +478,13 @@ def md():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["make", "optimise", "plans", "run", "md"])
+    ap.add_argument("cmd", choices=["make", "optimise", "plans", "run", "md", "export"])
     ap.add_argument("--cli")
     ap.add_argument("--procs", type=int, default=4)
     ap.add_argument("--seeds", type=int, default=10)
     ap.add_argument("--methods", default=",".join(RUN_METHODS))
+    ap.add_argument("--poses", default="truth")
+    ap.add_argument("--courses", default="plan", help="plan (the planning courses), disturbed, or both")
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
     if a.cmd == "make":
@@ -390,8 +495,11 @@ def main():
         plans()
         md()
     elif a.cmd == "run":
-        run(a.procs, a.seeds, a.methods.split(","))
+        courses = {"plan": BASE, "disturbed": DISTURB, "both": BASE + DISTURB}[a.courses]
+        run(a.procs, a.seeds, a.methods.split(","), a.poses.split(","), courses)
         md()
+    elif a.cmd == "export":
+        export()
     else:
         md()
 
