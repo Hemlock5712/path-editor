@@ -1,5 +1,5 @@
 // Settings: the things that rarely change, out of the editor's way. Robot (robot.json), defaults for new
-// paths, the field and its obstacles (field.json), the project (red flip, the PathName enum), the Sim
+// paths, the field and its obstacles (field.json), the project (red flip, the generated names), the Sim
 // preview's drivetrain, and the editor's own preferences.
 
 import { Bot, Cpu, FolderCog, Hexagon, Map as MapIcon, Route, SlidersHorizontal, Trash2 } from "lucide-react";
@@ -271,17 +271,20 @@ function ProjectTab() {
         <p className="hint">How the robot flips blue paths for red (the FieldFrame you pass the follow command). The red view uses the same flip.</p>
       </div>
       <div className="settings-group">
-        <h4>PathName enum</h4>
+        <h4>Generated names</h4>
         <div className="grid3">
           <TextField
             label="Java package"
             value={settings.javaPackage || "-"}
             validate={(v) => (v === "-" || isValidPackage(v) ? null : "A Java package, like frc.robot")}
-            onCommit={(v) => editProject("Enum package", (p) => ({ ...p, settings: { ...p.settings, javaPackage: v === "-" ? "" : v } }))}
+            onCommit={(v) => editProject("Names package", (p) => ({ ...p, settings: { ...p.settings, javaPackage: v === "-" ? "" : v } }))}
           />
         </div>
         <p className="hint">
-          Saving writes <code>PathName.java</code> there. Enter <code>-</code> to stop generating it.
+          Saving writes <code>PathEditorNames.java</code> there: the path files, the event names and the named points as constants
+          (<code>Paths.TO_REEF</code>, <code>Events.SHOOT</code>, <code>Points.SCORE_L</code>), which every name-taking method in lib
+          accepts, so a typo is a compile error. <code>PathLibrary.loadAll()</code> checks them against deploy at boot. It replaces the old{" "}
+          <code>PathName.java</code>. Enter <code>-</code> to stop generating it.
         </p>
       </div>
     </section>

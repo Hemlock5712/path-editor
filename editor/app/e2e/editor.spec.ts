@@ -210,7 +210,9 @@ test("add waypoints and an event, save, reload, and get the same file back", asy
   expect(saved).toContain('"headingMode": "hold"');
   expect(saved).toContain('{ "name": "intakeDown", "atWaypoint": 0.5 }');
   expect(saved.match(/"x":/g)).toHaveLength(4);
-  expect(await folderFile(page, "src/main/java/frc/robot/PathName.java")).toContain('PATH1("Path1")');
+  const names = await folderFile(page, "src/main/java/frc/robot/PathEditorNames.java");
+  expect(names).toContain(`PATH1("Path1")`);
+  expect(names).toContain(`INTAKE_DOWN("intakeDown")`);
   expect(await folderFile(page, "src/main/deploy/paths/.pathproject.json")).toContain('"name": "Path1"');
 
   // reload, open the folder again: the path and its event are back

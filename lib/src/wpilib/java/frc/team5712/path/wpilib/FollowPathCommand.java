@@ -52,6 +52,18 @@ public final class FollowPathCommand implements Command {
   private Supplier<FieldFrame> frameSource;
   private PathLibrary library;
 
+  /** {@link #FollowPathCommand(String, Mechanism, PathFollower, Supplier, Supplier, Consumer, FieldFrame)}, named by the path's generated name ({@code Paths.X}). */
+  public FollowPathCommand(
+      PathId path,
+      Mechanism drive,
+      PathFollower follower,
+      Supplier<Pose2d> pose,
+      Supplier<ChassisVelocities> fieldVelocity,
+      Consumer<ChassisVelocities> fieldOutput,
+      FieldFrame redFrame) {
+    this(path.fileName(), drive, follower, pose, fieldVelocity, fieldOutput, redFrame);
+  }
+
   /**
    * @param drive the drivetrain mechanism this command requires
    * @param pose the measured field pose
@@ -76,6 +88,11 @@ public final class FollowPathCommand implements Command {
     this.redFrame = redFrame;
     this.telemetry = new PathTelemetry(name);
     follower.onEvent(fired::add);
+  }
+
+  /** {@link #onEvent(String, Command)} by the event's generated name ({@code Events.X}). */
+  public FollowPathCommand onEvent(EventId event, Command command) {
+    return onEvent(event.eventName(), command);
   }
 
   /** Forks {@code command} when the path event {@code eventName} fires. */

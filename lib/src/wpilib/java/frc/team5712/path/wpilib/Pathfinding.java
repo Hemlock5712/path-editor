@@ -132,6 +132,11 @@ public final class Pathfinding {
     return v3(new PathfindCommand(this, drive, "Pathfind " + pointName, point(pointName, heading), null, null));
   }
 
+  /** {@link #toPoint(Mechanism, String, Rotation2d)} by the point's generated name ({@code Points.X}). */
+  public PathfindCommand toPoint(Mechanism drive, PointId point, Rotation2d heading) {
+    return toPoint(drive, point.pointName(), heading);
+  }
+
   /** To a pose read when it starts and at each re-plan, in the real field frame (not flipped). */
   public PathfindCommand toTarget(Mechanism drive, Supplier<Pose2d> realGoal) {
     return v3(new PathfindCommand(this, drive, "Pathfind", real(realGoal), null, null));
@@ -142,6 +147,23 @@ public final class Pathfinding {
    * (a rolling hand-over when the path starts moving), then the path itself. The path's follower is built
    * here, in robot init; its events fire through {@code library.bindEvent}.
    */
+  public PathfindCommand thenFollow(Mechanism drive, PathId path) {
+    return thenFollow(drive, path.fileName());
+  }
+
+  /**
+   * A library path on its own (no pathfinding first), its events bound through {@code library.bindEvent}:
+   * {@code otf.follow(drive, Paths.TO_REEF)}. The follower is built here, in robot init.
+   */
+  public FollowPathCommand follow(Mechanism drive, PathId path) {
+    return follow(drive, path.fileName());
+  }
+
+  public FollowPathCommand follow(Mechanism drive, String pathName) {
+    return new FollowPathCommand(pathName, drive, new PathFollower(library.get(pathName), config), pose, fieldVelocity,
+        fieldOutput, redFrame).withEvents(library);
+  }
+
   public PathfindCommand thenFollow(Mechanism drive, String pathName) {
     Path path = library.get(pathName);
     FollowPathCommand follow = new FollowPathCommand(pathName, drive, new PathFollower(path, config), pose,
@@ -159,11 +181,29 @@ public final class Pathfinding {
     return v2(new PathfindCommandV2(this, drive, "Pathfind " + pointName, point(pointName, heading), null));
   }
 
+  public PathfindCommandV2 toPointV2(Subsystem drive, PointId point, Rotation2d heading) {
+    return toPointV2(drive, point.pointName(), heading);
+  }
+
   public PathfindCommandV2 toTargetV2(Subsystem drive, Supplier<Pose2d> realGoal) {
     return v2(new PathfindCommandV2(this, drive, "Pathfind", real(realGoal), null));
   }
 
   /** {@link #thenFollow} for Commands v2: the pathfinding command, then the path's, handing over the speed. */
+  public PathfindThenFollowV2 thenFollowV2(Subsystem drive, PathId path) {
+    return thenFollowV2(drive, path.fileName());
+  }
+
+  /** {@link #follow} for Commands v2. */
+  public FollowPathCommandV2 followV2(Subsystem drive, PathId path) {
+    return followV2(drive, path.fileName());
+  }
+
+  public FollowPathCommandV2 followV2(Subsystem drive, String pathName) {
+    return new FollowPathCommandV2(pathName, drive, new PathFollower(library.get(pathName), config), pose, fieldVelocity,
+        fieldOutput, redFrame).withEvents(library);
+  }
+
   public PathfindThenFollowV2 thenFollowV2(Subsystem drive, String pathName) {
     Path path = library.get(pathName);
     PathfindCommandV2 first = new PathfindCommandV2(this, drive, "Pathfind to " + pathName, f -> start(path, f), path);

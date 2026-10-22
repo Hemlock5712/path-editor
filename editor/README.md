@@ -54,7 +54,7 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 | `src/main/deploy/paths/field.json` | field size and obstacle polygons | `FieldMap.read` |
 | `src/main/deploy/paths/robot.json` | the robot (`RobotConfig`'s keys) plus `bumperLengthMeters` / `bumperWidthMeters` | `RobotFile`, `PlannerConfig.fromRobotFile` |
 | `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points (with their headings and twins) and which waypoints follow them, locked waypoints, linked copies, the red-frame and enum settings, the view | the editor only |
-| `src/main/java/<package>/PathName.java` | an enum of every path file (package set in Settings > Project; `frc.robot` by default) | robot code |
+| `src/main/java/<package>/PathEditorNames.java` | the project's names as constants: `Paths` (every path file), `Events` (every event name the paths use) and `Points` (the named points), implementing lib's `PathId`, `EventId` and `PointId`; package set in Settings > Project (`frc.robot` by default). It replaces the old `PathName.java`, which saving deletes | robot code (checked against deploy by `PathLibrary.loadAll()` at boot) |
 
 - **Only changed files are written.** `field.json` and `robot.json` are only created once you edit them.
 - **Unknown keys are kept.** That applies to the keys in `field.json` and `robot.json` that the editor
@@ -84,7 +84,7 @@ after PathPlanner's.
     that item, with Back (Esc) and, for waypoints, previous/next.
   - The rail and the inspector resize by dragging their edges, and the sizes are remembered.
 - **Settings page.** Robot (robot.json), Path defaults (what a new path starts with), Field (size and
-  obstacles), Project (the robot project folder, red flip, PathName enum), Sim preview drivetrain (latency,
+  obstacles), Project (the robot project folder, red flip, the generated names' package), Sim preview drivetrain (latency,
   lag, grip), and Editor (snapping, footprints, the quick start).
 - **Telemetry page.** The NT4 connection and live data. The connection stays up on the other pages, and a
   switch shows the live robot on the editor's field.
