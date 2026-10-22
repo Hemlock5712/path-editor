@@ -35,8 +35,10 @@ class Chain(Follower):
         if self.switch:
             self.k += 1
             self.switch = False
-            self.f.reset(self.legs[self.k], Start(t, pose, vel))
+            # the next command starts from the last one's output (on a rolling end, its endCommand)
+            self.f.reset(self.legs[self.k], Start(t, pose, vel, handed=self.last))
         cmd = self.f.step(t, pose, vel)
+        self.last = cmd
         if self.f.done():
             if self.k == len(self.legs) - 1:
                 self.finished = True

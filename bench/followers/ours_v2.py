@@ -170,8 +170,9 @@ class OursV2(Follower):
                        options=self.options, keepSensing=start.t > 0)
         self.srv = server()
         self.build_ms = r["buildMs"]
+        extra = {} if start.handed is None else {"handed": [float(v) for v in start.handed]}
         self.srv.call(op="reset", t=start.t, pose=[float(v) for v in start.pose],
-                      vel=[float(v) for v in start.vel])
+                      vel=[float(v) for v in start.vel], **extra)
         self.finished = False
 
     def step(self, t, pose, vel):
