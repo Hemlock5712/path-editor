@@ -11,7 +11,7 @@ The neutral course becomes our path file:
   at the same waypoint-relative position; between targets the heading follows the minimum-jerk blend;
 - the shared limits: 4 m/s and 6 m/s^2 for the path, 540 deg/s and 720 deg/s^2 for the follower;
 - the robot file is the bench plant's numbers (mass, inertia, module radius, gearing, Kraken curve, 120 A),
-  with the planning grip mu as an option (as shipped: 0.7, the library default).
+  with the grip mu as an option (OURS_MU: the tread's 1.5).
 
 reset() sends `load` (the Java side builds the path: the robot-init work, timed here as path prep) and
 then `reset` (the start, which does no path work).
@@ -34,6 +34,10 @@ MAIN = "frc.team5712.path.tools.BenchServer"
 LOG_DIR = os.path.join(ROOT, "bench", "out")  # BenchServer stderr, one file per worker (gitignored)
 
 _server = None
+
+# The robot file's frictionCoefficient: the tread's mu. The library plans and limits at 0.9 x min(mu g, the tip
+# limit) (core change, 2026-10); before that change it planned at this mu directly (shipped 0.7).
+OURS_MU = 1.5
 
 
 class _Server:
@@ -135,12 +139,12 @@ def to_ours(course):
 
 
 class OursV2(Follower):
-    """Options: `mu` (planning grip, default 0.7), plus any FollowerConfig field by its Java name
+    """Options: `mu` (the robot file's grip, default OURS_MU), plus any FollowerConfig field by its Java name
     (crossTrackKp, headingKp, latencySeconds, terminalRadiusMeters, limiterFrictionCoefficient, ...)."""
 
     robot_overrides = {}  # robot file fields that differ from the bench plant (set for the heavy_robot course)
 
-    def __init__(self, mu=0.7, limits: Limits = Limits(), **follower_options):
+    def __init__(self, mu=OURS_MU, limits: Limits = Limits(), **follower_options):
         self.mu = mu
         self.lim = limits
         self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
@@ -152,7 +156,7 @@ class OursV2(Follower):
     @staticmethod
     def adapt(course):
         path = to_ours(course)
-        call_fresh(op="load", path=path, robot=robot_json(0.7))
+        call_fresh(op="load", path=path, robot=robot_json(OURS_MU))
         g = server().call(op="geometry", step=0.02)
         return {"path": path, "geometry": np.column_stack([g["x"], g["y"]])}
 

@@ -13,9 +13,14 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 from alignsim.geom import rot, wrap  # noqa: E402,F401
+from dataclasses import replace  # noqa: E402
+
 from alignsim.params import LoopParams, RobotParams  # noqa: E402
 
-RP = RobotParams()
+# The robot's tread: SDS MK5 Spike Grip, mu 1.5 static (Joe's grip decision, 2026-10). Kinetic keeps the old
+# plant's ratio (1.15 / 1.0 -> 1.5 / 1.3). alignsim's own defaults stay as they were for its earlier studies.
+MU_STATIC, MU_KINETIC = 1.5, 1.3
+RP = replace(RobotParams(), mu_static=MU_STATIC, mu_kinetic=MU_KINETIC)
 LP = LoopParams()
 BASE_R = math.hypot(*RP.module_positions[0])  # m, robot centre to a wheel
 

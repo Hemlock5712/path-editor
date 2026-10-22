@@ -15,7 +15,7 @@ config matches the alignsim plant (bench/alignsim/params.py RobotParams):
 | radius | 0.0508 m | wheel_radius (2 in) |
 | vmax | 607.37 rad/s (motor) | Kraken X60 FOC free speed, motor_kv 50.6 rad/s/V x 12 V = 5800 rpm |
 | tmax | 2.328 N m (motor) | motor_kt 0.0194 N m/A x stator_limit 120 A |
-| cof | 1.15 | mu_static (same value PathPlanner gets) |
+| cof | 1.5 | mu_static (same value PathPlanner gets; SDS MK5 Spike Grip) |
 | bumper front / side / back | 0.425 m | the 0.85 m x 0.85 m robot with bumpers |
 
 Constraints on every trajectory: StopPoint at the first and last waypoint, MaxVelocity 4.0 m/s,
@@ -37,6 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 from courses import CHOREO_TRAJ as TRAJ_FOR_COURSE  # noqa: E402
+from common import RP  # noqa: E402
 from courses import COURSES, NeutralPath  # noqa: E402
 
 PROJECT = "bench"
@@ -57,7 +58,7 @@ def project():
             "frontLeft": {"x": e(0.29, "m"), "y": e(0.29, "m")},
             "backLeft": {"x": e(-0.29, "m"), "y": e(0.29, "m")},
             "mass": e(60.0, "kg"), "inertia": e(6.0, "kg m ^ 2"), "gearing": e(6.75), "radius": e(0.0508, "m"),
-            "vmax": e(MOTOR_FREE, "rad / s"), "tmax": e(MOTOR_TMAX, "N * m"), "cof": e(1.15),
+            "vmax": e(MOTOR_FREE, "rad / s"), "tmax": e(MOTOR_TMAX, "N * m"), "cof": e(RP.mu_static),
             "bumper": {"front": e(0.425, "m"), "side": e(0.425, "m"), "back": e(0.425, "m")},
             "differentialTrackWidth": e(0.58, "m"),
         },

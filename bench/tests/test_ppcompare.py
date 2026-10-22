@@ -10,7 +10,7 @@ import ppcompare
 from courses import COURSES, NeutralPath, to_bezier
 from followers.pathplanner import PathPlannerPath, RobotConfig, generate_trajectory
 from followers.pathplanner2 import GUI_STEER_RATE, Path2Follower, SetpointGenerator, plan_time, to_path2
-from common import Limits
+from common import RP, Limits
 from pp_objective import Optimiser, PathFile, mulberry32
 
 
@@ -24,7 +24,7 @@ def test_setpoint_generator_keeps_to_the_cap_and_the_grip():
             sp = gen.generate(sp, (4.0, 0.0, 0.0))
             step = (sp.speeds[0] - prev) / 0.02
             prev = sp.speeds[0]
-            assert step <= (cap or 1.15 * 9.8) + 1e-6
+            assert step <= (cap or RP.mu_static * 9.8) + 1e-6
         assert sp.speeds[0] == pytest.approx(4.0, abs=1e-6)
 
 

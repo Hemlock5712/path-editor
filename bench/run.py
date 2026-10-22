@@ -71,7 +71,7 @@ def pp_grid(quick):
     if quick:
         return [{"kp": kp, "kp_rot": 5.0, "hold": True} for kp in (5.0, 10.0)]
     return [{"kp": kp, "kp_rot": kr, "hold": True, "cof": cof} for kp in (5.0, 7.0, 10.0, 15.0, 20.0)
-            for kr in (5.0, 10.0) for cof in (0.4, 0.5, 0.6, 0.7, 0.9, 1.15)]
+            for kr in (5.0, 10.0) for cof in (0.4, 0.5, 0.6, 0.7, 0.9, 1.15, 1.5)]
 
 
 def ours_grid(quick):
