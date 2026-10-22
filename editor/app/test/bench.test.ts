@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { aggregate, bestValidByMetric, cell, COLUMNS, parseBench, rows, rowWinner, scoreboard, tableFor, validity, verdict, type BenchData } from "../src/bench/benchData.ts";
+import { aggregate, bestOf, bestValidByMetric, cell, COLUMNS, courseMetricStat, courseMetricsFor, parseBench, rowHeadline, rows, rowWinner, scoreboard, tableFor, validity, verdict, type BenchData } from "../src/bench/benchData.ts";
 
 const stat = (mean: number | null, worst = mean, nan = 0) => ({ mean, worst, nan });
 
@@ -128,5 +128,30 @@ describe("new courses", () => {
     expect(rows(data).map((r) => r.key)).toContain(extra);
     expect(verdict(data, "truth", cols)[0]).toMatch(new RegExp(`of ${rows(data).length} targets`));
     expect(rowWinner(data, "truth", cols, rows(data).find((r) => r.key === extra)!, "t_settle")).toBe("ours");
+  });
+});
+
+describe("the courses' own measures", () => {
+  const data = parseBench(readFileSync(join(import.meta.dirname, "..", "public", "bench", "results-lite.json"), "utf8"));
+  const cols = COLUMNS.filter((c) => !c.more);
+  const row = (key: string) => rows(data).find((r) => r.key === key)!;
+
+  it("head a course where nothing settles by design (the drive-through's miss), and only there", () => {
+    expect(rowHeadline(data, "truth", cols, row("intake_drive_through"))?.key).toBe("miss_cm");
+    expect(rowHeadline(data, "truth", cols, row("wall_hug"))).toBeNull();
+    expect(rowHeadline(data, "truth", cols, row("straight_3m"))).toBeNull();
+    expect(courseMetricsFor(data, "wall_hug").map((m) => [m.key, m.higherIsBetter])).toEqual([["wall_clear_cm", true]]);
+    expect(courseMetricStat(data, "truth", "intake_drive_through", "ours_v2", "miss_cm")?.mean).toBeCloseTo(0.347, 3);
+  });
+
+  it("pick the best the right way round", () => {
+    const xs = [
+      { id: "a", value: -79.5 },
+      { id: "b", value: 11.6 },
+      { id: "c", value: Number.NaN },
+    ];
+    expect(bestOf(xs, true)).toBe("b");
+    expect(bestOf(xs, false)).toBe("a");
+    expect(bestOf([{ id: "a", value: Number.NaN }], true)).toBeNull();
   });
 });

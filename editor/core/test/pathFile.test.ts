@@ -4,7 +4,13 @@ import { describe, expect, it } from "vitest";
 import { exact, fixed5, writeJson } from "../src/json.ts";
 import { eventMeters, Path } from "../src/path.ts";
 import { pathToJson, readPath, robotFromJson, robotToJson, writePath } from "../src/pathFile.ts";
-import { DEFAULT_ROBOT } from "../src/robot.ts";
+import {
+  DEFAULT_ROBOT,
+  equalPushMetersPerSecondSquared,
+  tipOrGripMetersPerSecondSquared,
+  tractionLimit,
+  tractionMetersPerSecondSquared,
+} from "../src/robot.ts";
 import { eventAtMeters, eventAtWaypoint, makePathSpec, makeWaypoint } from "../src/spec.ts";
 import { allSamples, COUNT, SEED } from "./pathFileSamples.ts";
 
@@ -108,6 +114,25 @@ describe("path files", () => {
     expect(robotFromJson(JSON.parse(writeJson(robotToJson(r), exact)))).toEqual(r);
     expect(robotFromJson({})).toEqual(DEFAULT_ROBOT);
     expect(robotFromJson({ massKg: 50, motor: { stallCurrentAmps: 400 } }).driveMotor.stallTorqueNewtonMeters).toBe(9.362);
+    const tall = { ...DEFAULT_ROBOT, centerOfMassHeightMeters: 0.3, tipDistanceMeters: 0.254, tractionRule: "equalPush" as const };
+    expect(robotFromJson(JSON.parse(writeJson(robotToJson(tall), exact)))).toEqual(tall);
+    expect("tipDistanceMeters" in robotToJson(DEFAULT_ROBOT)).toBe(false); // a square base writes none
+    expect(() => robotFromJson({ tractionRule: "halfway" })).toThrow(RangeError);
+  });
+
+  it("works out both traction rules the way RobotConfig.java does", () => {
+    // the default: tip 0.29 m, centre of mass 0.2 m: tipping before grip
+    expect(tractionMetersPerSecondSquared(DEFAULT_ROBOT)).toBe(0.9 * Math.min(1.5 * 9.81, (9.81 * 0.29) / 0.2));
+    expect(tractionLimit(DEFAULT_ROBOT)).toBe("tipping");
+    // Joe's 0.254 m modules: 11.2 m/s² by tip-or-grip, 6.1 m/s² by equal push
+    const joe = { ...DEFAULT_ROBOT, tipDistanceMeters: 0.254 };
+    expect(tipOrGripMetersPerSecondSquared(joe)).toBeCloseTo(11.21, 2);
+    expect(equalPushMetersPerSecondSquared(joe)).toBeCloseTo(6.07, 2);
+    const equal = { ...joe, tractionRule: "equalPush" as const };
+    expect(tractionMetersPerSecondSquared(equal)).toBe(equalPushMetersPerSecondSquared(joe));
+    expect(tractionLimit(equal)).toBe("equalPush");
+    expect(tractionLimit({ ...equal, centerOfMassHeightMeters: 0 })).toBe("grip");
+    expect(tractionMetersPerSecondSquared({ ...equal, centerOfMassHeightMeters: 0 })).toBe(0.9 * 1.5 * 9.81);
   });
 });
 

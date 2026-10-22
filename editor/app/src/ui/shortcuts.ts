@@ -23,7 +23,7 @@ export const SHORTCUTS: [string, string][] = [
   ["Delete", "Delete the selected item"],
   ["Arrows (Shift)", "Nudge the selected waypoint or point 1 cm (5 cm)"],
   ["Q / E", "Turn the selected waypoint, heading or named point 5° left / right"],
-  ["Tab / Shift+Tab", "Select the next / previous waypoint"],
+  ["Tab / Shift+Tab", "On the field: the next / previous waypoint (past either end, on to the next control)"],
   ["L", "Measure lengths: drag between two points (they snap to waypoints and named points)"],
   ["Ctrl+C / Ctrl+V", "Copy the selected waypoint (paste puts it after the selected one), or with nothing selected the path (paste makes a new path)"],
   ["Space", "Play or pause"],
@@ -153,9 +153,10 @@ export function onKeyDown(e: KeyboardEvent): void {
       ui.set({ helpOpen: true });
       return;
     case "Tab":
-      if (flow.get().kind) return;
-      e.preventDefault();
-      cycleWaypoint(e.shiftKey ? -1 : 1);
+      // on the field only: everywhere else Tab moves the focus, as it should
+      if (flow.get().kind || !(e.target instanceof HTMLCanvasElement)) return;
+      // through the waypoints; past either end, on to the next control (no keyboard trap)
+      if (cycleWaypoint(e.shiftKey ? -1 : 1)) e.preventDefault();
       return;
   }
   switch (key) {

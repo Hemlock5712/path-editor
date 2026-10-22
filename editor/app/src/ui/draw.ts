@@ -113,8 +113,14 @@ export function atS(st: Stations, column: Float64Array, s: number): number {
 /** Heading interpolated the short way round. */
 export function headingAtS(st: Stations, s: number): number {
   const n = st.s.length;
+  // (binary search: this runs for every robot on every frame)
   let lo = 0;
-  while (lo < n - 2 && st.s[lo + 1]! <= s) lo++;
+  let top = Math.max(0, n - 2);
+  while (lo < top) {
+    const mid = (lo + top + 1) >> 1;
+    if (st.s[mid]! <= s) lo = mid;
+    else top = mid - 1;
+  }
   const hi = Math.min(n - 1, lo + 1);
   const a = st.heading[lo]!;
   const b = st.heading[hi]!;
@@ -166,6 +172,24 @@ export function drawField(ctx: CanvasRenderingContext2D, m: DrawModel): void {
 /** What the field backdrop needs: the view, the image, and the field's size. */
 export type FieldBackdrop = Pick<DrawModel, "view" | "image"> & { readonly project: Pick<Project, "field"> };
 
+let fieldCache: { image: HTMLImageElement; w: number; h: number; canvas: HTMLCanvasElement } | null = null;
+
+/** The field image turned and scaled to w × h px, made once per size. */
+function scaledField(image: HTMLImageElement, w: number, h: number): HTMLCanvasElement | null {
+  if (fieldCache && fieldCache.image === image && fieldCache.w === w && fieldCache.h === h) return fieldCache.canvas;
+  if (w < 1 || h < 1 || typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const c = canvas.getContext("2d");
+  if (!c) return null;
+  c.translate(w / 2, h / 2);
+  c.rotate(Math.PI);
+  c.drawImage(image, IMAGE_FIELD.x, IMAGE_FIELD.y, IMAGE_FIELD.w, IMAGE_FIELD.h, -w / 2, -h / 2, w, h);
+  fieldCache = { image, w, h, canvas };
+  return canvas;
+}
+
 export function drawFieldImage(ctx: CanvasRenderingContext2D, m: FieldBackdrop): void {
   const { view } = m;
   const L = m.project.field.lengthMeters;
@@ -175,13 +199,12 @@ export function drawFieldImage(ctx: CanvasRenderingContext2D, m: FieldBackdrop):
   const w = L * view.scale;
   const h = W * view.scale;
   if (m.image) {
-    // The image has red on the left; turned half a turn, blue's wall is at -x as in WPILib
-    ctx.save();
-    ctx.translate(x0 + w / 2, y0 + h / 2);
-    ctx.rotate(Math.PI);
+    // The image has red on the left; turned half a turn, blue's wall is at -x as in WPILib. Scaling the big
+    // image is the costliest thing on a frame, so it's done once per size and the copy is drawn after.
+    const backdrop = scaledField(m.image, Math.round(w), Math.round(h));
     ctx.globalAlpha = 0.85;
-    ctx.drawImage(m.image, IMAGE_FIELD.x, IMAGE_FIELD.y, IMAGE_FIELD.w, IMAGE_FIELD.h, -w / 2, -h / 2, w, h);
-    ctx.restore();
+    if (backdrop) ctx.drawImage(backdrop, x0, y0, w, h);
+    ctx.globalAlpha = 1;
   } else {
     ctx.fillStyle = "#1f2937";
     ctx.fillRect(x0, y0, w, h);
@@ -354,21 +377,39 @@ function drawBlocked(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   ctx.fillText("add a waypoint here?", sx + 13, sy + 4);
 }
 
+/** The speed colours, precomputed: drawing a long path picks from these instead of building one per segment. */
+const SPEED_STEPS = 48;
+const SPEED_COLOURS = Array.from({ length: SPEED_STEPS + 1 }, (_, k) => speedColour(k / SPEED_STEPS));
+
 function drawPath(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const g = m.geometry;
   if (!g) return;
-  const pts = polyline(m.view, g, 0, g.lengthMeters, 0.02);
+  // about 2 px a segment (but never finer than 2 cm), and one stroke per run of the same colour, so a long
+  // path draws in a few strokes rather than thousands
+  const pts = polyline(m.view, g, 0, g.lengthMeters, Math.max(0.02, 2 / m.view.scale));
   const a = m.analysis;
-  const vmax = a ? Math.max(0.1, ...a.stations.v) : 1;
+  let vmax = 0.1;
+  if (a) for (const v of a.stations.v) if (v > vmax) vmax = v;
   ctx.lineWidth = 4;
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  let colour = -1;
   for (let i = 1; i < pts.length; i++) {
     const [x0, y0, s0] = pts[i - 1]!;
     const [x1, y1] = pts[i]!;
-    ctx.strokeStyle = a ? speedColour(atS(a.stations, a.stations.v, s0) / vmax) : m.active.colour;
-    line(ctx, x0, y0, x1, y1);
+    const k = a ? Math.round(Math.max(0, Math.min(1, atS(a.stations, a.stations.v, s0) / vmax)) * SPEED_STEPS) : 0;
+    if (k !== colour) {
+      if (colour >= 0) ctx.stroke();
+      ctx.strokeStyle = a ? SPEED_COLOURS[k]! : m.active.colour;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      colour = k;
+    }
+    ctx.lineTo(x1, y1);
   }
+  if (colour >= 0) ctx.stroke();
   ctx.lineCap = "butt";
+  ctx.lineJoin = "miter";
 }
 
 /** Where the swept bumpers hit an obstacle or the wall: the path itself turns red there, with the bumpers at the middle. */
@@ -904,7 +945,7 @@ function drawLegend(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const y = 74;
   const w = 120;
   for (let i = 0; i < w; i++) {
-    ctx.fillStyle = speedColour(i / (w - 1));
+    ctx.fillStyle = SPEED_COLOURS[Math.round((i / (w - 1)) * SPEED_STEPS)]!;
     ctx.fillRect(x + i, y, 1, 8);
   }
   ctx.fillStyle = "#cbd5e1";

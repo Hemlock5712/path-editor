@@ -17,7 +17,8 @@ import java.util.Map;
  *   "bumperLengthMeters": 0.85, "bumperWidthMeters": 0.85 }
  * </pre>
  *
- * {@code tipDistanceMeters} is optional (a square base without it). The bumper keys aren't part of {@link RobotConfig}; {@code PlannerConfig.fromRobotFile} reads them.
+ * {@code tipDistanceMeters} is optional (a square base without it); {@code tractionRule} is
+ * {@code "tipOrGrip"} (the default) or {@code "equalPush"}. The bumper keys aren't part of {@link RobotConfig}; {@code PlannerConfig.fromRobotFile} reads them.
  */
 public final class RobotFile {
   private RobotFile() {}
@@ -53,7 +54,9 @@ public final class RobotFile {
         PathFile.number(m, "maxAngularRadPerSec", d.maxAngularRadPerSec()),
         PathFile.number(m, "maxAngularRadPerSecSquared", d.maxAngularRadPerSecSquared()),
         PathFile.number(m, "centerOfMassHeightMeters", d.centerOfMassHeightMeters()),
-        PathFile.number(m, "tipDistanceMeters", d.tipDistanceMeters()));
+        PathFile.number(m, "tipDistanceMeters", d.tipDistanceMeters()),
+        m.get("tractionRule") == null ? d.tractionRule()
+            : RobotConfig.TractionRule.fromFileName(String.valueOf(m.get("tractionRule"))));
   }
 
   /** The JSON tree; unset optional limits are left out. */
@@ -80,6 +83,7 @@ public final class RobotFile {
     if (Double.isFinite(r.tipDistanceMeters())) {
       m.put("tipDistanceMeters", r.tipDistanceMeters());
     }
+    m.put("tractionRule", r.tractionRule().fileName());
     Map<String, Object> motor = new LinkedHashMap<>();
     motor.put("nominalVolts", r.driveMotor().nominalVolts());
     motor.put("stallTorqueNewtonMeters", r.driveMotor().stallTorqueNewtonMeters());

@@ -80,7 +80,9 @@ export function App() {
 
   useEffect(() => {
     const leave = (e: BeforeUnloadEvent) => {
-      if (isDirty(editor.get())) e.preventDefault();
+      if (!isDirty(editor.get())) return;
+      e.preventDefault();
+      e.returnValue = ""; // (older browsers ask only when this is set)
     };
     const uninstall = installAppBehaviour();
     window.addEventListener("keydown", onKeyDown);

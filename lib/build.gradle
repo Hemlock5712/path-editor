@@ -58,6 +58,12 @@ sourceSets {
     e2eTest {
         compileClasspath += sourceSets.main.output + sourceSets.wpilib.output
         runtimeClasspath += sourceSets.main.output + sourceSets.wpilib.output
+        // the editor's generated names for that project, and the test that uses them, once it has been
+        // authored (a fresh clone compiles without them)
+        if (file('../e2e/out/robot-project/src/main/java/frc/robot/PathEditorNames.java').isFile()) {
+            java.srcDir '../e2e/out/robot-project/src/main/java'
+            java.srcDir 'src/e2eNames/java'
+        }
     }
 }
 

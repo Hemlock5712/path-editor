@@ -4,6 +4,7 @@
 import { makeWaypoint } from "../../../core/src/index.ts";
 import { withSpec } from "./edits.ts";
 import { transformPoint } from "./mirror.ts";
+import { normalAngle } from "./positions.ts";
 import { newId, type NamedPoint, type Project } from "./project.ts";
 
 /** Moves a named point and every waypoint linked to it, and its twin (if it has one) to match. */
@@ -47,7 +48,7 @@ export function addNamedPoint(project: Project, name: string, x: number, y: numb
 }
 
 export function setPointHeading(project: Project, id: string, heading: number): Project {
-  return { ...project, namedPoints: project.namedPoints.map((p) => (p.id === id ? { ...p, heading } : p)) };
+  return { ...project, namedPoints: project.namedPoints.map((p) => (p.id === id ? { ...p, heading: normalAngle(heading) } : p)) };
 }
 
 export function renameNamedPoint(project: Project, id: string, name: string): Project {

@@ -48,7 +48,7 @@ async function openFiles(files: ProjectFiles, writable: boolean): Promise<void> 
       const n = loaded.project.paths.length;
       notify(
         loaded.problems.length > 0
-          ? `Opened ${files.label} (${n} paths). Skipped: ${loaded.problems.join("; ")}`
+          ? `Opened ${files.label} (${n} ${n === 1 ? "path" : "paths"}). Skipped: ${loaded.problems.join("; ")}`
           : `Opened ${files.label}: ${n} ${n === 1 ? "path" : "paths"}.`,
         loaded.problems.length > 0 ? "error" : "info",
       );

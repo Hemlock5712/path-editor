@@ -3,7 +3,7 @@
 // selection or drag ghosts on the chrome, no browser context menu).
 
 import { AlertCircle, CheckCircle2, Clipboard, Copy, Info, Scissors, Search, TextSelect } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fitView, zoomBy } from "../state/actions.ts";
 import { question } from "../state/confirm.ts";
 import { useStore } from "../state/store.ts";
@@ -94,6 +94,15 @@ export function Splitter({
 /** One tooltip for the whole app: any element with data-tip="Label|Shortcut" gets it on hover or focus. */
 export function TooltipHost() {
   const [tip, setTip] = useState<{ text: string; key?: string; x: number; y: number; below: boolean } | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  // a tip by the window's edge slides back inside it (it is centred on its control)
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const shift = r.right > window.innerWidth - 8 ? window.innerWidth - 8 - r.right : r.left < 8 ? 8 - r.left : 0;
+    if (shift !== 0) el.style.left = `${(tip?.x ?? 0) + shift}px`;
+  }, [tip]);
   useEffect(() => {
     let timer = 0;
     let watch: MutationObserver | null = null;
@@ -147,6 +156,7 @@ export function TooltipHost() {
   return (
     <Portal>
       <div
+        ref={box}
         className="tooltip"
         role="tooltip"
         style={{ left: tip.x, top: tip.below ? tip.y : undefined, bottom: tip.below ? undefined : window.innerHeight - tip.y }}

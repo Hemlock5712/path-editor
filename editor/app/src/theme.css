@@ -2993,3 +2993,28 @@ dialog.transform legend {
 .checks .fixes:empty {
   display: none;
 }
+
+/* the bench's course measures: rows under their course in the main table */
+.benchmark .measure-row th,
+.benchmark .measure-row td {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  padding-top: 1px;
+  padding-bottom: 3px;
+}
+
+.benchmark .measure-row td.best {
+  color: var(--text);
+}
+
+.benchmark .measure-label {
+  padding-left: var(--s3);
+}
+
+.bench-caption {
+  caption-side: bottom;
+  padding-top: var(--s2);
+  text-align: left;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}

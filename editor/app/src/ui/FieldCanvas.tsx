@@ -236,6 +236,8 @@ export function FieldCanvas() {
   const deselectedRef = useRef<{ index: number; pathId: string } | null>(null);
   /** When the last press was: a press long after it starts a new click sequence. */
   const lastPressRef = useRef(-Infinity);
+  /** The waypoint selected when the current click sequence began (a double-click on a robot builds on it). */
+  const sequenceStartRef = useRef<{ index: number; pathId: string } | null>(null);
   const liveOverlay = useStore(ui, (u) => u.liveOverlay);
 
   // ---------------------------------------------------------------------------- drawing
@@ -626,7 +628,9 @@ export function FieldCanvas() {
     // after the last one starts a new click sequence with nothing remembered
     const now = performance.now();
     const s0 = editor.get();
-    if (s0.selection?.kind === "waypoint") deselectedRef.current = { index: s0.selection.index, pathId: s0.activePathId };
+    const selected = s0.selection?.kind === "waypoint" ? { index: s0.selection.index, pathId: s0.activePathId } : null;
+    if (now - lastPressRef.current > DOUBLE_CLICK_MS) sequenceStartRef.current = selected;
+    if (selected) deselectedRef.current = selected;
     else if (now - lastPressRef.current > DOUBLE_CLICK_MS) deselectedRef.current = null;
     lastPressRef.current = now;
     stopMotion();
@@ -1024,8 +1028,24 @@ export function FieldCanvas() {
       editPath("Automatic tangent", (p) => setTangent(p, hit.index, Number.NaN, 1.0));
       return;
     }
-    // on a robot, a knob or a marker the clicks selected it; an obstacle is just more field here, and a
-    // named point is where the new waypoint goes (linked to it)
+    // on another waypoint's robot: a new point exactly there (a loop's end back on its start), after the
+    // waypoint selected when the double-click began
+    if (hit?.kind === "waypoint") {
+      const path = activePath(s);
+      const from = sequenceStartRef.current;
+      deselectedRef.current = null;
+      lastPressRef.current = -Infinity;
+      if (!from || from.pathId !== path.id || from.index === hit.index) return;
+      if (hit.index === from.index + 1) {
+        notify("That waypoint already follows the selected one.");
+        return;
+      }
+      const w = path.spec.waypoints[hit.index]!;
+      addAfter(from.index, w.xMeters, w.yMeters);
+      return;
+    }
+    // on a knob or a marker the clicks selected it; an obstacle is just more field here, and a named point
+    // is where the new waypoint goes (linked to it)
     if (hit && hit.kind !== "obstacle" && hit.kind !== "point") return;
     // the first click of the double-click deselected the waypoint it builds on
     const path = activePath(s);
@@ -1171,7 +1191,7 @@ function waypointMenu(index: number, x: number, y: number): void {
   for (const t of faceTargets().slice(0, 6)) items.push({ label: `Face ${t.name}`, icon: <Crosshair size={14} />, run: () => faceToward(index, t.x, t.y, `Face ${t.name}`) });
   if (!isEnd) {
     items.push({
-      label: passThrough ? "Hold a heading here" : "Pass through (no heading)",
+      label: passThrough ? "Hold a heading here" : "Pass-through (no heading)",
       icon: <Navigation size={14} />,
       run: () => editPath(passThrough ? "Set heading" : "Pass through", (p) => setHeading(p, index, passThrough ? planned() : Number.NaN)),
     });

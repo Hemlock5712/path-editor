@@ -190,3 +190,15 @@ describe("named points", () => {
     expect(eventNames(project)).toEqual(["align", "intake", "shoot"]);
   });
 });
+
+describe("angles", () => {
+  it("headings and tangents are kept in (-180°, 180°], whatever is typed", async () => {
+    const { normalAngle } = await import("../src/model/positions.ts");
+    const DEG = Math.PI / 180;
+    expect(normalAngle(190 * DEG) / DEG).toBeCloseTo(-170, 9);
+    expect(normalAngle(-180 * DEG) / DEG).toBeCloseTo(180, 9);
+    expect(normalAngle(540 * DEG) / DEG).toBeCloseTo(180, 9);
+    expect(normalAngle(0.75)).toBe(0.75);
+    expect(Number.isNaN(normalAngle(Number.NaN))).toBe(true);
+  });
+});

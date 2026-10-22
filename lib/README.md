@@ -63,13 +63,21 @@ inside the zone.
 The model (also in the class comment):
 
 - traction, for the worst wheel: `√(a² + (v²κ)²) + c·|α| ≤ A`, with `α = a·θ' + v²·θ''`,
-  `c = I/(m·r)` and `A = 0.9 · min(μ·g, g · tip / h)`: 90 % of whichever comes first, the tread's grip
-  or tipping over (Joe's rule, as in Precision-Drive's AccelerationLimiter). The defaults are SDS MK5
-  Spike Grip (μ 1.5), the centre of mass 0.2 m up (to be measured) and modules at ±0.29 m (tip
-  0.29 m), so `A = 0.9 · min(14.7, 14.2) = 12.8 m/s²`: tipping comes first. In the robot file:
-  `frictionCoefficient`, `centerOfMassHeightMeters` (0 = no tipping limit) and the optional
-  `tipDistanceMeters`, which is min(|module x|, |module y|) and defaults to a square base's
-  `moduleRadiusMeters / √2`. The plan and the limiter (below) use the same `A`;
+  `c = I/(m·r)` and `A` the traction limit, by the robot file's `tractionRule`:
+  - `"tipOrGrip"` (the default for now, Joe's spec and Precision-Drive's AccelerationLimiter):
+    `A = 0.9 · min(μ·g, g·x/h)`, whichever comes first, the tread's grip or tipping over;
+  - `"equalPush"`: `A = 0.9 · μ·g / (1 + μ·h/x)`. Swerve velocity control pushes every wheel about
+    equally, so the wheels that weight transfer unloads slip first.
+
+  The defaults are SDS MK5 Spike Grip (μ 1.5), the centre of mass 0.2 m up (to be measured) and
+  modules at ±0.29 m (x = 0.29 m), giving `tipOrGrip` 12.8 m/s² (tipping first) and `equalPush`
+  6.5 m/s². With Joe's ±0.254 m modules they are 11.2 and 6.1 m/s². The other robot-file keys are
+  `frictionCoefficient`, `centerOfMassHeightMeters` (0 = no load transfer: both rules give 0.9·μ·g) and
+  the optional `tipDistanceMeters`. The last is min(|module x|, |module y|), one value for every
+  direction, and defaults to a square base's `moduleRadiusMeters / √2`.
+  `RobotConfig.tipOrGripMetersPerSecondSquared()`, `equalPushMetersPerSecondSquared()` and
+  `tractionLimit()` (grip, tipping or equal push) give the editor both values and which one binds. The
+  plan and the limiter (below) use the same `A`;
 - motors, speeding up: `a + c·|α| ≤` the Kraken X60 FOC push at the fastest wheel's speed
   `v·(1 + r|θ'|)` (12 V minus back-EMF, capped by the stator limit). The sideways `v²κ` comes from
   tyre side-grip, not torque. Braking: only the stator limit;
@@ -185,15 +193,17 @@ options.
 
 ### Traction: μ 1.5 and tipping
 
-The robot runs SDS MK5 Spike Grip, μ 1.5. Acceleration and cornering are held to 90 % of whichever
-comes first, grip or tipping: `A = 0.9 · min(μ·g, g · tip / h)` (`RobotConfig.tractionMetersPerSecondSquared`).
+The robot runs SDS MK5 Spike Grip, μ 1.5. Acceleration and cornering are held to a traction limit `A`
+(`RobotConfig.tractionMetersPerSecondSquared`). By default that's 90 % of whichever comes first, grip or
+tipping, `0.9 · min(μ·g, g·x/h)`. The other rule, `equalPush`, is `0.9 · μ·g / (1 + μ·h/x)`. Joe picks
+the default once bench-builder has re-baselined both.
 The planner's grip circle and the follower's output limiter both use `A`, so the editor's plan is what
 the robot will try. Before this change they were separate: the plan used μ 0.7 and the limiter 1.0, on a
 1.15 / 1.0 bench floor. Scaled to the 1.5 tread, that 0.7 plan would be 0.7 of `A` and the limiter about
 `A`.
 
 Whether the plan needs its own margin under `A` was checked on the bench plant set to 1.5 / 1.3, low grip
-0.91 / 0.79, and the centre of mass 0.2 m up (weight transfer on). The figures below are ours over all 16
+0.91 / 0.79, and the centre of mass 0.2 m up (weight transfer on). The figures below use the `tipOrGrip` rule. They are ours over all 16
 courses that stop, 10 seeds, perfect pose: the sum of the settle times, and the mean wheel slip per run.
 
 | plan at | as shipped (adaptive grip) | adaptive grip off |
@@ -209,9 +219,11 @@ weight transfer, not from cornering:
 - On this plant the straight 3 m slips for 0.34 s at the path's 6 m/s², against none with the centre of
   mass at 0.
 - Every module pushes about the same, so the wheels that unload slip first. That happens at about
-  `μ·g / (1 + μ·h / tip)`: 7.2 m/s² static for these numbers, well under `A`'s 12.8.
-- So the rule's `min(grip, tip)` is generous for a tall robot. A real centre-of-mass height and a slip
-  check on the real robot should come before trusting it.
+  `μ·g / (1 + μ·h/x)`: 7.2 m/s² static for these numbers, well under `tipOrGrip`'s 12.8. bench-builder
+  found the same, and that is the `equalPush` rule.
+- Planning above that is deliberate under `tipOrGrip`: the loaded wheels make up for a slipping light one
+  while the stators have headroom, at some cost in odometry. A real centre-of-mass height and a slip check
+  on the real robot should decide between the two.
 
 Adaptive grip costs time at `1.0 · A` (45.4 s against 41.5 s off). It latches the acceleration at which the
 light wheels let go as the floor's μ. Its thresholds need another look on bench-builder's final plant.
@@ -257,12 +269,32 @@ These are compiled against WPILib 2027.0.0-alpha-7 from the installer's offline 
 (`C:/Users/Public/wpilib/2027_alpha7/maven`; `-PwpilibMaven=<dir>` points elsewhere). The build
 skips them with a warning if the repo is missing.
 
+- **Names are constants.** The editor writes `PathEditorNames.java` into the robot project on every save
+  (package set in its Settings > Project; `frc.robot` by default): three enums, `Paths`, `Events` and `Points`,
+  each constant carrying its exact name and implementing `PathId`, `EventId` or `PointId`. Every method below
+  that takes a name also takes one of these, so a misspelt or renamed path, event or point is a compile error:
+
+  ```java
+  import static frc.robot.PathEditorNames.*;
+
+  PathLibrary paths = PathLibrary.loadAll();
+  paths.bindEvent(Events.INTAKE_DOWN, intake.lower())
+       .bindEvent(Events.SHOOT, shooter.shoot())
+       .requireAllEventsBound();               // a forgotten event fails at boot
+  Command toReef = otf.follow(drive, Paths.TO_REEF);   // or new FollowPathCommand(Paths.TO_REEF, drive, ...)
+  Command toDepot = otf.toPoint(drive, Points.DEPOT, Rotation2d.k180deg);
+  ```
+
+  The String versions stay, but the constants are the way to name things.
 - `PathLibrary.loadAll()` builds every `deploy/paths/*.path.json` (with `deploy/paths/robot.json` if
-  present) in robot init. A bad file fails at boot. `loadAll(File dir)` does the same for any folder.
-- `PathLibrary.bindEvent(name, command)` (a v3 or a v2 command) binds an event name from the path
-  files to a command once for every path; a follow command picks the bindings up with
-  `withEvents(library)`, and its own `onEvent` wins for the same name. `unboundEventNames()` lists
-  the names the files use with nothing bound, which is where a typo shows up.
+  present) in robot init. A bad file fails at boot. `loadAll(File dir)` does the same for any folder. If the
+  project's `PathEditorNames` is compiled in (the package named in `.pathproject.json`), it checks every
+  constant against deploy: a stale class (deploy changed and the code wasn't rebuilt, or the other way round)
+  fails at boot, naming the missing constants. `requireNames(Class)` runs the same check by hand.
+- `PathLibrary.bindEvent(event, command)` (a v3 or a v2 command) binds an event to a command once for every
+  path; a follow command picks the bindings up with `withEvents(library)`, and its own `onEvent` wins for the
+  same name. `requireAllEventsBound()` fails if any event the files use has nothing bound;
+  `unboundEventNames()` lists them.
 - `FollowPathCommand` (Commands v3) runs the follower in its coroutine and forks event commands as
   children. `FollowPathCommandV2` (Commands v2) schedules event commands independently, and sends its
   first command from `initialize()`, as v3 does, so a path chained after a rolling end doesn't coast a
@@ -453,9 +485,10 @@ been measured.
 Pathfinding otf = new Pathfinding(paths, FollowerConfig.defaults(paths.robot()),
     drive::getPose, drive::getFieldVelocity, drive::driveFieldVelocity, FieldFrame.RED_HALF_TURN);
 otf.to(drive, new Pose2d(-7.6, 3.1, Rotation2d.k180deg));   // blue frame, flipped on red
-otf.toPoint(drive, "Depot", Rotation2d.k180deg);            // an editor named point (blue frame)
+otf.toPoint(drive, Points.DEPOT, Rotation2d.k180deg);       // an editor named point (blue frame)
 otf.toTarget(drive, vision::scoringPose);                   // real field frame, used as given
-otf.thenFollow(drive, "ToReef");                            // to the path's start, then the path
+otf.thenFollow(drive, Paths.TO_REEF);                       // to the path's start, then the path
+otf.follow(drive, Paths.TO_REEF);                           // the path on its own, its events bound
 otf.to(drive, goal).withMovingGoal(vision::pieceIfSeen);     // the end follows a moving goal (real frame)
 otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a library path as drawn, its end on vision
 ```
