@@ -514,7 +514,14 @@ public final class PathFollower {
       refHeading = active.heading().sample(s).radians();
     } else {
       VelocityProfile profile = active.profile();
-      double sAhead = profile.sAtTime(profile.timeAt(s) + cfg.latencySeconds());
+      double lead = cfg.latencySeconds();
+      if (track.spec().startMetersPerSecond() > 0.0) {
+        // A rolling start: the last path's command led into its own end, not into this path's speeding up,
+        // so the lead builds up over ROLLING_LEAD_SECONDS instead of in one loop (a jump of a·τ that the
+        // limiter would take at full grip, slipping the wheels at the hand-over)
+        lead *= Math.min(1.0, (timeSeconds - startTime) / ROLLING_LEAD_SECONDS);
+      }
+      double sAhead = profile.sAtTime(profile.timeAt(s) + lead);
       double cusp = active.geometry().nextCusp(s);
       if (sAhead > cusp - CUSP_EDGE_METERS) {
         // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
@@ -681,6 +688,9 @@ public final class PathFollower {
 
   /** A pose moving faster than this many times the path's top speed has jumped. */
   private static final double MAX_POSE_SPEED_RATIO = 1.5;
+
+  /** After a rolling start, the read-ahead grows to the full latency over this long. */
+  static final double ROLLING_LEAD_SECONDS = 0.3;
 
   /** Progress reads no closer to a cusp than this (its tangent is undefined), and steps past it by as much. */
   static final double CUSP_EDGE_METERS = 1e-3;

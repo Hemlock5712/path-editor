@@ -120,7 +120,10 @@ Each loop, in the blue frame:
    `s⁺ = s_plan(t_plan(s) + τ)`. That is what gets a robot off a standing start, where the profile
    says 0 m/s. The speed is `min(v_plan(s⁺), sqrt(v_end² + 2·a·(d − v·τ)))`, which is DriveToPose's
    brake on the distance left `d`. The speed points along the tangent at `s⁺`, so the command turns
-   into a curve early by `v²κτ`: the curvature feed-forward.
+   into a curve early by `v²κτ`: the curvature feed-forward. On a path that starts moving (a rolling
+   hand-over), the read-ahead grows from 0 to `τ` over the first 0.3 s. The last path's command led into its own
+   end, not into this one speeding up, and taking the lead `a·τ` in one loop slipped all four wheels at the
+   hand-over (bench three_piece_chain: wheel slip 600 → 330 ms, same time).
 4. **Across the path.** PD on the cross-track error (P 5/s, D 0), pushing along the normal at `s`.
    Knocked more than 0.4 m off (`rejoinAboveMeters`), the follower builds a piece back onto the path:
    from the robot's pose, along the way it is really going (from the pose's change; after a hit the
@@ -269,8 +272,8 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 
 | Request | Reply |
 | --- | --- |
-| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs"}` |
-| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()` | `{"ok", "startMicros"}` plus `"startReplanMicros"` when the start re-planned the speeds |
+| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session) and `"startCurvature"` (fix the first waypoint's curvature, e.g. the last leg's `endCurvature`): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs", "endCurvature"}` |
+| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()`, plus optional `"handed": [vx, vy, omega]` (the last path's `endCommand`, for a rolling hand-over; default the measured velocity) | `{"ok", "startMicros"}` plus `"startReplanMicros"` when the start re-planned the speeds |
 | `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild, and `"rejoins"` and `"rejoinMicros"` after a rejoin |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
 | `{"op": "geometry", "step": 0.02}`: the built path, sampled | `{"x": [...], "y": [...]}` |
@@ -437,7 +440,19 @@ otf.toTarget(drive, vision::scoringPose);                   // real field frame,
 otf.thenFollow(drive, Paths.TO_REEF);                       // to the path's start, then the path
 otf.follow(drive, Paths.TO_REEF);                           // the path on its own, its events bound
 otf.to(drive, goal).withMovingGoal(vision::pieceIfSeen);     // the end follows a moving goal (real frame)
+otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a library path as drawn, its end on vision
 ```
+
+- **Moving goals on library paths.** `follow(drive, name)` (and `followV2`) is the plain `FollowPathCommand` for a
+  library path, an optimised one included, built with the same drivetrain, settings, clock and alliance. It plans
+  nothing at go. `withMovingGoal(Supplier<Optional<Pose2d>>)` is on `FollowPathCommand` and `FollowPathCommandV2`
+  themselves too, for commands built by hand. The supplier gives the goal in the real field frame, like the
+  robot's pose (not flipped on red), or empty to keep the last one. When the goal moves more than 2 cm or 2°, only
+  the rest of the path is rebuilt, from the robot's progress to the goal, joining with matching position,
+  tangent and curvature (`PathFollower.bindGoal`, 0.1-0.3 ms). In the last 0.3 m DriveToPose's law drives
+  straight to it. The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
+  away once the robot is 1.5 m out. `PathLibrary` holds no drivetrain, so the factory lives on `Pathfinding`
+  rather than as `paths.follow(...)`.
 
 - **Planning.** Each command plans when it starts, from the measured pose and velocity, with `OnTheFly` (in `plan`,
   no WPILib). This is the one place path work happens at go: about 1 ms median and under 5 ms at the 95th

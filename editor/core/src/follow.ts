@@ -194,6 +194,7 @@ const NOMINAL_LOOP_SECONDS = 0.02;
 const CUSP_EDGE_METERS = 1e-3;
 const MAX_PROGRESS_RATE = 8.0;
 const MIN_TAIL_METERS = 0.15;
+const ROLLING_LEAD_SECONDS = 0.3;
 const MIN_MOVING_SPEED = 0.1;
 const MIN_POSE_DT = 0.005;
 const MAX_POSE_SPEED_RATIO = 1.5;
@@ -225,6 +226,7 @@ export class PathFollower {
   private s = 0;
   private lastS = 0;
   private lastTime = 0;
+  private startTime = 0;
   private settledSince = Number.NaN;
   private crossTrack = 0;
   private refX = 0;
@@ -298,6 +300,7 @@ export class PathFollower {
     this.updateProgress(p);
     this.lastS = this.s;
     this.lastTime = timeSeconds;
+    this.startTime = timeSeconds;
     this.prevX = Number.NaN;
     this.settledSince = Number.NaN;
     this.phaseNow = "TRACKING";
@@ -509,7 +512,12 @@ export class PathFollower {
       this.refHeading = active.heading.sample(this.s).radians;
     } else {
       const profile = active.profile;
-      let sAhead = profile.sAtTime(profile.timeAt(this.s) + cfg.latencySeconds);
+      let lead = cfg.latencySeconds;
+      if (this.track.spec.startMetersPerSecond > 0.0) {
+        // a rolling start: the lead builds up over ROLLING_LEAD_SECONDS (PathFollower.java)
+        lead *= Math.min(1.0, (timeSeconds - this.startTime) / ROLLING_LEAD_SECONDS);
+      }
+      let sAhead = profile.sAtTime(profile.timeAt(this.s) + lead);
       const cusp = active.geometry.nextCusp(this.s);
       if (sAhead > cusp - CUSP_EDGE_METERS) {
         // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
