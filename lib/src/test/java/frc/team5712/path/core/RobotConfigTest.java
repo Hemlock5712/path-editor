@@ -40,26 +40,30 @@ class RobotConfigTest {
   }
 
   @Test
-  void tractionIsNinetyPercentOfGripOrTipWhicheverComesFirst() {
-    // the default: modules at ±0.29 m (tip 0.29 m), centre of mass 0.2 m up: tipping first
-    assertEquals(0.29, R.tipDistanceInUseMeters(), 1e-12);
-    assertEquals(9.81 * 0.29 / 0.2, R.tipMetersPerSecondSquared(), 1e-12);
-    assertEquals(0.9 * 9.81 * 0.29 / 0.2, R.tractionMetersPerSecondSquared(), 1e-12);
-    assertEquals(RobotConfig.TractionLimit.TIPPING, R.tractionLimit());
+  void tipOrGripIsNinetyPercentOfGripOrTipWhicheverComesFirst() {
+    // the default robot is equal-push; this rule is the opt-in
+    assertEquals(RobotConfig.TractionRule.EQUAL_PUSH, R.tractionRule());
+    RobotConfig tg = R.withTractionRule(RobotConfig.TractionRule.TIP_OR_GRIP);
+    // modules at ±0.29 m (tip 0.29 m), centre of mass 0.2 m up: tipping first
+    assertEquals(0.29, tg.tipDistanceInUseMeters(), 1e-12);
+    assertEquals(9.81 * 0.29 / 0.2, tg.tipMetersPerSecondSquared(), 1e-12);
+    assertEquals(0.9 * 9.81 * 0.29 / 0.2, tg.tractionMetersPerSecondSquared(), 1e-12);
+    assertEquals(RobotConfig.TractionLimit.TIPPING, tg.tractionLimit());
     // Joe's numbers: 0.254 m modules, 0.9 · min(14.7, 12.46) = 11.2 m/s²
-    RobotConfig joe = R.withTipDistanceMeters(0.254);
+    RobotConfig joe = tg.withTipDistanceMeters(0.254);
     assertEquals(0.9 * Math.min(1.5 * 9.81, 9.81 * 0.254 / 0.2), joe.tractionMetersPerSecondSquared(), 1e-12);
     assertEquals(11.21, joe.tractionMetersPerSecondSquared(), 0.01);
     // a low centre of mass: grip first; at 0 no tipping limit at all
-    assertEquals(0.9 * 1.5 * 9.81, R.withCenterOfMassHeightMeters(0.1).tractionMetersPerSecondSquared(), 1e-12);
-    assertEquals(Double.POSITIVE_INFINITY, R.withCenterOfMassHeightMeters(0).tipMetersPerSecondSquared());
-    assertEquals(RobotConfig.TractionLimit.GRIP, R.withCenterOfMassHeightMeters(0).tractionLimit());
+    assertEquals(0.9 * 1.5 * 9.81, tg.withCenterOfMassHeightMeters(0.1).tractionMetersPerSecondSquared(), 1e-12);
+    assertEquals(Double.POSITIVE_INFINITY, tg.withCenterOfMassHeightMeters(0).tipMetersPerSecondSquared());
+    assertEquals(RobotConfig.TractionLimit.GRIP, tg.withCenterOfMassHeightMeters(0).tractionLimit());
   }
 
   @Test
   void equalPushIsTheLimitWhenEveryWheelPushesTheSame() {
     // the light wheels slip first: 0.9 · μg / (1 + μh/x); for Joe's 0.254 m modules 6.1 m/s²
-    RobotConfig joe = R.withTipDistanceMeters(0.254).withTractionRule(RobotConfig.TractionRule.EQUAL_PUSH);
+    RobotConfig joe = R.withTipDistanceMeters(0.254); // the default rule
+    assertEquals(0.9 * 1.5 * 9.81 / (1 + 1.5 * 0.2 / 0.29), R.tractionMetersPerSecondSquared(), 1e-12);
     assertEquals(0.9 * 1.5 * 9.81 / (1 + 1.5 * 0.2 / 0.254), joe.tractionMetersPerSecondSquared(), 1e-12);
     assertEquals(6.07, joe.tractionMetersPerSecondSquared(), 0.01);
     assertEquals(RobotConfig.TractionLimit.EQUAL_PUSH, joe.tractionLimit());

@@ -31,7 +31,7 @@
       "maxAngularRadPerSec": 9.42477796076938,
       "maxAngularRadPerSecSquared": 12.566370614359172,
       "centerOfMassHeightMeters": 0.2,
-      "tractionRule": "tipOrGrip",
+      "tractionRule": "equalPush",
       "motor": { "nominalVolts": 12, "stallTorqueNewtonMeters": 9.362, "stallCurrentAmps": 476.1, "freeSpeedRadPerSec": 605.8037833672317 }
     },
     "follower": { "latencySeconds": 0.06999999999999999 },

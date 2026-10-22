@@ -17,6 +17,7 @@ import {
   driveAccelMetersPerSecondSquared,
   spinLeverMeters,
   tractionMetersPerSecondSquared,
+  TRACTION_MARGIN,
   type RobotConfig,
 } from "./robot.ts";
 
@@ -84,7 +85,7 @@ export function followerConfig(robot: RobotConfig, options: Partial<Omit<Followe
     headingToleranceRadians: 1.0 * DEG,
     settledMetersPerSecond: 0.05,
     debounceSeconds: 0.1,
-    replanStartFromMeasuredVelocity: false,
+    replanStartFromMeasuredVelocity: true,
     rejoinAboveMeters: 0.4,
     ...options,
   };
@@ -201,9 +202,12 @@ const MIN_MOVING_SPEED = 0.1;
 const MIN_POSE_DT = 0.005;
 const MAX_POSE_SPEED_RATIO = 1.5;
 
-/** The output limiter's budget, m/s²: the robot's traction limit, or the configured μ·g (PathFollower.limiterBudget). */
+/**
+ * The output limiter's budget, m/s²: the robot's traction limit without its 10 % margin (the plan keeps it, so
+ * feedback has that room), or the configured μ·g (PathFollower.limiterBudget).
+ */
 export function limiterBudget(cfg: FollowerConfig): number {
-  return Number.isNaN(cfg.limiterFrictionCoefficient) ? tractionMetersPerSecondSquared(cfg.robot)
+  return Number.isNaN(cfg.limiterFrictionCoefficient) ? tractionMetersPerSecondSquared(cfg.robot) / TRACTION_MARGIN
     : cfg.limiterFrictionCoefficient * GRAVITY;
 }
 
@@ -321,9 +325,11 @@ export class PathFollower {
     const v = flipSpeeds(frame, measuredVelocity);
     const speed = javaHypot(v.vxMetersPerSecond, v.vyMetersPerSecond);
     const first = this.path.sample(0.0);
-    if (this.cfg.replanStartFromMeasuredVelocity && !this.pureRotation && speed > MIN_MOVING_SPEED
+    if (this.cfg.replanStartFromMeasuredVelocity && !this.pureRotation && this.path.spec.startMetersPerSecond === 0.0
+      && speed > MIN_MOVING_SPEED
       && v.vxMetersPerSecond * first.tangentX + v.vyMetersPerSecond * first.tangentY > 0.0) {
-      // already moving: the speeds are re-planned from the measured speed (only the profile is rebuilt)
+      // a path planned from rest, started while moving: the speeds are re-planned from the measured speed
+      // (only the profile is rebuilt; a path that starts moving already plans its start speed)
       this.track = this.path.withStartSpeed(speed, this.cfg.robot);
       this.active = this.track;
     }

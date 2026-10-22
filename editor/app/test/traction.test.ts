@@ -15,10 +15,13 @@ import {
 } from "../src/model/traction.ts";
 
 describe("traction", () => {
-  it("says what limits the default robot: Spike Grip μ 1.5 with the centre of mass 0.2 m up tips first", () => {
+  it("says what limits the default robot: Spike Grip μ 1.5 with the centre of mass 0.2 m up, equal push", () => {
     expect(DEFAULT_ROBOT.frictionCoefficient).toBe(1.5);
     expect(DEFAULT_ROBOT.centerOfMassHeightMeters).toBe(0.2);
-    expect(tractionHeadline(DEFAULT_ROBOT)).toBe("Traction limit 12.8 m/s², tipping limits first");
+    expect(DEFAULT_ROBOT.tractionRule).toBe("equalPush");
+    expect(tractionHeadline(DEFAULT_ROBOT)).toBe("Traction limit 6.5 m/s², the front wheels slip first");
+    // the opt-in rule tips first
+    expect(tractionHeadline({ ...DEFAULT_ROBOT, tractionRule: "tipOrGrip" })).toBe("Traction limit 12.8 m/s², tipping limits first");
     expect(tipOrGripWorking(DEFAULT_ROBOT)).toBe("Tip or grip 12.8 m/s²: 0.9 × the lower of grip μ·g = 14.7 m/s² and tipping g × tip 0.29 m ÷ height 0.20 m = 14.2 m/s².");
     expect(equalPushWorking(DEFAULT_ROBOT)).toMatch(/^Equal push 6\.5 m\/s²: .*front wheels slip first\.$/);
   });
@@ -31,13 +34,14 @@ describe("traction", () => {
   });
 
   it("follows the numbers: a lower centre of mass or a slicker tread makes grip the limit", () => {
-    const low = { ...DEFAULT_ROBOT, centerOfMassHeightMeters: 0 };
+    const tipOrGrip = { ...DEFAULT_ROBOT, tractionRule: "tipOrGrip" as const };
+    const low = { ...tipOrGrip, centerOfMassHeightMeters: 0 };
     expect(tractionHeadline(low)).toBe("Traction limit 13.2 m/s², grip limits first");
     expect(tipOrGripWorking(low)).toContain("no tipping limit");
-    const carpet = { ...DEFAULT_ROBOT, frictionCoefficient: 0.7 };
+    const carpet = { ...tipOrGrip, frictionCoefficient: 0.7 };
     expect(tractionHeadline(carpet)).toBe(`Traction limit ${(0.9 * 0.7 * GRAVITY).toFixed(1)} m/s², grip limits first`);
     // a wider base than the square default pushes tipping further off
-    expect(tractionMetersPerSecondSquared({ ...DEFAULT_ROBOT, tipDistanceMeters: 0.4 })).toBeCloseTo(0.9 * 1.5 * GRAVITY, 9);
+    expect(tractionMetersPerSecondSquared({ ...tipOrGrip, tipDistanceMeters: 0.4 })).toBeCloseTo(0.9 * 1.5 * GRAVITY, 9);
   });
 
   it("spots the old 0.7 planning default", () => {
@@ -52,7 +56,7 @@ describe("traction", () => {
     expect(old.config.centerOfMassHeightMeters).toBe(0.2);
     expect(Number.isNaN(old.config.tipDistanceMeters)).toBe(true);
     const text = writeRobot(DEFAULT_ROBOT_SETTINGS);
-    expect(JSON.parse(text)).toMatchObject({ frictionCoefficient: 1.5, centerOfMassHeightMeters: 0.2, tractionRule: "tipOrGrip" });
+    expect(JSON.parse(text)).toMatchObject({ frictionCoefficient: 1.5, centerOfMassHeightMeters: 0.2, tractionRule: "equalPush" });
     expect(text).not.toContain("tipDistanceMeters");
     const set = { ...DEFAULT_ROBOT_SETTINGS, config: { ...DEFAULT_ROBOT, tipDistanceMeters: 0.33 } };
     expect(parseRobot(writeRobot(set)).config.tipDistanceMeters).toBe(0.33);
