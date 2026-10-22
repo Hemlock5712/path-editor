@@ -160,11 +160,6 @@ public final class Pathfinding {
     return follow(drive, path.fileName());
   }
 
-  public FollowPathCommand follow(Mechanism drive, String pathName) {
-    return new FollowPathCommand(pathName, drive, new PathFollower(library.get(pathName), config), pose, fieldVelocity,
-        fieldOutput, redFrame).withEvents(library);
-  }
-
   public PathfindCommand thenFollow(Mechanism drive, String pathName) {
     Path path = library.get(pathName);
     FollowPathCommand follow = new FollowPathCommand(pathName, drive, new PathFollower(path, config), pose,
@@ -228,11 +223,6 @@ public final class Pathfinding {
   /** {@link #follow} for Commands v2. */
   public FollowPathCommandV2 followV2(Subsystem drive, PathId path) {
     return followV2(drive, path.fileName());
-  }
-
-  public FollowPathCommandV2 followV2(Subsystem drive, String pathName) {
-    return new FollowPathCommandV2(pathName, drive, new PathFollower(library.get(pathName), config), pose, fieldVelocity,
-        fieldOutput, redFrame).withEvents(library);
   }
 
   public PathfindThenFollowV2 thenFollowV2(Subsystem drive, String pathName) {
