@@ -82,13 +82,13 @@ def pp_grid(quick):
 
 
 def ours_grid(quick):
-    """Ours v2 (lib/ PathFollower): the end's ease-in line, the latency allowance and the output limiter's grip.
-    The other FollowerConfig gains stay at their defaults."""
+    """Ours v2 (lib/ PathFollower): the end's ease-in line and the latency allowance. The grip is the robot's
+    (traction rule in the library, limiter at the same limit); the other FollowerConfig gains stay at their
+    defaults."""
     if quick:
         return [{"easeInPerSecond": e} for e in (6.0, 12.0)]
-    # planning mu 0.7 was the interior optimum in phase 3's sweep, so it stays fixed here
-    return [{"easeInPerSecond": e, "latencySeconds": lat, "limiterFrictionCoefficient": lim}
-            for e in (9.0, 12.0, 16.0) for lat in (0.03, 0.05, 0.07) for lim in (1.0, 1.4, 2.0)]
+    return [{"easeInPerSecond": e, "latencySeconds": lat}
+            for e in (9.0, 12.0, 16.0) for lat in (0.03, 0.05, 0.07)]
 
 
 def path2_grid(quick):

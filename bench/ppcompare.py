@@ -154,7 +154,7 @@ OPTIMISED_FILE = os.path.join(OUT, "ppcompare_optimised.json")
 MU_FILE = os.path.join(OUT, "musweep_optimised.json")
 
 # The grip sweep (`run.py --mu-sweep`): ours with the robot file's grip at the shipped OURS_MU and lower, as
-# drawn and optimised. The output limiter's grip option is max(1.0, mu), so it never clips the plan's corners.
+# drawn and optimised. The output limiter takes the same traction limit as the plan (the library's default).
 from followers.ours_v2 import OURS_MU  # noqa: E402
 
 MU_SWEEP = (OURS_MU, 1.25, 1.0, 0.7)  # the shipped grip first
@@ -168,7 +168,7 @@ def mu_key(mu, optimised=False):
 
 for _mu in MU_SWEEP[1:]:
     METHODS[mu_key(_mu)] = ("(b)", f"Ours v2, planning mu {_mu:g}", ("chain", "ours_v2", {
-        "mu": _mu, "limiterFrictionCoefficient": max(1.0, _mu)}))
+        "mu": _mu}))
     METHODS[mu_key(_mu, True)] = ("(c)", f"Ours v2 optimised, planning mu {_mu:g}", ("optimised", f"ours@{_mu:g}"))
     BASE[mu_key(_mu, True)] = mu_key(_mu)
     TOOL[mu_key(_mu, True)] = f"ours@{_mu:g}"

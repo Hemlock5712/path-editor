@@ -6,7 +6,7 @@ PathPlanner plans corners at its wheel COF (the plant's static grip); ours' robo
 with a perfect pose and wheel odometry, and with slip-aware odometry on the bench courses. PathPlanner's rows
 come from out/ppcompare.json (`--pp-compare`); its optimised rows are also run with slip-aware odometry here.
 
-The output limiter's grip option (limiterFrictionCoefficient) is max(1.0, mu) in the sweep rows (ppcompare.py).
+The output limiter follows the robot file's grip (limiterFrictionCoefficient's default: the traction limit).
 Braking stays as shipped.
 """
 
@@ -109,7 +109,7 @@ def section_md(out, ppc):
          f"{out['meta']['wall_s']:.0f} s wall)._\n",
          "Ours with the robot file's grip at mu " + ", ".join(f"{m:g}" for m in P.MU_SWEEP)
          + f" ({P.OURS_MU:g} as shipped), as drawn and optimised (the optimiser re-run per mu, default budget, seed 1). "
-         "The output limiter's grip option is max(1.0, mu). "
+         "The output limiter takes the same traction limit as the plan. "
          f"The plant's grip is mu {RP.mu_static:g} static / {RP.mu_kinetic:g} kinetic (less on the low-grip course, "
          "and from halfway on the grip-drop course). Means over all --pp-compare targets; PathPlanner's rows are "
          "from the --pp-compare run.\n"]

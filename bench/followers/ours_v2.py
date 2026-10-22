@@ -35,8 +35,8 @@ LOG_DIR = os.path.join(ROOT, "bench", "out")  # BenchServer stderr, one file per
 
 _server = None
 
-# The robot file's frictionCoefficient: the tread's mu. The library plans and limits at 0.9 x min(mu g, the tip
-# limit) (core change, 2026-10); before that change it planned at this mu directly (shipped 0.7).
+# The robot file's frictionCoefficient: the tread's mu. The library plans and limits at 0.9 x min(mu g, g tip / h)
+# (lib/README.md, Traction); before that change it planned at this mu directly (shipped 0.7).
 OURS_MU = 1.5
 
 
@@ -111,6 +111,7 @@ def robot_json(mu):
         "driveMotorCount": 4,
         "statorCurrentLimitAmps": RP.stator_limit,
         "frictionCoefficient": mu,
+        "centerOfMassHeightMeters": RP.cg_height,  # the library's tip limit (tip distance: the square base's)
         "maxAngularRadPerSec": Limits().max_omega,
         "motor": {"nominalVolts": 12.0, "stallTorqueNewtonMeters": RP.motor_kt * stall_current,
                   "stallCurrentAmps": stall_current, "freeSpeedRadPerSec": RP.motor_kv * 12.0},

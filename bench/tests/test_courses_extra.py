@@ -96,9 +96,7 @@ def test_a_bline_leg_with_a_rolling_end_finishes_moving():
 
 def test_ours_runs_a_chain_with_slip_aware_odometry():
     r = run_one(("three_piece_chain", "ours_v2", None, 0, "slipodom"))
-    # TODO: back to 3 cm once the library's 0.9 x min(mu g, tip) change lands (until then ours plans at the raw
-    # mu 1.5 on the weight-transferring plant and ends 3.2 cm off on seed 0)
-    assert r["err_end_cm"] < 5.0 and r["overshoot_cm"] < 2.0  # the session survives the handoffs
+    assert r["err_end_cm"] < 3.0 and r["overshoot_cm"] < 2.0  # the session survives the handoffs
 
 
 def test_overshoot_counts_only_after_the_end_is_reached():
