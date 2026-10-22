@@ -703,7 +703,9 @@ class PathFollowerTest {
   void slipLowersTheGripThenItRecovers() {
     Path path = Path.build(FixturePaths.autoRoute().withEndSpeeds(0, 0), ROBOT);
     FakeSlip slip = new FakeSlip();
-    PathFollower f = new PathFollower(path, CFG).withSlipSignal(slip);
+    // a share no command reaches: every slip counts as the floor's
+    FollowerConfig counts = CFG.toBuilder().expectedSlipShare(100.0).build();
+    PathFollower f = new PathFollower(path, counts).withSlipSignal(slip);
     double[] muDuring = {Double.NaN};
     double[] worstAccel = {0};
     FieldSpeeds[] last = {new FieldSpeeds(0, 0, 0)};
@@ -729,6 +731,27 @@ class PathFollowerTest {
     assertTrue(r.finished());
     assertTrue(Double.isInfinite(f.slipFrictionCoefficient()) || f.slipFrictionCoefficient() > muDuring[0],
         "climbs back after the slip");
+  }
+
+  @Test
+  void slipWhileAskingForMoreThanTheEqualPushOnsetIsTheTreadsOwn() {
+    // A launch at 9 m/s² asks for more than the light wheels hold (7.2 m/s² for the default robot), so
+    // they slip on a good floor: adaptive grip leaves the grip alone. The same slip on a gentle path,
+    // asking for 2 m/s², says the floor is slick.
+    FakeSlip slip = new FakeSlip();
+    double[] lowest = {Double.POSITIVE_INFINITY};
+    Hook slipping = (t, plant, ff) -> {
+      slip.confidence = t > 0.1 && t < 0.4 ? 0.9 : 0.0;
+      slip.achieved = 5.0;
+      lowest[0] = Math.min(lowest[0], ff.slipFrictionCoefficient());
+    };
+    Path hard = Path.build(FixturePaths.straight().withLimits(4.0, 9.0), ROBOT);
+    run(hard, new PathFollower(hard, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
+    assertEquals(Double.POSITIVE_INFINITY, lowest[0], "a hard launch's slip is expected");
+    lowest[0] = Double.POSITIVE_INFINITY;
+    Path gentle = Path.build(FixturePaths.straight().withLimits(4.0, 2.0), ROBOT);
+    run(gentle, new PathFollower(gentle, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
+    assertTrue(lowest[0] < 1.0, "a gentle launch's slip lowers the grip: " + lowest[0]);
   }
 
   @Test

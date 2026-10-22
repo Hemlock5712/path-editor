@@ -225,8 +225,17 @@ weight transfer, not from cornering:
   while the stators have headroom, at some cost in odometry. A real centre-of-mass height and a slip check
   on the real robot should decide between the two.
 
-Adaptive grip costs time at `1.0 · A` (45.4 s against 41.5 s off). It latches the acceleration at which the
-light wheels let go as the floor's μ. Its thresholds need another look on bench-builder's final plant.
+Adaptive grip used to cost time at `1.0 · A` (45.4 s against 41.5 s off), because it read the light wheels
+letting go as a slick floor. Now it ignores slip while the robot asks for more than 0.8 of the equal-push
+onset (see Slip, below). The figures are from bench-builder's 240 A plant (1.5 / 1.3, centre of mass 0.2 m),
+all 26 courses, 10 evaluation seeds, ours with adaptive grip on and off:
+- Perfect pose, the 21 clean courses: 53.8 s on against 52.8 s off (it was 58.4 s on). The rest is
+  three_piece_chain (+0.17 s) and hit_mid_path (+0.05 s).
+- Low grip (0.91 / 0.79), wheel odometry: the win stays, at 4.1 cm end error against 8.0 off.
+- Grip drop: the win is gone (10.2 cm, the same as off; it was 5.3 cm on). The old win came from latching
+  on the clean floor's load-transfer slip before the drop. After the drop to μ 0.91 (61 % of the tread),
+  slip at the path's 6 m/s² looks like the tread's own, so the slip signal can't tell them apart.
+- Clean courses with odometry: 41 runs settle against 38 off (the old one settled 63, by driving slower).
 
 ### Slip: detection, adaptive grip and slip-aware odometry (`frc.team5712.path.slip`)
 
@@ -243,7 +252,12 @@ light wheels let go as the floor's μ. Its thresholds need another look on bench
   together, so the per-module residuals rarely stand out.
 - **Adaptive grip** in `PathFollower` (`withSlipSignal`, on by default; `adaptiveGrip(false)` turns
   it off). Once the confidence reaches 0.3, it takes the acceleration achieved, less 10 %, as the
-  floor's μ (never below 0.39). The limiter's budget for speeding up, the brake law's deceleration
+  floor's μ (never below 0.39). It ignores slip the tread's own weight transfer explains, though.
+  Every wheel pushes about the same, so on a good floor the light wheels let go once the robot asks for
+  the equal-push onset, `μ·g / (1 + μ·h/x)` (7.2 m/s² for the defaults). Slip in a spell that has asked
+  for at least 0.8 of that (`expectedSlipShare`) changes nothing. Early in a spell it also undoes what
+  the spell's first samples latched, since the filtered acceleration lags the slip. Slip while asking for
+  less means a slicker floor. The limiter's budget for speeding up, the brake law's deceleration
   and the planned speed (× sqrt(μ_slip / μ_plan), μ_plan = A/g) all follow it. Braking keeps a limiter budget of
   at least μ 1.11 (`slipBrakeFriction`): the brake law plans with the low μ, so the robot starts
   braking early, but the limiter never forbids it to brake harder. Capping braking at the measured

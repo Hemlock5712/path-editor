@@ -46,11 +46,11 @@ final class OutputLimiter {
   }
 
   /**
-   * Lowers (or restores) the grip budget for steps that speed the robot up: μ·g, with μ capped at
-   * the configured one. Braking has its own budget ({@link #setBrakeFrictionCoefficient}).
+   * Lowers (or restores) the budget for steps that speed the robot up, m/s², capped at the configured
+   * one. Braking has its own budget ({@link #setBrakeBudget}).
    */
-  void setFrictionCoefficient(double mu) {
-    grip = Math.min(nominalGrip, mu * RobotConfig.GRAVITY);
+  void setSpeedingUpBudget(double accel) {
+    grip = Math.min(nominalGrip, accel);
   }
 
   /**
@@ -59,8 +59,8 @@ final class OutputLimiter {
    * on a slick floor a sliding tread still brakes at kinetic friction. The brake law plans with the
    * low μ, so the robot starts braking early instead.
    */
-  void setBrakeFrictionCoefficient(double mu) {
-    brakeGrip = Math.min(nominalGrip, mu * RobotConfig.GRAVITY);
+  void setBrakeBudget(double accel) {
+    brakeGrip = Math.min(nominalGrip, accel);
   }
 
   /** Steps the command toward the wanted velocity over {@code dt} seconds. */
