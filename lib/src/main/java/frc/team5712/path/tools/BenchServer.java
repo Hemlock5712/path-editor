@@ -56,6 +56,11 @@ public final class BenchServer {
     public double achievedAccelMetersPerSecondSquared() {
       return sensing == null ? 0.0 : sensing.detector().achievedAccelMetersPerSecondSquared();
     }
+
+    @Override
+    public double imuGapMetersPerSecondSquared() {
+      return sensing == null ? Double.NaN : sensing.detector().imuGapMetersPerSecondSquared();
+    }
   };
   private Pathfinder pathfinder;
   private String pathfinderKey;

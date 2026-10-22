@@ -56,6 +56,8 @@ import frc.team5712.path.core.RobotConfig;
  *     spell that has asked for at least this share of the equal-push onset {@code μ·g / (1 + μ·h/x)}. Every
  *     wheel pushes about the same, so above that the light wheels slip on a good floor too; it says nothing
  *     about the floor. Slip while asking for less does
+ * @param slideGapMetersPerSecondSquared ...and so does slip while the wheels' acceleration is this far from the
+ *     IMU's: the wheels spinning up together while the chassis doesn't follow, so the loaded wheels slide too
  * @param rejoinAboveMeters knocked further than this off the path, build a piece from where the robot is, the
  *     way it is really going (from the pose's change: after a hit the wheels slide), back onto the path
  *     {@code REJOIN_METERS} ahead with matching position, tangent and curvature, or straight to the goal when
@@ -93,7 +95,8 @@ public record FollowerConfig(
     double slipBrakeFriction,
     boolean replanStartFromMeasuredVelocity,
     double rejoinAboveMeters,
-    double expectedSlipShare) {
+    double expectedSlipShare,
+    double slideGapMetersPerSecondSquared) {
 
   /** How far ahead (along the path) a rejoining piece meets it. */
   public static final double REJOIN_METERS = 1.0;
@@ -143,6 +146,7 @@ public record FollowerConfig(
     b.replanStartFromMeasuredVelocity = replanStartFromMeasuredVelocity;
     b.rejoinAboveMeters = rejoinAboveMeters;
     b.expectedSlipShare = expectedSlipShare;
+    b.slideGapMetersPerSecondSquared = slideGapMetersPerSecondSquared;
     return b;
   }
 
@@ -180,6 +184,7 @@ public record FollowerConfig(
     private boolean replanStartFromMeasuredVelocity = false;
     private double rejoinAboveMeters = 0.4;
     private double expectedSlipShare = 0.8;
+    private double slideGapMetersPerSecondSquared = 3.5;
 
     private Builder(RobotConfig robot) {
       this.robot = robot;
@@ -216,6 +221,7 @@ public record FollowerConfig(
     public Builder replanStartFromMeasuredVelocity(boolean v) { replanStartFromMeasuredVelocity = v; return this; }
     public Builder rejoinAboveMeters(double v) { rejoinAboveMeters = v; return this; }
     public Builder expectedSlipShare(double v) { expectedSlipShare = v; return this; }
+    public Builder slideGapMetersPerSecondSquared(double v) { slideGapMetersPerSecondSquared = v; return this; }
 
     /**
      * Sets a field by its name (the record component's name), for option maps such as the bench's.
@@ -254,6 +260,7 @@ public record FollowerConfig(
         case "replanStartFromMeasuredVelocity" -> replanStartFromMeasuredVelocity = v != 0.0;
         case "rejoinAboveMeters" -> rejoinAboveMeters = v;
         case "expectedSlipShare" -> expectedSlipShare = v;
+        case "slideGapMetersPerSecondSquared" -> slideGapMetersPerSecondSquared = v;
         default -> {
           return false;
         }
@@ -270,7 +277,7 @@ public record FollowerConfig(
           headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,
           goalMoveRadians, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
           minSlipFriction, slipBrakeFriction, replanStartFromMeasuredVelocity, rejoinAboveMeters,
-          expectedSlipShare);
+          expectedSlipShare, slideGapMetersPerSecondSquared);
     }
   }
 }

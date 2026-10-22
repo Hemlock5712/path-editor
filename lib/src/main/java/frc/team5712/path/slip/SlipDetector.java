@@ -241,6 +241,7 @@ public final class SlipDetector implements SlipSignal {
   }
 
   /** |wheel-implied − IMU| acceleration, m/s² (NaN without an IMU). */
+  @Override
   public double imuGapMetersPerSecondSquared() {
     return imuGap;
   }
