@@ -39,6 +39,9 @@ public final class FixtureGen {
     for (Map.Entry<String, PathSpec> e : FixturePaths.spinLimited().entrySet()) {
       write(out, e.getKey(), e.getValue(), FixturePaths.SPIN_LIMITED_ROBOT);
     }
+    for (Map.Entry<String, PathSpec> e : FixturePaths.cusped().entrySet()) {
+      write(out, e.getKey(), e.getValue(), RobotConfig.DEFAULT);
+    }
     java.nio.file.Path files = out.resolve(PATH_FILES);
     Files.createDirectories(files.getParent());
     Files.writeString(files, pathFiles(), StandardCharsets.UTF_8);

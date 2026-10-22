@@ -313,7 +313,8 @@ public final class PathFollower {
     updateProgress(pose);
     double remaining = active.lengthMeters() - s;
     if (phase == Phase.TRACKING && !rollingEnd && remaining < cfg.terminalRadiusMeters()
-        && Math.abs(Angles.wrap(goal.headingRadians() - active.heading().sample(s).radians())) <= cfg.terminalTurnRadians()) {
+        && Math.abs(Angles.wrap(goal.headingRadians() - active.heading().sample(s).radians())) <= cfg.terminalTurnRadians()
+        && Double.isNaN(active.geometry().nextCusp(s))) { // not while the path still has to double back
       phase = Phase.TERMINAL;
     }
 
@@ -361,6 +362,11 @@ public final class PathFollower {
     } else {
       VelocityProfile profile = active.profile();
       double sAhead = profile.sAtTime(profile.timeAt(s) + cfg.latencySeconds());
+      double cusp = active.geometry().nextCusp(s);
+      if (sAhead > cusp - CUSP_EDGE_METERS) {
+        // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
+        sAhead = Math.max(s, cusp - CUSP_EDGE_METERS);
+      }
       PathSample here = active.sample(s);
       PathSample ahead = active.sample(sAhead);
       double brake = StoppingLaw.brake(remaining, limiter.speed(), brakeDecel, cfg.latencySeconds(), endSpeed);
@@ -479,6 +485,10 @@ public final class PathFollower {
       return;
     }
     var geometry = active.geometry();
+    if (geometry.hasCusps()) {
+      updateProgressAroundCusps(pose, geometry);
+      return;
+    }
     Projection near = geometry.project(pose.xMeters(), pose.yMeters(), s, cfg.windowMeters());
     if (near.distanceMeters() > cfg.reprojectMeters()) {
       Projection all = geometry.projectGlobal(pose.xMeters(), pose.yMeters());
@@ -487,6 +497,34 @@ public final class PathFollower {
       }
     }
     s = near.s();
+  }
+
+  /** Progress reads no closer to a cusp than this (its tangent is undefined), and steps past it by as much. */
+  static final double CUSP_EDGE_METERS = 1e-3;
+
+  /**
+   * Progress on a path that doubles back. Around a cusp the two sides lie on top of each other, so the
+   * search stays on the robot's side of it: between the last cusp passed and the next one. The robot then
+   * crosses when it gets within the position tolerance of the cusp (the plan has stopped there), and
+   * progress carries on from the far side.
+   */
+  private void updateProgressAroundCusps(Pose pose, frc.team5712.path.core.PathGeometry geometry) {
+    double next = geometry.nextCusp(s);
+    double prev = geometry.previousCusp(s);
+    double lo = Double.isNaN(prev) ? 0.0 : prev + CUSP_EDGE_METERS;
+    double hi = Double.isNaN(next) ? geometry.lengthMeters() : next - CUSP_EDGE_METERS;
+    Projection near = geometry.projectWithin(pose.xMeters(), pose.yMeters(),
+        Math.max(lo, s - cfg.windowMeters()), Math.min(hi, s + cfg.windowMeters()));
+    if (near.distanceMeters() > cfg.reprojectMeters()) {
+      Projection all = geometry.projectGlobalWithin(pose.xMeters(), pose.yMeters(), lo, hi);
+      if (all.distanceMeters() < near.distanceMeters() - 0.05) {
+        near = all;
+      }
+    }
+    s = near.s();
+    if (!Double.isNaN(next) && next - s <= cfg.positionToleranceMeters()) {
+      s = Math.min(geometry.lengthMeters(), next + CUSP_EDGE_METERS);
+    }
   }
 
   /**

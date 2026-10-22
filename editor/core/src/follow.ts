@@ -176,6 +176,8 @@ export type Phase = "IDLE" | "TRACKING" | "TERMINAL" | "FINISHED" | "CANCELLED";
 export const PHASES: readonly Phase[] = ["IDLE", "TRACKING", "TERMINAL", "FINISHED", "CANCELLED"];
 
 const NOMINAL_LOOP_SECONDS = 0.02;
+/** Progress reads no closer to a cusp than this (its tangent is undefined), and steps past it by as much. */
+const CUSP_EDGE_METERS = 1e-3;
 const MAX_PROGRESS_RATE = 8.0;
 
 /** One controller from path to pose (PathFollower.java; see there for the design). */
@@ -292,7 +294,8 @@ export class PathFollower {
     const remaining = active.lengthMeters - this.s;
     const goal = this.goal;
     if (this.phaseNow === "TRACKING" && !this.rollingEnd && remaining < cfg.terminalRadiusMeters
-      && Math.abs(wrap(goal.headingRadians - active.heading.sample(this.s).radians)) <= cfg.terminalTurnRadians) {
+      && Math.abs(wrap(goal.headingRadians - active.heading.sample(this.s).radians)) <= cfg.terminalTurnRadians
+      && Number.isNaN(active.geometry.nextCusp(this.s))) { // not while the path still has to double back
       this.phaseNow = "TERMINAL";
     }
 
@@ -333,7 +336,12 @@ export class PathFollower {
       this.refHeading = active.heading.sample(this.s).radians;
     } else {
       const profile = active.profile;
-      const sAhead = profile.sAtTime(profile.timeAt(this.s) + cfg.latencySeconds);
+      let sAhead = profile.sAtTime(profile.timeAt(this.s) + cfg.latencySeconds);
+      const cusp = active.geometry.nextCusp(this.s);
+      if (sAhead > cusp - CUSP_EDGE_METERS) {
+        // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
+        sAhead = Math.max(this.s, cusp - CUSP_EDGE_METERS);
+      }
       const here: PathSample = active.sample(this.s);
       const ahead: PathSample = active.sample(sAhead);
       const brake = StoppingLaw.brake(remaining, this.limiter.speed(), brakeDecel, cfg.latencySeconds, this.endSpeed);
@@ -396,12 +404,35 @@ export class PathFollower {
       return;
     }
     const geometry = this.path.geometry;
+    if (geometry.cusps.length > 0) {
+      this.updateProgressAroundCusps(pose);
+      return;
+    }
     let near = geometry.project(pose.xMeters, pose.yMeters, this.s, this.cfg.windowMeters);
     if (near.distanceMeters > this.cfg.reprojectMeters) {
       const all = geometry.projectGlobal(pose.xMeters, pose.yMeters);
       if (all.distanceMeters < near.distanceMeters - 0.05) near = all;
     }
     this.s = near.s;
+  }
+
+  /** Progress on a path that doubles back: stays on the robot's side of the next cusp (PathFollower.java). */
+  private updateProgressAroundCusps(pose: Pose): void {
+    const geometry = this.path.geometry;
+    const next = geometry.nextCusp(this.s);
+    const prev = geometry.previousCusp(this.s);
+    const lo = Number.isNaN(prev) ? 0.0 : prev + CUSP_EDGE_METERS;
+    const hi = Number.isNaN(next) ? geometry.lengthMeters : next - CUSP_EDGE_METERS;
+    let near = geometry.projectWithin(pose.xMeters, pose.yMeters,
+      Math.max(lo, this.s - this.cfg.windowMeters), Math.min(hi, this.s + this.cfg.windowMeters));
+    if (near.distanceMeters > this.cfg.reprojectMeters) {
+      const all = geometry.projectGlobalWithin(pose.xMeters, pose.yMeters, lo, hi);
+      if (all.distanceMeters < near.distanceMeters - 0.05) near = all;
+    }
+    this.s = near.s;
+    if (!Number.isNaN(next) && next - this.s <= this.cfg.positionToleranceMeters) {
+      this.s = Math.min(geometry.lengthMeters, next + CUSP_EDGE_METERS);
+    }
   }
 
   private turnProgress(heading: number): number {

@@ -103,6 +103,11 @@ export class Path {
     return this.geometry.lengthMeters;
   }
 
+  /** Where the path reverses, metres along it (PathGeometry.cusps); the profile stops the robot at each. */
+  get cusps(): readonly number[] {
+    return this.geometry.cusps;
+  }
+
   get totalTimeSeconds(): number {
     return this.profile.totalTimeSeconds;
   }

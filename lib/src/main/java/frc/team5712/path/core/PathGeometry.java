@@ -1,5 +1,6 @@
 package frc.team5712.path.core;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -13,6 +14,13 @@ import java.util.List;
  * the point within {@link #LOOKUP_TOLERANCE_METERS} of where the exact inverse would, and until
  * halving no longer changes the quadrature. A query is then a binary search plus one polynomial,
  * and the point, tangent and curvature are the exact spline values at that {@code u}.
+ *
+ * <p><b>Cusps.</b> A spline can stop and double back: where |p'| falls to zero the curve reverses, and the
+ * curvature there is infinite but only at a point, which a table or a grid steps over. {@link #cusps} finds
+ * them once, at build: every local minimum of |p'| (scanned at {@link #CUSP_SCAN} steps per piece, then
+ * golden-section) where the tangent {@link #CUSP_ARC_METERS} before and after turns by more than 120°. That
+ * takes in near-cusps too (hairpins tighter than about 2 cm). The velocity profile stops the robot at each,
+ * and the follower stops, then reverses; the editor flags them, since they are almost never meant.
  */
 public final class PathGeometry {
   /** Worst position error of a lookup by s, measured at each sub-piece's middle while building. */
@@ -25,6 +33,18 @@ public final class PathGeometry {
   private static final double MAX_INITIAL_PIECE_METERS = 0.5;
 
   private static final int MAX_DEPTH = 24;
+
+  /** Samples of |p'| per spline piece when looking for cusps. */
+  public static final int CUSP_SCAN = 64;
+
+  /** A cusp turns the tangent more than 120° between this far before and this far after it. */
+  public static final double CUSP_ARC_METERS = 0.02;
+
+  /** cos 120°. */
+  private static final double CUSP_COS = -0.5;
+
+  /** 1 − 1/φ, the golden section. */
+  private static final double GOLDEN = 0.3819660112501051;
 
   // 5-point Gauss-Legendre on [0, 1]: nodes 0.5 ± 0.5ξ, weights w/2
   private static final double GL_XI1 = 0.5384693101056830910363144207002088;
@@ -47,6 +67,7 @@ public final class PathGeometry {
   private final double[] pieceM0;
   private final double[] pieceC2;
   private final double[] pieceC3;
+  private final double[] cusps;
 
   private static final java.util.concurrent.atomic.AtomicLong BUILDS =
       new java.util.concurrent.atomic.AtomicLong();
@@ -72,6 +93,7 @@ public final class PathGeometry {
     this.pieceM0 = Arrays.copyOf(table.m0, table.count);
     this.pieceC2 = Arrays.copyOf(table.c2, table.count);
     this.pieceC3 = Arrays.copyOf(table.c3, table.count);
+    this.cusps = findCusps();
   }
 
   /** Builds the spline through these waypoints and its arc-length table. */
@@ -141,6 +163,93 @@ public final class PathGeometry {
     int k = (int) Math.floor(waypoint);
     double f = waypoint - k;
     return waypointS[k] + f * (waypointS[k + 1] - waypointS[k]);
+  }
+
+  /** Where the path reverses (cusps and near-cusps), metres along it, ascending; empty for most paths. */
+  public double[] cusps() {
+    return cusps.clone();
+  }
+
+  /** True when the path has a cusp. */
+  public boolean hasCusps() {
+    return cusps.length > 0;
+  }
+
+  /** The first cusp after {@code s} (by more than a micrometre), or NaN. */
+  public double nextCusp(double s) {
+    for (double c : cusps) {
+      if (c > s + 1e-6) {
+        return c;
+      }
+    }
+    return Double.NaN;
+  }
+
+  /** The last cusp at or before {@code s} (within a micrometre), or NaN. */
+  public double previousCusp(double s) {
+    double out = Double.NaN;
+    for (double c : cusps) {
+      if (c <= s + 1e-6) {
+        out = c;
+      }
+    }
+    return out;
+  }
+
+  private double[] findCusps() {
+    List<Double> out = new ArrayList<>();
+    double[] v = new double[CUSP_SCAN + 1];
+    for (int k = 0; k < spline.segmentCount(); k++) {
+      for (int j = 0; j <= CUSP_SCAN; j++) {
+        v[j] = spline.speed(k, (double) j / CUSP_SCAN);
+      }
+      for (int j = 1; j < CUSP_SCAN; j++) {
+        if (!(v[j] <= v[j - 1] && v[j] < v[j + 1])) {
+          continue;
+        }
+        double a = (j - 1.0) / CUSP_SCAN;
+        double b = (j + 1.0) / CUSP_SCAN;
+        for (int it = 0; it < 60; it++) {
+          double m1 = a + (b - a) * GOLDEN;
+          double m2 = b - (b - a) * GOLDEN;
+          if (spline.speed(k, m1) < spline.speed(k, m2)) {
+            b = m2;
+          } else {
+            a = m1;
+          }
+        }
+        double s = sAtParameter(k, 0.5 * (a + b));
+        GeometrySample before = sample(Math.max(0.0, s - CUSP_ARC_METERS));
+        GeometrySample after = sample(Math.min(lengthMeters, s + CUSP_ARC_METERS));
+        if (before.tangentX() * after.tangentX() + before.tangentY() * after.tangentY() < CUSP_COS) {
+          out.add(s);
+        }
+      }
+    }
+    double[] c = new double[out.size()];
+    for (int i = 0; i < c.length; i++) {
+      c[i] = out.get(i);
+    }
+    return c;
+  }
+
+  /** Metres along the path at spline piece {@code k}, parameter {@code u}: the table's own inverse, by bisection. */
+  private double sAtParameter(int k, double u) {
+    double lo = waypointS[k];
+    double hi = waypointS[k + 1];
+    for (int it = 0; it < 60; it++) {
+      double mid = 0.5 * (lo + hi);
+      int i = findPiece(mid);
+      double len = pieceS[i + 1] - pieceS[i];
+      double sigma = len > 0.0 ? (mid - pieceS[i]) / len : 0.0;
+      double um = pieceU0[i] + sigma * (pieceM0[i] + sigma * (pieceC2[i] + sigma * pieceC3[i]));
+      if (pieceSegment[i] < k || (pieceSegment[i] == k && um < u)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return 0.5 * (lo + hi);
   }
 
   /** Number of sub-pieces in the arc-length table (for tests and tuning). */
@@ -237,6 +346,26 @@ public final class PathGeometry {
       lo = hi = sGuess < 0.0 ? 0.0 : lengthMeters;
     }
     return closestBetween(xMeters, yMeters, lo, hi, WINDOW_STEP_METERS);
+  }
+
+  /** The closest point to (x, y) with s in [lo, hi] (the window's spacing): a window that stops at a cusp. */
+  public Projection projectWithin(double xMeters, double yMeters, double lo, double hi) {
+    lo = Math.max(0.0, lo);
+    hi = Math.min(lengthMeters, hi);
+    if (hi < lo) {
+      hi = lo;
+    }
+    return closestBetween(xMeters, yMeters, lo, hi, WINDOW_STEP_METERS);
+  }
+
+  /** The closest point to (x, y) with s in [lo, hi], at the global search's spacing. */
+  public Projection projectGlobalWithin(double xMeters, double yMeters, double lo, double hi) {
+    lo = Math.max(0.0, lo);
+    hi = Math.min(lengthMeters, hi);
+    if (hi < lo) {
+      hi = lo;
+    }
+    return closestBetween(xMeters, yMeters, lo, hi, GLOBAL_STEP_METERS);
   }
 
   /** The closest point on the whole path to (x, y), for starting up or after losing track. */

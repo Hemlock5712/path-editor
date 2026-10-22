@@ -47,6 +47,14 @@ import java.util.List;
  * Every path gets at least {@link #MIN_CELLS} cells, so short hops are resolved too. On the fixture paths a 3 cm grid's total time is within 0.1-0.9 % of a 1 mm
  * grid's (the larger figures come from zones capping every cell they touch). Curvature is
  * continuous, so no smoothing window is needed.
+ *
+ * <h2>Cusps</h2>
+ *
+ * Where the path doubles back ({@link PathGeometry#cusps}) the robot must stop: the grid gains a point at
+ * each cusp (splitting its cell in two) whose speed cap is zero, so the plan comes to rest exactly there
+ * and sets off the other way. A cusp in the first or last cell, or within a cell of the previous one, gets
+ * no point of its own (the robot is already near a stop there). A path without cusps keeps the uniform
+ * grid, number for number.
  */
 public final class VelocityProfile {
   /** Default grid spacing, metres. */
@@ -58,6 +66,10 @@ public final class VelocityProfile {
   private final double lengthMeters;
   private final double ds;
   private final int cells;
+  /** s at each grid point, and each cell's length: uniform unless a cusp added a point. */
+  private final double[] nodeS;
+  private final double[] cellLength;
+  private final boolean uniform;
   private final double[] velocity; // m/s at each grid point, cells + 1
   private final double[] accel; // m/s² in each cell, constant across it
   private final double[] time; // s at each grid point
@@ -70,10 +82,14 @@ public final class VelocityProfile {
     return BUILDS.get();
   }
 
-  private VelocityProfile(double lengthMeters, double ds, double[] velocity, double[] accel, double[] time) {
+  private VelocityProfile(double lengthMeters, double ds, double[] nodeS, double[] cellLength, boolean uniform,
+      double[] velocity, double[] accel, double[] time) {
     BUILDS.incrementAndGet();
     this.lengthMeters = lengthMeters;
     this.ds = ds;
+    this.nodeS = nodeS;
+    this.cellLength = cellLength;
+    this.uniform = uniform;
     this.cells = accel.length;
     this.velocity = velocity;
     this.accel = accel;
@@ -92,9 +108,52 @@ public final class VelocityProfile {
       RobotConfig robot,
       double gridMeters) {
     double length = geometry.lengthMeters();
-    int cells = Math.max(MIN_CELLS, (int) Math.ceil(length / gridMeters));
-    double ds = length / cells;
+    int uniformCells = Math.max(MIN_CELLS, (int) Math.ceil(length / gridMeters));
+    double ds = length / uniformCells;
+
+    // The grid: uniform, plus a stopping point at each cusp (nodeS, cellLength; stop marks the points)
+    double[] cusps = geometry.cusps();
+    List<Double> extra = new java.util.ArrayList<>();
+    List<Integer> stopAt = new java.util.ArrayList<>(); // uniform grid points that are cusps themselves
+    double lastStop = Double.NEGATIVE_INFINITY;
+    for (double c : cusps) {
+      if (c < ds || c > length - ds || c - lastStop < ds) {
+        continue;
+      }
+      lastStop = c;
+      int i = (int) Math.floor(c / ds);
+      if (Math.abs(c - i * ds) < 1e-6) {
+        stopAt.add(i);
+      } else if (Math.abs(c - (i + 1) * ds) < 1e-6) {
+        stopAt.add(i + 1);
+      } else {
+        extra.add(c);
+      }
+    }
+    int cells = uniformCells + extra.size();
     int nodes = cells + 1;
+    double[] nodeS = new double[nodes];
+    double[] cellLength = new double[cells];
+    boolean[] stop = new boolean[nodes];
+    int[] gridIndex = new int[nodes]; // the uniform grid point, or -1 for a cusp's own point
+    for (int i = 0, e = 0, n = 0; i <= uniformCells; i++) {
+      double si = i == uniformCells ? length : i * ds;
+      while (e < extra.size() && extra.get(e) < si) {
+        nodeS[n] = extra.get(e);
+        gridIndex[n] = -1;
+        stop[n] = true;
+        n++;
+        e++;
+      }
+      nodeS[n] = si;
+      gridIndex[n] = i;
+      stop[n] = stopAt.contains(i);
+      n++;
+    }
+    for (int i = 0; i < cells; i++) {
+      boolean whole = gridIndex[i] >= 0 && gridIndex[i + 1] == gridIndex[i] + 1;
+      cellLength[i] = whole ? ds : nodeS[i + 1] - nodeS[i];
+    }
 
     // Zones, resolved to the grid points they cap: every point of every cell the zone overlaps
     List<ConstraintZone> zones = spec.constraintZones();
@@ -117,7 +176,7 @@ public final class VelocityProfile {
     double[] speedCap = new double[nodes];
     double[] d = new double[8];
     for (int i = 0; i < nodes; i++) {
-      double s = i == cells ? length : i * ds;
+      double s = nodeS[i];
       geometry.evaluateAt(s, d);
       GeometrySample g = PathGeometry.toSample(s, d);
       HeadingSample h = heading.sample(g);
@@ -128,7 +187,9 @@ public final class VelocityProfile {
       double vCap = spec.maxMetersPerSecond();
       double aCap = spec.maxMetersPerSecondSquared();
       for (int j = 0; j < zoneFirst.length; j++) {
-        if (i >= zoneFirst[j] && i <= zoneLast[j]) {
+        boolean in = gridIndex[i] >= 0 ? gridIndex[i] >= zoneFirst[j] && gridIndex[i] <= zoneLast[j]
+            : s >= zoneFirst[j] * ds && s <= zoneLast[j] * ds;
+        if (in) {
           vCap = Math.min(vCap, zones.get(j).maxMetersPerSecond());
           aCap = Math.min(aCap, zones.get(j).maxMetersPerSecondSquared());
         }
@@ -144,7 +205,7 @@ public final class VelocityProfile {
       if (bend > 0.0) {
         vCap = Math.min(vCap, Math.sqrt(grip / bend));
       }
-      speedCap[i] = vCap;
+      speedCap[i] = stop[i] ? 0.0 : vCap;
       budget.curvature[i] = kAbs;
       budget.spin[i] = hp;
       budget.spinBend[i] = hpp;
@@ -155,7 +216,7 @@ public final class VelocityProfile {
     double[] forward = new double[nodes];
     forward[0] = Math.min(spec.startMetersPerSecond(), speedCap[0]);
     for (int i = 0; i < cells; i++) {
-      forward[i + 1] = step(budget, forward[i], i, i + 1, speedCap[i + 1], ds, true);
+      forward[i + 1] = step(budget, forward[i], i, i + 1, speedCap[i + 1], cellLength[i], true);
     }
 
     // Backward pass: slow enough to brake for everything ahead. The final speed is the lower of the two.
@@ -163,7 +224,7 @@ public final class VelocityProfile {
     double next = Math.min(spec.endMetersPerSecond(), speedCap[cells]);
     velocity[cells] = Math.min(forward[cells], next);
     for (int i = cells - 1; i >= 0; i--) {
-      next = step(budget, next, i + 1, i, speedCap[i], ds, false);
+      next = step(budget, next, i + 1, i, speedCap[i], cellLength[i], false);
       velocity[i] = Math.min(forward[i], next);
     }
 
@@ -173,13 +234,13 @@ public final class VelocityProfile {
     for (int i = 0; i < cells; i++) {
       double v0 = velocity[i];
       double v1 = velocity[i + 1];
-      accel[i] = (v1 * v1 - v0 * v0) / (2.0 * ds);
+      accel[i] = (v1 * v1 - v0 * v0) / (2.0 * cellLength[i]);
       if (!(v0 + v1 > 0.0)) {
-        throw new IllegalStateException("the profile stalls at s = " + (i * ds) + " m");
+        throw new IllegalStateException("the profile stalls at s = " + nodeS[i] + " m");
       }
-      time[i + 1] = time[i] + 2.0 * ds / (v0 + v1);
+      time[i + 1] = time[i] + 2.0 * cellLength[i] / (v0 + v1);
     }
-    return new VelocityProfile(length, ds, velocity, accel, time);
+    return new VelocityProfile(length, ds, nodeS, cellLength, extra.isEmpty(), velocity, accel, time);
   }
 
   /**
@@ -355,18 +416,31 @@ public final class VelocityProfile {
     }
     double tau = t - time[lo];
     double d = velocity[lo] * tau + 0.5 * accel[lo] * tau * tau;
-    d = d < 0.0 ? 0.0 : (d > ds ? ds : d);
-    double s = lo * ds + d;
+    d = d < 0.0 ? 0.0 : (d > cellLength[lo] ? cellLength[lo] : d);
+    double s = nodeS[lo] + d;
     return s > lengthMeters ? lengthMeters : s;
   }
 
   private int cellAt(double s) {
-    int i = (int) Math.floor(s / ds);
-    return i < 0 ? 0 : (i >= cells ? cells - 1 : i);
+    if (uniform) {
+      int i = (int) Math.floor(s / ds);
+      return i < 0 ? 0 : (i >= cells ? cells - 1 : i);
+    }
+    int lo = 0;
+    int hi = cells - 1;
+    while (lo < hi) {
+      int mid = (lo + hi + 1) >>> 1;
+      if (nodeS[mid] <= s) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
   }
 
   private double clampedOffset(double s, int i) {
-    double d = s - i * ds;
-    return d < 0.0 ? 0.0 : (d > ds ? ds : d);
+    double d = s - nodeS[i];
+    return d < 0.0 ? 0.0 : (d > cellLength[i] ? cellLength[i] : d);
   }
 }
