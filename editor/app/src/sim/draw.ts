@@ -39,15 +39,23 @@ export function drawSim(ctx: CanvasRenderingContext2D, m: SimDrawModel): void {
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineWidth = 2.5;
+  // one stroke per run of the same colour (in 1/32 steps of the error scale), not one per 20 ms loop
+  ctx.lineJoin = "round";
+  let colour = "";
   for (let i = 1; i < p.t.length; i++) {
     const [ax, ay] = view.toCanvas(p.x[i - 1]!, p.y[i - 1]!);
     const [bx, by] = view.toCanvas(p.x[i]!, p.y[i]!);
-    ctx.strokeStyle = errorColour(p.crossTrack[i]!);
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
+    const c = errorColour(Math.round((Math.min(1, Math.abs(p.crossTrack[i]!) / ERROR_SCALE_METERS) * 32)) / 32 * ERROR_SCALE_METERS);
+    if (c !== colour) {
+      if (colour) ctx.stroke();
+      ctx.strokeStyle = c;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      colour = c;
+    }
     ctx.lineTo(bx, by);
-    ctx.stroke();
   }
+  if (colour) ctx.stroke();
 
   // the shove: an arrow from where the robot was hit, along the hit
   if (p.shove) {

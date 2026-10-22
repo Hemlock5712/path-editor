@@ -65,6 +65,38 @@ chain (2). The intake miss stays 0.4 cm for ours and 0.3 cm for PathPlanner. Our
   and fast_long, by one seed each.
 - **Heavy robot:** level with Choreo, not ahead.
 
+**Why ours loses the figure eight and the three-piece chain** (`python bench/losses.py [--pose odom]`; speed
+against distance from `run_one` traces; 10 seeds, perfect pose unless stated):
+- **figure_eight: planning grip, nothing else.** Ours plans at mu 0.7; Choreo plans at the plant's 1.15, and
+  PathPlanner at its COF. Speed against distance is close to Choreo's on the straights (within 0.15 m/s). Ours brakes earlier
+  into each lobe (2.18 against 2.67 m/s at 3.5 m, 2.09 against 2.46 m/s at 9.5 m), and then finishes faster
+  (5 cm to settled 0.14 s against 0.20 s). Mean settle time is level with Choreo (4.504 s against 4.495 s). The
+  crossing costs nothing: no projection jump, 1.3 cm RMS. The heading is held, so the spin limits don't come in.
+  Planned at mu 0.85, ours settles in 4.244 s, level with PathPlanner at COF 0.9 (4.226 s). It does so at 1.5 cm
+  RMS and 1.4 s of slip, against PathPlanner's 9.3 cm and 10.0 s. At mu 1.0 it settles in 4.151 s. With wheel
+  odometry PathPlanner at COF 0.9 never settles (11.8 cm off), and ours at 0.7 settles 7 of 10, Choreo 8 of 10.
+  Grip stays a robot setting (`frictionCoefficient`); no library change.
+- **three_piece_chain: the join directions, then the handoffs.** The route data sets the direction of travel at
+  both joins to 90 deg, so the sweep runs straight along the fuel at x = -1.2. The hybrid's Choreo trajectory
+  fixes only the robot's heading there and rounds the corners (7.4 cm RMS off the authored route).
+  - Ours as one path through every waypoint plans 5.038 s against 5.046 s as the chain, so the fixed 2 m/s
+    handoffs cost only 8 ms of plan. On the plant the chain settles 0.048 s later (5.058 s against 5.010 s) and
+    slips 600 ms against 21 ms. The cause is a transient at each new leg: its first commands climb about
+    11 m/s^2 (2.00 -> 2.65 m/s in three loops) against the leg's 6 m/s^2 plan, and all four wheels slip. That
+    is in the follower and has gone to core-builder.
+  - A joint plan (prototype, `bench/chain_plan.py`): profile the whole route once and give each join the joint
+    profile's speed (2.38 m/s at both joins). The chain then settles in 4.994 s, still with the authored
+    directions.
+  - Taking the joins' directions from the spline too (66.5 and 113.5 deg) gives 4.769 s as a chain and 4.740 s as
+    one path, ahead of the hybrid's 4.788 s. But the sweep then bows 8.5 cm off the fuel line. So the 0.21 s still
+    behind the hybrid is the price of the straight sweep the route asks for, not a follower loss.
+  - With wheel odometry every variant ends about 5.5-6 cm off and settles 0-2 of 10. The joint plan with free
+    directions settles 0 of 10, because of the handoff slip.
+  - What the editor would need: an auto made of linked path files, and a "plan across the chain" step. It would
+    profile the linked files as one route and write each join's handoff speed (and, if the user unlocks it, its
+    direction of travel) into both files, re-running when either changes. The library already takes
+    `startMetersPerSecond` / `endMetersPerSecond` and set tangents, so it needs no new path format.
+
 
 **Perfect pose (the control laws):**
 - **Choreo with ChoreoLib's documented follower is the fastest on the clean courses.** Its trajectories are solved

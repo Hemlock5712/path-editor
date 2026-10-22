@@ -195,3 +195,54 @@ There are three layers, from the most to the least preferred.
    that an interrupt cancels pending ones, and that what the editor previewed (time, speed, event times) matches
    what the robot code did.
 7. **Robot runs** on the same courses, with vision on and off.
+
+## Later (planned, not started): autos as a graph
+
+Joe asked for this to be planned only. What we have gets made solid first.
+
+**The idea.** Paths are the building blocks, and an auto joins them into a flowchart that students can read.
+PathPlanner's `new-path` branch (path2, af86ef2) does something similar: waypoint graphs with branches chosen at runtime by
+project-wide named conditions.
+
+**Nodes** (steps):
+- follow a path;
+- pathfind on the fly to a pose or named point;
+- pathfind, then follow a path;
+- run a named command;
+- wait;
+- parallel group (e.g. a path plus the intake).
+
+**Edges:**
+- plain "then";
+- a decision on a named condition (yes/no), with "wait up to X s for true", debounce, and what to do on timeout.
+
+**Example:**
+
+    Start -> Path "ToPiece1" (intake event)
+          -> hasPiece?
+               yes -> Path "Piece1ToScore" (optimised) -> Command "Shoot"
+               no  -> Pathfind to "Piece2" (on the fly) -> Path "Piece2ToScore" (optimised) -> Command "Shoot"
+
+**Where things live:**
+- The graph is data: `deploy/paths/<name>.auto.json`, authored in the editor.
+- Robot code only binds meanings by name: `library.bindCondition("hasPiece", intake::hasPiece)`, like `bindEvent`.
+- `PathLibrary` builds one Commands v2/v3 command at boot, so pressing go still does no path work.
+- `unboundConditionNames()` catches typos.
+
+**Why it suits us:** on-the-fly pathfinding joins a branch from wherever the robot really is. A missed pickup rarely
+leaves the robot on the next path's planned start, and this is the hard part of branching autos elsewhere.
+
+**Guard rails:**
+- A forward-only flow to start: no arbitrary loops. Bounded "retry up to N" can come later.
+- Each branch's total time is checked against the 15 s auto period.
+- A straight auto stays one row of nodes, with no extra ceremony.
+- Checks for dead ends, unbound names, and branch joins that don't connect.
+
+**Order:**
+1. Straight autos plus "plan across the chain". One joint speed profile over consecutive paths sets each handoff speed,
+   and optionally the join directions. bench/chain_plan.py is the prototype: three_piece_chain 5.06 s -> 4.99 s, or
+   4.77 s with free join directions.
+2. Decision nodes with conditions, timeouts and debounce.
+3. The flowchart view in an Autos tab, branch colours on the field, and per-branch times.
+4. Whole-auto sim preview with condition toggles.
+5. End-to-end tests of every branch through the WPILib adapters.

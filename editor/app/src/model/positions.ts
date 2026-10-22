@@ -55,3 +55,10 @@ const DEGREES = Math.PI / 180.0;
 export function round5Radians(radians: number): number {
   return round5(radians / DEGREES) * DEGREES;
 }
+
+/** A direction as the editor stores it: in (-180°, 180°], to the file's precision (NaN stays NaN). */
+export function normalAngle(radians: number): number {
+  if (Number.isNaN(radians) || (radians > -Math.PI && radians <= Math.PI)) return radians;
+  const degrees = round5(((((radians / DEGREES + 180) % 360) + 360) % 360) - 180);
+  return (degrees === -180 ? 180 : degrees) * DEGREES;
+}

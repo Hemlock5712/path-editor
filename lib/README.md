@@ -257,12 +257,32 @@ These are compiled against WPILib 2027.0.0-alpha-7 from the installer's offline 
 (`C:/Users/Public/wpilib/2027_alpha7/maven`; `-PwpilibMaven=<dir>` points elsewhere). The build
 skips them with a warning if the repo is missing.
 
+- **Names are constants.** The editor writes `PathEditorNames.java` into the robot project on every save
+  (package set in its Settings > Project; `frc.robot` by default): three enums, `Paths`, `Events` and `Points`,
+  each constant carrying its exact name and implementing `PathId`, `EventId` or `PointId`. Every method below
+  that takes a name also takes one of these, so a misspelt or renamed path, event or point is a compile error:
+
+  ```java
+  import static frc.robot.PathEditorNames.*;
+
+  PathLibrary paths = PathLibrary.loadAll();
+  paths.bindEvent(Events.INTAKE_DOWN, intake.lower())
+       .bindEvent(Events.SHOOT, shooter.shoot())
+       .requireAllEventsBound();               // a forgotten event fails at boot
+  Command toReef = otf.follow(drive, Paths.TO_REEF);   // or new FollowPathCommand(Paths.TO_REEF, drive, ...)
+  Command toDepot = otf.toPoint(drive, Points.DEPOT, Rotation2d.k180deg);
+  ```
+
+  The String versions stay, but the constants are the way to name things.
 - `PathLibrary.loadAll()` builds every `deploy/paths/*.path.json` (with `deploy/paths/robot.json` if
-  present) in robot init. A bad file fails at boot. `loadAll(File dir)` does the same for any folder.
-- `PathLibrary.bindEvent(name, command)` (a v3 or a v2 command) binds an event name from the path
-  files to a command once for every path; a follow command picks the bindings up with
-  `withEvents(library)`, and its own `onEvent` wins for the same name. `unboundEventNames()` lists
-  the names the files use with nothing bound, which is where a typo shows up.
+  present) in robot init. A bad file fails at boot. `loadAll(File dir)` does the same for any folder. If the
+  project's `PathEditorNames` is compiled in (the package named in `.pathproject.json`), it checks every
+  constant against deploy: a stale class (deploy changed and the code wasn't rebuilt, or the other way round)
+  fails at boot, naming the missing constants. `requireNames(Class)` runs the same check by hand.
+- `PathLibrary.bindEvent(event, command)` (a v3 or a v2 command) binds an event to a command once for every
+  path; a follow command picks the bindings up with `withEvents(library)`, and its own `onEvent` wins for the
+  same name. `requireAllEventsBound()` fails if any event the files use has nothing bound;
+  `unboundEventNames()` lists them.
 - `FollowPathCommand` (Commands v3) runs the follower in its coroutine and forks event commands as
   children. `FollowPathCommandV2` (Commands v2) schedules event commands independently, and sends its
   first command from `initialize()`, as v3 does, so a path chained after a rolling end doesn't coast a
@@ -453,9 +473,10 @@ been measured.
 Pathfinding otf = new Pathfinding(paths, FollowerConfig.defaults(paths.robot()),
     drive::getPose, drive::getFieldVelocity, drive::driveFieldVelocity, FieldFrame.RED_HALF_TURN);
 otf.to(drive, new Pose2d(-7.6, 3.1, Rotation2d.k180deg));   // blue frame, flipped on red
-otf.toPoint(drive, "Depot", Rotation2d.k180deg);            // an editor named point (blue frame)
+otf.toPoint(drive, Points.DEPOT, Rotation2d.k180deg);       // an editor named point (blue frame)
 otf.toTarget(drive, vision::scoringPose);                   // real field frame, used as given
-otf.thenFollow(drive, "ToReef");                            // to the path's start, then the path
+otf.thenFollow(drive, Paths.TO_REEF);                       // to the path's start, then the path
+otf.follow(drive, Paths.TO_REEF);                           // the path on its own, its events bound
 otf.to(drive, goal).withMovingGoal(vision::pieceIfSeen);     // the end follows a moving goal (real frame)
 otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a library path as drawn, its end on vision
 ```

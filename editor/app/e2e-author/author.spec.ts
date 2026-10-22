@@ -487,4 +487,8 @@ test("author the end-to-end suite in the editor and save it", async ({ page }) =
     const text = readFileSync(join(pathsDir, `${plan.name}.path.json`), "utf8");
     for (const e of plan.events) expect(text, plan.name).toContain(`"name": "${e.name}"`);
   }
+  // the generated names, which the Java suite compiles and uses (lib/src/e2eNames)
+  const names = readFileSync(join(PROJECT, "src", "main", "java", "frc", "robot", "PathEditorNames.java"), "utf8");
+  for (const plan of chosen) expect(names).toContain(`("${plan.name}")`);
+  for (const e of chosen.flatMap((p) => p.events)) expect(names).toContain(`("${e.name}")`);
 });

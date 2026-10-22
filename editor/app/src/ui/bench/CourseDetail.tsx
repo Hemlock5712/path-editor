@@ -5,7 +5,10 @@
 
 import { useEffect, useRef } from "react";
 import {
+  bestOf,
   bestValidByMetric,
+  courseMetricStat,
+  courseMetricsFor,
   COURSE_ORIGIN,
   methodColour,
   POSE_LABELS,
@@ -260,6 +263,59 @@ function ResultsTable({ t, s, seeds }: { t: BenchTable; s: BenchState; seeds: nu
   );
 }
 
+/** The course's own measures (wall clearance, a miss distance, ...), by method; bold where best, either way round. */
+function MeasuresTable({ data, t, s }: { data: BenchData; t: BenchTable; s: BenchState }) {
+  const measures = courseMetricsFor(data, s.course);
+  if (measures.length === 0) return null;
+  const methods = listedMethods(t, s.moreMethods).filter((m) => data.courseMetrics?.runs[s.pose]?.[s.course]?.[m] !== undefined);
+  const mean = (id: string, key: string) => courseMetricStat(data, s.pose, s.course, id, key)?.mean ?? Number.NaN;
+  // the best mean, and any that tie with it as shown
+  const best = Object.fromEntries(
+    measures.map((m) => {
+      const id = bestOf(methods.map((x) => ({ id: x, value: mean(x, m.key) })), m.higherIsBetter);
+      return [m.key, id === null ? Number.NaN : mean(id, m.key)];
+    }),
+  );
+  return (
+    <>
+      <h3 className="subhead">This course&apos;s own measures</h3>
+      <div className="bench-table-scroll">
+        <table className="bench-table" data-testid="bench-measures">
+          <caption>Mean (worst) over the seeds. Bold: the best mean, highest or lowest as each measure says (▲ higher is better, ▼ lower).</caption>
+          <thead>
+            <tr>
+              <th scope="col">Method</th>
+              {measures.map((m) => (
+                <th scope="col" key={m.key}>
+                  {m.label} <span className="unit">{m.unit}</span> {m.higherIsBetter ? "▲" : "▼"}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {methods.map((key) => (
+              <tr key={key} data-method={key}>
+                <th scope="row">
+                  <Swatch method={key} /> {t.methods.find((m) => m.key === key)?.label ?? key}
+                </th>
+                {measures.map((m) => {
+                  const st = courseMetricStat(data, s.pose, s.course, key, m.key);
+                  return (
+                    <td key={m.key} className={num(best[m.key]) === num(st?.mean ?? undefined) && Number.isFinite(best[m.key]!) ? "best" : undefined}>
+                      {num(st?.mean ?? undefined)}
+                      {typeof st?.worst === "number" && <span className="worst"> ({formatNumber(st.worst, 2)})</span>}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function courseOptions(data: BenchData): { value: string; label: string }[] {
   const courses = data.courses.map((c) => ({ value: c.key, label: `${c.key} (bench course)` }));
   const routes = (data.ppcompare?.targets ?? []).map((t) => ({ value: PP_PREFIX + t.key, label: `${t.key} (${t.onField ? "2026 route" : "course"}, PathPlanner comparison)` }));
@@ -334,6 +390,7 @@ export function CourseDetail({ data }: { data: BenchData }) {
         </div>
       </div>
       <Scoreboard t={t} s={s} />
+      <MeasuresTable data={data} t={t} s={s} />
       <h3 className="subhead">All metrics</h3>
       <div className="bench-table-scroll">
         <ResultsTable t={t} s={s} seeds={isRoute ? (data.ppcompare?.meta.seeds.length ?? 0) : data.meta.seeds.length} />

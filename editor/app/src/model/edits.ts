@@ -15,7 +15,7 @@ import {
   type Waypoint,
 } from "../../../core/src/index.ts";
 import { draftSpec, type EditorPath } from "./project.ts";
-import { afterDelete, afterInsert } from "./positions.ts";
+import { afterDelete, afterInsert, normalAngle } from "./positions.ts";
 
 export function withSpec(path: EditorPath, parts: Partial<PathSpec>): EditorPath {
   return { ...path, spec: draftSpec({ ...path.spec, ...parts }) };
@@ -47,7 +47,7 @@ export function moveWaypoint(path: EditorPath, i: number, x: number, y: number):
 /** Sets the tangent direction (NaN = automatic) and scale of waypoint i. */
 export function setTangent(path: EditorPath, i: number, radians: number, scale: number): EditorPath {
   const w = path.spec.waypoints[i]!;
-  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, changed(w, { tangentRadians: radians, tangentScale: scale })) });
+  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, changed(w, { tangentRadians: normalAngle(radians), tangentScale: scale })) });
 }
 
 /**
@@ -58,7 +58,7 @@ export function setHeading(path: EditorPath, i: number, radians: number): Editor
   const n = path.spec.waypoints.length;
   if (Number.isNaN(radians) && (i === 0 || i === n - 1)) throw new RangeError("the first and last waypoints always have a heading");
   const w = path.spec.waypoints[i]!;
-  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, changed(w, { headingRadians: radians })) });
+  return withSpec(path, { waypoints: replaceAt(path.spec.waypoints, i, changed(w, { headingRadians: normalAngle(radians) })) });
 }
 
 export function setPinned(path: EditorPath, i: number, pinned: boolean): EditorPath {
@@ -145,11 +145,11 @@ export function linkWaypoint(path: EditorPath, i: number, pointId: string | null
 // ------------------------------------------------------------------------------ rotation targets
 
 export function addRotationTarget(path: EditorPath, t: RotationTarget): EditorPath {
-  return withSpec(path, { rotationTargets: [...path.spec.rotationTargets, t] });
+  return withSpec(path, { rotationTargets: [...path.spec.rotationTargets, { ...t, headingRadians: normalAngle(t.headingRadians) }] });
 }
 
 export function updateRotationTarget(path: EditorPath, i: number, t: RotationTarget): EditorPath {
-  return withSpec(path, { rotationTargets: replaceAt(path.spec.rotationTargets, i, t) });
+  return withSpec(path, { rotationTargets: replaceAt(path.spec.rotationTargets, i, { ...t, headingRadians: normalAngle(t.headingRadians) }) });
 }
 
 export function removeRotationTarget(path: EditorPath, i: number): EditorPath {

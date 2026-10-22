@@ -39,6 +39,18 @@ public final class FollowPathCommandV2 extends Command {
   /** Steps closer together than this are in the same robot loop (it runs every 20 ms). */
   private static final double SAME_LOOP_SECONDS = 0.005;
 
+  /** The same, named by the path's generated name ({@code Paths.X}). */
+  public FollowPathCommandV2(
+      PathId path,
+      Subsystem drive,
+      PathFollower follower,
+      Supplier<Pose2d> pose,
+      Supplier<ChassisVelocities> fieldVelocity,
+      Consumer<ChassisVelocities> fieldOutput,
+      FieldFrame redFrame) {
+    this(path.fileName(), drive, follower, pose, fieldVelocity, fieldOutput, redFrame);
+  }
+
   public FollowPathCommandV2(
       String name,
       Subsystem drive,
@@ -56,6 +68,11 @@ public final class FollowPathCommandV2 extends Command {
     setName(name);
     addRequirements(drive);
     follower.onEvent(fired::add);
+  }
+
+  /** {@link #onEvent(String, Command)} by the event's generated name ({@code Events.X}). */
+  public FollowPathCommandV2 onEvent(EventId event, Command command) {
+    return onEvent(event.eventName(), command);
   }
 
   /** Schedules {@code command} when the path event {@code eventName} fires. */
