@@ -2,7 +2,7 @@
 // in time, event and target positions, and the live checks. Pure, so it runs in the worker and in
 // tests alike. No path maths is done here; every number comes from Path.build and its samples.
 
-import { cusps, cuspWaypoint } from "./cusps.ts";
+import { cuspWaypoint } from "./cusps.ts";
 import {
   eventMeters,
   gripMetersPerSecondSquared,
@@ -230,7 +230,7 @@ const deg = (r: number) => Math.round((r * 180) / Math.PI);
 
 /** Where the path doubles back on itself: the robot overshoots and comes back. */
 function cuspChecks(input: AnalysisInput, path: Path): Check[] {
-  return cusps(path.geometry).map((s) => ({
+  return path.cusps.map((s) => ({
     kind: "cusp",
     severity: "error",
     message: `The path reverses direction at s = ${f2(s)} m (a cusp): the robot will overshoot and come back.`,

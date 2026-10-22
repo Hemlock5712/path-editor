@@ -247,12 +247,11 @@ A zone's inspector also has **Split at the middle**.
 - **Turn too sharp for its distance.** The planned heading slows the plan to under 75 % of the same path
   planned without turning, and by at least 0.3 m/s. The message gives the turn, the distance, and both
   speeds. On lib's example route it reports "turns 128° over 1.54 m … slows to 0.77 m/s".
-- **Cusp** (an error). The path reverses direction somewhere: the spline's direction flips between two
-  samples 1 cm apart. A tangent set against the way the path goes makes one (as in an auto of Joe's, whose
+- **Cusp** (an error). The path reverses direction somewhere: the core's `PathGeometry.cusps` (a speed
+  minimum where the direction turns more than 120°; the profile stops the robot there). A tangent set against the way the path goes makes one (as in an auto of Joe's, whose
   end tangent pointed back against its approach); so can automatic tangents at very sharp zigzags. The
   message gives where ("The path reverses direction at s = 11.67 m (a cusp): the robot will overshoot and
-  come back.") and the fix names the waypoint whose curve to reset. The core will report cusps itself
-  (`Path.cusps()`, from core-builder); the editor's scan stands in until then.
+  come back.") and the fix names the waypoint whose curve to reset.
 - **Bumpers.** The bumper rectangle is swept along the plan every 2 cm, with the planned heading.
   Touching an obstacle or the field wall is an error, and the path turns red there with the bumpers drawn
   where they hit. Passing closer than 5 cm (the pathfinder's default margin) is a warning. The optimiser

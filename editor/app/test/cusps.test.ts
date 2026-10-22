@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_ROBOT, makePathSpec, makeWaypoint, PathGeometry, readPath, type PathSpec } from "../../core/src/index.ts";
 import { analyse, type AnalysisInput } from "../src/compute/analysis.ts";
-import { cusps, hasReversal, reversedTangents } from "../src/compute/cusps.ts";
+import { hasReversal, reversedTangents } from "../src/compute/cusps.ts";
 import { optimise } from "../src/compute/optimiser.ts";
 import { DEFAULT_FIELD } from "../src/model/project.ts";
 
@@ -23,7 +23,7 @@ const input = (spec: PathSpec, obstacles: AnalysisInput["obstacles"] = DEFAULT_F
 describe("cusps", () => {
   it("finds the one in Joe's path, where it doubles back near the end, and the tangent that makes it", () => {
     const g = PathGeometry.build(joe.waypoints);
-    const at = cusps(g);
+    const at = g.cusps;
     expect(at).toHaveLength(1);
     expect(at[0]!).toBeCloseTo(11.67, 1);
     expect(reversedTangents(joe)).toEqual([4]);

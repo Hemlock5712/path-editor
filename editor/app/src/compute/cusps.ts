@@ -1,27 +1,9 @@
-// Cusps: places where the path doubles back on itself, so the robot overshoots and comes back. The
-// spline's direction flips there (two samples a centimetre apart point opposite ways). They come from a
-// tangent set against the way the path goes (by hand, or as the optimiser once could), and from
-// automatic tangents at very sharp zigzags. The core will report them itself (Path.cusps(), on its way
-// from core-builder); until then this scan finds them, and the check, the optimiser's guard and the
-// fix-its all use it.
+// Cusps: places where the path doubles back on itself, so the robot overshoots and comes back. The core
+// finds them (PathGeometry.cusps: a speed minimum where the direction turns more than 120°); here are the
+// editor's uses of them: whether a spec reverses at all (including a tangent set against its chord, which
+// the optimiser rules out before it can make one), and which waypoint to blame for one.
 
 import { PathGeometry, type PathSpec } from "../../../core/src/index.ts";
-
-/** Sampling step for the scan, metres. */
-const STEP = 0.01;
-
-/** Where the path reverses, metres along it (one entry per reversal). */
-export function cusps(g: PathGeometry): number[] {
-  const out: number[] = [];
-  const L = g.lengthMeters;
-  let prev = g.sample(0);
-  for (let s = STEP; s <= L + 1e-9; s += STEP) {
-    const p = g.sample(Math.min(s, L));
-    if (prev.tangentX * p.tangentX + prev.tangentY * p.tangentY < 0 && (out.length === 0 || s - out[out.length - 1]! > 0.05)) out.push(s);
-    prev = p;
-  }
-  return out;
-}
 
 /** How far (radians) a tangent may point from the local chord before it counts as reversed. */
 export const REVERSED_RADIANS = (100 * Math.PI) / 180;
@@ -57,7 +39,7 @@ export function hasReversal(spec: PathSpec, g: PathGeometry | null = null): bool
       return false;
     }
   }
-  return cusps(geometry).length > 0;
+  return geometry.cusps.length > 0;
 }
 
 /** The waypoint to blame for a cusp at s: a reversed tangent nearby, or the closer end of its stretch. */
