@@ -226,16 +226,22 @@ weight transfer, not from cornering:
   on the real robot should decide between the two.
 
 Adaptive grip used to cost time at `1.0 · A` (45.4 s against 41.5 s off), because it read the light wheels
-letting go as a slick floor. Now it ignores slip while the robot asks for more than 0.8 of the equal-push
-onset (see Slip, below). The figures are from bench-builder's 240 A plant (1.5 / 1.3, centre of mass 0.2 m),
-all 26 courses, 10 evaluation seeds, ours with adaptive grip on and off:
-- Perfect pose, the 21 clean courses: 53.8 s on against 52.8 s off (it was 58.4 s on). The rest is
-  three_piece_chain (+0.17 s) and hit_mid_path (+0.05 s).
-- Low grip (0.91 / 0.79), wheel odometry: the win stays, at 4.1 cm end error against 8.0 off.
-- Grip drop: the win is gone (10.2 cm, the same as off; it was 5.3 cm on). The old win came from latching
-  on the clean floor's load-transfer slip before the drop. After the drop to μ 0.91 (61 % of the tread),
-  slip at the path's 6 m/s² looks like the tread's own, so the slip signal can't tell them apart.
-- Clean courses with odometry: 41 runs settle against 38 off (the old one settled 63, by driving slower).
+letting go as a slick floor. Now it ignores slip that load transfer explains (see Slip, below). The figures
+are from bench-builder's 240 A plant (1.5 / 1.3, centre of mass 0.2 m), all 26 courses, 10 evaluation seeds
+(tuned on 100-102), ours with adaptive grip on and off:
+
+| | tipOrGrip: on / off | equalPush: on / off | old adaptive grip (tipOrGrip) |
+|---|---|---|---|
+| 21 clean courses, perfect pose, summed settle | 53.7 / 52.8 s | 63.0 / 63.2 s | 58.4 s |
+| clean runs where adaptive grip acted (false positives) | 14 / 190 | 0 / 190 | 152 / 190 |
+| low grip, wheel odometry, end error | 4.1 / 8.0 cm | 4.1 / 4.1 cm (no slip to react to) | 4.1 cm |
+| grip drop, perfect pose, settle | 2.06 / 2.22 s | 2.22 / 2.22 s | 2.28 s |
+| grip drop, slip-aware odometry, end error | 6.7 / 7.4 cm | 4.2 / 4.2 cm | 4.2 cm |
+
+The false positives left under `tipOrGrip` are mostly launches, where the detector flags slip at 60 ms,
+before the filtered command has risen. Holding the command's peak instead removes most of them. But low
+grip is caught the same way, at its launch, so that costs the low-grip win (8.3 cm), and it wasn't taken.
+Under `equalPush` the plan stays under the onset, so adaptive grip never acts on these courses.
 
 ### Slip: detection, adaptive grip and slip-aware odometry (`frc.team5712.path.slip`)
 
@@ -255,9 +261,12 @@ all 26 courses, 10 evaluation seeds, ours with adaptive grip on and off:
   floor's μ (never below 0.39). It ignores slip the tread's own weight transfer explains, though.
   Every wheel pushes about the same, so on a good floor the light wheels let go once the robot asks for
   the equal-push onset, `μ·g / (1 + μ·h/x)` (7.2 m/s² for the defaults). Slip in a spell that has asked
-  for at least 0.8 of that (`expectedSlipShare`) changes nothing. Early in a spell it also undoes what
-  the spell's first samples latched, since the filtered acceleration lags the slip. Slip while asking for
-  less means a slicker floor. The limiter's budget for speeding up, the brake law's deceleration
+  for at least 0.8 of that (`expectedSlipShare`) changes nothing, unless the wheels are spinning up at least
+  3.5 m/s² faster than the IMU says the chassis is (`slideGapMetersPerSecondSquared`). That means the loaded
+  wheels are sliding too. On the bench that gap stays under about 3 m/s² for load-transfer slip on a good
+  floor, and is 3.4-7.8 m/s² when the whole robot slides on a slick one (`SlipSignal.imuGapMetersPerSecondSquared`).
+  Expected slip early in a spell also undoes what the spell's first samples latched, since the filtered
+  acceleration lags the slip. Slip while asking for less than the onset means a slicker floor. The limiter's budget for speeding up, the brake law's deceleration
   and the planned speed (× sqrt(μ_slip / μ_plan), μ_plan = A/g) all follow it. Braking keeps a limiter budget of
   at least μ 1.11 (`slipBrakeFriction`): the brake law plans with the low μ, so the robot starts
   braking early, but the limiter never forbids it to brake harder. Capping braking at the measured

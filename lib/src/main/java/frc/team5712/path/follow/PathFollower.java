@@ -659,15 +659,18 @@ public final class PathFollower {
         spellMaxCommanded = 0.0;
       }
       // Every wheel pushes about the same, so on the tread's own floor the wheels that weight transfer
-      // unloads let go once the robot asks for μ·g / (1 + μ·h/x) (the equal-push onset). Slip while the
-      // spell has asked for at least expectedSlipShare of that is expected, not a slick floor: it changes
-      // nothing. Slip while asking for less says the floor grips worse than the tread. The commanded
-      // acceleration is filtered and lagged like the robot's response, and it lags the spell's start, so
-      // expected slip early in a spell also undoes what the spell's first samples latched.
+      // unloads let go once the robot asks for μ·g / (1 + μ·h/x) (the equal-push onset): some wheels slip
+      // while the rest grip. That slip is expected, not a slick floor, and changes nothing. A slick floor
+      // shows either way: slip while asking for less than expectedSlipShare of that onset, or the wheels
+      // together spinning up faster than the IMU says the chassis does (the gap at least
+      // slideGapMetersPerSecondSquared: the loaded wheels are sliding too). The commanded acceleration is
+      // filtered and lagged like the robot's response, and it lags the spell's start, so expected slip
+      // early in a spell also undoes what the spell's first samples latched.
       floorMu = slipSignal.achievedAccelMetersPerSecondSquared() / RobotConfig.GRAVITY;
       spellMaxCommanded = Math.max(spellMaxCommanded, commandedAccel);
       double onset = cfg.robot().equalPushMetersPerSecondSquared() / RobotConfig.TRACTION_MARGIN;
-      expected = spellMaxCommanded >= cfg.expectedSlipShare() * onset;
+      boolean sliding = slipSignal.imuGapMetersPerSecondSquared() >= cfg.slideGapMetersPerSecondSquared();
+      expected = spellMaxCommanded >= cfg.expectedSlipShare() * onset && !sliding;
       if (expected && timeSeconds - spellStart <= SPELL_ONSET_SECONDS) {
         slipMu = spellStartMu;
         spellLatched = false;

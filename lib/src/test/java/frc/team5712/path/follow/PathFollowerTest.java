@@ -673,6 +673,7 @@ class PathFollowerTest {
   static final class FakeSlip implements frc.team5712.path.slip.SlipSignal {
     double confidence;
     double achieved;
+    double gap = Double.NaN;
 
     @Override
     public double confidence() {
@@ -682,6 +683,11 @@ class PathFollowerTest {
     @Override
     public double achievedAccelMetersPerSecondSquared() {
       return achieved;
+    }
+
+    @Override
+    public double imuGapMetersPerSecondSquared() {
+      return gap;
     }
   }
 
@@ -752,6 +758,11 @@ class PathFollowerTest {
     Path gentle = Path.build(FixturePaths.straight().withLimits(4.0, 2.0), ROBOT);
     run(gentle, new PathFollower(gentle, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
     assertTrue(lowest[0] < 1.0, "a gentle launch's slip lowers the grip: " + lowest[0]);
+    // the hard launch again, but the wheels spin up 5 m/s² faster than the chassis: all of them slide
+    slip.gap = 5.0;
+    lowest[0] = Double.POSITIVE_INFINITY;
+    run(hard, new PathFollower(hard, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
+    assertTrue(lowest[0] < 1.0, "a slide lowers the grip whatever the robot asked for: " + lowest[0]);
   }
 
   @Test
