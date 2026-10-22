@@ -173,7 +173,8 @@ class OursV2(Follower):
 
     def reset(self, native, start):
         # a path that starts after t = 0 is the next one of a chain: it keeps the run's slip-sensing session
-        r = call_fresh(op="load", path=native["path"], robot=dict(robot_json(self.mu), **self.robot_overrides),
+        src = {"trajectory": native["trajectory"]} if "trajectory" in native else {"path": native["path"]}
+        r = call_fresh(op="load", **src, robot=dict(robot_json(self.mu), **self.robot_overrides),
                        options=self.options, keepSensing=start.t > 0)
         self.srv = server()
         self.build_ms = r["buildMs"]
@@ -189,3 +190,19 @@ class OursV2(Follower):
 
     def done(self):
         return self.finished
+
+
+class OursOnChoreo(OursV2):
+    """Ours v2's follower on a Choreo trajectory (the course's .traj): Path.fromTrajectory builds our path from
+    the samples (spline through their positions, Choreo's heading and speed as tables), and the same
+    PathFollower follows it by position with our stopping law at the end."""
+
+    @staticmethod
+    def adapt(course):
+        from followers.choreo import load_traj
+
+        s = load_traj(course.name)["samples"]
+        traj = {k: [float(r[i]) for r in s] for i, k in enumerate(("t", "x", "y", "heading", "vx", "vy"))}
+        call_fresh(op="load", trajectory=traj, robot=robot_json(OURS_MU))
+        g = server().call(op="geometry", step=0.02)
+        return {"trajectory": traj, "geometry": np.column_stack([g["x"], g["y"]])}

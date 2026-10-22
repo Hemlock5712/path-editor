@@ -96,6 +96,30 @@ public final class VelocityProfile {
     this.time = time;
   }
 
+  /**
+   * A profile from a speed table made elsewhere (a Choreo trajectory): speed {@code v[i]} at
+   * {@code s[i]} metres, s strictly rising from 0, with constant acceleration between the points
+   * like a built profile's cells. The speeds are taken as given: no limit is applied.
+   */
+  public static VelocityProfile tabulated(double[] s, double[] v) {
+    int cells = s.length - 1;
+    if (cells < 1 || v.length != s.length || s[0] != 0.0) {
+      throw new IllegalArgumentException("a speed table needs two or more points, starting at s = 0");
+    }
+    double[] cellLength = new double[cells];
+    double[] accel = new double[cells];
+    double[] time = new double[cells + 1];
+    for (int i = 0; i < cells; i++) {
+      cellLength[i] = s[i + 1] - s[i];
+      if (!(cellLength[i] > 0.0) || !(v[i] + v[i + 1] > 0.0)) {
+        throw new IllegalArgumentException("the speed table must rise in s and keep moving, at point " + i);
+      }
+      accel[i] = (v[i + 1] * v[i + 1] - v[i] * v[i]) / (2.0 * cellLength[i]);
+      time[i + 1] = time[i] + 2.0 * cellLength[i] / (v[i] + v[i + 1]);
+    }
+    return new VelocityProfile(s[cells], s[cells] / cells, s.clone(), cellLength, false, v.clone(), accel, time);
+  }
+
   public static VelocityProfile build(
       PathGeometry geometry, HeadingProfile heading, PathSpec spec, RobotConfig robot) {
     return build(geometry, heading, spec, robot, DEFAULT_GRID_METERS);

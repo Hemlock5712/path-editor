@@ -153,14 +153,20 @@ def choreo_plan(n):
             "length": float(np.sum(np.hypot(np.diff(s[:, 1]), np.diff(s[:, 2]))))}
 
 
-def ours_plan(n, rule):
-    from followers.ours_v2 import call_fresh, robot_json, server, to_ours, OURS_MU
+def _robot(n, rule):
+    """Ours' robot file for a matched course: the bench plant, the rule, the course's robot where it has one."""
+    from followers.ours_v2 import OURS_MU, robot_json
 
     robot = dict(robot_json(OURS_MU), tractionRule=rule)
     r = EXTRAS.get(n, {}).get("robot")
     if r:
         robot.update(massKg=r["mass"], momentOfInertiaKgM2=r["inertia"], statorCurrentLimitAmps=r["stator_limit"])
-    rep = call_fresh(op="load", path=to_ours(COURSES[n]), robot=robot)
+    return robot
+
+
+def _envelope(rep):
+    from followers.ours_v2 import server
+
     g = server().call(op="geometry", step=0.01, profile=True)
     v, a, k = np.array(g["v"]), np.array(g["a"]), np.array(g["k"])
     lat = v * v * np.abs(k)
@@ -168,39 +174,150 @@ def ours_plan(n, rule):
             "latmax": float(lat.max()), "tanmax": float(np.abs(a).max()), "length": rep["lengthMeters"]}
 
 
+def ours_plan(n, rule, tree=None):
+    from followers.ours_v2 import call_fresh, to_ours
+
+    return _envelope(call_fresh(op="load", path=tree or to_ours(COURSES[n]), robot=_robot(n, rule)))
+
+
+def ours_on_choreo_plan(n, rule):
+    """Path.fromTrajectory on the course's .traj: its planned time should be Choreo's."""
+    from followers.ours_v2 import call_fresh
+
+    return _envelope(call_fresh(op="load", trajectory=_traj(n), robot=_robot(n, rule)))
+
+
+def _traj(n):
+    from followers.choreo import load_traj
+
+    s = load_traj(n)["samples"]
+    return {k: [float(r[i]) for r in s] for i, k in enumerate(("t", "x", "y", "heading", "vx", "vy"))}
+
+
 def plans():
+    opt = _optimised()
     out = {}
     for tag, rule in RULES.items():
         for b in BASE:
             n = name(tag, b)
-            out[n] = {"choreo": choreo_plan(n), "ours": ours_plan(n, rule), "traction": traction(rule)}
+            out[n] = {"choreo": choreo_plan(n), "ours": ours_plan(n, rule), "traction": traction(rule),
+                      "ours_on_choreo": ours_on_choreo_plan(n, rule)}
+            if n in opt:
+                out[n]["ours_opt"] = ours_plan(n, rule, opt[n]["path"])
     json.dump(out, open(os.path.join(OUT, "matched_plans.json"), "w"), indent=1)
     return out
 
 
+# ============================================================================================ optimise
+OPT_FILE = os.path.join(OUT, "matched_opt.json")
+OPT_BUDGET_MS = 3000  # the optimiser's default budget (1500 plans), as in ppcompare
+
+
+def _optimise_job(n):
+    """tools/optimise.mjs on the course as ours draws it, curves only (waypoints stay, like Choreo's), waypoints
+    with a course heading pinned (ppcompare.optimise_ours), on a large empty field."""
+    import subprocess
+    import tempfile
+
+    from followers.ours_v2 import to_ours
+
+    rule = RULES[n.split("_")[1]]
+    course = COURSES[n]
+    pins = [str(i) for i, w in enumerate(course.waypoints) if w.heading_deg is not None]
+    with tempfile.TemporaryDirectory() as d:
+        p, r, f, o = (os.path.join(d, x) for x in ("path.json", "robot.json", "field.json", "out.json"))
+        json.dump(to_ours(course), open(p, "w"))
+        json.dump(_robot(n, rule), open(r, "w"))
+        json.dump({"field": {"length_m": 60.0, "width_m": 40.0}, "obstacles": []}, open(f, "w"))
+        cmd = ["node", os.path.join(os.path.dirname(HERE), "tools", "optimise.mjs"), p, "--robot", r, "--field", f,
+               "--budget-ms", str(OPT_BUDGET_MS), "--seed", "1", "--out", o]
+        if pins:
+            cmd += ["--pin", ",".join(pins)]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode not in (0, 3):
+            raise RuntimeError(f"{n}: optimise.mjs exit {res.returncode}: {res.stderr.strip()}")
+        return n, {"path": json.load(open(o)), "summary": res.stderr.strip()}
+
+
+def optimise(procs):
+    names = [name(tag, b) for tag in RULES for b in BASE]
+    with mp.get_context("spawn").Pool(procs) as pool:
+        got = dict(pool.map(_optimise_job, names))
+    json.dump(got, open(OPT_FILE, "w"), indent=1)
+    for n, v in got.items():
+        print(n, v["summary"])
+
+
+_opt_cache = None
+
+
+def _optimised():
+    global _opt_cache
+    if _opt_cache is None:
+        _opt_cache = json.load(open(OPT_FILE)) if os.path.exists(OPT_FILE) else {}
+    return _opt_cache
+
+
+from followers.ours_v2 import OursV2  # noqa: E402
+
+
+class OursOptimised(OursV2):
+    """Ours v2 on the path our optimiser made for the course (out/matched_opt.json)."""
+
+    @staticmethod
+    def adapt(course):
+        from followers.ours_v2 import call_fresh, robot_json, server, OURS_MU
+
+        tree = _optimised()[course.name]["path"]
+        call_fresh(op="load", path=tree, robot=robot_json(OURS_MU))
+        g = server().call(op="geometry", step=0.02)
+        return {"path": tree, "geometry": np.column_stack([g["x"], g["y"]])}
+
+
+def _register_methods():
+    from followers import LABELS, METHODS
+
+    METHODS["ours_opt"] = ("matched", "OursOptimised", {})
+    LABELS["ours_opt"] = "Ours v2, optimised (curves only)"
+
+
+_register_methods()
+
+
 # ============================================================================================ run
+# method key in the results -> (registry key, whether it takes ours' traction rule)
+RUN_METHODS = {"choreo": ("choreo", False), "choreo_hybrid": ("choreo_hybrid", False), "ours": ("ours_v2", True),
+               "ours_on_choreo": ("ours_on_choreo", True), "ours_opt": ("ours_opt", True)}
+RESULTS = os.path.join(OUT, "matched.json")
+
+
 def _job(job):
     from sim import run_one
 
     return job, run_one(job)
 
 
-def run(procs, seeds):
-    jobs = []
+def run(procs, seeds, methods):
+    res = json.load(open(RESULTS)) if os.path.exists(RESULTS) else {}
+    jobs, keys = [], []
     for tag, rule in RULES.items():
         for b in BASE:
             n = name(tag, b)
-            for s in range(seeds):
-                jobs.append((n, "choreo", None, s, "truth"))
-                jobs.append((n, "choreo_hybrid", None, s, "truth"))
-                jobs.append((n, "ours_v2", {"robot": {"tractionRule": rule}}, s, "truth"))
+            for m in methods:
+                key, ruled = RUN_METHODS[m]
+                if len(res.get(n, {}).get(m, [])) == seeds:
+                    continue  # already run
+                for s in range(seeds):
+                    jobs.append((n, key, {"robot": {"tractionRule": rule}} if ruled else None, s, "truth"))
+                    keys.append(m)
     with mp.get_context("spawn").Pool(procs) as pool:
         rows = pool.map(_job, jobs, chunksize=2)
-    res = {}
-    for (n, m, _, s, _), r in rows:
-        key = "ours" if m == "ours_v2" else m
-        res.setdefault(n, {}).setdefault(key, []).append({k: v for k, v in r.items() if k != "trace"})
-    json.dump(res, open(os.path.join(OUT, "matched.json"), "w"), indent=1)
+    fresh = {}
+    for m, ((n, _, _, s, _), r) in zip(keys, rows):
+        fresh.setdefault((n, m), []).append({k: v for k, v in r.items() if k != "trace"})
+    for (n, m), rs in fresh.items():
+        res.setdefault(n, {})[m] = rs
+    json.dump(res, open(RESULTS, "w"), indent=1)
     return res
 
 
@@ -211,40 +328,46 @@ def _mean(rows, k):
     return (float(g.mean()) if len(g) else float("nan")), int(np.isnan(a).sum())
 
 
+PLAN_COLS = [("choreo", "Choreo"), ("ours", "ours as drawn"), ("ours_opt", "ours optimised"),
+             ("ours_on_choreo", "ours' path from the .traj")]
+RUN_COLS = [("choreo", "Choreo + ChoreoLib"), ("choreo_hybrid", "hybrid prototype"),
+            ("ours_on_choreo", "ours on Choreo"), ("ours", "ours as drawn"), ("ours_opt", "ours optimised")]
+
+
 def md():
     P = json.load(open(os.path.join(OUT, "matched_plans.json")))
-    R = json.load(open(os.path.join(OUT, "matched.json"))) if os.path.exists(os.path.join(OUT, "matched.json")) else {}
+    R = json.load(open(RESULTS)) if os.path.exists(RESULTS) else {}
     lines = ["# Choreo and ours at matched limits", "",
              "Generated by `bench/matched.py` (see its docstring for how the limits are matched).", ""]
     for tag, rule in RULES.items():
         a = traction(rule)
+        cols = [c for c in PLAN_COLS if c[0] in P[name(tag, BASE[0])]]
         lines += [f"## {rule}: |a| <= {a:.2f} m/s^2 for both", "",
-                  "Plans (planned time; peak total / sideways acceleration, m/s^2; peak speed, m/s; path length, m):", "",
-                  "| course | Choreo plan | ours plan | ours - Choreo | Choreo peak a / side / v / length | "
-                  "ours peak a / side / v / length |", "|---|---|---|---|---|---|"]
+                  "Planned time, s (peak total / sideways acceleration, m/s^2):", "",
+                  "| course | " + " | ".join(h for _, h in cols) + " |", "|---" * (len(cols) + 1) + "|"]
         for b in BASE:
             p = P[name(tag, b)]
-            c, o = p["choreo"], p["ours"]
-            lines.append(f"| {b} | {c['T']:.3f} | {o['T']:.3f} | {o['T'] - c['T']:+.3f} | "
-                         f"{c['amax']:.2f} / {c['latmax']:.2f} / {c['vmax']:.2f} / {c['length']:.2f} | "
-                         f"{o['amax']:.2f} / {o['latmax']:.2f} / {o['vmax']:.2f} / {o['length']:.2f} |")
+            lines.append(f"| {b} | " + " | ".join(
+                f"{p[k]['T']:.3f} ({p[k]['amax']:.2f} / {p[k]['latmax']:.2f})" for k, _ in cols) + " |")
         if R:
-            n0 = len(next(iter(R.values()))["ours"])
-            lines += ["", f"Runs, perfect pose, {n0} seeds (time to 5 cm / time settled, s (runs that never "
-                      "settle); off its own path RMS / max, cm; off the drawn course RMS, cm):", "",
-                      "| course | Choreo + ChoreoLib | hybrid | ours |", "|---|---|---|---|"]
+            cols = [c for c in RUN_COLS if c[0] in R[name(tag, BASE[0])]]
+            n0 = len(R[name(tag, BASE[0])]["choreo"])
+            lines += ["", f"Runs, perfect pose, {n0} seeds: time to 5 cm / time settled, s (runs that never "
+                      "settle); off its own path RMS / max, cm:", "",
+                      "| course | " + " | ".join(h for _, h in cols) + " |", "|---" * (len(cols) + 1) + "|"]
+            sums = {m: 0.0 for m, _ in cols}
             for b in BASE:
                 cells = []
-                for m in ("choreo", "choreo_hybrid", "ours"):
+                for m, _ in cols:
                     rows = R[name(tag, b)][m]
                     t5, _ = _mean(rows, "t_5cm")
                     ts, nn = _mean(rows, "t_settle")
                     own, _ = _mean(rows, "ct_own_rms_cm")
                     own_max, _ = _mean(rows, "ct_own_max_cm")
-                    ct, _ = _mean(rows, "ct_rms_cm")
-                    cells.append(f"{t5:.2f} / {ts:.2f}" + (f" ({nn})" if nn else "")
-                                 + f"; {own:.1f} / {own_max:.1f}; {ct:.1f}")
+                    sums[m] += t5
+                    cells.append(f"{t5:.2f} / {ts:.2f}" + (f" ({nn})" if nn else "") + f"; {own:.1f} / {own_max:.1f}")
                 lines.append(f"| {b} | " + " | ".join(cells) + " |")
+            lines.append("| sum of time to 5 cm | " + " | ".join(f"{sums[m]:.2f}" for m, _ in cols) + " |")
         lines.append("")
     open(os.path.join(OUT, "matched.md"), "w", encoding="utf-8").write("\n".join(lines))
     print("\n".join(lines))
@@ -252,19 +375,22 @@ def md():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["make", "plans", "run", "md"])
+    ap.add_argument("cmd", choices=["make", "optimise", "plans", "run", "md"])
     ap.add_argument("--cli")
     ap.add_argument("--procs", type=int, default=4)
     ap.add_argument("--seeds", type=int, default=10)
+    ap.add_argument("--methods", default=",".join(RUN_METHODS))
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
     if a.cmd == "make":
         make(a.cli)
+    elif a.cmd == "optimise":
+        optimise(a.procs)
     elif a.cmd == "plans":
         plans()
         md()
     elif a.cmd == "run":
-        run(a.procs, a.seeds)
+        run(a.procs, a.seeds, a.methods.split(","))
         md()
     else:
         md()

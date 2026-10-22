@@ -111,7 +111,6 @@ public final class BenchServer {
   }
 
   private String load(Map<String, Object> msg) {
-    Map<String, Object> pathTree = PathFile.asMap(msg.get("path"), "path");
     RobotConfig robot = msg.get("robot") == null
         ? RobotConfig.DEFAULT
         : RobotFile.fromJson(PathFile.asMap(msg.get("robot"), "robot"));
@@ -124,9 +123,15 @@ public final class BenchServer {
       }
     }
     long t0 = System.nanoTime();
-    PathSpec spec = PathFile.fromJson(pathTree);
-    path = msg.get("startCurvature") == null ? Path.build(spec, robot)
-        : Path.build(spec, robot, VelocityProfile.DEFAULT_GRID_METERS, number(msg, "startCurvature"));
+    if (msg.get("trajectory") != null) { // a trajectory planned elsewhere (Choreo): Path.fromTrajectory
+      Map<String, Object> tr = PathFile.asMap(msg.get("trajectory"), "trajectory");
+      path = Path.fromTrajectory(column(tr, "t"), column(tr, "x"), column(tr, "y"), column(tr, "heading"),
+          column(tr, "vx"), column(tr, "vy"), robot.tractionMetersPerSecondSquared());
+    } else {
+      PathSpec spec = PathFile.fromJson(PathFile.asMap(msg.get("path"), "path"));
+      path = msg.get("startCurvature") == null ? Path.build(spec, robot)
+          : Path.build(spec, robot, VelocityProfile.DEFAULT_GRID_METERS, number(msg, "startCurvature"));
+    }
     double buildMs = (System.nanoTime() - t0) / 1e6;
     follower = new PathFollower(path, b.build());
     goal = Optional.empty();
@@ -371,6 +376,17 @@ public final class BenchServer {
     if (follower == null) {
       throw new IllegalStateException("load a path first");
     }
+  }
+
+  private static double[] column(Map<String, Object> m, String key) {
+    if (!(m.get(key) instanceof List<?> list)) {
+      throw new IllegalArgumentException("'" + key + "' must be a list of numbers");
+    }
+    double[] out = new double[list.size()];
+    for (int i = 0; i < out.length; i++) {
+      out[i] = ((Number) list.get(i)).doubleValue();
+    }
+    return out;
   }
 
   private static double number(Map<String, Object> m, String key) {

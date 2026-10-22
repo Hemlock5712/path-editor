@@ -30,6 +30,10 @@ public final class HeadingProfile {
   private final double[] zoneBlendMeters;
   private final double[] zonePointX;
   private final double[] zonePointY;
+  // A heading table (tabulated), or null: theta at s, cubic Hermite between the points
+  private final double[] tableS;
+  private final double[] tableRadians;
+  private final double[] tableSlope;
 
   private HeadingProfile(
       PathGeometry geometry,
@@ -40,6 +44,25 @@ public final class HeadingProfile {
       double[] zoneBlendMeters,
       double[] zonePointX,
       double[] zonePointY) {
+    this(geometry, targetS, targetRadians, zoneStartS, zoneEndS, zoneBlendMeters, zonePointX, zonePointY,
+        null, null, null);
+  }
+
+  private HeadingProfile(
+      PathGeometry geometry,
+      double[] targetS,
+      double[] targetRadians,
+      double[] zoneStartS,
+      double[] zoneEndS,
+      double[] zoneBlendMeters,
+      double[] zonePointX,
+      double[] zonePointY,
+      double[] tableS,
+      double[] tableRadians,
+      double[] tableSlope) {
+    this.tableS = tableS;
+    this.tableRadians = tableRadians;
+    this.tableSlope = tableSlope;
     this.geometry = geometry;
     this.targetS = targetS;
     this.targetRadians = targetRadians;
@@ -102,6 +125,64 @@ public final class HeadingProfile {
     return new HeadingProfile(geometry, ts, tr, za, zb, zblend, zx, zy);
   }
 
+  /**
+   * A heading from a table made elsewhere (a Choreo trajectory): {@code radians[i]} at {@code s[i]}
+   * metres, s strictly rising. Between the points a cubic Hermite with finite-difference slopes, so
+   * the spin is continuous; before the first point and after the last the heading holds.
+   */
+  public static HeadingProfile tabulated(PathGeometry geometry, double[] s, double[] radians) {
+    int n = s.length;
+    if (n < 2 || radians.length != n) {
+      throw new IllegalArgumentException("a heading table needs two or more points");
+    }
+    double[] r = new double[n];
+    r[0] = radians[0];
+    for (int i = 1; i < n; i++) {
+      r[i] = r[i - 1] + Angles.wrap(radians[i] - r[i - 1]);
+    }
+    double[] slope = new double[n];
+    for (int i = 0; i < n; i++) {
+      double back = i > 0 ? (r[i] - r[i - 1]) / (s[i] - s[i - 1]) : Double.NaN;
+      double fwd = i < n - 1 ? (r[i + 1] - r[i]) / (s[i + 1] - s[i]) : Double.NaN;
+      slope[i] = Double.isNaN(back) ? fwd : (Double.isNaN(fwd) ? back
+          : (back * (s[i + 1] - s[i]) + fwd * (s[i] - s[i - 1])) / (s[i + 1] - s[i - 1]));
+    }
+    double[] none = new double[0];
+    return new HeadingProfile(geometry, none, none, none, none, none, none, none, s.clone(), r, slope);
+  }
+
+  private HeadingSample tableSample(double s) {
+    int last = tableS.length - 1;
+    if (s <= tableS[0]) {
+      return new HeadingSample(tableRadians[0], 0.0, 0.0);
+    }
+    if (s >= tableS[last]) {
+      return new HeadingSample(tableRadians[last], 0.0, 0.0);
+    }
+    int lo = 0;
+    int hi = last - 1;
+    while (lo < hi) {
+      int mid = (lo + hi + 1) >>> 1;
+      if (tableS[mid] <= s) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    double h = tableS[lo + 1] - tableS[lo];
+    double t = (s - tableS[lo]) / h;
+    double p0 = tableRadians[lo];
+    double p1 = tableRadians[lo + 1];
+    double m0 = tableSlope[lo] * h;
+    double m1 = tableSlope[lo + 1] * h;
+    double t2 = t * t;
+    double t3 = t2 * t;
+    double theta = (2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * p1 + (t3 - t2) * m1;
+    double d1 = (6 * t2 - 6 * t) * p0 + (3 * t2 - 4 * t + 1) * m0 + (-6 * t2 + 6 * t) * p1 + (3 * t2 - 2 * t) * m1;
+    double d2 = (12 * t - 6) * p0 + (6 * t - 4) * m0 + (-12 * t + 6) * p1 + (6 * t - 2) * m1;
+    return new HeadingSample(theta, d1 / h, d2 / (h * h));
+  }
+
   private static double clamp(double s, PathGeometry g) {
     return s < 0.0 ? 0.0 : (s > g.lengthMeters() ? g.lengthMeters() : s);
   }
@@ -113,6 +194,9 @@ public final class HeadingProfile {
 
   /** The heading at a geometry sample already in hand (saves a lookup). */
   public HeadingSample sample(GeometrySample g) {
+    if (tableS != null) {
+      return tableSample(g.s());
+    }
     double s = g.s();
     double theta;
     double dTheta;

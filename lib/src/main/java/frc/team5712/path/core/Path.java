@@ -45,6 +45,85 @@ public final class Path {
   }
 
   /**
+   * A path that follows a trajectory planned elsewhere (a Choreo {@code .traj}): its samples' positions,
+   * headings and speeds, at rest at both ends. The geometry is our quintic spline through the sample
+   * positions, each with the direction of travel from the sample's velocity; the heading and the speed
+   * are tables along it ({@link HeadingProfile#tabulated}, {@link VelocityProfile#tabulated}), taken as
+   * planned. Samples closer than a millimetre to the last one kept are dropped (a spin on the spot has
+   * no length to put a heading table on). {@code maxMetersPerSecondSquared} is only for re-plans the
+   * follower makes from this path (a moving start, a rejoin); the planned profile is the trajectory's.
+   *
+   * @param t sample times, s; x, y, heading in metres and radians; vx, vy field velocity, m/s
+   */
+  public static Path fromTrajectory(double[] t, double[] x, double[] y, double[] heading, double[] vx, double[] vy,
+      double maxMetersPerSecondSquared) {
+    int n = t.length;
+    int[] keep = new int[n];
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+      if (k == 0 || Math.hypot(x[i] - x[keep[k - 1]], y[i] - y[keep[k - 1]]) > 1e-3) {
+        keep[k++] = i;
+      } else if (i == n - 1) {
+        keep[k - 1] = i; // the last sample is the end: it replaces the one too close before it
+      }
+    }
+    if (k < 2) {
+      throw new IllegalArgumentException("the trajectory doesn't move");
+    }
+    // The end pieces are millimetres long (the robot starts and stops there), so the ends are pinned to
+    // the circle through their three nearest samples: its curvature, and its tangent where the robot is
+    // at rest (the chord to the neighbour is turned by half the arc across it, which on a piece that
+    // short bends the curve)
+    double startK = k < 3 ? 0.0 : circleCurvature(x, y, keep[0], keep[1], keep[2]);
+    double endK = k < 3 ? 0.0 : circleCurvature(x, y, keep[k - 3], keep[k - 2], keep[k - 1]);
+    java.util.List<Waypoint> wps = new java.util.ArrayList<>();
+    double vmax = 0.0;
+    for (int j = 0; j < k; j++) {
+      int i = keep[j];
+      double v = Math.hypot(vx[i], vy[i]);
+      vmax = Math.max(vmax, v);
+      double dir;
+      if (v > 1e-3) {
+        dir = StrictMath.atan2(vy[i], vx[i]);
+      } else { // at rest: the chord to the neighbour, turned back to the circle's tangent
+        int a = j == 0 ? keep[0] : keep[j - 1];
+        int b = j == 0 ? keep[1] : keep[j];
+        double chord = Math.hypot(x[b] - x[a], y[b] - y[a]);
+        double halfTurn = 0.5 * chord * (j == 0 ? startK : endK);
+        dir = StrictMath.atan2(y[b] - y[a], x[b] - x[a]) + (j == 0 ? -halfTurn : halfTurn);
+      }
+      wps.add(Waypoint.at(x[i], y[i], dir));
+    }
+    PathGeometry geometry = PathGeometry.build(wps, k < 3 ? Double.NaN : startK, k < 3 ? Double.NaN : endK);
+    double[] s = new double[k];
+    double[] h = new double[k];
+    double[] v = new double[k];
+    for (int j = 0; j < k; j++) {
+      int i = keep[j];
+      s[j] = j == 0 ? 0.0 : geometry.sAtWaypoint(j);
+      h[j] = heading[i];
+      v[j] = j == 0 || j == k - 1 ? 0.0 : Math.hypot(vx[i], vy[i]);
+    }
+    s[k - 1] = geometry.lengthMeters();
+    PathSpec spec = new PathSpec(wps, java.util.List.of(), java.util.List.of(), java.util.List.of(), vmax,
+        maxMetersPerSecondSquared, 0.0, 0.0, java.util.List.of(), HeadingMode.HOLD);
+    return new Path(spec, geometry, HeadingProfile.tabulated(geometry, s, h), VelocityProfile.tabulated(s, v));
+  }
+
+  /** Signed curvature of the circle through three points (0 when they are in a line), 1/m. */
+  private static double circleCurvature(double[] x, double[] y, int a, int b, int c) {
+    double abx = x[b] - x[a];
+    double aby = y[b] - y[a];
+    double bcx = x[c] - x[b];
+    double bcy = y[c] - y[b];
+    double acx = x[c] - x[a];
+    double acy = y[c] - y[a];
+    double cross = abx * bcy - aby * bcx;
+    double d = Math.hypot(abx, aby) * Math.hypot(bcx, bcy) * Math.hypot(acx, acy);
+    return d > 0.0 ? 2.0 * cross / d : 0.0;
+  }
+
+  /**
    * The waypoints' headings as rotation targets at those waypoints, ahead of the authored targets, and
    * the waypoints themselves without them: what the heading profile plans with. A spec with no waypoint
    * headings is returned unchanged. (A rotation target at the same place as a waypoint heading makes a
