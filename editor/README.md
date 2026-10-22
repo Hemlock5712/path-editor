@@ -53,7 +53,7 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 | `src/main/deploy/paths/<name>.path.json` | one per path tab, written by `core`'s `writePath` (schema 3; schemas 1 and 2 still read) | `PathLibrary.loadAll()` |
 | `src/main/deploy/paths/field.json` | field size and obstacle polygons | `FieldMap.read` |
 | `src/main/deploy/paths/robot.json` | the robot (`RobotConfig`'s keys) plus `bumperLengthMeters` / `bumperWidthMeters` | `RobotFile`, `PlannerConfig.fromRobotFile` |
-| `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points and which waypoints follow them, pinned waypoints, the red-frame and enum settings, the view | the editor only |
+| `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points (with their headings and twins) and which waypoints follow them, locked waypoints, linked copies, the red-frame and enum settings, the view | the editor only |
 | `src/main/java/<package>/PathName.java` | an enum of every path file (package set in Settings > Project; `frc.robot` by default) | robot code |
 
 - **Only changed files are written.** `field.json` and `robot.json` are only created once you edit them.
@@ -115,7 +115,8 @@ optionally, a heading.
 - **Adding waypoints: double-click.** A new project's path is empty: the first double-click places the
   start, the second the end. After that, select a waypoint and double-click the field: the new point goes
   right after it (between it and the next, or as the new end), at the double-clicked spot, and is selected,
-  so more double-clicks build forward from it. With nothing selected a double-click only says how. A single
+  so more double-clicks build forward from it. Double-clicking another waypoint's robot puts the new point
+  exactly there (a loop auto's end back on its start). With nothing selected a double-click only says how. A single
   click never adds a point: it selects or deselects. A new path (**+**) starts with just its start, at the
   last path's end, selected. **Add after** in a waypoint's inspector does the same from the keyboard
   (halfway to the next point, or 1 m past the end), and right-clicking the field offers it too. There is no
@@ -173,7 +174,8 @@ optionally, a heading.
 
 **Waypoints.**
 - Add, insert, drag, delete and nudge (arrow keys: 1 cm, or 5 cm with Shift). Q and E turn the selected
-  waypoint, heading or named point 5° left or right; Tab and Shift+Tab step through the waypoints. **Locked** (the waypoint's
+  waypoint, heading or named point 5° left or right; with the field focused, Tab and Shift+Tab step through
+  the waypoints, and past either end move on to the next control. Typed headings are kept in (-180°, 180°]. **Locked** (the waypoint's
   inspector, its right-click menu, or **Optimiser settings**) keeps a waypoint where it is whatever the
   optimiser does (a padlock marks it). Pass-through is only about heading: it never fixes or frees a point.
 - The path's Global constraints and Start and end state cards set the top speed, the maximum acceleration
@@ -357,7 +359,7 @@ inspector. It is enabled for any path with a start and an end.
 with type stripping):
 
 ```
-node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms 3000 --seed 1     [--out <file>] [--move-waypoints] [--corridor 0.5] [--pin 2,5] [--segment 1,4] [--no-scales]
+node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms 3000 --seed 1     [--out <file>] [--move-waypoints] [--corridor 0.5] [--lock 2,5] [--segment 1,4] [--no-scales]
 ```
 
 It writes the optimised path file (to `--out`, or stdout) and a one-line summary to stderr, with the clearance.

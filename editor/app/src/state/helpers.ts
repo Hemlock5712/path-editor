@@ -49,13 +49,21 @@ export function rotateSelection(delta: number): boolean {
   return false;
 }
 
-/** Tab and Shift+Tab: the next or previous waypoint. */
-export function cycleWaypoint(step: number): void {
+/**
+ * Tab and Shift+Tab on the field: the next or previous waypoint. False past either end (the selection
+ * clears, and the key moves the focus on as usual).
+ */
+export function cycleWaypoint(step: number): boolean {
   const s = editor.get();
   const n = activePath(s).spec.waypoints.length;
-  if (n === 0) return;
   const at = s.selection?.kind === "waypoint" ? s.selection.index : step > 0 ? -1 : n;
-  select({ kind: "waypoint", index: (at + step + n) % n });
+  const next = at + step;
+  if (next < 0 || next >= n) {
+    select(null);
+    return false;
+  }
+  select({ kind: "waypoint", index: next });
+  return true;
 }
 
 /** Turns waypoint i to face a field point. */

@@ -33,7 +33,7 @@ import { useRef, useState } from "react";
 import { isDrawn } from "../../model/project.ts";
 import { fitView, stepPlayback, toggleAlliance, togglePlay } from "../../state/actions.ts";
 import { analysis, playback } from "../../state/analysis.ts";
-import { redo, setTool, setView, undo, type Tool } from "../../state/editor.ts";
+import { activePath, redo, setTool, setView, undo, type Tool } from "../../state/editor.ts";
 import { live } from "../../state/live.ts";
 import { useStore } from "../../state/store.ts";
 import { openContextMenu, ui } from "../../state/ui.ts";
@@ -41,6 +41,7 @@ import { SimResultRow, SimSwitch } from "../../sim/SimPanel.tsx";
 import { Charts } from "../Charts.tsx";
 import { FLOWS, TOOLS } from "../commands.ts";
 import { fixesFor } from "../../state/fixes.ts";
+import { deleteItem } from "../../state/actions.ts";
 import { cancelFlow, flow, startFlow, type FlowKind } from "../../state/flow.ts";
 import { formatNumber, IconButton, Portal, Slider, useDismiss, usePopoverPosition } from "../controls.tsx";
 import { atS } from "../draw.ts";
@@ -145,11 +146,16 @@ function ToolBar() {
 /** The plan's headline numbers: length, time, top speed. */
 function PathStats() {
   const a = useAnalysis();
-  const drawn = isDrawn(useActivePath().spec);
+  const spec = useActivePath().spec;
+  const drawn = isDrawn(spec);
+  // a plan that failed says so (the checks badge says why), rather than "planning…" for ever
+  const failed = useStore(analysis, (st) => st.spec === spec && st.result !== null && !st.result.ok);
   return (
     <span className="path-stats" data-testid="path-stats">
       {!drawn ? (
         "no path yet"
+      ) : failed ? (
+        <span className="field-error">can't plan: see the checks</span>
       ) : a ? (
         <>
           {formatNumber(a.lengthMeters, 2)} m, <strong>{formatNumber(a.totalTimeSeconds, 2)} s</strong>, top {formatNumber(Math.max(...a.stations.v), 2)} m/s
@@ -159,6 +165,15 @@ function PathStats() {
       )}
     </span>
   );
+}
+
+/** "waypoints 2 and 3 are at the same place": the one to delete (the second, unless it's the end). */
+function samePlace(failure: string): number | null {
+  const m = /waypoints (\d+) and (\d+) are at the same place/.exec(failure);
+  if (!m) return null;
+  const n = activePath().spec.waypoints.length;
+  const second = Number(m[2]);
+  return second === n - 1 ? Number(m[1]) : second;
 }
 
 function ChecksBadge() {
@@ -195,9 +210,27 @@ function ChecksBadge() {
           <div ref={pop} className="popover checks-popover" style={style} role="dialog" aria-label="Checks">
             {!drawn && <p className="hint">Double-click the field to place the start and the end.</p>}
             {drawn && failure && (
-              <p className="check error" role="alert">
-                The path can't be planned: {failure}
-              </p>
+              <>
+                <p className="check error" role="alert">
+                  The path can't be planned: {failure}
+                </p>
+                {samePlace(failure) && (
+                  <span className="fixes">
+                    <button
+                      type="button"
+                      className="btn small"
+                      data-testid="fix-same-place"
+                      onClick={() => {
+                        setOpen(false);
+                        deleteItem({ kind: "waypoint", index: samePlace(failure)! });
+                      }}
+                    >
+                      <Wrench size={12} />
+                      Delete waypoint {samePlace(failure)}
+                    </button>
+                  </span>
+                )}
+              </>
             )}
             {a && checks.length === 0 && <p className="hint">No problems found: the plan keeps to the robot's limits and clear of obstacles.</p>}
             <ul className="checks" aria-label="Checks" data-testid="checks">

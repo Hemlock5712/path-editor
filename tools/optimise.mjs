@@ -2,7 +2,7 @@
 // The editor's path optimiser, headless (the same code as the Optimise path button):
 //
 //   node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms N --seed S
-//        [--out <file>] [--move-waypoints] [--corridor M] [--pin 2,5] [--segment 1,4] [--no-scales]
+//        [--out <file>] [--move-waypoints] [--corridor M] [--lock 2,5] [--segment 1,4] [--no-scales]
 //
 // Writes the optimised path file (schema 3, the core's writer) to --out, or to stdout; a one-line summary
 // goes to stderr. The budget is turned into a number of plans to try (500 per second of budget), so a run
@@ -11,7 +11,7 @@
 // --robot and --field are the robot project's robot.json and field.json (both optional: defaults are the
 // editor's). By default only the curve changes (the tangents at every waypoint); waypoints and headings stay
 // exactly where they are. --move-waypoints also moves the unlocked interior waypoints within --corridor,
-// keeping their headings; --pin locks waypoints, and the start, the end and zone anchors never move.
+// keeping their headings; --lock keeps waypoints where they are (--pin, its old name, works too), and the start, the end and zone anchors never move.
 // --segment only changes the path between two waypoints. The result clears every obstacle and the field
 // wall by 5 cm, or (exit code 3) the path is written unchanged with what blocks it and where.
 //
@@ -40,7 +40,7 @@ function usage(message) {
   if (message) console.error(`optimise: ${message}`);
   console.error(
     "usage: node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms N --seed S\n" +
-      "       [--out <file>] [--move-waypoints] [--corridor M] [--pin i,j] [--segment a,b] [--no-scales]",
+      "       [--out <file>] [--move-waypoints] [--corridor M] [--lock i,j] [--segment a,b] [--no-scales]",
   );
   process.exit(2);
 }
@@ -66,13 +66,13 @@ const number = (key, fallback) => {
   return v;
 };
 const list = (key) => (opts[key] === undefined ? [] : opts[key].split(",").map((s) => Number.parseInt(s, 10)));
-const known = new Set(["robot", "field", "budget-ms", "seed", "out", "corridor", "pin", "segment", "noScales", "moveWaypoints"]);
+const known = new Set(["robot", "field", "budget-ms", "seed", "out", "corridor", "pin", "lock", "segment", "noScales", "moveWaypoints"]);
 for (const k of Object.keys(opts)) if (!known.has(k)) usage(`unknown option --${k}`);
 
 const spec = core.readPath(readFileSync(pathFile, "utf8"));
 const robot = opts.robot ? parseRobot(readFileSync(opts.robot, "utf8")) : DEFAULT_ROBOT_SETTINGS;
 const field = opts.field ? parseField(readFileSync(opts.field, "utf8")) : DEFAULT_FIELD;
-const pins = list("pin");
+const pins = [...list("lock"), ...list("pin")];
 const segment = list("segment");
 if (opts.segment !== undefined && segment.length !== 2) usage("--segment takes two waypoint indices, a,b");
 

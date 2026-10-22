@@ -10,6 +10,7 @@ import { deleteWaypoint, insertWaypoint } from "../model/edits.ts";
 import { round5 } from "../model/positions.ts";
 import type { EditorPath, FieldDoc } from "../model/project.ts";
 import { CHECKS, type Analysis } from "./analysis.ts";
+import { bumperCorners, convexHull, convexOverlap } from "./polygons.ts";
 
 export interface RouteSetup {
   readonly field: FieldDoc;
@@ -75,6 +76,20 @@ export function routeAround(path: EditorPath, a: Analysis, setup: RouteSetup): R
     const w = spec.waypoints[i]!;
     return { xMeters: w.xMeters, yMeters: w.yMeters, headingRadians: Number.isNaN(w.headingRadians) ? 0 : w.headingRadians };
   };
+  // a waypoint the robot can't stand on: say so (the route goes between waypoints and never moves them)
+  for (const i of legs) {
+    const w = spec.waypoints[i]!;
+    const body = bumperCorners(w.xMeters, w.yMeters, Number.isNaN(w.headingRadians) ? 0 : w.headingRadians, setup.bumperLengthMeters, setup.bumperWidthMeters);
+    const hit = setup.field.obstacles.find((o) => {
+      const hull = convexHull(o.polygon);
+      return hull.length >= 3 && convexOverlap(body, hull);
+    });
+    if (!hit) continue;
+    return {
+      ok: false,
+      reason: `Waypoint ${i}'s bumpers are inside the ${hit.name}. Move it out first: Route around goes between your waypoints and doesn't move them.`,
+    };
+  }
   // each leg's corners, between two kept waypoints
   const corners: (readonly [number, number])[][] = [];
   for (let k = 0; k + 1 < legs.length; k++) {

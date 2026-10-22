@@ -69,3 +69,14 @@ describe("route around obstacles", () => {
     expect(r).toEqual({ ok: false, reason: "Nothing to route around: the path clears every obstacle." });
   });
 });
+
+describe("route around, when a waypoint itself is in an obstacle", () => {
+  it("says so instead of routing round its own point", () => {
+    const inHub = makePathSpec({
+      waypoints: [makeWaypoint(-6.5, -1.5, Number.NaN, 1, 0), makeWaypoint(-3.7, 0, Number.NaN, 1, 0)],
+      maxMetersPerSecond: 4,
+    });
+    const r = routeAround(makeEditorPath("P", inHub, 0), planned(inHub), setup);
+    expect(r).toEqual({ ok: false, reason: "Waypoint 1's bumpers are inside the blue hub. Move it out first: Route around goes between your waypoints and doesn't move them." });
+  });
+});
