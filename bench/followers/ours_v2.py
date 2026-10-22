@@ -10,7 +10,7 @@ The neutral course becomes our path file:
 - every heading in the course (waypoint headings and fractional heading targets) becomes a rotation target
   at the same waypoint-relative position; between targets the heading follows the minimum-jerk blend;
 - the shared limits: 4 m/s and 6 m/s^2 for the path, 540 deg/s and 720 deg/s^2 for the follower;
-- the robot file is the bench plant's numbers (mass, inertia, module radius, gearing, Kraken curve, 120 A),
+- the robot file is the bench plant's numbers (mass, inertia, module radius, gearing, Kraken curve, stator limit),
   with the grip mu as an option (OURS_MU: the tread's 1.5).
 
 reset() sends `load` (the Java side builds the path: the robot-init work, timed here as path prep) and
@@ -139,13 +139,15 @@ def to_ours(course):
 
 
 class OursV2(Follower):
-    """Options: `mu` (the robot file's grip, default OURS_MU), plus any FollowerConfig field by its Java name
+    """Options: `mu` (the robot file's grip, default OURS_MU), `robot` (extra robot file fields), plus any FollowerConfig field by its Java name
     (crossTrackKp, headingKp, latencySeconds, terminalRadiusMeters, limiterFrictionCoefficient, ...)."""
 
     robot_overrides = {}  # robot file fields that differ from the bench plant (set for the heavy_robot course)
 
-    def __init__(self, mu=OURS_MU, limits: Limits = Limits(), **follower_options):
+    def __init__(self, mu=OURS_MU, limits: Limits = Limits(), robot=None, **follower_options):
         self.mu = mu
+        if robot:  # robot file fields beyond the plant's (e.g. the traction rule)
+            self.robot_overrides = dict(robot)
         self.lim = limits
         self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
                         "brakeMetersPerSecondSquared": limits.max_accel}

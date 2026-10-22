@@ -45,8 +45,12 @@ MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_cap
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
                 "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_noadapt", "ours_tuned"]
 MAIN_METHODS += ["pp_path2", "pp_path2_tuned"]  # PathPlanner's new path system (new-path branch, pre-release)
-# the full-traction block: who can use the new grip (the shared acceleration raised, the rest unchanged)
-FT_METHODS = ["ours_v2", "pathplanner_tuned", "choreo"]
+# the full-traction block: ours under each traction rule with its own acceleration (FT_OURS, on the copies with the
+# path cap raised), against the others at the shared limits (FT_OTHERS, the main grid's rows)
+# ours under each traction rule of the library (robot file setting); the first is the shipped default
+OURS_RULES = ["ours_v2"]
+FT_OURS = OURS_RULES
+FT_OTHERS = ["pathplanner_tuned", "choreo", "choreo_hybrid"]
 TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme", "ours_tuned": "ours_v2"}
 TUNED_BASE["pp_path2_tuned"] = "pp_path2"
 EXTRA = {  # registry entries that only exist in the bench driver
@@ -305,7 +309,7 @@ def main():
             for pose in poses:
                 jobs, keys = [], []
                 for c in ft:
-                    for m in FT_METHODS:
+                    for m in FT_OURS:
                         key, opts = resolve(m, out["tuned"])
                         for s in seeds:
                             jobs.append((c, key, opts, s, pose))
@@ -688,30 +692,31 @@ def _winner(rows, key, lowest=True, valid=None):
 
 
 def full_traction_md(out):
-    """The original nine courses with the shared acceleration at FULL_TRACTION_ACCEL, against the main grid."""
+    """Ours with its own traction on the original nine (FULL_TRACTION), against the others at the shared limits."""
     ft = out.get("full_traction")
     if not ft:
         return "Not run (--quick, or a run from before the block existed).\n"
     titles = {"truth": "Perfect pose", "odom": "Wheel odometry + gyro", "slipodom": "Slip-aware odometry + IMU"}
-    L = [f"The original nine courses again with the shared acceleration limit raised from "
-         f"{Limits().max_accel:g} to {FULL_TRACTION_ACCEL:g} m/s^2 (the library's traction limit for the team's "
-         f"modules); the speed cap stays {Limits().max_speed:g} m/s. Only {', '.join(label(m) for m in FT_METHODS)}. "
-         "Each cell: time settled s (runs settled) and mean wheel slip ms, then the same at the main grid's "
-         "limits.\n"]
+    L = [f"Ours on the original nine courses with the path's acceleration cap raised from {Limits().max_accel:g} to "
+         f"{FULL_TRACTION_ACCEL:g} m/s^2, so its own traction rule decides (speed cap {Limits().max_speed:g} m/s), "
+         f"against {', '.join(label(m) for m in FT_OTHERS)} at the shared limits (the main grid's rows). Each cell: "
+         "time settled s (runs settled), mean wheel slip ms, mean end error cm.\n"]
+    cols = [("ft", m) for m in FT_OURS] + [("shared", m) for m in ["ours_v2"] + FT_OTHERS]
+
+    def cell(a):
+        if a is None:
+            return "-"
+        n, ns = a["n"], a["t_settle_nan"]
+        st = "never" if ns == n else f"{a['t_settle_mean']:.2f} ({n - ns}/{n})"
+        return f"{st}, {a['wheel_slip_ms_mean']:.0f} ms, {a['err_end_cm_mean']:.1f} cm"
     for pose in ft:
         L.append(f"### {titles[pose]}\n")
-        L.append("| course | " + " | ".join(f"{label(m)}: full traction / shared" for m in FT_METHODS) + " |")
-        L.append("|---|" + "---|" * len(FT_METHODS))
+        L.append("| course | " + " | ".join(f"{label(m)}{' (own traction)' if k == 'ft' else ' (shared limits)'}"
+                                         for k, m in cols) + " |")
+        L.append("|---|" + "---|" * len(cols))
         for c, ms in ft[pose].items():
             base = out["runs"][pose].get(c[3:], {})
-
-            def cell(a):
-                if a is None:
-                    return "-"
-                n, ns = a["n"], a["t_settle_nan"]
-                st = "never" if ns == n else f"{a['t_settle_mean']:.2f} ({n - ns}/{n})"
-                return f"{st}, {a['wheel_slip_ms_mean']:.0f} ms"
-            L.append(f"| {c[3:]} | " + " | ".join(f"{cell(ms.get(m))} / {cell(base.get(m))}" for m in FT_METHODS) + " |")
+            L.append(f"| {c[3:]} | " + " | ".join(cell(ms.get(m) if k == "ft" else base.get(m)) for k, m in cols) + " |")
         L.append("")
     return "\n".join(L)
 

@@ -6,7 +6,7 @@ controllers/PPHolonomicDriveController and commands/FollowPathCommand.
 
 Line-for-line in structure. Approximations (see RESULTS.md):
 - RobotConfig comes from the sim (mass 60 kg, MOI 6, wheel radius, gearing 6.75, Kraken X60 FOC from
-  WPILib's DCMotor numbers, 120 A current limit, max drive speed = the sim's free speed) with wheel COF
+  WPILib's DCMotor numbers, the plant's current limit, max drive speed = the sim's free speed) with wheel COF
   the sim's static mu (1.5); it is NOT changed for the low-grip course (nobody adapts).
 - Drive feedforwards (wheel forces/currents) are not computed: the plant takes velocity requests only.
 - Events, point-towards zones, constraint zones, flipping and Choreo paths are not ported.

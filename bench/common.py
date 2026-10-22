@@ -21,9 +21,13 @@ from alignsim.params import LoopParams, RobotParams  # noqa: E402
 # plant's ratio (1.15 / 1.0 -> 1.5 / 1.3). alignsim's own defaults stay as they were for its earlier studies.
 # The centre of mass is 0.2 m up (core-builder's figure for the library's tip limit), so the plant transfers
 # weight too: tip = g x 0.29 / 0.2 = 14.2 m/s^2 against mu g = 14.7.
+# The drive motors' stator (slip) current limit is the robot's 240 A: at 120 A the loaded back modules run short
+# of current on a hard launch (Precision-Videos record/v2-race/MU15.md and q11_mu15.md: an 11.2 m/s^2 launch draws
+# 105-110 A mean, 134-142 A peak on the back motors).
 MU_STATIC, MU_KINETIC = 1.5, 1.3
 CG_HEIGHT = 0.2
-RP = replace(RobotParams(), mu_static=MU_STATIC, mu_kinetic=MU_KINETIC, cg_height=CG_HEIGHT)
+STATOR_LIMIT = 240.0
+RP = replace(RobotParams(), mu_static=MU_STATIC, mu_kinetic=MU_KINETIC, cg_height=CG_HEIGHT, stator_limit=STATOR_LIMIT)
 LP = LoopParams()
 BASE_R = math.hypot(*RP.module_positions[0])  # m, robot centre to a wheel
 

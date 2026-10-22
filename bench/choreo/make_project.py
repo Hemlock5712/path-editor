@@ -14,7 +14,7 @@ config matches the alignsim plant (bench/alignsim/params.py RobotParams):
 | gearing | 6.75 | drive_gear |
 | radius | 0.0508 m | wheel_radius (2 in) |
 | vmax | 607.37 rad/s (motor) | Kraken X60 FOC free speed, motor_kv 50.6 rad/s/V x 12 V = 5800 rpm |
-| tmax | 2.328 N m (motor) | motor_kt 0.0194 N m/A x stator_limit 120 A |
+| tmax | 4.656 N m (motor) | motor_kt 0.0194 N m/A x stator_limit 240 A (bench/common.py) |
 | cof | 1.5 | mu_static (same value PathPlanner gets; SDS MK5 Spike Grip) |
 | bumper front / side / back | 0.425 m | the 0.85 m x 0.85 m robot with bumpers |
 
@@ -43,7 +43,7 @@ from courses import COURSES, NeutralPath  # noqa: E402
 PROJECT = "bench"
 
 MOTOR_FREE = 50.6 * 12.0  # rad/s
-MOTOR_TMAX = 0.0194 * 120.0  # N m
+MOTOR_TMAX = 0.0194 * RP.stator_limit  # N m
 
 
 def e(val, unit=""):

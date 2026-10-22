@@ -71,8 +71,8 @@ def _give_robot(f, r):
                             wheel_cof=f.cfg.wheel_cof)
         f.gen = SetpointGenerator(f.cfg, f.gen.steer_rate, f.gen.constraints)
     elif name == "OursV2":
-        f.robot_overrides = {"massKg": r["mass"], "momentOfInertiaKgM2": r["inertia"],
-                             "statorCurrentLimitAmps": r["stator_limit"]}
+        f.robot_overrides = dict(f.robot_overrides, massKg=r["mass"], momentOfInertiaKgM2=r["inertia"],
+                                 statorCurrentLimitAmps=r["stator_limit"])
 
 
 def make_follower(cname, key, opts, seed=0):

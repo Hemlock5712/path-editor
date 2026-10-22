@@ -219,6 +219,38 @@ def diff():
     f = os.path.join(DIR, "diff.md")
     open(f, "w", encoding="utf-8").write("\n".join(L) + "\n")
     print("wrote", f, f"({len(changed)} changed rows)")
+    rules()
+
+
+def rules():
+    """Ours under each traction rule against the others, per course and pose source: time settled, wheel slip
+    and end error (out/rebaseline/rules.md)."""
+    import run
+
+    res = json.load(open(os.path.join(OUT, "results.json")))
+    others = ["pathplanner_tuned", "pp_path2_tuned", "choreo", "choreo_hybrid", "bline_tuned_caps"]
+    titles = {"truth": "Perfect pose", "odom": "Wheel odometry + gyro", "slipodom": "Slip-aware odometry + IMU"}
+    L = ["# Ours under each traction rule", "",
+         "Cells: time settled s (runs settled of 10) / mean wheel slip ms (4 wheels summed) / mean end error cm.", ""]
+    for pose in ("truth", "odom", "slipodom"):
+        runs = res["runs"].get(pose)
+        if not runs:
+            continue
+        ms = [m for m in run.OURS_RULES + others if m in next(iter(runs.values()))]
+        L += [f"## {titles[pose]}", "", "| course | " + " | ".join(run.label(m) for m in ms) + " |",
+              "|---|" + "---|" * len(ms)]
+        for c, by in runs.items():
+            cells = []
+            for m in ms:
+                a = by[m]
+                n, ns = a["n"], a["t_settle_nan"]
+                st = "never" if ns == n else f"{a['t_settle_mean']:.2f} ({n - ns})"
+                cells.append(f"{st} / {a['wheel_slip_ms_mean']:.0f} / {a['err_end_cm_mean']:.1f}")
+            L.append(f"| {c} | " + " | ".join(cells) + " |")
+        L.append("")
+    f = os.path.join(DIR, "rules.md")
+    open(f, "w", encoding="utf-8").write("\n".join(L) + "\n")
+    print("wrote", f)
 
 
 STEPS = [("main", step_main), ("ppcompare", step_ppcompare), ("musweep", step_musweep), ("losses", step_losses)]
