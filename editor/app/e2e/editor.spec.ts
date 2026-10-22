@@ -781,19 +781,22 @@ test("an old robot.json's μ 0.7: the editor offers Spike Grip's 1.5, Settings s
   await expect(page.getByTestId("tread-mu")).toHaveValue("1.5");
   await expect(page.getByTestId("old-mu-note")).toHaveCount(0);
   const limit = page.getByTestId("traction-limit");
-  await expect(limit).toContainText("Traction limit 12.8 m/s², tipping limits first");
+  // Equal push by default (the file has no tractionRule): the front wheels slip first under load transfer
+  await expect(page.getByRole("radio", { name: "Equal push" })).toHaveAttribute("aria-checked", "true");
+  await expect(limit).toContainText("Traction limit 6.5 m/s², the front wheels slip first");
+  await expect(page.getByTestId("tip-or-grip-advice")).toContainText("Faster in corners; try it once the centre-of-mass height is measured");
   await expect(page.getByTestId("com-height")).toHaveValue("0.2");
   await expect(page.getByTestId("tip-distance")).toHaveAttribute("placeholder", "auto (square base)");
   await expect(page.getByTestId("traction-calibrate")).toContainText("luggage scale");
   await expect(page.getByTestId("traction-calibrate")).toContainText("0.29 m on this base");
   if (process.env.SHOTS) await page.locator('[aria-label="Traction"]').screenshot({ path: join(process.env.SHOTS, "traction-settings.png") });
 
-  // the other rule, and back
-  await page.getByRole("radio", { name: "Equal push" }).click();
-  await expect(limit).toContainText("Traction limit 6.5 m/s², the front wheels slip first");
-  await shot("traction-equal-push");
+  // the opt-in rule, and back
   await page.getByRole("radio", { name: "Tip or grip" }).click();
-  await expect(limit).toContainText("12.8 m/s², tipping limits first");
+  await expect(limit).toContainText("Traction limit 12.8 m/s², tipping limits first");
+  await shot("traction-tip-or-grip");
+  await page.getByRole("radio", { name: "Equal push" }).click();
+  await expect(limit).toContainText("6.5 m/s², the front wheels slip first");
 
   // the Sim preview's floor: no cap until given a μ, then min(μg, g·tip/h) with this robot
   await page.getByTestId("settings-sim").click();
@@ -813,6 +816,6 @@ test("an old robot.json's μ 0.7: the editor offers Spike Grip's 1.5, Settings s
   await page.keyboard.press("Control+s");
   await expect(page.getByTestId("status")).toContainText("Saved to robot-project");
   const saved = JSON.parse((await folderFile(page, "src/main/deploy/paths/robot.json"))!) as Record<string, unknown>;
-  expect(saved).toMatchObject({ frictionCoefficient: 1.5, centerOfMassHeightMeters: 0, tractionRule: "tipOrGrip" });
+  expect(saved).toMatchObject({ frictionCoefficient: 1.5, centerOfMassHeightMeters: 0, tractionRule: "equalPush" });
   expect(saved).not.toHaveProperty("tipDistanceMeters");
 });

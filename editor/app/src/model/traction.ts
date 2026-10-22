@@ -34,6 +34,9 @@ export function tractionHeadline(r: RobotConfig): string {
   return `Traction limit ${ms2(tractionMetersPerSecondSquared(r))}, ${SETS_IT[tractionLimit(r)]}`;
 }
 
+/** When to switch from equal push (the default) to tip or grip. */
+export const TIP_OR_GRIP_ADVICE = "Faster in corners; try it once the centre-of-mass height is measured and slip is checked on the robot with vision";
+
 /** The tip-or-grip rule's working: 0.9 × the lower of grip and tipping. */
 export function tipOrGripWorking(r: RobotConfig): string {
   const grip = `grip μ·g = ${ms2(gripMetersPerSecondSquared(r))}`;

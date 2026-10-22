@@ -13,6 +13,7 @@ import {
   simFloorCapMetersPerSecondSquared,
   SPIKE_GRIP_MU,
   equalPushWorking,
+  TIP_OR_GRIP_ADVICE,
   tipOrGripWorking,
   tractionHeadline,
 } from "../../model/traction.ts";
@@ -191,16 +192,20 @@ function TractionGroup({ config: c, set }: { config: RobotConfig; set: (label: s
         label="Traction rule"
         value={c.tractionRule}
         options={[
-          { value: "tipOrGrip", label: "Tip or grip", tip: "0.9 × the lower of μ·g and g·tip/h: the tread slides or the robot tips, whichever first" },
           { value: "equalPush", label: "Equal push", tip: "0.9 × μ·g ÷ (1 + μ·h/tip): every wheel pushes the same, so the unloaded ones slip first" },
+          { value: "tipOrGrip", label: "Tip or grip", tip: `0.9 × the lower of μ·g and g·tip/h. ${TIP_OR_GRIP_ADVICE}` },
         ]}
         onChange={(tractionRule) => set("Traction rule", { tractionRule })}
       />
       <div className="stats" data-testid="traction-limit">
         <strong>{tractionHeadline(c)}</strong>
         <ul className="traction-rules">
-          <li className={c.tractionRule === "tipOrGrip" ? "in-use" : undefined}>{tipOrGripWorking(c)}</li>
           <li className={c.tractionRule === "equalPush" ? "in-use" : undefined}>{equalPushWorking(c)}</li>
+          <li className={c.tractionRule === "tipOrGrip" ? "in-use" : undefined}>
+            {tipOrGripWorking(c)}
+            <br />
+            <span data-testid="tip-or-grip-advice">{TIP_OR_GRIP_ADVICE}.</span>
+          </li>
         </ul>
       </div>
       {hasOldDefaultMu(c) && (

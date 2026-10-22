@@ -58,6 +58,9 @@ describe("traction", () => {
     const text = writeRobot(DEFAULT_ROBOT_SETTINGS);
     expect(JSON.parse(text)).toMatchObject({ frictionCoefficient: 1.5, centerOfMassHeightMeters: 0.2, tractionRule: "equalPush" });
     expect(text).not.toContain("tipDistanceMeters");
+    // a file that saved the opt-in rule keeps it; one without the key gets the default
+    expect(parseRobot(JSON.stringify({ tractionRule: "tipOrGrip" })).config.tractionRule).toBe("tipOrGrip");
+    expect(old.config.tractionRule).toBe("equalPush");
     const set = { ...DEFAULT_ROBOT_SETTINGS, config: { ...DEFAULT_ROBOT, tipDistanceMeters: 0.33 } };
     expect(parseRobot(writeRobot(set)).config.tipDistanceMeters).toBe(0.33);
   });
