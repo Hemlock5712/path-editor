@@ -275,6 +275,10 @@ function WithoutVision({ d, rule }: { d: MatchedData; rule: string }) {
     .map((s) => ({ method: s.method, value: s.endErrorCm, text: `${cm(s.endErrorCm)} cm`, tip: METHOD_NOTES[s.method] }))
     .sort((a, b) => a.value - b.value);
   const shove = SHOWN.map((m) => stats(d, rule, "odom", SHOVE, m)?.err_end_cm).filter((v): v is number => typeof v === "number");
+  const slipAware: BarRow[] = SHOWN.flatMap((m) => {
+    const e = stats(d, rule, "slipodom", SHOVE, m)?.err_end_cm;
+    return typeof e === "number" ? [{ method: m, value: e, text: `${cm(e)} cm`, tip: METHOD_NOTES[m] }] : [];
+  }).sort((a, b) => a.value - b.value);
   return (
     <Section
       id="odometry"
@@ -286,9 +290,16 @@ function WithoutVision({ d, rule }: { d: MatchedData; rule: string }) {
       <DisturbTable d={d} rule={rule} pose="odom" courses={d.courses.disturbed.filter((c) => c !== SHOVE)} testId="bench-odom-table" />
       {shove.length > 0 && (
         <p className="bench-lead" data-testid="bench-shove-note">
-          A shove can't be fixed without vision: the robot slides sideways, the wheels don't count the slide, and every follower ends{" "}
-          {Math.min(...shove).toFixed(0)}–{Math.max(...shove).toFixed(0)} cm off while sure it is on target. A camera fixes that.
+          A shove is the hard case. The robot slides sideways, the wheels don't count the slide, and with plain wheel odometry every
+          follower ends {Math.min(...shove).toFixed(0)}–{Math.max(...shove).toFixed(0)} cm off while sure it is on target.{" "}
+          {slipAware.length > 0 && "Our library's slip-aware odometry uses the IMU to notice the slide. Given to every follower, the shove ends:"}
         </p>
+      )}
+      {slipAware.length > 0 && (
+        <>
+          <Bars rows={slipAware} testId="bench-slipaware-bars" label="Shoved halfway, slip-aware odometry: distance from the target at the end" />
+          <p className="hint">Shoved halfway, slip-aware odometry: average distance from the target at the end. Shorter is better.</p>
+        </>
       )}
     </Section>
   );

@@ -372,48 +372,15 @@ the in-browser optimiser byte for byte.
 
 ## Bench comparison
 
-The **Bench** page is a read-only view of the bench's results, laid out like a model launch page.
+The **Bench** page (`ui/BenchView.tsx`, data in `bench/matchedData.ts`) is a read-only comparison of ours with
+Choreo, PathPlanner, path2 and BLine, every library planning to the same limits on the same simulated robot.
+It reads one committed snapshot, `app/public/bench/matched.json`, written by `python bench/matched.py export`
+(see `bench/matched.py` for how the limits are matched, and `bench/MATCHED.md` for the tables).
 
-- **The verdict**, written from the data. For example: "Ours settles first on 11 of 14 targets; PathPlanner
-  (Bezier, tuned + hold) on 2. Ours gets within 5 cm first on 9. Didn't settle, or ended off: Choreo on 4,
-  BLine (tuned) on 1."
-- **The pose switch** (perfect pose, wheel odometry, slip-aware) drives everything on the page, with a line
-  saying what each means. It opens on perfect pose: the follower alone. On odometry no method settles inside
-  2 cm of the true goal, and the verdict says so.
-- **One table across every course and 2026 route.**
-  - The columns are Ours, PathPlanner (Bezier, tuned + hold), PathPlanner path2 (tuned), Choreo and BLine
-    (tuned). **+ more methods** adds the as-shipped variants.
-  - Each cell is the time settled. Ours' column is tinted, and the best valid cell in each row is bold.
-  - A run counts only if every seed settled (2 cm and 1°, held 0.25 s) and it ended within 5 cm. One that
-    doesn't shows "✕ never", "✕ 3/10" (seeds settled) or "38 cm off" in muted text, and can't be bold.
-  - Summary rows give the targets won and the mean time settled, over the targets every method settled on.
-  - Clicking a target opens it in the course detail.
-- **How we compare.** A horizontal bar chart per metric across the methods, best first, with ours in the
-  accent and values at the bar tips. The metrics are time settled, time to 5 cm, final error, cross-track
-  RMS, wheel slip, reliability, and plan time against actual. The bars are over the same targets for every
-  method, so none is flattered by skipping the hard ones. **Per target** shows one small chart per course and
-  route.
-- **Optimised paths.** The PathPlanner comparison (`run.py --pp-compare`): the same waypoints as drawn and after
-  each tool's own optimiser, curves only on both sides. Ours reshapes the tangents, as it ships. PathPlanner
-  Bezier's is PathPlanner's own genetic algorithm on the handles. path2 has no optimiser. The waypoint-moving
-  runs (all by our search, path2's included) show with "more methods". Each cell gives the time settled and the
-  planned time.
-- **The courses' own measures.** The harder courses export measures of their own (`courseMetrics`: the closest
-  bumper to a wall, the miss at a game piece, the speed there, and so on), some better higher. They sit under
-  their course's row in the main table and in the course detail, with ▲ or ▼ for which way is better, and the
-  best (and any tie, as shown) in bold. A course where nothing settles by design (the drive-through) shows its
-  first measure in place of the time settled.
-- **Course detail.** The field with each method's authored path (dashed) and true trace (solid), the
-  "what to look at" line, a scoreboard ranked by time settled, then seeds settled, then final error, and
-  every metric.
-  - Bench courses are drawn at one fixed spot, labelled "Bench course, not a field route".
-  - The 2026 routes are drawn where they are on the field.
-- **Colours.** The five headline methods take the documented categorical palette's first five slots, validated
-  for colour vision on this app's surface. Ours is slot 1, blue.
-- **Data.** The page opens with the committed snapshot, `app/public/bench/results-lite.json` (0.9 MB: every table,
-  the PathPlanner comparison, geometry to the millimetre, and perfect-pose traces every 0.2 s). Refresh it with
-  `python bench/run.py --export-editor`, which writes it and the full export (`bench/out/editor_bench.json`).
-  The file picker at the bottom of the page loads the full export.
+In order: the short version (runs that finish, courses won, how close it ends after a shove or on a slippery
+floor), speed (time to finish all courses, and the planned time), when something goes wrong, without vision
+(wheel odometry), course by course, and how it was tested. One switch picks the traction rule. A run
+"finishes" when it settles within 2 cm and 1 degree of the end pose; ties at the precision shown count for both.
 
 ## Live robot (NT4)
 

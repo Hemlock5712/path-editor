@@ -16,7 +16,8 @@ test("the bench page tells the comparison in plain words", async ({ page }) => {
   await expect(page.getByTestId("bench-speed-bars").locator("li")).toHaveCount(6);
   await expect(page.getByTestId("bench-speed")).toContainText("Choreo makes the fastest plans");
   await expect(page.getByTestId("bench-disturbed-table").locator("tbody tr")).toHaveCount(3);
-  await expect(page.getByTestId("bench-shove-note")).toContainText("can't be fixed without vision");
+  await expect(page.getByTestId("bench-shove-note")).toContainText("slip-aware odometry");
+  await expect(page.getByTestId("bench-slipaware-bars").locator("li")).toHaveCount(6);
   await expect(page.getByTestId("bench-course-table").locator("tbody tr")).toHaveCount(10);
   await expect(page.getByTestId("bench-course-table")).not.toContainText("✕");
   await page.screenshot({ path: "test-results/bench-page.png" });

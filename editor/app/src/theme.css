@@ -91,7 +91,6 @@ body {
 
 input,
 textarea,
-.selectable,
 code {
   user-select: text;
   -webkit-user-select: text;
@@ -944,15 +943,6 @@ code {
   line-height: 1.45;
 }
 
-.subhead {
-  margin: var(--s2) 0 0;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
 .row {
   display: flex;
   flex-wrap: wrap;
@@ -974,12 +964,6 @@ code {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s3);
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
 }
 
 .tag {
@@ -2020,89 +2004,6 @@ dialog::backdrop {
   scroll-behavior: smooth;
 }
 
-.bench-column {
-  display: grid;
-  grid-template-rows: minmax(200px, 1fr) minmax(160px, 48%);
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-
-.bench-column .field-wrap {
-  position: relative;
-}
-
-.bench-side {
-  width: 300px;
-  flex: none;
-  overflow-y: auto;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-}
-
-.bench-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  padding: var(--s4);
-}
-
-.bench-table-wrap {
-  overflow: auto;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-}
-
-.bench-table {
-  border-collapse: collapse;
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
-  width: 100%;
-}
-
-.bench-table caption {
-  text-align: left;
-  padding: var(--s2) var(--s3);
-  color: var(--muted);
-}
-
-.bench-table th,
-.bench-table td {
-  padding: var(--s1) var(--s3);
-  border-bottom: 1px solid var(--border);
-  text-align: right;
-  white-space: nowrap;
-}
-
-.bench-table th[scope="row"],
-.bench-table thead th:nth-child(2) {
-  text-align: left;
-  font-weight: 400;
-}
-
-.bench-table thead th {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.bench-table td.best {
-  font-weight: 700;
-  color: var(--ok);
-}
-
-.bench-table .worst {
-  color: var(--muted);
-  font-size: var(--fs-xs);
-}
-
-.swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  vertical-align: middle;
-}
-
 .legend {
   list-style: none;
   margin: 0;
@@ -2116,22 +2017,6 @@ dialog::backdrop {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s3);
-}
-
-.file-input {
-  font-size: var(--fs-sm);
-  color: var(--muted);
-}
-
-.file-input::file-selector-button {
-  height: 26px;
-  margin-right: var(--s2);
-  padding: 0 var(--s3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r2);
-  background: var(--raised);
-  color: var(--text);
-  font: inherit;
 }
 
 .tooltip {
@@ -2266,77 +2151,16 @@ dialog::backdrop {
   }
 }
 
-/* the bench page's scoreboard and tables: invalid runs greyed, their times void */
-.scoreboard {
-  padding-bottom: var(--s2);
-}
-
-.bench-table tr.invalid th,
-.bench-table tr.invalid td {
-  color: var(--faint);
-}
-
-.bench-table td.void,
-.bench-table .void {
-  color: var(--faint);
-  text-decoration: line-through;
-  font-weight: 400;
-}
-
-.bench-table td.rank {
-  text-align: center;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.bench-table tr:not(.invalid) td.rank {
-  color: var(--accent);
-}
-
 .tag.danger {
   margin-left: var(--s2);
   background: var(--danger-soft);
   color: var(--danger);
 }
 
-.bench-subhead {
-  margin: var(--s2) var(--s3) 0;
-}
-
-.scoreboard .hint {
-  padding: 0 var(--s3);
-}
-
 .look {
   margin: var(--s2) 0 0;
   font-size: var(--fs-sm);
   color: var(--text);
-}
-
-.method-chip {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  width: 100%;
-  padding: 3px var(--s2);
-  border: 1px solid transparent;
-  border-radius: var(--r2);
-  background: transparent;
-  color: var(--muted);
-  text-align: left;
-}
-
-.method-chip:hover {
-  background: var(--raised);
-}
-
-.method-chip[aria-pressed="true"] {
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-
-.method-chip[aria-pressed="false"] .swatch {
-  opacity: 0.35;
 }
 
 /* the telemetry page's tracking view */
@@ -2481,26 +2305,6 @@ dialog::backdrop {
   letter-spacing: -0.01em;
 }
 
-.verdict {
-  margin: 0 0 var(--s4);
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-  font-size: var(--fs-lg);
-  color: var(--text);
-}
-
-.verdict li:first-child {
-  font-size: var(--fs-xl);
-  font-weight: 600;
-}
-
-.verdict li:not(:first-child) {
-  color: var(--muted);
-}
-
 .bench-controls-row {
   display: flex;
   flex-wrap: wrap;
@@ -2508,29 +2312,10 @@ dialog::backdrop {
   gap: var(--s3) var(--s5);
 }
 
-.pose-explain {
-  flex: 1;
-  min-width: 260px;
-  margin-bottom: 4px;
-}
-
 .bench-section {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
-}
-
-.bench-section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s3);
-}
-
-.bench-section-head h2 {
-  margin: 0;
-  font-size: var(--fs-xl);
-  font-weight: 600;
 }
 
 .bench-table-scroll {
@@ -2597,12 +2382,6 @@ dialog::backdrop {
   color: var(--text);
 }
 
-.benchmark .void-cell,
-.benchmark .na {
-  color: var(--faint);
-  font-weight: 400;
-}
-
 .benchmark tfoot th,
 .benchmark tfoot td {
   border-bottom: none;
@@ -2619,51 +2398,6 @@ dialog::backdrop {
   font-size: var(--fs-xs);
   color: var(--faint);
   font-weight: 400;
-}
-
-.link-row {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--border-strong);
-  text-underline-offset: 3px;
-}
-
-.link-row:hover {
-  text-decoration-color: var(--accent);
-}
-
-/* the metric switch: pills in one row above the chart */
-.metric-switch {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-}
-
-.metric-pill {
-  height: 28px;
-  padding: 0 var(--s3);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-}
-
-.metric-pill:hover {
-  color: var(--text);
-}
-
-.metric-pill[aria-checked="true"] {
-  background: var(--raised-2);
-  color: var(--text);
-  border-color: var(--text);
 }
 
 /* horizontal bars: <=24 px, square at the baseline, 4 px round at the data end; ours in the accent,
@@ -2722,20 +2456,8 @@ dialog::backdrop {
   background: #556274;
 }
 
-.bar.neg {
-  border-radius: 4px 0 0 4px;
-}
-
 .bars li.ours .bar {
   background: var(--accent);
-}
-
-.bar-zero {
-  position: absolute;
-  top: -2px;
-  bottom: -2px;
-  width: 1px;
-  background: var(--border-strong);
 }
 
 .bar-value {
@@ -2746,44 +2468,6 @@ dialog::backdrop {
   font-variant-numeric: tabular-nums;
   color: var(--text);
   white-space: nowrap;
-}
-
-.bars.compact {
-  padding: var(--s2) var(--s2);
-  gap: 3px;
-  border: none;
-  background: transparent;
-}
-
-.bars.compact li {
-  grid-template-columns: 110px minmax(0, 1fr);
-  gap: var(--s2);
-}
-
-.bars.compact .bar-label {
-  font-size: var(--fs-xs);
-}
-
-.bars.compact .bar-track {
-  height: 14px;
-  margin-right: 44px;
-}
-
-.bars.compact .bar {
-  top: 2px;
-  height: 10px;
-}
-
-.bars.compact .bar-value {
-  top: 0;
-  line-height: 14px;
-  font-size: var(--fs-xs);
-}
-
-.multiples {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: var(--s3);
 }
 
 .multiple {
@@ -2798,47 +2482,6 @@ dialog::backdrop {
   padding: 0 var(--s2);
   font-weight: 600;
   font-size: var(--fs-sm);
-}
-
-.multiple-note {
-  margin: 0 var(--s2) var(--s1);
-  font-size: var(--fs-xs);
-  color: var(--faint);
-}
-
-/* the course detail */
-.bench-detail-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: var(--s3);
-}
-
-.bench-field {
-  position: relative;
-  height: 420px;
-  border: 1px solid var(--border);
-  border-radius: var(--r3);
-  overflow: hidden;
-}
-
-.bench-detail-side {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-}
-
-.bench-detail-pick {
-  min-width: 320px;
-}
-
-.bench-detail .scoreboard .bench-table {
-  border: 1px solid var(--border);
-  border-radius: var(--r3);
-}
-
-.bench-data {
-  padding-top: var(--s3);
-  border-top: 1px solid var(--border);
 }
 
 /* guided flows: the step bar over the field, and the form a flow ends with */
@@ -3027,31 +2670,6 @@ dialog.transform legend {
 
 .checks .fixes:empty {
   display: none;
-}
-
-/* the bench's course measures: rows under their course in the main table */
-.benchmark .measure-row th,
-.benchmark .measure-row td {
-  font-size: var(--fs-xs);
-  color: var(--muted);
-  padding-top: 1px;
-  padding-bottom: 3px;
-}
-
-.benchmark .measure-row td.best {
-  color: var(--text);
-}
-
-.benchmark .measure-label {
-  padding-left: var(--s3);
-}
-
-.bench-caption {
-  caption-side: bottom;
-  padding-top: var(--s2);
-  text-align: left;
-  color: var(--muted);
-  font-size: var(--fs-xs);
 }
 
 /* the Bench page: headline tiles, a lead paragraph per section, and the sub-lines in table cells */
