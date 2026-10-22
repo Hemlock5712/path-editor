@@ -38,6 +38,10 @@ _server = None
 # The robot file's frictionCoefficient: the tread's mu. The library plans and limits at 0.9 x min(mu g, g tip / h)
 # (lib/README.md, Traction); before that change it planned at this mu directly (shipped 0.7).
 OURS_MU = 1.5
+# The stopping law's deceleration: the shared limit, but never above the library's default (6 m/s^2, the team's
+# DriveToPose DECEL; braking harder costs tag accuracy, MU15.md). Raising a course's acceleration cap (the
+# full-traction block) leaves it at 6.
+BRAKE = 6.0
 
 
 class _Server:
@@ -151,7 +155,7 @@ class OursV2(Follower):
             self.robot_overrides = dict(robot)
         self.lim = limits
         self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
-                        "brakeMetersPerSecondSquared": limits.max_accel}
+                        "brakeMetersPerSecondSquared": min(limits.max_accel, BRAKE)}
         self.options.update(follower_options)
         # adaptive grip (on by default) needs the slip detector fed every odometry tick (see slipsense.py)
         self.wants_sensing = bool(self.options.get("adaptiveGrip", 1))

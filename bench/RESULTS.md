@@ -30,9 +30,78 @@ like a worn carpet seam.
 
 ## Summary
 
-Every number below is from the run in the generated section (10 seeds per cell). That run added the eight
-harder courses; the original nine courses' rows came out identical to the run before it, so the bullets about
-them still hold.
+### Re-baseline at the robot's plant (2026-10-22)
+
+The generated tables are now from a new plant, so every number in them moved. What changed, all in
+`bench/common.py`:
+- **The tread:** SDS MK5 Spike Grip, mu 1.5 static / 1.3 kinetic (was 1.15 / 1.0). The low-grip course and the
+  grip drop keep their fraction of normal grip: 0.91 / 0.79 (were 0.70 / 0.61).
+- **Weight transfer:** centre of mass 0.2 m up (was 0, no transfer). This alone makes every method slip more. At
+  6 m/s^2 the two light wheels lose 62 N each, and with all four wheels pushing equally they slip from about
+  6.5 m/s^2 (`bench/wt_check.py`: mu g / (1 + mu h / x) = 7.2 m/s^2, less the force spikes of the 50 Hz
+  setpoint steps). So the wheel-slip column rose for everyone, and is no longer comparable with the old tables.
+- **Current limit:** 240 A, the robot's slip current (was alignsim's 120 A, which starves the loaded back modules
+  on a hard launch: Precision-Videos record/v2-race/MU15.md and q11_mu15.md).
+- **The shove** scales with grip: 1043 N (was 800 N). At mu 1.5, 800 N is below the robot's 883 N static grip
+  and no longer slides it.
+- **Overshoot** of a run that never gets within 5 cm counts from 0.5 m out (it counted the whole run).
+- **The libraries:** PathPlanner, path2 and Choreo plan at the plant's mu 1.5 and 240 A; the old follower,
+  DriveToPose and the hybrid keep their shipped limiter (mu 1.0). Ours' robot file gives mu 1.5 and the centre
+  of mass, and the library plans and limits to 0.9 x min(mu g, g tip / h) = 12.8 m/s^2 (`tractionRule`
+  "tipOrGrip", the default). It also runs under "equalPush", 0.9 x mu g / (1 + mu h / x) = 6.5 m/s^2 (row "Ours v2,
+  equal-push traction rule"). Adaptive grip has core-builder's fix for weight-transfer slip (56453b1).
+- **Every course passes its own limits to the followers too:** fast_long's 5 m/s cap used to reach only the
+  authored paths, so the followers and PathPlanner's trajectory stayed at 4 m/s.
+
+**Ours under the two traction rules** (10 seeds; time settled s (runs settled) / wheel slip s / end error cm;
+the full per-course table for every pose source is `bench/out/rebaseline/rules.md`, from `rebaseline.py`):
+
+| course | tipOrGrip, perfect pose | equalPush, perfect pose | tipOrGrip, odometry | equalPush, odometry | best other, odometry (end error) |
+|---|---|---|---|---|---|
+| straight_3m | 1.43 / 0.3 / 0.1 | 1.46 / 0.2 / 0.1 | 1.43 (6) / 0.4 / 2.5 | 1.45 (5) / 0.2 / 2.4 | hybrid 2.4 |
+| s_curve | 2.05 / 1.7 / 0.1 | 2.22 / 0.7 / 0.1 | 2.04 (3) / 1.6 / 4.2 | 2.21 (3) / 0.7 / 4.1 | hybrid 4.1 |
+| hairpin | 2.60 / 3.5 / 0.1 | 3.04 / 1.3 / 0.1 | never / 3.5 / 8.2 | never / 1.2 / 3.0 | Choreo 1.8 |
+| figure_eight | 3.70 / 5.8 / 0.1 | 4.63 / 2.0 / 0.2 | 3.69 (5) / 5.7 / 2.3 | 4.62 (8) / 2.0 / 1.7 | hybrid 1.4 |
+| three_piece_chain | 4.90 / 3.4 / 0.1 | 5.19 / 0.9 / 0.1 | never / 3.3 / 6.1 | 5.17 (2) / 0.9 / 5.5 | Choreo 5.3 |
+| low_grip_s_curve | 3.01 / 0.9 / 0.2 | 2.25 / 3.6 / 0.1 | 3.10 (4) / 0.3 / 4.1 | 2.22 (3) / 3.4 / 4.1 | hybrid 4.2 |
+| grip_drop_s_curve | 2.22 / 4.4 / 0.1 | 2.22 / 2.2 / 0.2 | never / 3.4 / 10.2 | 2.22 (4) / 2.2 / 4.2 | hybrid 4.3 |
+
+- **Perfect pose:** ours under tipOrGrip settles first (level with ours with adaptive grip off) on 8 of the 16
+  courses that end at rest: straight, S-curve, hairpin, grip drop, spin, figure eight, wall hug and heavy robot.
+  Ours with adaptive grip off is first on six more: slalom (2.58 s against 2.68 s), long_auto (3.77 against
+  3.91), hit_mid_path (2.13 against 2.18), tag_align (1.95 against 2.03), three_piece_chain (4.72 against 4.90)
+  and fast_long (2.56 against 2.66). So adaptive grip still costs time on the plain courses. equalPush is
+  0.03-0.93 s slower than tipOrGrip and slips about half as much.
+- **Wheel odometry (the main condition):** tipOrGrip's mean final error over the nine courses went from 8.7 to
+  11.2 cm, and it settles 17 of 90 runs (was 20). equalPush gets 8.5 cm and 24 of 90. That puts it behind only
+  BLine tuned with caps (7.7 cm) and the DriveToPose chain (8.1 cm); tuned PathPlanner gets 15.7 cm and Choreo
+  16.8 cm. Slip-aware odometry gives the same picture.
+- **The grip drop:** under tipOrGrip it now ends 10.2 cm off with odometry and settles 0 of 10, the same as with
+  adaptive grip off. The weight-transfer fix gave up the old protection. equalPush keeps it: 4.2 cm, 4 of 10,
+  the best of any method. On low grip both rules end 4.1 cm off, but tipOrGrip's adaptive grip slows it to
+  3.01-3.10 s (slip 0.3-0.9 s) against equalPush's 2.22-2.25 s (slip 3.4-3.6 s).
+- **Full traction** (the path's acceleration cap at 11.2 m/s^2, so the rule decides; the "Full traction"
+  section): tipOrGrip gains 0.04-0.15 s over the shared 6 m/s^2 cap, at more slip. equalPush is unchanged,
+  because its 6.5 m/s^2 is barely above 6.
+- **The optimised comparison** (`--pp-compare`): ours optimised (curves only) settles first on all 14 targets
+  against PathPlanner after its own optimiser (13 of 14 before).
+
+**Where ours loses after the re-baseline** (as shipped: tipOrGrip, adaptive grip on):
+- **moving_start (perfect pose):** tuned PathPlanner settles in 1.67 s against 1.87 s (equalPush 2.39 s).
+- **long_auto (perfect pose):** tuned PathPlanner 3.88 s against 3.91 s.
+- **three_piece_chain (perfect pose):** the hybrid 4.79 s and tuned PathPlanner 4.83 s against 4.90 s.
+- **fast_long (perfect pose):** Choreo 2.61 s against 2.66 s (equalPush 2.59 s).
+- **low_grip_s_curve:** adaptive grip slows it to 3.01 s against the hybrid's 2.26 s and equalPush's 2.25 s.
+- **Odometry end error:** 11.2 cm over the nine courses, behind BLine tuned with caps (7.7), the DriveToPose
+  chain (8.1) and equalPush (8.5). On the hairpin it ends 8.2 cm off against Choreo's 1.8 cm and equalPush's
+  3.0 cm; on the grip drop 10.2 cm against equalPush's 4.2 cm.
+- **three_piece_chain with odometry:** never settles; equalPush and the hybrid settle 2 of 10.
+
+The bullets below are from the old plant (mu 1.15 / 1.0, no weight transfer, 120 A) and are kept as its record;
+their numbers are no longer in the generated tables.
+
+Every number below is from the old plant's run (10 seeds per cell). That run added the eight harder courses; the
+original nine courses' rows came out identical to the run before it.
 
 **Harder courses (perfect pose; "settled" = every seed within 2 cm and 1 deg of the true end, held 0.25 s):**
 
@@ -220,7 +289,7 @@ defaults, so "tuned" equals "as shipped".
   lowest odometry error on the tuning seeds, at the cost of a 2.9 cm shove overshoot.
 
 <!-- generated:start -->
-_Generated by `python bench/run.py --both` (10 seeds, 519 s wall)._
+_Generated by `python bench/run.py --both` (10 seeds, 125 s wall)._
 
 ## Tuning sweeps
 
@@ -1722,43 +1791,43 @@ Ours on the original nine courses with the path's acceleration cap raised from 6
 
 | course | Ours v2 (as shipped) (own traction) | Ours v2, equal-push traction rule (robot file tractionRule) (own traction) | Ours v2 (as shipped) (shared limits) | PathPlanner (tuned) + hold (shared limits) | Choreo + ChoreoLib follower (as shipped) (shared limits) | Choreo geometry + DriveToPose finish (hybrid prototype) (shared limits) |
 |---|---|---|---|---|---|---|
-| straight_3m | 1.25 (3/10), 1479 ms, 2.8 cm | 1.79 (4/10), 609 ms, 2.3 cm | 1.43 (6/10), 368 ms, 2.5 cm | 1.45 (4/10), 570 ms, 2.9 cm | 1.48 (5/10), 667 ms, 3.0 cm | 1.58 (5/10), 531 ms, 2.4 cm |
-| s_curve | 1.88 (1/10), 2680 ms, 4.5 cm | 2.56 (4/10), 1007 ms, 4.1 cm | 2.04 (3/10), 1623 ms, 4.2 cm | 2.15 (3/10), 1605 ms, 4.8 cm | 2.18 (4/10), 1187 ms, 4.5 cm | 2.27 (4/10), 1178 ms, 4.1 cm |
-| hairpin | never, 4539 ms, 4.0 cm | 3.38 (2/10), 1627 ms, 2.7 cm | never, 3461 ms, 8.2 cm | never, 3170 ms, 5.7 cm | 3.07 (7/10), 1834 ms, 1.8 cm | never, 1347 ms, 2.8 cm |
-| slalom | 3.14 (1/10), 3212 ms, 6.7 cm | 3.34 (3/10), 1628 ms, 5.5 cm | 3.07 (2/10), 2657 ms, 5.5 cm | 2.67 (4/10), 3437 ms, 5.7 cm | 3.00 (4/10), 1965 ms, 5.6 cm | 3.13 (2/10), 1694 ms, 5.8 cm |
-| long_auto | 4.66 (1/10), 2528 ms, 9.3 cm | 4.41 (3/10), 1007 ms, 8.1 cm | 4.45 (2/10), 1808 ms, 8.5 cm | 3.80 (1/10), 2150 ms, 8.6 cm | 4.00 (1/10), 1810 ms, 8.0 cm | 4.09 (2/10), 1596 ms, 8.1 cm |
-| moving_start | never, 2897 ms, 5.2 cm | 2.60 (4/10), 1750 ms, 3.6 cm | never, 2054 ms, 4.1 cm | never, 2480 ms, 39.0 cm | never, 1986 ms, 19.9 cm | 2.09 (3/10), 1908 ms, 3.6 cm |
-| hit_mid_path | never, 4446 ms, 61.8 cm | never, 2945 ms, 41.4 cm | never, 3677 ms, 53.8 cm | never, 3709 ms, 53.0 cm | never, 3614 ms, 98.2 cm | never, 3495 ms, 94.8 cm |
-| low_grip_s_curve | 2.81 (4/10), 1469 ms, 6.3 cm | 2.57 (4/10), 3693 ms, 4.2 cm | 3.10 (4/10), 306 ms, 4.1 cm | never, 4811 ms, 9.7 cm | 2.18 (4/10), 4558 ms, 4.5 cm | 2.26 (3/10), 4157 ms, 4.2 cm |
-| grip_drop_s_curve | never, 4543 ms, 25.2 cm | 2.56 (3/10), 2416 ms, 4.7 cm | never, 3386 ms, 10.2 cm | never, 3379 ms, 12.3 cm | 2.18 (1/10), 2960 ms, 5.5 cm | 2.26 (4/10), 2624 ms, 4.3 cm |
+| straight_3m | 1.32 (1/10), 727 ms, 6.5 cm | 1.45 (5/10), 275 ms, 2.4 cm | 1.43 (6/10), 368 ms, 2.5 cm | 1.45 (4/10), 570 ms, 2.9 cm | 1.48 (5/10), 667 ms, 3.0 cm | 1.58 (5/10), 531 ms, 2.4 cm |
+| s_curve | 1.99 (2/10), 1975 ms, 6.5 cm | 2.21 (3/10), 732 ms, 4.1 cm | 2.04 (3/10), 1623 ms, 4.2 cm | 2.15 (3/10), 1605 ms, 4.8 cm | 2.18 (4/10), 1187 ms, 4.5 cm | 2.27 (4/10), 1178 ms, 4.1 cm |
+| hairpin | never, 3809 ms, 3.7 cm | never, 1335 ms, 3.0 cm | never, 3461 ms, 8.2 cm | never, 3170 ms, 5.7 cm | 3.07 (7/10), 1834 ms, 1.8 cm | never, 1347 ms, 2.8 cm |
+| slalom | 3.16 (1/10), 2706 ms, 7.6 cm | 3.01 (3/10), 1362 ms, 5.6 cm | 3.07 (2/10), 2657 ms, 5.5 cm | 2.67 (4/10), 3437 ms, 5.7 cm | 3.00 (4/10), 1965 ms, 5.6 cm | 3.13 (2/10), 1694 ms, 5.8 cm |
+| long_auto | 4.69 (1/10), 1998 ms, 8.9 cm | 4.06 (2/10), 766 ms, 8.1 cm | 4.45 (2/10), 1808 ms, 8.5 cm | 3.80 (1/10), 2150 ms, 8.6 cm | 4.00 (1/10), 1810 ms, 8.0 cm | 4.09 (2/10), 1596 ms, 8.1 cm |
+| moving_start | 1.78 (2/10), 2320 ms, 5.2 cm | 2.41 (4/10), 1686 ms, 3.6 cm | never, 2054 ms, 4.1 cm | never, 2480 ms, 39.0 cm | never, 1986 ms, 19.9 cm | 2.09 (3/10), 1908 ms, 3.6 cm |
+| hit_mid_path | never, 4005 ms, 60.6 cm | never, 2840 ms, 41.4 cm | never, 3677 ms, 53.8 cm | never, 3709 ms, 53.0 cm | never, 3614 ms, 98.2 cm | never, 3495 ms, 94.8 cm |
+| low_grip_s_curve | 2.81 (4/10), 1315 ms, 8.2 cm | 2.22 (3/10), 3435 ms, 4.2 cm | 3.10 (4/10), 306 ms, 4.1 cm | never, 4811 ms, 9.7 cm | 2.18 (4/10), 4558 ms, 4.5 cm | 2.26 (3/10), 4157 ms, 4.2 cm |
+| grip_drop_s_curve | never, 3735 ms, 9.2 cm | 2.21 (4/10), 2164 ms, 4.3 cm | never, 3386 ms, 10.2 cm | never, 3379 ms, 12.3 cm | 2.18 (1/10), 2960 ms, 5.5 cm | 2.26 (4/10), 2624 ms, 4.3 cm |
 
 ### Slip-aware odometry + IMU
 
 | course | Ours v2 (as shipped) (own traction) | Ours v2, equal-push traction rule (robot file tractionRule) (own traction) | Ours v2 (as shipped) (shared limits) | PathPlanner (tuned) + hold (shared limits) | Choreo + ChoreoLib follower (as shipped) (shared limits) | Choreo geometry + DriveToPose finish (hybrid prototype) (shared limits) |
 |---|---|---|---|---|---|---|
-| straight_3m | 1.25 (4/10), 1454 ms, 3.0 cm | 1.79 (4/10), 609 ms, 2.3 cm | 1.43 (6/10), 368 ms, 2.5 cm | 1.45 (4/10), 570 ms, 2.9 cm | 1.48 (5/10), 667 ms, 3.0 cm | 1.58 (5/10), 531 ms, 2.4 cm |
-| s_curve | 1.84 (2/10), 2649 ms, 4.5 cm | 2.56 (4/10), 1007 ms, 4.1 cm | 2.04 (3/10), 1623 ms, 4.2 cm | 2.15 (3/10), 1605 ms, 4.8 cm | 2.18 (4/10), 1187 ms, 4.5 cm | 2.27 (4/10), 1178 ms, 4.1 cm |
-| hairpin | never, 4488 ms, 7.4 cm | 3.38 (2/10), 1627 ms, 2.7 cm | never, 3467 ms, 8.5 cm | never, 3183 ms, 5.4 cm | 3.07 (7/10), 1834 ms, 1.8 cm | never, 1347 ms, 2.8 cm |
-| slalom | 3.14 (1/10), 3222 ms, 5.8 cm | 3.34 (3/10), 1628 ms, 5.5 cm | 3.07 (2/10), 2657 ms, 5.5 cm | 2.71 (2/10), 3535 ms, 6.0 cm | 3.00 (4/10), 1965 ms, 5.6 cm | 3.13 (2/10), 1694 ms, 5.8 cm |
-| long_auto | 4.66 (1/10), 2502 ms, 8.8 cm | 4.41 (3/10), 1007 ms, 8.1 cm | 4.45 (2/10), 1808 ms, 8.5 cm | 3.80 (1/10), 2149 ms, 8.7 cm | 4.00 (1/10), 1810 ms, 8.0 cm | 4.09 (2/10), 1596 ms, 8.1 cm |
-| moving_start | 1.71 (1/10), 2896 ms, 5.7 cm | 2.60 (4/10), 1750 ms, 3.6 cm | 1.86 (1/10), 2072 ms, 4.2 cm | never, 2798 ms, 25.8 cm | never, 2359 ms, 13.0 cm | 2.09 (4/10), 1907 ms, 3.6 cm |
-| hit_mid_path | never, 5174 ms, 17.6 cm | 2.70 (1/10), 3159 ms, 6.4 cm | never, 4945 ms, 8.4 cm | never, 5208 ms, 14.6 cm | never, 5408 ms, 28.0 cm | never, 5679 ms, 8.8 cm |
-| low_grip_s_curve | 2.81 (4/10), 1111 ms, 5.6 cm | 2.57 (4/10), 3693 ms, 4.2 cm | 3.10 (4/10), 306 ms, 4.1 cm | never, 6101 ms, 9.4 cm | 2.18 (4/10), 4558 ms, 4.5 cm | 2.26 (3/10), 4139 ms, 4.2 cm |
-| grip_drop_s_curve | never, 5606 ms, 13.3 cm | 2.56 (3/10), 2416 ms, 4.7 cm | 2.23 (2/10), 4234 ms, 7.4 cm | 2.36 (1/10), 4500 ms, 7.0 cm | 2.18 (1/10), 2960 ms, 5.5 cm | 2.26 (4/10), 2624 ms, 4.3 cm |
+| straight_3m | 1.32 (1/10), 703 ms, 6.4 cm | 1.45 (5/10), 275 ms, 2.4 cm | 1.43 (6/10), 368 ms, 2.5 cm | 1.45 (4/10), 570 ms, 2.9 cm | 1.48 (5/10), 667 ms, 3.0 cm | 1.58 (5/10), 531 ms, 2.4 cm |
+| s_curve | never, 1944 ms, 6.2 cm | 2.21 (3/10), 732 ms, 4.1 cm | 2.04 (3/10), 1623 ms, 4.2 cm | 2.15 (3/10), 1605 ms, 4.8 cm | 2.18 (4/10), 1187 ms, 4.5 cm | 2.27 (4/10), 1178 ms, 4.1 cm |
+| hairpin | 2.42 (1/10), 3762 ms, 5.8 cm | never, 1335 ms, 3.0 cm | never, 3467 ms, 8.5 cm | never, 3183 ms, 5.4 cm | 3.07 (7/10), 1834 ms, 1.8 cm | never, 1347 ms, 2.8 cm |
+| slalom | 3.16 (1/10), 2716 ms, 6.4 cm | 3.01 (3/10), 1362 ms, 5.6 cm | 3.07 (2/10), 2657 ms, 5.5 cm | 2.71 (2/10), 3535 ms, 6.0 cm | 3.00 (4/10), 1965 ms, 5.6 cm | 3.13 (2/10), 1694 ms, 5.8 cm |
+| long_auto | 4.69 (1/10), 1980 ms, 8.5 cm | 4.06 (2/10), 766 ms, 8.1 cm | 4.45 (2/10), 1808 ms, 8.5 cm | 3.80 (1/10), 2149 ms, 8.7 cm | 4.00 (1/10), 1810 ms, 8.0 cm | 4.09 (2/10), 1596 ms, 8.1 cm |
+| moving_start | 1.78 (2/10), 2326 ms, 4.3 cm | 2.41 (4/10), 1686 ms, 3.6 cm | 1.86 (1/10), 2072 ms, 4.2 cm | never, 2798 ms, 25.8 cm | never, 2359 ms, 13.0 cm | 2.09 (4/10), 1907 ms, 3.6 cm |
+| hit_mid_path | never, 4730 ms, 17.2 cm | 2.70 (1/10), 3159 ms, 6.4 cm | never, 4945 ms, 8.4 cm | never, 5208 ms, 14.6 cm | never, 5408 ms, 28.0 cm | never, 5679 ms, 8.8 cm |
+| low_grip_s_curve | 2.81 (4/10), 1056 ms, 6.0 cm | 2.22 (3/10), 3435 ms, 4.2 cm | 3.10 (4/10), 306 ms, 4.1 cm | never, 6101 ms, 9.4 cm | 2.18 (4/10), 4558 ms, 4.5 cm | 2.26 (3/10), 4139 ms, 4.2 cm |
+| grip_drop_s_curve | never, 4605 ms, 11.2 cm | 2.21 (4/10), 2164 ms, 4.3 cm | 2.23 (2/10), 4234 ms, 7.4 cm | 2.36 (1/10), 4500 ms, 7.0 cm | 2.18 (1/10), 2960 ms, 5.5 cm | 2.26 (4/10), 2624 ms, 4.3 cm |
 
 ### Perfect pose
 
 | course | Ours v2 (as shipped) (own traction) | Ours v2, equal-push traction rule (robot file tractionRule) (own traction) | Ours v2 (as shipped) (shared limits) | PathPlanner (tuned) + hold (shared limits) | Choreo + ChoreoLib follower (as shipped) (shared limits) | Choreo geometry + DriveToPose finish (hybrid prototype) (shared limits) |
 |---|---|---|---|---|---|---|
-| straight_3m | 1.28 (10/10), 1471 ms, 0.0 cm | 1.79 (10/10), 614 ms, 0.1 cm | 1.43 (10/10), 337 ms, 0.1 cm | 1.48 (10/10), 467 ms, 1.0 cm | 1.48 (10/10), 625 ms, 1.6 cm | 1.58 (10/10), 514 ms, 0.1 cm |
-| s_curve | 1.89 (10/10), 2767 ms, 0.0 cm | 2.57 (10/10), 1036 ms, 0.0 cm | 2.05 (10/10), 1655 ms, 0.1 cm | 2.13 (10/10), 1620 ms, 0.8 cm | 2.17 (10/10), 1147 ms, 1.6 cm | 2.28 (10/10), 1213 ms, 0.1 cm |
-| hairpin | 2.44 (10/10), 4674 ms, 0.0 cm | 3.37 (10/10), 1679 ms, 0.1 cm | 2.60 (10/10), 3479 ms, 0.1 cm | 2.71 (10/10), 3240 ms, 0.5 cm | 3.07 (10/10), 1767 ms, 1.5 cm | 3.19 (10/10), 1340 ms, 0.1 cm |
-| slalom | 2.56 (10/10), 3466 ms, 0.1 cm | 3.36 (10/10), 1713 ms, 0.0 cm | 2.68 (10/10), 2831 ms, 0.1 cm | 2.69 (10/10), 3711 ms, 1.0 cm | 2.99 (10/10), 1824 ms, 1.6 cm | 3.10 (10/10), 1780 ms, 0.1 cm |
-| long_auto | 3.83 (10/10), 2591 ms, 0.1 cm | 4.42 (10/10), 1042 ms, 0.1 cm | 3.91 (10/10), 1829 ms, 0.1 cm | 3.88 (10/10), 2050 ms, 0.6 cm | 4.02 (2/10), 1792 ms, 1.6 cm | 4.09 (10/10), 1649 ms, 0.2 cm |
-| moving_start | 1.75 (10/10), 2956 ms, 0.0 cm | 2.63 (10/10), 1794 ms, 0.0 cm | 1.87 (10/10), 2094 ms, 0.1 cm | 1.67 (10/10), 3444 ms, 0.8 cm | 1.93 (10/10), 3028 ms, 1.6 cm | 2.10 (10/10), 1932 ms, 0.1 cm |
-| hit_mid_path | 2.27 (10/10), 6095 ms, 0.1 cm | 2.72 (10/10), 3249 ms, 0.1 cm | 2.18 (10/10), 4926 ms, 0.2 cm | 2.43 (10/10), 5951 ms, 0.8 cm | never, 5396 ms, 38.2 cm | 2.97 (10/10), 5714 ms, 0.1 cm |
-| low_grip_s_curve | 2.77 (10/10), 1381 ms, 0.2 cm | 2.61 (10/10), 3945 ms, 0.0 cm | 3.01 (10/10), 865 ms, 0.2 cm | 2.37 (10/10), 6730 ms, 0.6 cm | 2.18 (6/10), 4594 ms, 1.9 cm | 2.26 (10/10), 4326 ms, 0.1 cm |
-| grip_drop_s_curve | 2.58 (10/10), 6472 ms, 0.1 cm | 2.60 (10/10), 2659 ms, 0.0 cm | 2.22 (10/10), 4376 ms, 0.1 cm | 2.37 (10/10), 4775 ms, 0.6 cm | 2.18 (6/10), 2968 ms, 1.9 cm | 2.24 (10/10), 2780 ms, 0.1 cm |
+| straight_3m | 1.33 (10/10), 712 ms, 0.1 cm | 1.45 (10/10), 278 ms, 0.1 cm | 1.43 (10/10), 337 ms, 0.1 cm | 1.48 (10/10), 467 ms, 1.0 cm | 1.48 (10/10), 625 ms, 1.6 cm | 1.58 (10/10), 514 ms, 0.1 cm |
+| s_curve | 1.94 (10/10), 1991 ms, 0.1 cm | 2.22 (10/10), 755 ms, 0.1 cm | 2.05 (10/10), 1655 ms, 0.1 cm | 2.13 (10/10), 1620 ms, 0.8 cm | 2.17 (10/10), 1147 ms, 1.6 cm | 2.28 (10/10), 1213 ms, 0.1 cm |
+| hairpin | 2.48 (10/10), 3962 ms, 0.1 cm | 3.03 (10/10), 1370 ms, 0.1 cm | 2.60 (10/10), 3479 ms, 0.1 cm | 2.71 (10/10), 3240 ms, 0.5 cm | 3.07 (10/10), 1767 ms, 1.5 cm | 3.19 (10/10), 1340 ms, 0.1 cm |
+| slalom | 2.60 (10/10), 2894 ms, 0.1 cm | 3.01 (10/10), 1427 ms, 0.1 cm | 2.68 (10/10), 2831 ms, 0.1 cm | 2.69 (10/10), 3711 ms, 1.0 cm | 2.99 (10/10), 1824 ms, 1.6 cm | 3.10 (10/10), 1780 ms, 0.1 cm |
+| long_auto | 3.87 (10/10), 2049 ms, 0.1 cm | 4.07 (10/10), 787 ms, 0.1 cm | 3.91 (10/10), 1829 ms, 0.1 cm | 3.88 (10/10), 2050 ms, 0.6 cm | 4.02 (2/10), 1792 ms, 1.6 cm | 4.09 (10/10), 1649 ms, 0.2 cm |
+| moving_start | 1.80 (10/10), 2343 ms, 0.1 cm | 2.45 (10/10), 1724 ms, 0.1 cm | 1.87 (10/10), 2094 ms, 0.1 cm | 1.67 (10/10), 3444 ms, 0.8 cm | 1.93 (10/10), 3028 ms, 1.6 cm | 2.10 (10/10), 1932 ms, 0.1 cm |
+| hit_mid_path | 2.07 (10/10), 5214 ms, 0.2 cm | 2.72 (10/10), 3249 ms, 0.1 cm | 2.18 (10/10), 4926 ms, 0.2 cm | 2.43 (10/10), 5951 ms, 0.8 cm | never, 5396 ms, 38.2 cm | 2.97 (10/10), 5714 ms, 0.1 cm |
+| low_grip_s_curve | 2.72 (10/10), 1200 ms, 0.2 cm | 2.24 (10/10), 3602 ms, 0.2 cm | 3.01 (10/10), 865 ms, 0.2 cm | 2.37 (10/10), 6730 ms, 0.6 cm | 2.18 (6/10), 4594 ms, 1.9 cm | 2.26 (10/10), 4326 ms, 0.1 cm |
+| grip_drop_s_curve | 2.12 (10/10), 4744 ms, 0.1 cm | 2.21 (10/10), 2316 ms, 0.2 cm | 2.22 (10/10), 4376 ms, 0.1 cm | 2.37 (10/10), 4775 ms, 0.6 cm | 2.18 (6/10), 2968 ms, 1.9 cm | 2.24 (10/10), 2780 ms, 0.1 cm |
 
 ## Pathfinding course
 
@@ -2141,6 +2210,9 @@ The margin is how far beyond the bumpers' half-diagonal the obstacles are grown,
 <!-- pathfind:end -->
 
 ## Path speed: PathPlanner and ours
+
+_At the new plant (the generated block below), ours optimised settles first on all 14 targets against PathPlanner
+after its own optimiser. The paragraph and bullets that follow are from the old plant._
 
 **Optimised paths, each tool's own optimiser, curves only** (rows (c) and (d) below; perfect pose, time settled,
 10 seeds). PathPlanner's optimiser is a genetic algorithm on the Bezier handles that never moves an anchor
@@ -2659,9 +2731,8 @@ All targets (the 2026 routes and the existing courses):
 
 ## Planning grip: ours at mu 0.7 to 1.15
 
-_Not re-run since the optimiser changed: the optimised rows below come from the optimiser that also moved
-waypoints, and "PathPlanner optimised" is our search on its anchors and handles (now the extra row above), not
-PathPlanner's own optimiser. Re-run with `python bench/run.py --mu-sweep` before relying on them._
+_Re-run at the new plant (2026-10-22). The recommendation below is from the old plant (mu 1.15, ours' robot
+file at 0.7); the grip now comes from the robot's mu 1.5 and the library's traction rule._
 
 <!-- musweep:start -->
 _Generated by `python bench/run.py --mu-sweep` (10 seeds per cell, 0 s wall)._
