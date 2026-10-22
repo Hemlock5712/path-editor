@@ -17,6 +17,7 @@ import frc.team5712.path.core.PathSample;
 import frc.team5712.path.core.PathSpec;
 import frc.team5712.path.core.Pose;
 import frc.team5712.path.core.RobotConfig;
+import frc.team5712.path.core.RotationTarget;
 import frc.team5712.path.core.VelocityProfile;
 import frc.team5712.path.core.Waypoint;
 import frc.team5712.path.tools.FixturePaths;
@@ -130,6 +131,110 @@ class PathFollowerTest {
     Pose end = r.trace().get(r.trace().size() - 1);
     assertEquals(4.0, end.xMeters(), 0.02);
     assertEquals(1.0, end.yMeters(), 0.02);
+  }
+
+  @Test
+  void knockedFarOffItBuildsAPieceBackOntoThePath() {
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    List<String> fired = new ArrayList<>();
+    PathFollower follower = new PathFollower(path, CFG).addEvent("half", path.lengthMeters() / 2, () -> {});
+    follower.onEvent(fired::add);
+    Run r = run(path, follower, FieldFrame.BLUE, 20,
+        (t, plant, f) -> {
+          if (Math.abs(t - 1.0) < 1e-9) {
+            plant.displace(0.0, 0.7); // 70 cm sideways in one loop
+          }
+        });
+    assertTrue(r.finished());
+    assertTrue(follower.rejoinCount() >= 1, "rejoined");
+    assertTrue(follower.lastRejoinMicros() > 0.0);
+    Pose end = r.trace().get(r.trace().size() - 1);
+    assertEquals(4.0, end.xMeters(), 0.02);
+    assertEquals(1.0, end.yMeters(), 0.02);
+    assertEquals(List.of("half"), fired, "the event fires once, on the way");
+
+    // switched off, the same knock is recovered by the cross-track law alone
+    PathFollower plain = new PathFollower(path, CFG.toBuilder().rejoinAboveMeters(Double.POSITIVE_INFINITY).build());
+    Run r2 = run(path, plain, FieldFrame.BLUE, 20,
+        (t, plant, f) -> {
+          if (Math.abs(t - 1.0) < 1e-9) {
+            plant.displace(0.0, 0.7);
+          }
+        });
+    assertTrue(r2.finished());
+    assertEquals(0, plain.rejoinCount());
+  }
+
+  @Test
+  void aRejoinNeverSkipsACusp() {
+    // out to x = 2, back and up: knocked sideways on the way out, the robot must still go out to the tip
+    PathSpec spec = PathSpec.of(List.of(Waypoint.at(0.0, 0.0, 0.0), Waypoint.at(2.0, 0.0, 0.0),
+            Waypoint.at(1.2, 0.05, Math.PI), Waypoint.at(0.0, 0.6)))
+        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, 0.0), RotationTarget.atWaypoint(3, 0.0)))
+        .withLimits(4.0, 6.0);
+    Path path = Path.build(spec, ROBOT);
+    PathSample tip = path.sample(path.cusps()[0]);
+    PathFollower follower = new PathFollower(path, CFG);
+    Run r = run(path, follower, FieldFrame.BLUE, 20,
+        (t, plant, f) -> {
+          if (Math.abs(t - 0.4) < 1e-9) {
+            plant.displace(0.0, -0.7);
+          }
+        });
+    assertTrue(r.finished());
+    assertTrue(follower.rejoinCount() >= 1, "rejoined");
+    double furthest = Double.NEGATIVE_INFINITY;
+    for (Pose q : r.trace()) {
+      furthest = Math.max(furthest, q.xMeters() - tip.xMeters());
+    }
+    assertTrue(furthest > -0.1, "got to the tip: " + furthest);
+    Pose end = r.trace().get(r.trace().size() - 1);
+    assertEquals(0.0, end.xMeters(), 0.02);
+    assertEquals(0.6, end.yMeters(), 0.02);
+  }
+
+  @Test
+  void movingAtTheStartReplansOnlyTheSpeeds() {
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    PathSample s0 = path.sample(0);
+    Pose p = new Pose(s0.xMeters(), s0.yMeters(), s0.headingRadians());
+    PathFollower f = new PathFollower(path, CFG.toBuilder().replanStartFromMeasuredVelocity(true).build());
+    long geometries = PathGeometry.buildCount();
+    f.start(0.0, p, new FieldSpeeds(1.0, 1.5, 0.0), FieldFrame.BLUE);
+    assertEquals(geometries, PathGeometry.buildCount(), "the curve stays as drawn");
+    assertTrue(f.activePath().geometry() == path.geometry());
+    assertTrue(f.activePath().sample(0).metersPerSecond() > 1.0, "planned from the measured speed");
+    assertTrue(f.lastStartReplanMicros() > 0.0);
+    // moving backwards along the path: from rest, as without the option
+    f.start(0.0, p, new FieldSpeeds(-1.0, 1.5, 0.0), FieldFrame.BLUE);
+    assertTrue(f.activePath() == path);
+    assertTrue(Double.isNaN(f.lastStartReplanMicros()));
+    PathFollower off = new PathFollower(path, CFG);
+    off.start(0.0, p, new FieldSpeeds(1.0, 1.5, 0.0), FieldFrame.BLUE);
+    assertTrue(off.activePath() == path, "off by default");
+  }
+
+  @Test
+  void replanningTheStartIsWellUnderAMillisecondWarm() {
+    Path path = Path.build(FixturePaths.autoRoute().withEndSpeeds(0, 0), ROBOT);
+    PathFollower f = new PathFollower(path, CFG.toBuilder().replanStartFromMeasuredVelocity(true).build());
+    PathSample s0 = path.sample(0);
+    Pose p = new Pose(s0.xMeters(), s0.yMeters(), s0.headingRadians());
+    FieldSpeeds v = new FieldSpeeds(2.0 * s0.tangentX(), 2.0 * s0.tangentY(), 0.0);
+    double best = Double.POSITIVE_INFINITY;
+    double total = 0;
+    int n = 0;
+    for (int rep = 0; rep < 400; rep++) {
+      f.start(0, p, v, FieldFrame.BLUE);
+      if (rep >= 200) {
+        best = Math.min(best, f.lastStartReplanMicros());
+        total += f.lastStartReplanMicros();
+        n++;
+      }
+    }
+    System.out.printf("start re-plan of the %.1f m route from 2 m/s, warm: mean %.0f us, best %.0f us%n",
+        path.lengthMeters(), total / n, best);
+    assertTrue(total / n < 1000.0, "mean start re-plan " + total / n + " us");
   }
 
   @Test
