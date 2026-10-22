@@ -634,9 +634,13 @@ public final class PathFollower {
 
   // ------------------------------------------------------------------------------ pieces
 
-  /** The output limiter's budget, m/s²: the robot's traction limit, or the configured μ·g. */
+  /**
+   * The output limiter's budget, m/s²: the robot's traction limit without its 10 % margin (the plan keeps
+   * the margin, so feedback has that room), or the configured μ·g.
+   */
   static double limiterBudget(FollowerConfig cfg) {
-    return Double.isNaN(cfg.limiterFrictionCoefficient()) ? cfg.robot().tractionMetersPerSecondSquared()
+    return Double.isNaN(cfg.limiterFrictionCoefficient())
+        ? cfg.robot().tractionMetersPerSecondSquared() / RobotConfig.TRACTION_MARGIN
         : cfg.limiterFrictionCoefficient() * RobotConfig.GRAVITY;
   }
 

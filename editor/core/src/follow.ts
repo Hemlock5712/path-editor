@@ -17,6 +17,7 @@ import {
   driveAccelMetersPerSecondSquared,
   spinLeverMeters,
   tractionMetersPerSecondSquared,
+  TRACTION_MARGIN,
   type RobotConfig,
 } from "./robot.ts";
 
@@ -201,9 +202,12 @@ const MIN_MOVING_SPEED = 0.1;
 const MIN_POSE_DT = 0.005;
 const MAX_POSE_SPEED_RATIO = 1.5;
 
-/** The output limiter's budget, m/s²: the robot's traction limit, or the configured μ·g (PathFollower.limiterBudget). */
+/**
+ * The output limiter's budget, m/s²: the robot's traction limit without its 10 % margin (the plan keeps it, so
+ * feedback has that room), or the configured μ·g (PathFollower.limiterBudget).
+ */
 export function limiterBudget(cfg: FollowerConfig): number {
-  return Number.isNaN(cfg.limiterFrictionCoefficient) ? tractionMetersPerSecondSquared(cfg.robot)
+  return Number.isNaN(cfg.limiterFrictionCoefficient) ? tractionMetersPerSecondSquared(cfg.robot) / TRACTION_MARGIN
     : cfg.limiterFrictionCoefficient * GRAVITY;
 }
 

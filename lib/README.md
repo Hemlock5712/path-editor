@@ -78,7 +78,7 @@ The model (also in the class comment):
   direction, and defaults to a square base's `moduleRadiusMeters / √2`.
   `RobotConfig.tipOrGripMetersPerSecondSquared()`, `equalPushMetersPerSecondSquared()` and
   `tractionLimit()` (grip, tipping or equal push) give the editor both values and which one binds. The
-  plan and the limiter (below) use the same `A`;
+  limiter (below) allows `A / 0.9`, the rule's limit without its margin;
 - motors, speeding up: `a + c·|α| ≤` the Kraken X60 FOC push at the fastest wheel's speed
   `v·(1 + r|θ'|)` (12 V minus back-EMF, capped by the stator limit). The sideways `v²κ` comes from
   tyre side-grip, not torque. Braking: only the stator limit;
@@ -125,8 +125,9 @@ the robot already moving (not backwards along the path), gets its speeds re-plan
 speed, as PathPlanner does. Only the profile is rebuilt, never the curve: 0.2-0.3 ms warm for the 16 m
 route on this PC, less on shorter paths. At rest it does nothing. It also does nothing on paths that plan
 their own start speed (rolling hand-overs, on-the-fly paths). Under equalPush on the bench it changes only
-the moving start: 2.39 → 2.32 s with a perfect pose, wheel slip 1.69 → 1.06 s, and 3.6 → 3.4 cm end error
-with odometry. three_piece_chain and the courses that start at rest give the same runs to the bit.
+the moving start: 2.10 → 2.02 s with a perfect pose, and 3.6 → 3.3 cm end error with odometry, but wheel
+slip goes from 1.52 to 2.13 s. three_piece_chain and the courses that start at rest give the same runs to
+the bit.
 
 Each loop, in the blue frame:
 
@@ -157,10 +158,12 @@ Each loop, in the blue frame:
    laws brake on the same distance with the same 6 m/s², so the hand-over has no seam.
 7. **One limiter.** Every output goes through `OutputLimiter`. It caps spin acceleration, then caps
    the motors' push at the fastest wheel's speed when speeding up. Then `|a| + c·|α| ≤ A`
-   (c = I/(m·r), the profile's model), scaling translation and spin together. `A` is the robot's
-   traction limit, the same as the plan's (`limiterFrictionCoefficient` NaN, the default; a number
-   sets μ·g instead). Before the μ 1.5 change the plan used μ 0.7 and the limiter 1.0 on a 1.15
-   floor; see "Traction: μ 1.5 and tipping" below for why one limit for both now.
+   (c = I/(m·r), the profile's model), scaling translation and spin together. Here `A` is the plan's
+   traction limit without its 10 % margin, `A / 0.9`: 7.2 m/s² under equalPush, the onset where the light
+   wheels let go. The plan keeps the margin and feedback has the rest
+   (`limiterFrictionCoefficient` NaN, the default; a number sets μ·g instead). With the limiter at the
+   plan's own limit, the fixture auto route strayed 9.3 cm where the plan used all of it. At `A / 0.9` it
+   strays 2.4 cm. The old split had the same shape: the plan used μ 0.7 and the limiter 1.0, on a 1.15 floor.
 8. **Finished.** Within 2 cm and 1°, measured slower than 5 cm/s, held 0.1 s. A rolling end (end
    speed above 0) never stops: it finishes as the robot passes the end, and `endCommand()` is the
    velocity to hand to the next follower (`start(..., handedCommand)`).
@@ -212,10 +215,9 @@ centre of mass 0.2 m, bench/out/rebaseline/rules.md). Under wheel odometry, equa
 With a perfect pose `tipOrGrip` is faster on most clean courses, because the loaded wheels make up for the
 slipping light ones. That costs wheel slip and so odometry. `tipOrGrip` is worth trying once the centre of
 mass's height is measured and slip has been checked on the real robot, with vision correcting the pose.
-The planner's grip circle and the follower's output limiter both use `A`, so the editor's plan is what
-the robot will try. Before this change they were separate: the plan used μ 0.7 and the limiter 1.0, on a
-1.15 / 1.0 bench floor. Scaled to the 1.5 tread, that 0.7 plan would be 0.7 of `A` and the limiter about
-`A`.
+The planner's grip circle uses `A`, so the editor's plan is what the robot will try. The follower's output
+limiter allows `A / 0.9`, the rule's limit without its margin, so feedback has room. Before this change the
+plan used μ 0.7 and the limiter 1.0, on a 1.15 / 1.0 bench floor.
 
 Whether the plan needs its own margin under `A` was checked on the bench plant set to 1.5 / 1.3, low grip
 0.91 / 0.79, and the centre of mass 0.2 m up (weight transfer on). The figures below use the `tipOrGrip` rule. They are ours over all 16

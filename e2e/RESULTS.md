@@ -12,14 +12,14 @@ flips. Each row is two runs: one to the end, and one cancelled halfway through i
 - **66 of 66 rows pass** (11 paths and chains × 2 frameworks × 3 alliances).
 - **354 events** fired and checked in the full runs.
 - Worst event position error (true pose when the event's command ran, along the path, versus where it was
-  authored): **+4.5 cm** (RollA, `mid` at 1.50 m).
+  authored): **-4.4 cm** (MovingStart, `mid` at 2.31 m).
 - Worst event time error (versus the preview's t(s), or for an event at a stop the plan's time into the
-  finish band): **+0.085 s** (Slalom, `end`).
-- The worst event position error was **90 %** of its allowance (3 cm, or half a loop of travel plus 1 cm at speed).
-- Arrival in the finish band (2 cm, 1°) minus the plan's time into it, on paths that stop: **-0.038 to +0.068 s**.
+  finish band): **-0.062 s** (TurnInPlace, `mid`).
+- The worst event position error was **87 %** of its allowance (3 cm, or half a loop of travel plus 1 cm at speed).
+- Arrival in the finish band (2 cm, 1°) minus the plan's time into it, on paths that stop: **-0.038 to +0.056 s**.
 - Settling after arrival until the follower finishes (the DriveToPose finish, which the preview doesn't
-  model): at most **0.44 s**.
-- Worst peak-speed gap, robot (true) versus preview, on paths faster than 0.5 m/s: **3.8 %** (Hairpin, V3, blue).
+  model): at most **0.46 s**.
+- Worst peak-speed gap, robot (true) versus preview, on paths faster than 0.5 m/s: **4.0 %** (Hairpin, V3, blue).
 
 ## Tolerances (all in `lib/src/e2eTest/.../Tolerances.java`)
 
@@ -61,69 +61,69 @@ follower's own 540°/s and 720°/s², so feedback has room, as the plan's grip (
 
 | Path | Framework | Alliance | Result | Events | Worst event position | Worst event time | Arrival robot / plan | Settle | Peak robot / preview | Interrupt |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Straight | V3 | blue | pass | 5 | 3.8 cm | 0.052 s | 1.38 / 1.34 s | 0.34 s | 3.97 / 4.00 m/s | pass (1 fired) |
-| Straight | V3 | red (half-turn) | pass | 5 | 3.6 cm | 0.052 s | 1.38 / 1.34 s | 0.38 s | 3.97 / 4.00 m/s | pass (1 fired) |
-| Straight | V3 | red (mirror) | pass | 5 | 3.6 cm | 0.052 s | 1.38 / 1.34 s | 0.38 s | 3.97 / 4.00 m/s | pass (1 fired) |
-| Straight | V2 | blue | pass | 5 | 2.1 cm | 0.061 s | 1.40 / 1.34 s | 0.36 s | 3.97 / 4.00 m/s | pass (1 fired) |
-| Straight | V2 | red (half-turn) | pass | 5 | 4.0 cm | 0.044 s | 1.38 / 1.34 s | 0.36 s | 3.97 / 4.00 m/s | pass (1 fired) |
-| Straight | V2 | red (mirror) | pass | 5 | 3.7 cm | 0.044 s | 1.38 / 1.34 s | 0.38 s | 3.97 / 4.00 m/s | pass (1 fired) |
-| SCurve | V3 | blue | pass | 5 | 2.7 cm | 0.053 s | 2.16 / 2.11 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| SCurve | V3 | red (half-turn) | pass | 5 | 2.3 cm | 0.053 s | 2.16 / 2.11 s | 0.36 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| SCurve | V3 | red (mirror) | pass | 5 | 2.3 cm | 0.053 s | 2.16 / 2.11 s | 0.32 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| SCurve | V2 | blue | pass | 5 | 2.8 cm | 0.053 s | 2.16 / 2.11 s | 0.34 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| SCurve | V2 | red (half-turn) | pass | 5 | 2.6 cm | 0.053 s | 2.16 / 2.11 s | 0.40 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| SCurve | V2 | red (mirror) | pass | 5 | 3.4 cm | 0.053 s | 2.16 / 2.11 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| Hairpin | V3 | blue | pass | 5 | 1.5 cm | 0.056 s | 3.00 / 2.94 s | 0.42 s | 3.67 / 3.82 m/s | pass (1 fired) |
-| Hairpin | V3 | red (half-turn) | pass | 5 | 1.9 cm | 0.056 s | 3.00 / 2.94 s | 0.34 s | 3.68 / 3.82 m/s | pass (1 fired) |
-| Hairpin | V3 | red (mirror) | pass | 5 | 1.7 cm | 0.056 s | 3.00 / 2.94 s | 0.34 s | 3.67 / 3.82 m/s | pass (1 fired) |
-| Hairpin | V2 | blue | pass | 5 | 1.4 cm | 0.056 s | 3.00 / 2.94 s | 0.36 s | 3.68 / 3.82 m/s | pass (1 fired) |
-| Hairpin | V2 | red (half-turn) | pass | 5 | 2.0 cm | 0.056 s | 3.00 / 2.94 s | 0.42 s | 3.67 / 3.82 m/s | pass (1 fired) |
-| Hairpin | V2 | red (mirror) | pass | 5 | 1.9 cm | 0.056 s | 3.00 / 2.94 s | 0.38 s | 3.68 / 3.82 m/s | pass (1 fired) |
-| Slalom | V3 | blue | pass | 5 | 2.6 cm | 0.065 s | 2.98 / 2.91 s | 0.32 s | 3.50 / 3.63 m/s | pass (1 fired) |
-| Slalom | V3 | red (half-turn) | pass | 5 | 1.4 cm | 0.065 s | 2.98 / 2.91 s | 0.38 s | 3.50 / 3.63 m/s | pass (1 fired) |
-| Slalom | V3 | red (mirror) | pass | 5 | 1.4 cm | 0.065 s | 2.98 / 2.91 s | 0.38 s | 3.50 / 3.63 m/s | pass (1 fired) |
-| Slalom | V2 | blue | pass | 5 | 1.5 cm | 0.065 s | 2.98 / 2.91 s | 0.36 s | 3.50 / 3.63 m/s | pass (1 fired) |
-| Slalom | V2 | red (half-turn) | pass | 5 | 1.9 cm | 0.085 s | 2.98 / 2.91 s | 0.38 s | 3.50 / 3.63 m/s | pass (1 fired) |
-| Slalom | V2 | red (mirror) | pass | 5 | 1.9 cm | 0.065 s | 2.98 / 2.91 s | 0.38 s | 3.50 / 3.63 m/s | pass (1 fired) |
-| LongAuto | V3 | blue | pass | 6 | 3.3 cm | 0.052 s | 4.04 / 3.99 s | 0.40 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V3 | red (half-turn) | pass | 6 | 3.9 cm | 0.048 s | 4.04 / 3.99 s | 0.36 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V3 | red (mirror) | pass | 6 | 3.3 cm | 0.052 s | 4.04 / 3.99 s | 0.40 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V2 | blue | pass | 6 | 3.7 cm | 0.048 s | 4.04 / 3.99 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V2 | red (half-turn) | pass | 6 | 3.6 cm | 0.052 s | 4.04 / 3.99 s | 0.40 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| LongAuto | V2 | red (mirror) | pass | 6 | 2.2 cm | 0.056 s | 4.06 / 3.99 s | 0.36 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| MovingStart | V3 | blue | pass | 5 | 2.7 cm | 0.045 s | 1.66 / 1.61 s | 0.34 s | 3.99 / 4.00 m/s | pass (4 fired) |
-| MovingStart | V3 | red (half-turn) | pass | 5 | 2.6 cm | 0.045 s | 1.66 / 1.61 s | 0.38 s | 3.99 / 4.00 m/s | pass (4 fired) |
-| MovingStart | V3 | red (mirror) | pass | 5 | 2.7 cm | 0.045 s | 1.66 / 1.61 s | 0.38 s | 3.99 / 4.00 m/s | pass (4 fired) |
-| MovingStart | V2 | blue | pass | 5 | 2.8 cm | 0.045 s | 1.66 / 1.61 s | 0.40 s | 3.99 / 4.00 m/s | pass (4 fired) |
-| MovingStart | V2 | red (half-turn) | pass | 5 | 3.0 cm | 0.045 s | 1.66 / 1.61 s | 0.38 s | 3.99 / 4.00 m/s | pass (4 fired) |
-| MovingStart | V2 | red (mirror) | pass | 5 | 3.1 cm | 0.045 s | 1.66 / 1.61 s | 0.34 s | 3.99 / 4.00 m/s | pass (4 fired) |
-| ShortHop | V3 | blue | pass | 5 | 2.1 cm | 0.028 s | 0.86 / 0.82 s | 0.42 s | 0.27 / 0.25 m/s | pass (1 fired) |
-| ShortHop | V3 | red (half-turn) | pass | 5 | 1.6 cm | 0.048 s | 0.86 / 0.82 s | 0.22 s | 0.27 / 0.25 m/s | pass (1 fired) |
+| Straight | V3 | blue | pass | 5 | 1.6 cm | 0.044 s | 1.38 / 1.34 s | 0.34 s | 3.97 / 4.00 m/s | pass (1 fired) |
+| Straight | V3 | red (half-turn) | pass | 5 | 2.0 cm | 0.044 s | 1.38 / 1.34 s | 0.38 s | 3.97 / 4.00 m/s | pass (1 fired) |
+| Straight | V3 | red (mirror) | pass | 5 | 2.3 cm | 0.044 s | 1.38 / 1.34 s | 0.36 s | 3.97 / 4.00 m/s | pass (1 fired) |
+| Straight | V2 | blue | pass | 5 | 2.9 cm | 0.052 s | 1.38 / 1.34 s | 0.38 s | 3.97 / 4.00 m/s | pass (1 fired) |
+| Straight | V2 | red (half-turn) | pass | 5 | 1.8 cm | 0.044 s | 1.38 / 1.34 s | 0.36 s | 3.97 / 4.00 m/s | pass (1 fired) |
+| Straight | V2 | red (mirror) | pass | 5 | 1.6 cm | 0.044 s | 1.38 / 1.34 s | 0.38 s | 3.97 / 4.00 m/s | pass (1 fired) |
+| SCurve | V3 | blue | pass | 5 | 2.9 cm | 0.048 s | 2.16 / 2.11 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| SCurve | V3 | red (half-turn) | pass | 5 | 2.5 cm | 0.044 s | 2.16 / 2.11 s | 0.34 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| SCurve | V3 | red (mirror) | pass | 5 | 2.7 cm | 0.048 s | 2.16 / 2.11 s | 0.32 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| SCurve | V2 | blue | pass | 5 | 2.9 cm | 0.044 s | 2.16 / 2.11 s | 0.34 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| SCurve | V2 | red (half-turn) | pass | 5 | 3.5 cm | 0.044 s | 2.14 / 2.11 s | 0.42 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| SCurve | V2 | red (mirror) | pass | 5 | 2.0 cm | 0.053 s | 2.16 / 2.11 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| Hairpin | V3 | blue | pass | 5 | 2.3 cm | 0.056 s | 3.00 / 2.94 s | 0.42 s | 3.67 / 3.82 m/s | pass (1 fired) |
+| Hairpin | V3 | red (half-turn) | pass | 5 | 2.5 cm | 0.056 s | 2.98 / 2.94 s | 0.36 s | 3.67 / 3.82 m/s | pass (1 fired) |
+| Hairpin | V3 | red (mirror) | pass | 5 | 2.3 cm | 0.056 s | 3.00 / 2.94 s | 0.34 s | 3.67 / 3.82 m/s | pass (1 fired) |
+| Hairpin | V2 | blue | pass | 5 | 3.0 cm | 0.047 s | 2.98 / 2.94 s | 0.38 s | 3.67 / 3.82 m/s | pass (1 fired) |
+| Hairpin | V2 | red (half-turn) | pass | 5 | 2.2 cm | 0.036 s | 2.98 / 2.94 s | 0.42 s | 3.67 / 3.82 m/s | pass (1 fired) |
+| Hairpin | V2 | red (mirror) | pass | 5 | 2.4 cm | 0.056 s | 2.98 / 2.94 s | 0.38 s | 3.67 / 3.82 m/s | pass (1 fired) |
+| Slalom | V3 | blue | pass | 5 | 1.4 cm | 0.045 s | 2.96 / 2.91 s | 0.34 s | 3.51 / 3.63 m/s | pass (1 fired) |
+| Slalom | V3 | red (half-turn) | pass | 5 | 1.4 cm | 0.045 s | 2.96 / 2.91 s | 0.36 s | 3.51 / 3.63 m/s | pass (1 fired) |
+| Slalom | V3 | red (mirror) | pass | 5 | 1.4 cm | 0.045 s | 2.96 / 2.91 s | 0.32 s | 3.51 / 3.63 m/s | pass (1 fired) |
+| Slalom | V2 | blue | pass | 5 | 1.4 cm | 0.045 s | 2.96 / 2.91 s | 0.38 s | 3.51 / 3.63 m/s | pass (1 fired) |
+| Slalom | V2 | red (half-turn) | pass | 5 | 2.4 cm | 0.045 s | 2.96 / 2.91 s | 0.38 s | 3.51 / 3.63 m/s | pass (1 fired) |
+| Slalom | V2 | red (mirror) | pass | 5 | 1.4 cm | 0.045 s | 2.96 / 2.91 s | 0.38 s | 3.51 / 3.63 m/s | pass (1 fired) |
+| LongAuto | V3 | blue | pass | 6 | 2.3 cm | 0.048 s | 4.04 / 3.99 s | 0.40 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V3 | red (half-turn) | pass | 6 | 2.0 cm | 0.048 s | 4.04 / 3.99 s | 0.36 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V3 | red (mirror) | pass | 6 | 1.8 cm | 0.048 s | 4.04 / 3.99 s | 0.36 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V2 | blue | pass | 6 | 2.1 cm | 0.048 s | 4.04 / 3.99 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V2 | red (half-turn) | pass | 6 | 2.0 cm | 0.048 s | 4.04 / 3.99 s | 0.40 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| LongAuto | V2 | red (mirror) | pass | 6 | 2.6 cm | 0.056 s | 4.04 / 3.99 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| MovingStart | V3 | blue | pass | 5 | 4.4 cm | 0.033 s | 1.66 / 1.61 s | 0.28 s | 3.99 / 4.00 m/s | pass (4 fired) |
+| MovingStart | V3 | red (half-turn) | pass | 5 | 3.5 cm | 0.039 s | 1.66 / 1.61 s | 0.38 s | 3.99 / 4.00 m/s | pass (4 fired) |
+| MovingStart | V3 | red (mirror) | pass | 5 | 3.7 cm | 0.039 s | 1.64 / 1.61 s | 0.40 s | 3.99 / 4.00 m/s | pass (4 fired) |
+| MovingStart | V2 | blue | pass | 5 | 3.6 cm | 0.039 s | 1.64 / 1.61 s | 0.42 s | 3.99 / 4.00 m/s | pass (4 fired) |
+| MovingStart | V2 | red (half-turn) | pass | 5 | 3.6 cm | 0.045 s | 1.66 / 1.61 s | 0.38 s | 3.99 / 4.00 m/s | pass (4 fired) |
+| MovingStart | V2 | red (mirror) | pass | 5 | 3.6 cm | 0.039 s | 1.64 / 1.61 s | 0.36 s | 3.99 / 4.00 m/s | pass (4 fired) |
+| ShortHop | V3 | blue | pass | 5 | 2.0 cm | 0.028 s | 0.84 / 0.82 s | 0.44 s | 0.27 / 0.25 m/s | pass (1 fired) |
+| ShortHop | V3 | red (half-turn) | pass | 5 | 1.5 cm | 0.048 s | 0.86 / 0.82 s | 0.22 s | 0.28 / 0.25 m/s | pass (1 fired) |
 | ShortHop | V3 | red (mirror) | pass | 5 | 1.7 cm | 0.047 s | 0.86 / 0.82 s | 0.22 s | 0.26 / 0.25 m/s | pass (1 fired) |
-| ShortHop | V2 | blue | pass | 5 | 1.5 cm | 0.043 s | 0.84 / 0.82 s | 0.24 s | 0.28 / 0.25 m/s | pass (1 fired) |
+| ShortHop | V2 | blue | pass | 5 | 1.4 cm | 0.043 s | 0.84 / 0.82 s | 0.24 s | 0.28 / 0.25 m/s | pass (1 fired) |
 | ShortHop | V2 | red (half-turn) | pass | 5 | 1.5 cm | 0.048 s | 0.86 / 0.82 s | 0.22 s | 0.27 / 0.25 m/s | pass (1 fired) |
-| ShortHop | V2 | red (mirror) | pass | 5 | 1.7 cm | 0.048 s | 0.86 / 0.82 s | 0.22 s | 0.27 / 0.25 m/s | pass (1 fired) |
+| ShortHop | V2 | red (mirror) | pass | 5 | 1.6 cm | 0.043 s | 0.86 / 0.82 s | 0.22 s | 0.27 / 0.25 m/s | pass (1 fired) |
 | TurnInPlace | V3 | blue | pass | 3 | 0.1 cm | 0.042 s | 0.82 / 0.86 s | 0.10 s | 0.03 / 0.00 m/s | pass (2 fired) |
 | TurnInPlace | V3 | red (half-turn) | pass | 3 | 0.0 cm | 0.062 s | 0.82 / 0.86 s | 0.10 s | 0.02 / 0.00 m/s | pass (2 fired) |
 | TurnInPlace | V3 | red (mirror) | pass | 3 | 0.0 cm | 0.062 s | 0.82 / 0.86 s | 0.10 s | 0.01 / 0.00 m/s | pass (2 fired) |
 | TurnInPlace | V2 | blue | pass | 3 | 0.0 cm | 0.042 s | 0.84 / 0.86 s | 0.10 s | 0.02 / 0.00 m/s | pass (2 fired) |
 | TurnInPlace | V2 | red (half-turn) | pass | 3 | 0.0 cm | 0.022 s | 0.88 / 0.86 s | 0.10 s | 0.03 / 0.00 m/s | pass (2 fired) |
 | TurnInPlace | V2 | red (mirror) | pass | 3 | 0.0 cm | 0.042 s | 0.82 / 0.86 s | 0.10 s | 0.03 / 0.00 m/s | pass (2 fired) |
-| Zones | V3 | blue | pass | 5 | 1.0 cm | 0.059 s | 5.00 / 4.96 s | 0.38 s | 3.99 / 4.00 m/s | pass (2 fired) |
-| Zones | V3 | red (half-turn) | pass | 5 | 1.5 cm | 0.043 s | 5.00 / 4.96 s | 0.38 s | 3.99 / 4.00 m/s | pass (2 fired) |
-| Zones | V3 | red (mirror) | pass | 5 | 1.7 cm | 0.043 s | 5.00 / 4.96 s | 0.38 s | 3.99 / 4.00 m/s | pass (2 fired) |
-| Zones | V2 | blue | pass | 5 | 1.8 cm | 0.043 s | 5.00 / 4.96 s | 0.38 s | 3.99 / 4.00 m/s | pass (2 fired) |
-| Zones | V2 | red (half-turn) | pass | 5 | 2.1 cm | 0.043 s | 5.02 / 4.96 s | 0.44 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| Zones | V2 | red (mirror) | pass | 5 | 2.1 cm | 0.051 s | 5.02 / 4.96 s | 0.32 s | 4.00 / 4.00 m/s | pass (2 fired) |
-| ViaPoint | V3 | blue | pass | 5 | 3.2 cm | 0.049 s | 2.18 / 2.13 s | 0.34 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| ViaPoint | V3 | red (half-turn) | pass | 5 | 1.6 cm | 0.049 s | 2.18 / 2.13 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| ViaPoint | V3 | red (mirror) | pass | 5 | 2.8 cm | 0.049 s | 2.18 / 2.13 s | 0.32 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| ViaPoint | V2 | blue | pass | 5 | 3.1 cm | 0.049 s | 2.18 / 2.13 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| ViaPoint | V2 | red (half-turn) | pass | 5 | 1.8 cm | 0.049 s | 2.18 / 2.13 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| ViaPoint | V2 | red (mirror) | pass | 5 | 2.5 cm | 0.049 s | 2.18 / 2.13 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
-| RollA → RollB | V3 | blue | pass | 10 | 3.8 cm | 0.047 s | 2.44 / 2.36 s | 0.42 s | 3.99 / 4.00 m/s | pass (1 fired) |
-| RollA → RollB | V3 | red (half-turn) | pass | 10 | 2.4 cm | 0.052 s | 2.46 / 2.36 s | 0.40 s | 3.99 / 4.00 m/s | pass (1 fired) |
-| RollA → RollB | V3 | red (mirror) | pass | 10 | 4.5 cm | 0.052 s | 2.44 / 2.36 s | 0.36 s | 3.99 / 4.00 m/s | pass (1 fired) |
-| RollA → RollB | V2 | blue | pass | 10 | 3.8 cm | 0.049 s | 2.44 / 2.36 s | 0.38 s | 3.99 / 4.00 m/s | pass (1 fired) |
-| RollA → RollB | V2 | red (half-turn) | pass | 10 | 3.2 cm | 0.052 s | 2.46 / 2.36 s | 0.36 s | 3.99 / 4.00 m/s | pass (1 fired) |
-| RollA → RollB | V2 | red (mirror) | pass | 10 | 4.0 cm | 0.049 s | 2.44 / 2.36 s | 0.38 s | 3.99 / 4.00 m/s | pass (1 fired) |
+| Zones | V3 | blue | pass | 5 | 2.2 cm | 0.042 s | 5.00 / 4.96 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| Zones | V3 | red (half-turn) | pass | 5 | 2.4 cm | 0.039 s | 5.00 / 4.96 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| Zones | V3 | red (mirror) | pass | 5 | 1.9 cm | 0.043 s | 5.00 / 4.96 s | 0.38 s | 4.00 / 4.00 m/s | pass (2 fired) |
+| Zones | V2 | blue | pass | 5 | 1.6 cm | 0.042 s | 5.00 / 4.96 s | 0.38 s | 3.99 / 4.00 m/s | pass (2 fired) |
+| Zones | V2 | red (half-turn) | pass | 5 | 1.8 cm | 0.042 s | 5.00 / 4.96 s | 0.46 s | 3.99 / 4.00 m/s | pass (2 fired) |
+| Zones | V2 | red (mirror) | pass | 5 | 1.8 cm | 0.043 s | 5.00 / 4.96 s | 0.34 s | 3.99 / 4.00 m/s | pass (2 fired) |
+| ViaPoint | V3 | blue | pass | 5 | 3.7 cm | 0.048 s | 2.18 / 2.13 s | 0.34 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| ViaPoint | V3 | red (half-turn) | pass | 5 | 3.5 cm | 0.049 s | 2.18 / 2.13 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| ViaPoint | V3 | red (mirror) | pass | 5 | 4.3 cm | 0.047 s | 2.18 / 2.13 s | 0.30 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| ViaPoint | V2 | blue | pass | 5 | 3.5 cm | 0.029 s | 2.16 / 2.13 s | 0.36 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| ViaPoint | V2 | red (half-turn) | pass | 5 | 3.7 cm | 0.048 s | 2.18 / 2.13 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| ViaPoint | V2 | red (mirror) | pass | 5 | 3.9 cm | 0.048 s | 2.18 / 2.13 s | 0.38 s | 4.00 / 4.00 m/s | pass (1 fired) |
+| RollA → RollB | V3 | blue | pass | 10 | 3.3 cm | 0.032 s | 2.44 / 2.36 s | 0.44 s | 3.99 / 4.00 m/s | pass (1 fired) |
+| RollA → RollB | V3 | red (half-turn) | pass | 10 | 2.9 cm | 0.052 s | 2.44 / 2.36 s | 0.36 s | 3.99 / 4.00 m/s | pass (1 fired) |
+| RollA → RollB | V3 | red (mirror) | pass | 10 | 4.1 cm | 0.046 s | 2.44 / 2.36 s | 0.46 s | 3.99 / 4.00 m/s | pass (1 fired) |
+| RollA → RollB | V2 | blue | pass | 10 | 4.0 cm | 0.047 s | 2.44 / 2.36 s | 0.38 s | 3.99 / 4.00 m/s | pass (1 fired) |
+| RollA → RollB | V2 | red (half-turn) | pass | 10 | 2.6 cm | 0.047 s | 2.44 / 2.36 s | 0.34 s | 3.99 / 4.00 m/s | pass (1 fired) |
+| RollA → RollB | V2 | red (mirror) | pass | 10 | 2.8 cm | 0.047 s | 2.44 / 2.36 s | 0.38 s | 3.99 / 4.00 m/s | pass (1 fired) |

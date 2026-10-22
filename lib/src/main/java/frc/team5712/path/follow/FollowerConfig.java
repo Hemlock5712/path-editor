@@ -30,8 +30,9 @@ import frc.team5712.path.core.RobotConfig;
  * @param headingEaseInPerSecond the heading ease-in line, rad/s per radian left
  * @param headingDeadbandRadians ask for zero spin inside this
  * @param limiterFrictionCoefficient the output limiter's budget as a μ (μ·g shared by translation and
- *     spin); NaN, the default, = the robot's traction limit {@code 0.9 · min(μ·g, g · tip / h)}
- *     ({@link frc.team5712.path.core.RobotConfig#tractionMetersPerSecondSquared})
+ *     spin); NaN, the default, = the robot's traction limit without its 10 % margin ({@link
+ *     frc.team5712.path.core.RobotConfig#tractionMetersPerSecondSquared} / 0.9): the plan keeps the margin, so
+ *     feedback has that room
  * @param positionToleranceMeters finish: this close
  * @param headingToleranceRadians finish: this well aligned
  * @param settledMetersPerSecond finish: slower than this (measured)

@@ -84,11 +84,7 @@ class PathFollowerTest {
       double miss = Math.hypot(end.xMeters() - goal.xMeters(), end.yMeters() - goal.yMeters());
       assertTrue(miss < CFG.positionToleranceMeters(), e.getKey() + " ends " + miss + " m off");
       assertTrue(Math.abs(Angles.wrap(end.headingRadians() - goal.headingRadians())) < CFG.headingToleranceRadians());
-      // Under equal push the limiter holds the plan's own limit, so where the plan uses all of it (the auto
-      // route's last bend, braking) feedback has no room: 9.3 cm there in this plant (2.4 cm with the limiter
-      // at the equal-push onset, A / 0.9), against 4 cm or less everywhere else
-      double allowed = e.getKey().equals("auto_route") ? 0.10 : 0.05;
-      assertTrue(r.worstCrossTrack() < allowed, e.getKey() + " strays " + r.worstCrossTrack() + " m");
+      assertTrue(r.worstCrossTrack() < 0.05, e.getKey() + " strays " + r.worstCrossTrack() + " m");
       // finishing takes the plan plus the settle, not much more
       assertTrue(r.seconds() < path.totalTimeSeconds() + 0.8,
           e.getKey() + " took " + r.seconds() + " s for a " + path.totalTimeSeconds() + " s plan");
