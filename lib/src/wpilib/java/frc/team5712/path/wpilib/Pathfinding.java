@@ -29,6 +29,7 @@ import org.wpilib.math.kinematics.ChassisVelocities;
  * Command toAmp = otf.toPoint(drivetrain, "Amp", Rotation2d.kCCW_90deg);           // an editor named point
  * Command toTag = otf.toTarget(drivetrain, vision::bestScoringPose);              // real field frame, as is
  * Command thenAuto = otf.thenFollow(drivetrain, "ToReef");                       // to the path's start, then the path
+ * Command score = otf.follow(drivetrain, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a library path, its end on vision
  * </pre>
  *
  * Each command plans when it starts, from the robot's measured pose and velocity (a few milliseconds:
@@ -149,6 +150,23 @@ public final class Pathfinding {
     return v3(new PathfindCommand(this, drive, "Pathfind to " + pathName, f -> start(path, f), path, follow));
   }
 
+  /**
+   * The library path {@code pathName} on its own, no pathfinding: a {@link FollowPathCommand} with this object's
+   * drivetrain, follower settings, clock and alliance, its events bound through {@code library.bindEvent}. Add
+   * {@link FollowPathCommand#withMovingGoal} to let its end follow a goal seen on the field.
+   */
+  public FollowPathCommand follow(Mechanism drive, String pathName) {
+    FollowPathCommand c = new FollowPathCommand(pathName, drive, new PathFollower(library.get(pathName), config), pose,
+        fieldVelocity, fieldOutput, redFrame).withEvents(library);
+    if (clock != null) {
+      c.withClock(clock);
+    }
+    if (frame != null) {
+      c.withFrame(frame);
+    }
+    return c;
+  }
+
   // ------------------------------------------------------------------------------ Commands v2
 
   public PathfindCommandV2 toV2(Subsystem drive, Pose2d blueGoal) {
@@ -161,6 +179,19 @@ public final class Pathfinding {
 
   public PathfindCommandV2 toTargetV2(Subsystem drive, Supplier<Pose2d> realGoal) {
     return v2(new PathfindCommandV2(this, drive, "Pathfind", real(realGoal), null));
+  }
+
+  /** {@link #follow} for Commands v2. */
+  public FollowPathCommandV2 followV2(Subsystem drive, String pathName) {
+    FollowPathCommandV2 c = new FollowPathCommandV2(pathName, drive, new PathFollower(library.get(pathName), config), pose,
+        fieldVelocity, fieldOutput, redFrame).withEvents(library);
+    if (clock != null) {
+      c.withClock(clock);
+    }
+    if (frame != null) {
+      c.withFrame(frame);
+    }
+    return c;
   }
 
   /** {@link #thenFollow} for Commands v2: the pathfinding command, then the path's, handing over the speed. */

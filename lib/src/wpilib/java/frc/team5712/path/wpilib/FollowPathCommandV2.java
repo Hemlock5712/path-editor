@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
@@ -86,6 +87,18 @@ public final class FollowPathCommandV2 extends Command {
 
   private FieldFrame startFrame() {
     return frameSource == null ? Conversions.allianceFrame(redFrame) : frameSource.get();
+  }
+
+  /**
+   * Lets the end of the path follow a moving goal, e.g. a tag or a game piece seen by vision: a pose in the
+   * real field frame (as the robot's own pose; it is not flipped on red), or empty to keep the last one.
+   * When the goal moves more than 2 cm or 2°, only the rest of the path is rebuilt, from the robot's
+   * progress to the goal, joining smoothly ({@link PathFollower#bindGoal}); in the last 0.3 m DriveToPose's
+   * law drives straight to it. Binds the follower, so it applies to every run of this command.
+   */
+  public FollowPathCommandV2 withMovingGoal(Supplier<Optional<Pose2d>> realGoal) {
+    follower.bindGoal(() -> realGoal.get().map(Conversions::toPose));
+    return this;
   }
 
   /** Starts from the previous path's last command instead of the measured velocity (rolling ends). */

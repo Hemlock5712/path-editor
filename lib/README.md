@@ -416,7 +416,19 @@ otf.toPoint(drive, "Depot", Rotation2d.k180deg);            // an editor named p
 otf.toTarget(drive, vision::scoringPose);                   // real field frame, used as given
 otf.thenFollow(drive, "ToReef");                            // to the path's start, then the path
 otf.to(drive, goal).withMovingGoal(vision::pieceIfSeen);     // the end follows a moving goal (real frame)
+otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a library path as drawn, its end on vision
 ```
+
+- **Moving goals on library paths.** `follow(drive, name)` (and `followV2`) is the plain `FollowPathCommand` for a
+  library path, an optimised one included, built with the same drivetrain, settings, clock and alliance. It plans
+  nothing at go. `withMovingGoal(Supplier<Optional<Pose2d>>)` is on `FollowPathCommand` and `FollowPathCommandV2`
+  themselves too, for commands built by hand. The supplier gives the goal in the real field frame, like the
+  robot's pose (not flipped on red), or empty to keep the last one. When the goal moves more than 2 cm or 2°, only
+  the rest of the path is rebuilt, from the robot's progress to the goal, joining with matching position,
+  tangent and curvature (`PathFollower.bindGoal`, 0.1-0.3 ms). In the last 0.3 m DriveToPose's law drives
+  straight to it. The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
+  away once the robot is 1.5 m out. `PathLibrary` holds no drivetrain, so the factory lives on `Pathfinding`
+  rather than as `paths.follow(...)`.
 
 - **Planning.** Each command plans when it starts, from the measured pose and velocity, with `OnTheFly` (in `plan`,
   no WPILib). This is the one place path work happens at go: about 1 ms median and under 5 ms at the 95th
