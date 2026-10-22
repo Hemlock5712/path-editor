@@ -62,6 +62,14 @@ public final class QuinticSpline {
    * A rebuilt tail uses this to join the old path with matching position, tangent and curvature.
    */
   public static QuinticSpline through(List<Waypoint> waypoints, double startCurvature) {
+    return through(waypoints, startCurvature, Double.NaN);
+  }
+
+  /**
+   * Builds the spline with the curvature at the first and at the last waypoint fixed (NaN = chosen like the
+   * rest). A piece that joins an existing path ahead uses the last: it meets it with matching curvature.
+   */
+  public static QuinticSpline through(List<Waypoint> waypoints, double startCurvature, double endCurvature) {
     int n = waypoints.size() - 1;
     if (n < 1) {
       throw new IllegalArgumentException("a spline needs at least two waypoints");
@@ -195,6 +203,13 @@ public final class QuinticSpline {
       diag[0] = 1.0;
       upper[0] = 0.0;
       rhs[0] = startCurvature;
+    }
+    if (!Double.isNaN(endCurvature)) {
+      // the same for κn
+      rhs[n - 1] -= upper[n - 1] * endCurvature;
+      upper[n - 1] = 0.0;
+      diag[n] = 1.0;
+      rhs[n] = endCurvature;
     }
     // Thomas algorithm (the matrix is a sum of positive-definite 2×2 blocks, so no pivoting needed)
     for (int i = 1; i <= n; i++) {

@@ -106,6 +106,11 @@ public final class PathGeometry {
     return build(QuinticSpline.through(waypoints, startCurvature));
   }
 
+  /** The same, with the curvature at the first and last waypoints fixed (NaN = free). */
+  public static PathGeometry build(List<Waypoint> waypoints, double startCurvature, double endCurvature) {
+    return build(QuinticSpline.through(waypoints, startCurvature, endCurvature));
+  }
+
   /** Builds the arc-length table for a spline. */
   public static PathGeometry build(QuinticSpline spline) {
     int n = spline.segmentCount();

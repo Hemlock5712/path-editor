@@ -186,6 +186,29 @@ class QuinticSplineTest {
   }
 
   @Test
+  void fixedEndCurvaturesAreKept() {
+    List<Waypoint> w = FixturePaths.slalom().waypoints();
+    int n = w.size() - 1;
+    QuinticSpline both = QuinticSpline.through(w, 0.37, -0.52);
+    double[] d = new double[8];
+    both.evaluate(n - 1, 1.0, d);
+    assertEquals(-0.52, curvature(d), 1e-9);
+    both.evaluate(0, 0.0, d);
+    assertEquals(0.37, curvature(d), 1e-9);
+    for (int k = 1; k < n; k++) {
+      both.evaluate(k - 1, 1.0, d);
+      double before = curvature(d);
+      both.evaluate(k, 0.0, d);
+      assertEquals(before, curvature(d), 1e-6);
+    }
+    // two waypoints, both ends fixed
+    QuinticSpline piece = QuinticSpline.through(List.of(Waypoint.at(0, 0, 0.0), Waypoint.at(2, 1, 0.5)), 0.1, -0.2);
+    assertEquals(0.1, piece.knotCurvature(0), 0.0);
+    assertEquals(-0.2, piece.knotCurvature(1), 0.0);
+    assertEquals(QuinticSpline.through(w, 0.37).knotCurvature(2), QuinticSpline.through(w, 0.37, Double.NaN).knotCurvature(2), 0.0);
+  }
+
+  @Test
   void rejectsRepeatedWaypointsAndTooFewPoints() {
     assertThrows(
         IllegalArgumentException.class,

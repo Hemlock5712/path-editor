@@ -2,6 +2,8 @@ package frc.team5712.path.tools;
 
 import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.PathSpec;
+import frc.team5712.path.core.VelocityProfile;
 import frc.team5712.path.core.Json;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.PathFile;
@@ -117,7 +119,9 @@ public final class BenchServer {
       }
     }
     long t0 = System.nanoTime();
-    path = Path.build(PathFile.fromJson(pathTree), robot);
+    PathSpec spec = PathFile.fromJson(pathTree);
+    path = msg.get("startCurvature") == null ? Path.build(spec, robot)
+        : Path.build(spec, robot, VelocityProfile.DEFAULT_GRID_METERS, number(msg, "startCurvature"));
     double buildMs = (System.nanoTime() - t0) / 1e6;
     follower = new PathFollower(path, b.build());
     goal = Optional.empty();
@@ -131,6 +135,7 @@ public final class BenchServer {
     r.put("lengthMeters", path.lengthMeters());
     r.put("totalTimeSeconds", path.totalTimeSeconds());
     r.put("buildMs", buildMs);
+    r.put("endCurvature", path.sample(path.lengthMeters()).curvature());
     return line(r);
   }
 
@@ -209,10 +214,15 @@ public final class BenchServer {
     need();
     FieldFrame frame = msg.get("frame") == null ? FieldFrame.BLUE : FieldFrame.valueOf(msg.get("frame").toString());
     long t0 = System.nanoTime();
-    follower.start(number(msg, "t"), pose(msg.get("pose")), speeds(msg.get("vel")), frame);
+    FieldSpeeds measured = speeds(msg.get("vel"));
+    follower.start(number(msg, "t"), pose(msg.get("pose")), measured, frame,
+        msg.get("handed") == null ? measured : speeds(msg.get("handed")));
     Map<String, Object> r = new LinkedHashMap<>();
     r.put("ok", Boolean.TRUE);
     r.put("startMicros", (System.nanoTime() - t0) / 1e3);
+    if (!Double.isNaN(follower.lastStartReplanMicros())) {
+      r.put("startReplanMicros", follower.lastStartReplanMicros());
+    }
     return line(r);
   }
 
@@ -234,6 +244,10 @@ public final class BenchServer {
     if (!Double.isNaN(follower.lastTailRebuildMicros())) {
       r.put("rebuilds", (double) follower.tailRebuildCount());
       r.put("rebuildMicros", follower.lastTailRebuildMicros());
+    }
+    if (follower.rejoinCount() > 0) {
+      r.put("rejoins", (double) follower.rejoinCount());
+      r.put("rejoinMicros", follower.lastRejoinMicros());
     }
     return line(r);
   }
