@@ -65,12 +65,14 @@ describe("NT4 client", () => {
     local = 1_004_000;
     client.onBinary(frame([0x94, 0xff, ...uint64(50_000_000), 0x02, ...uint64(1_000_000)]));
     expect(client.roundTripUs).toBe(4000);
+    expect(client.syncRoundTripUs).toBe(4000);
     expect(client.serverOffsetUs).toBe(50_000_000 + 2000 - 1_004_000);
     expect(client.serverNowUs()).toBe(50_002_000);
     // a slower answer later doesn't replace the better estimate
     local = 2_020_000;
     client.onBinary(frame([0x94, 0xff, ...uint64(51_010_000), 0x02, ...uint64(2_000_000)]));
     expect(client.roundTripUs).toBe(20_000);
+    expect(client.syncRoundTripUs).toBe(4000);
     expect(client.serverOffsetUs).toBe(50_000_000 + 2000 - 1_004_000);
   });
 

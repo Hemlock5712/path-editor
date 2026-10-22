@@ -116,6 +116,15 @@ export class Nt4Client {
     return this.lastRttUs;
   }
 
+  /**
+   * The round trip of the answer the clock offset comes from, µs (Infinity before the first). The server
+   * stamped that answer between the ping leaving and the answer coming back, so the offset is right to
+   * within half of it.
+   */
+  get syncRoundTripUs(): number {
+    return this.bestRttUs;
+  }
+
   /** Now, on the server's clock (µs), or null before the first time sync. */
   serverNowUs(): number | null {
     return this.offsetUs === null ? null : this.now() + this.offsetUs;

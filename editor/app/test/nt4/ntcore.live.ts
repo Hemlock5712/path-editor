@@ -55,18 +55,23 @@ describe("NT4 client against WPILib's ntcore", () => {
   afterAll(stopServer);
 
   it("receives the follower's telemetry, with time sync, from a real server", async () => {
-    const received: { v: Nt4Value; serverNowAtArrival: number | null }[] = [];
+    // each value with the server's time when it arrived, as the client reckons it, and the round trip of the
+    // time sync answer that reckoning came from (the first answer can be slow: the server is busy sending
+    // every topic to a new client; a better one replaces it a few seconds later)
+    const received: { v: Nt4Value; serverNowAtArrival: number | null; syncRoundTripUs: number }[] = [];
     const client: Nt4Client = new Nt4Client({
       host: "127.0.0.1",
       port: PORT,
       prefixes: ["/Telemetry/"],
-      onValue: (v) => received.push({ v, serverNowAtArrival: client.serverNowUs() }),
+      onValue: (v) => received.push({ v, serverNowAtArrival: client.serverNowUs(), syncRoundTripUs: client.syncRoundTripUs }),
     });
     client.connect();
     try {
       await until("the connection and time sync", () => client.serverOffsetUs !== null);
       expect(client.protocol).toBe("v4.1.networktables.first.wpi.edu");
-      expect(client.roundTripUs).toBeLessThan(50_000); // localhost
+      // localhost: within a few pings (every 3 s) one comes back fast; the first can wait behind every
+      // topic's announcement on a busy PC
+      await until("a localhost round trip", () => client.syncRoundTripUs < 50_000, 15_000);
 
       // the follower runs the S-curve over and over: watch a whole run's events go by
       const fired = () => received.filter((r) => r.v.topic.name === "/Telemetry/PathFollower/EventsFired").map((r) => r.v.value as string[]);
@@ -93,19 +98,29 @@ describe("NT4 client against WPILib's ntcore", () => {
 
       // time sync: the server publishes its own clock (ntcore's, in ns) every loop and flushes it at once.
       // When a value arrives, the client's estimate of the server's time is that clock plus the transport
-      // time: never less than minus half a round trip (the sync's accuracy), and only a few ms more.
+      // time, less the estimate's error. The error is at most half the round trip of the answer the estimate
+      // came from (the server stamped it between the ping leaving and the answer arriving), so the transport
+      // time, which can't be negative, leaves each lag no lower than minus that half round trip. 0.05 ms
+      // covers the two clocks' readings, each rounded to the µs.
       const clock = received.filter((r) => r.v.topic.name === "/Telemetry/Harness/ServerTimeNanos" && r.serverNowAtArrival !== null);
       expect(clock.length).toBeGreaterThan(50);
+      const early = clock
+        .map((r) => ({ lag: (r.serverNowAtArrival! - (r.v.value as number) / 1000) / 1000, bound: -r.syncRoundTripUs / 2000 - 0.05 }))
+        .filter((x) => x.lag < x.bound);
+      expect(early, "lags (ms) earlier than the sync's accuracy allows").toEqual([]);
       const lags = clock.map((r) => (r.serverNowAtArrival! - (r.v.value as number) / 1000) / 1000);
-      const stamps = clock.map((r) => Math.abs(r.v.serverTimeUs - (r.v.value as number) / 1000) / 1000);
+      // the NT timestamp is taken when the value is logged, just after the harness reads the clock into it
+      const stamps = clock.map((r) => (r.v.serverTimeUs - (r.v.value as number) / 1000) / 1000).sort((a, b) => a - b);
       lags.sort((a, b) => a - b);
       const median = lags[Math.floor(lags.length / 2)]!;
       console.log(
-        `NT4: round trip ${(client.roundTripUs / 1000).toFixed(2)} ms; arrival lag median ${median.toFixed(1)} ms, ` +
-          `range ${lags[0]!.toFixed(1)} to ${lags.at(-1)!.toFixed(1)} ms over ${lags.length} values; worst stamp gap ${Math.max(...stamps).toFixed(2)} ms`,
+        `NT4: round trip ${(client.roundTripUs / 1000).toFixed(2)} ms (sync's ${(client.syncRoundTripUs / 1000).toFixed(2)} ms); arrival lag median ${median.toFixed(1)} ms, ` +
+          `range ${lags[0]!.toFixed(1)} to ${lags.at(-1)!.toFixed(1)} ms over ${lags.length} values; stamp gap median ${stamps[Math.floor(stamps.length / 2)]!.toFixed(2)}, worst ${stamps.at(-1)!.toFixed(2)} ms`,
       );
-      expect(Math.max(...stamps)).toBeLessThan(5); // the value's NT timestamp is the clock it carries
-      expect(lags[0]!).toBeGreaterThan(-(client.roundTripUs / 1000) / 2 - 1);
+      // the value's NT timestamp is on the clock it carries: never before it (µs rounding aside), and as a
+      // rule straight after it (the worst is however long the harness's thread was held up, on a busy PC)
+      expect(stamps[0]!).toBeGreaterThan(-0.002);
+      expect(stamps[Math.floor(stamps.length / 2)]!).toBeLessThan(1);
       const p95 = lags[Math.floor(lags.length * 0.95)]!;
       console.log(`NT4: 95th percentile lag ${p95.toFixed(1)} ms`);
       expect(median).toBeLessThan(15);
@@ -136,8 +151,12 @@ describe("NT4 client against WPILib's ntcore", () => {
 
   it("records a whole run as the follower logged it (the Telemetry page's recording)", async () => {
     // the harness publishes the follower's own account of each run when it ends: [run, loops, cross-track
-    // RMS, cross-track max, final position error, final heading error, seconds]
+    // RMS, cross-track max, final position error, final heading error, seconds]. Runs differ in length (the
+    // harness runs in real time, so a slow loop changes the run), so each recorded run is matched to its own
+    // account by order, not by its numbers: the first account to arrive after the run started is its own
+    // (the next run starts half a second after the last one's account).
     const summaries: { at: number; values: number[] }[] = [];
+    const startedAt: number[] = []; // the frame each recorded run started in
     let frames = 0;
     const recorder = new Recorder("/Telemetry/Robot/Pose", 10);
     const client = new Nt4Client({
@@ -150,8 +169,9 @@ describe("NT4 client against WPILib's ntcore", () => {
         if (v.topic.name === "/Telemetry/Harness/RunSummary") summaries.push({ at: frames, values: v.value as number[] });
       },
       onFrameEnd: () => {
-        frames++;
         recorder.onFrameEnd();
+        while (startedAt.length < recorder.runs.length) startedAt.push(frames);
+        frames++;
       },
     });
     client.connect();
@@ -159,11 +179,10 @@ describe("NT4 client against WPILib's ntcore", () => {
       // a run that started after we connected, recorded from its first loop to its finish
       await until("a whole recorded run", () => recorder.runs.some((r) => r.finished && r.samples[0] !== undefined && r.samples[0].t < 0.05), 60_000);
       const run = recorder.runs.find((r) => r.finished && r.samples[0]!.t < 0.05)!;
-      const runIndex = recorder.runs.indexOf(run);
-      await until("the harness's account of it", () => summaries.length > 0 && recorder.runs.length > runIndex, 10_000);
-      // the account that came with this run's finish: the first after its last sample
-      const theirs = summaries.find((x) => Math.abs(x.values[1]! - run.samples.length) <= 1 && Math.abs(x.values[6]! - run.samples.at(-1)!.t) < 0.1);
-      expect(theirs, `no harness summary matches a run of ${run.samples.length} loops, ${run.samples.at(-1)!.t} s; got ${JSON.stringify(summaries.map((x) => x.values))}`).toBeDefined();
+      const start = startedAt[recorder.runs.indexOf(run)]!;
+      const account = () => summaries.find((x) => x.at >= start);
+      await until("the harness's account of it", () => account() !== undefined, 10_000);
+      const theirs = account()!;
       const [, loops, rms, max, endError, endHeading, seconds] = theirs!.values as [number, number, number, number, number, number, number];
       const ours = summarise(run);
       console.log(
