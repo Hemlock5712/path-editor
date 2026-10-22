@@ -33,6 +33,7 @@ if HERE not in sys.path:
 import numpy as np  # noqa: E402
 
 from courses import COURSES, QUICK_COURSES, NeutralPath, t_end  # noqa: E402
+from courses_extra import EXTRA_COURSES, EXTRAS  # noqa: E402
 from followers import LABELS, METHODS, build  # noqa: E402
 
 OUT = os.path.join(HERE, "out")
@@ -198,6 +199,9 @@ def main():
     ap.add_argument("--both", action="store_true")
     ap.add_argument("--procs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--md-only", action="store_true")
+    ap.add_argument("--resume", action="store_true",
+                    help="carry on from out/results.partial.json (saved after each sweep and pose grid) if its "
+                         "seeds, courses and pose sources match")
     ap.add_argument("--export-editor", action="store_true",
                     help="write out/editor_bench.json (tables, geometry and traces) for the editor's Bench view")
     ap.add_argument("--trace-pose", default="truth",
@@ -250,23 +254,34 @@ def main():
                     "tuning_score": f"settled fraction first, then mean(settle time or sim time) + "
                                     f"{TIME_PER_METRE_CT:g} s per metre of RMS cross-track"},
            "sweeps": {}, "tuned": {}, "runs": {}, "geometry": {}, "traces": {}}
+    sweep_courses = [c for c in courses if c not in EXTRA_COURSES]  # tuned on the original nine
+    partial = os.path.join(OUT, "results.partial.json")
+    if a.resume and os.path.exists(partial):
+        prev = json.load(open(partial))
+        if all(prev["meta"][k] == out["meta"][k] for k in ("seeds", "courses", "poses", "quick")):
+            out.update({k: prev[k] for k in ("sweeps", "tuned", "runs", "pathfind") if k in prev})
+            print("resuming: sweeps", sorted(out["sweeps"]), "poses", sorted(out["runs"]), flush=True)
+
+    def checkpoint():
+        os.makedirs(OUT, exist_ok=True)
+        with open(partial, "w") as fh:
+            json.dump(out, fh)
+
     with mp.get_context("spawn").Pool(a.procs) as pool:
-        best, table = sweep(pool, "bline_readme", bline_grid(a.quick), courses)
-        out["tuned"]["bline_tuned"], out["sweeps"]["bline"] = best, table
-        print("BLine tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
-        best, table = sweep(pool, "bline_readme", bline_grid(a.quick, caps=True), courses)
-        out["tuned"]["bline_tuned_caps"], out["sweeps"]["bline_caps"] = best, table
-        print("BLine tuned with caps:", best, f"({time.time() - t0:.0f} s)", flush=True)
-        best, table = sweep(pool, "pathplanner", pp_grid(a.quick), courses)
-        out["tuned"]["pathplanner_tuned"], out["sweeps"]["pathplanner"] = best, table
-        print("PathPlanner tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
-        best, table = sweep(pool, "ours_v2", ours_grid(a.quick), courses)
-        out["tuned"]["ours_tuned"], out["sweeps"]["ours"] = best, table
-        print("Ours v2 tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
-        best, table = sweep(pool, "pp_path2", path2_grid(a.quick), courses)
-        out["tuned"]["pp_path2_tuned"], out["sweeps"]["pp_path2"] = best, table
-        print("PathPlanner path2 tuned:", best, f"({time.time() - t0:.0f} s)", flush=True)
+        for name, key, base, grid in (("bline", "bline_tuned", "bline_readme", bline_grid(a.quick)),
+                                      ("bline_caps", "bline_tuned_caps", "bline_readme", bline_grid(a.quick, caps=True)),
+                                      ("pathplanner", "pathplanner_tuned", "pathplanner", pp_grid(a.quick)),
+                                      ("ours", "ours_tuned", "ours_v2", ours_grid(a.quick)),
+                                      ("pp_path2", "pp_path2_tuned", "pp_path2", path2_grid(a.quick))):
+            if name in out["sweeps"]:
+                continue
+            best, table = sweep(pool, base, grid, sweep_courses)
+            out["tuned"][key], out["sweeps"][name] = best, table
+            print(f"{key}:", best, f"({time.time() - t0:.0f} s)", flush=True)
+            checkpoint()
         for pose in poses:
+            if pose in out["runs"]:
+                continue
             jobs, keys = [], []
             for c in courses:
                 for m in MAIN_METHODS:
@@ -280,10 +295,13 @@ def main():
                 by.setdefault(c, {}).setdefault(m, []).append(r)
             out["runs"][pose] = {c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()}
             print(pose, "grid done", f"({time.time() - t0:.0f} s)", flush=True)
-        if not a.quick:
+            checkpoint()
+        if not a.quick and "pathfind" not in out:
             out["pathfind"] = pathfind_grid(pool, seeds, poses)
             print("pathfinding done", f"({time.time() - t0:.0f} s)", flush=True)
+            checkpoint()
     # geometry each method authored, and one true path per method/course (seed 0, odometry)
+    from scenarios import make_follower
     from sim import run_one
 
     for c in courses:
@@ -291,9 +309,8 @@ def main():
         tr = {}
         for m in MAIN_METHODS:
             key, opts = resolve(m, out["tuned"])
-            cls, kw = build(key, opts)
-            f = cls(**kw)
-            g[m] = np.asarray(cls.geometry(f.adapt(COURSES[c]))).round(4).tolist()
+            f, native = make_follower(c, key, opts)
+            g[m] = np.asarray(f.geometry(native)).round(4).tolist()
             tr[m] = run_one((c, key, opts, 0, poses[0]), trace=True)["trace"]
         out["geometry"][c] = g
         out["traces"][c] = tr
@@ -334,6 +351,7 @@ EDITOR_LOOK = {
     "around_hub_trench": "threading the trench round the hub: the time, and keeping to the line in the trench",
     "shot_to_tower": "to the tower, facing the wall: the final pose for the climb",
 }
+EDITOR_LOOK.update({c: e["look"] for c, e in EXTRAS.items()})  # the harder courses (courses_extra.py)
 LITE_TRACE_STEP = 5  # every 5th trace sample: 0.2 s apart
 EDITOR_SCHEMA = 1
 # what the editor's tables show: name in results.json -> (label, unit)
@@ -347,6 +365,14 @@ EDITOR_METRICS = {
     "yaw_end_deg": ("final yaw", "deg"),
     "overshoot_cm": ("overshoot", "cm"),
     "wheel_slip_ms": ("wheel slip", "ms"),
+}
+# the harder courses' own numbers (scenarios.course_metrics), exported apart from the tables above (where lower
+# is always better): name -> (label, unit, higher is better)
+COURSE_METRICS = {
+    "wall_clear_cm": ("closest bumper to a wall", "cm", True),
+    "miss_cm": ("miss at the piece", "cm", False),
+    "piece_speed": ("speed at the piece", "m/s", True),
+    "keeps_going": ("runs still going at the piece", "fraction", True),
 }
 
 
@@ -445,6 +471,9 @@ def export_editor(results_path, trace_seeds, procs, trace_pose="truth"):
         "geometry": d["geometry"],
         "traces": traces,
     }
+    cm = _course_metrics_block(d)
+    if cm:
+        out["courseMetrics"] = cm
     pp = _ppcompare_block()
     if pp:
         out["ppcompare"] = pp
@@ -457,6 +486,24 @@ def export_editor(results_path, trace_seeds, procs, trace_pose="truth"):
         json.dump(lite_export(out), fh, separators=(",", ":"))
         fh.write("\n")
     print("wrote", os.path.normpath(LITE_EXPORT), f"({os.path.getsize(LITE_EXPORT) // 1024} kB)")
+
+
+def _course_metrics_block(d):
+    """The harder courses' own numbers for the editor: per course the metrics it has, and per pose source and
+    method their mean and worst run (the lowest where higher is better). None if no course has any."""
+    metrics, runs = {}, {}
+    for p, by_course in d["runs"].items():
+        for c, by_method in by_course.items():
+            for m, r in by_method.items():
+                for k, (lab, unit, higher) in COURSE_METRICS.items():
+                    if k + "_mean" not in r:
+                        continue
+                    metrics.setdefault(c, {})[k] = {"key": k, "label": lab, "unit": unit, "higherIsBetter": higher}
+                    runs.setdefault(p, {}).setdefault(c, {}).setdefault(m, {})[k] = {
+                        "mean": r[k + "_mean"], "worst": r[k + ("_min" if higher else "_worst")], "nan": r[k + "_nan"]}
+    if not metrics:
+        return None
+    return {"metrics": {c: list(v.values()) for c, v in metrics.items()}, "runs": _round(runs, 3)}
 
 
 def _round(v, places):
@@ -523,7 +570,7 @@ def row(m, a):
 def overview(out, pose):
     """One line per method over every course and seed."""
     runs = out["runs"][pose]
-    courses = list(runs)
+    courses = [c for c in runs if c not in EXTRA_COURSES]
     L = ["| method | runs settled | courses settled every seed | mean RMS cross-track cm | worst cross-track cm | "
          "mean final error cm | mean wheel slip ms |", "|---|---|---|---|---|---|---|"]
     for m in MAIN_METHODS:
@@ -598,6 +645,108 @@ def geometry_md(out):
         L.append("- DriveToPose chain goals: " + ", ".join(f"{p(x)} @{math.degrees(x[2]):.0f} deg" for x in g))
         L.append(f"- Neutral path length {NeutralPath(co).length:.2f} m; old path-editor and PathPlanner author the same "
                  "cubics (to_catmull / to_bezier); sampled geometry of every method is in results.json")
+        L.append("")
+    return "\n".join(L)
+
+
+END_TOLERANCE_CM = 5.0  # the editor's validity rule (editor/app/src/bench/benchData.ts)
+
+
+def _winner(rows, key, lowest=True, valid=None):
+    """(method, value) with the best mean of `key` among the methods where every run has it (and that pass
+    `valid`); None if none. On time settled, also every final error within END_TOLERANCE_CM, as the editor."""
+    best = None
+    for m, a in rows.items():
+        v = a.get(key + "_mean")
+        if v is None or a.get(key + "_nan", 0) or (valid and not valid(a)):
+            continue
+        if key == "t_settle" and a["err_end_cm_worst"] > END_TOLERANCE_CM:
+            continue
+        if best is None or (v < best[1] if lowest else v > best[1]):
+            best = (m, v)
+    return best
+
+
+def harder_md(out):
+    """The harder courses: what each tests, how each method meets it, and per pose source the winner on each
+    course with ours' numbers next to it."""
+    from scenarios import BUMPER_HALF, KEEPS_GOING
+
+    courses = [c for c in out["meta"]["courses"] if c in EXTRA_COURSES]
+    if not courses:
+        return ""
+    L = ["Eight courses beyond the original nine (bench/courses_extra.py; what they need beyond a path is in "
+         "bench/scenarios.py, whose docstring says how each method meets a moving end). Every method in the main "
+         "grid runs every course; none is skipped, because each either has a way to do the task or shows what "
+         "happens without one. The tuning sweeps use only the original nine courses.\n",
+         "| course | what it tests | what to look at |", "|---|---|---|"]
+    for c in courses:
+        L.append(f"| {c} | {COURSES[c].description} | {EXTRAS[c]['look']} |")
+    L.append("")
+    L.append(f"Course-specific numbers: **wall clearance** = the closest the TRUE bumper square ({2 * BUMPER_HALF:g} m) "
+             "comes to either wall over the run (the plant has no walls, so negative = through it); **miss** = the "
+             "closest the robot's centre comes to the TRUE piece; **at piece** = true speed there; **keeps going** = "
+             f"runs at least {KEEPS_GOING:g} m/s at the piece. On tag_align_moving_goal every time and error is "
+             "against the TRUE goal. intake_drive_through ends moving, so it has no settle time.\n")
+    titles = {"truth": "Perfect pose", "odom": "Wheel odometry + gyro", "slipodom": "Slip-aware odometry + IMU"}
+    for pose in ("truth", "odom", "slipodom"):
+        if pose not in out["runs"]:
+            continue
+        runs = out["runs"][pose]
+        L.append(f"### {titles[pose]}\n")
+        L.append("| course | winner, time settled s (every run settled, final error within 5 cm) | ours v2 as shipped | "
+                 "ours v2 tuned | "
+                 "course-specific: best / ours v2 / ours tuned |")
+        L.append("|---|---|---|---|---|")
+        for c in courses:
+            rows = runs[c]
+
+            def st(m):
+                a = rows[m]
+                n, ns = a["n"], a["t_settle_nan"]
+                return "never" if ns == n else f"{a['t_settle_mean']:.2f}" + ("" if ns == 0 else f" ({n - ns}/{n})")
+
+            spec = "-"
+            valid = None
+            if c == "wall_hug":
+                valid = lambda a: a["wall_clear_cm_min"] >= 0  # noqa: E731
+                b = max(rows, key=lambda m: rows[m]["wall_clear_cm_min"])
+                spec = (f"wall clearance worst run cm: best {label(b)} {rows[b]['wall_clear_cm_min']:.1f}; "
+                        f"ours {rows['ours_v2']['wall_clear_cm_min']:.1f} / {rows['ours_tuned']['wall_clear_cm_min']:.1f}")
+            if c == "intake_drive_through":
+                b = _winner(rows, "miss_cm", valid=lambda a: a["keeps_going_mean"] == 1.0)
+                o, t = rows["ours_v2"], rows["ours_tuned"]
+                spec = (f"miss cm (keeps going in every run): best {label(b[0])} {b[1]:.1f} at "
+                        f"{rows[b[0]]['piece_speed_mean']:.2f} m/s; ours {o['miss_cm_mean']:.1f} at "
+                        f"{o['piece_speed_mean']:.2f} m/s / {t['miss_cm_mean']:.1f} at {t['piece_speed_mean']:.2f} m/s"
+                        if b else "nobody keeps going in every run")
+                L.append(f"| {c} | n/a (ends moving) | - | - | {spec} |")
+                continue
+            w = _winner(rows, "t_settle", valid=valid)
+            win = f"{label(w[0])} {w[1]:.2f}" if w else "nobody settles every run"
+            L.append(f"| {c} | {win} | {st('ours_v2')} | {st('ours_tuned')} | {spec} |")
+        L.append("")
+        L.append("Every method on the course-specific numbers (mean; wall clearance and speed at the piece: worst "
+                 "run = lowest):\n")
+        L.append("| method | wall clearance cm, mean / worst | miss at piece cm, mean / worst | at piece m/s, mean / "
+                 "lowest | keeps going |")
+        L.append("|---|---|---|---|---|")
+        wc, ip = runs.get("wall_hug"), runs.get("intake_drive_through")
+        for m in MAIN_METHODS:
+            cells = []
+            if wc:
+                a = wc[m]
+                cells.append(f"{a['wall_clear_cm_mean']:.1f} / {a['wall_clear_cm_min']:.1f}")
+            else:
+                cells.append("-")
+            if ip:
+                a = ip[m]
+                cells += [f"{a['miss_cm_mean']:.1f} / {a['miss_cm_worst']:.1f}",
+                          f"{a['piece_speed_mean']:.2f} / {a['piece_speed_min']:.2f}",
+                          f"{round(a['keeps_going_mean'] * a['n'])}/{a['n']}"]
+            else:
+                cells += ["-", "-", "-"]
+            L.append(f"| {label(m)} | " + " | ".join(cells) + " |")
         L.append("")
     return "\n".join(L)
 
@@ -740,6 +889,7 @@ def write_md(out):
         "wheels. Path prep = median wall-clock of the method's own preparation in Python (relative only; for Choreo it "
         "is only loading the .traj, its solver time is in the geometry section).\n",
         tables(out),
+        "## Harder courses\n", harder_md(out),
         "## Pathfinding course\n", pathfind_md(out),
         "## Geometry each method authored\n", geometry_md(out), END])
     text = open(MD).read() if os.path.exists(MD) else f"# Path-following bench: results\n\n{START}\n{END}\n"

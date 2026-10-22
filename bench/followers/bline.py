@@ -3,9 +3,11 @@ following/Follower.java (execute, isFinished, end), TranslationProgress, Rotatio
 TranslationGuidance, HolonomicController, HolonomicRateLimiter; path/PreparedPath + Path's
 waypoint expansion (`getPathElementsWithConstraintsNoWaypoints`).
 
-Swerve only. Not ported: events, rotation override, flipping/mirroring, tank drive, rolling ends
-(every course ends at rest, so min velocity is 0), per-element acceleration and rotation ranges (every
-element gets the shared limits). Per-target max velocity IS supported: caps=True authors BLine-Web's
+Swerve only. Not ported: events, rotation override, flipping/mirroring, tank drive, per-element acceleration
+and rotation ranges (every element gets the shared limits), minimum velocities other than a rolling end's.
+Rolling ends (a course with end_speed > 0) are ported: the last target gets that minimum velocity, and on
+reaching the end tolerance the follower hands over its last command and finishes without stopping
+(PreparedPath's `rolling`, Follower.execute / isFinished / end). Per-target max velocity IS supported: caps=True authors BLine-Web's
 corner-seeded caps (courses.bline_corner_caps); the rest of BLine-Web's velocity solver is not ported.
 PID controllers are P-only (as in the README), so WPILib PIDController reduces to kP * error, with
 continuous input on the heading controller.
@@ -266,6 +268,9 @@ class BLine(Follower):
             els = [dict(e, radius=self.radius) if e["kind"] == "T" else e for e in els]
         if self.caps:
             els = bline_corner_caps(els, self.lim.max_speed, self.lim.max_accel)
+        if course.end_speed > 0:  # a rolling end: the last target's minimum velocity
+            last = max(i for i, e in enumerate(els) if e["kind"] == "T")
+            els = [dict(e, vmin=course.end_speed) if i == last else e for i, e in enumerate(els)]
         return dict(native, elements=els)
 
     @staticmethod
@@ -281,6 +286,7 @@ class BLine(Follower):
         self.cmd = tuple(start.vel)
         self.tp = TranslationProgress(els, pose[:2])
         self.rp = RotationProgress(els, pose)
+        self.rolling = [e for e in els if e["kind"] == "T"][-1].get("vmin", 0.0) > 0
         self.finished = False
 
     def step(self, t, pose, vel):
@@ -295,12 +301,18 @@ class BLine(Follower):
         target = tp.target()
         remaining = tp.remaining(p)
         final_reached = tp.is_last() and remaining <= self.tol
+        if final_reached and self.rolling:  # rolling handoff: keep the incoming command, finished
+            self.finished = True
+            return self.cmd
         lim = self.lim
         # TranslationGuidance.calculate
         bearing = math.atan2(target[1] - p[1], target[0] - p[0])
         raw = self.kp * remaining
         vmax = self.els[tp.index].get("vmax", lim.max_speed)  # TranslationLimits of the active target
-        speed = clamp(raw, -vmax, vmax)  # min velocity 0: minimumMagnitude is a no-op
+        speed = clamp(raw, -vmax, vmax)
+        vmin = min(self.els[tp.index].get("vmin", 0.0), vmax)  # minimumMagnitude: 0 except on a rolling end
+        if vmin > 0 and abs(speed) < vmin:
+            speed = math.copysign(vmin, speed) if speed else vmin
         err, n = tp.cross_track(p)
         corr = self.kp_ct * err if (n[0] or n[1]) else 0.0
         vx = speed * math.cos(bearing) - corr * n[0]

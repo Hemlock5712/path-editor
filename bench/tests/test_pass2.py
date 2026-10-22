@@ -33,7 +33,7 @@ def test_choreo_trajectory_ends(course):
     s = load_traj(course)["samples"]
     assert math.dist(s[0][1:3], c.start_pose[:2]) < 1e-3 and math.dist(s[-1][1:3], c.end_pose[:2]) < 1e-3
     assert abs(math.remainder(s[-1][3] - c.end_pose[2], 2 * math.pi)) < 1e-3
-    assert math.hypot(s[-1][4], s[-1][5]) < 1e-3  # StopPoint at the end
+    assert abs(math.hypot(s[-1][4], s[-1][5]) - c.end_speed) < 2e-2  # StopPoint at the end, or the rolling end
 
 
 def test_choreo_sampling_hits_knots():

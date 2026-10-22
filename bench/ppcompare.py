@@ -6,10 +6,13 @@ Rows per route (five 2026 autos, below) and per existing course:
       ("path2", pre-release: bare waypoints, a reactive follower and the setpoint generator) as shipped and as
       tuned in its sweep (run.path2_grid, inside the shared 6 m/s^2);
   (b) ours as drawn (lib/'s PathFollower, as shipped);
-  (c) ours after the editor's waypoint optimiser;
-  (d) PathPlanner after the same optimiser on its own control points (pp_objective.py), scored by its own
-      generator's time.
-(c) and (d) wait for the headless optimiser (tools/optimise.mjs); until it exists their rows say so.
+  (c) ours after its own optimiser (tools/optimise.mjs) as it ships: only the curves change (the tangent
+      direction and scale at every waypoint); waypoints and headings stay put;
+  (d) PathPlanner 2027 after PathPlanner's own optimiser (pp_optimizer.py, a port of the GUI's genetic
+      algorithm): only the handles change (heading and lengths); anchors never move.
+Extra rows, labelled as such: ours with --move-waypoints, and PathPlanner 2027's anchors and handles moved by
+OUR search (pp_objective.py, a port of optimiser.ts with PathPlanner's generator as the objective). path2 has no
+optimiser in PathPlanner; its only optimised row is the extra one, our search on its waypoints.
 
 Metrics: the planned time from each tool's own generator (ours: Path.totalTimeSeconds; PathPlanner 2027: the
 trajectory's total time; path2: the GUI's simulated time), then on the bench plant: time to 5 cm of the end,
@@ -101,8 +104,11 @@ ROUTES = {
 def targets():
     """Every row target: the 2026 routes, then the existing courses (one leg each)."""
     out = {name: r["legs"] for name, r in ROUTES.items()}
+    from courses_extra import EXTRA_COURSES
+
     for name, c in COURSES.items():
-        out[name] = [c]
+        if name not in EXTRA_COURSES:  # the harder courses need more than a path (scenarios.py)
+            out[name] = [c]
     return out
 
 
@@ -120,15 +126,29 @@ METHODS = {
     "pp_path2": ("(a)", "PathPlanner path2 (new-path, pre-release), as shipped", ("path2", {})),
     "pp_path2_tuned": ("(a)", "PathPlanner path2, tuned (6 m/s^2 cap)", ("path2", "tuned")),
     "ours_v2": ("(b)", "Ours v2, as shipped", ("chain", "ours_v2", {})),
-    "ours_optimised": ("(c)", "Ours v2 after the waypoint optimiser", ("optimised", "ours")),
-    "pp2027_optimised": ("(d)", "PathPlanner 2027 after the optimiser (anchors + handles), + hold",
-                         ("optimised", "pp2027")),
-    "pp_path2_optimised": ("(d)", "PathPlanner path2 after the optimiser (waypoints)", ("optimised", "path2")),
+    "ours_optimised": ("(c)", "Ours v2 after its optimiser (curves only, as it ships)", ("optimised", "ours")),
+    "pp2027_optimised": ("(d)", "PathPlanner 2027 after PathPlanner's own optimiser (handles only), + hold",
+                         ("optimised", "pp2027ga")),
+    "ours_optimised_moved": ("extra", "Ours v2 after its optimiser with --move-waypoints",
+                             ("optimised", "ours_moved")),
+    "pp2027_optimised_moved": ("extra", "PathPlanner 2027, anchors + handles moved by OUR search (not "
+                               "PathPlanner's), + hold", ("optimised", "pp2027")),
+    "pp_path2_optimised": ("extra", "PathPlanner path2, waypoints moved by OUR search (path2 has no optimiser)",
+                           ("optimised", "path2")),
 }
 RUN_METHODS = ["pp2027_hold", "pp2027_tuned", "pp_path2", "pp_path2_tuned", "ours_v2"]
-OPTIMISED = ["ours_optimised", "pp2027_optimised", "pp_path2_optimised"]
-BASE = {"ours_optimised": "ours_v2", "pp2027_optimised": "pp2027_hold", "pp_path2_optimised": "pp_path2"}
-TOOL = {"ours_optimised": "ours", "pp2027_optimised": "pp2027", "pp_path2_optimised": "path2"}
+OPTIMISED = ["ours_optimised", "pp2027_optimised", "ours_optimised_moved", "pp2027_optimised_moved",
+             "pp_path2_optimised"]
+BASE = {"ours_optimised": "ours_v2", "pp2027_optimised": "pp2027_hold", "ours_optimised_moved": "ours_v2",
+        "pp2027_optimised_moved": "pp2027_hold", "pp_path2_optimised": "pp_path2"}
+TOOL = {"ours_optimised": "ours", "pp2027_optimised": "pp2027ga", "ours_optimised_moved": "ours_moved",
+        "pp2027_optimised_moved": "pp2027", "pp_path2_optimised": "path2"}
+# optimiser tools: ours (curves only), PathPlanner's GA, then the extras (ours moving waypoints, our search on
+# PathPlanner 2027's anchors and handles, our search on path2's waypoints)
+OPT_TOOLS = ("ours", "pp2027ga", "ours_moved", "pp2027", "path2")
+OPT_TITLES = {"ours": "ours, curves only", "pp2027ga": "PathPlanner 2027, its own GA",
+              "ours_moved": "extra: ours, --move-waypoints", "pp2027": "extra: PathPlanner 2027, our search",
+              "path2": "extra: path2, our search"}
 BUDGET_MS = 3000  # the optimiser's default budget (1500 plans), for every tool
 OPTIMISED_FILE = os.path.join(OUT, "ppcompare_optimised.json")
 MU_FILE = os.path.join(OUT, "musweep_optimised.json")
@@ -406,21 +426,26 @@ def section_md(out):
         L.append(f"| {name} | {pts} | {r['description']} |")
     L.append("")
     if "optimiser" in out:
-        L += ["### The optimiser, rows (c) and (d)\n",
-              f"The editor's waypoint optimiser at its default budget ({BUDGET_MS / 1000:g} s = "
-              f"{BUDGET_MS // 2} plans per path file) and seed 1, on each tool's own control points, scored by that "
-              "tool's own figure: ours through `tools/optimise.mjs`; PathPlanner through `pp_objective.py`, a "
-              "line-for-line port of the same search (`optimiser.ts`) with PathPlanner's generator as the objective. "
-              "Pass-through waypoints move within 0.5 m and their tangents scale by half to double (2027: both "
-              "handles; path2 has none); the ends and waypoints with a set heading stay put. The bench has no "
-              "obstacles, so nothing stops a corridor cutting into the hub, bumps or trench arms; the same holds for "
-              "every tool. Planned time before -> after, summed over the target's path files:\n",
-              "| target | ours | PathPlanner 2027 | path2 |", "|---|---|---|---|"]
+        tools_run = [t for t in OPT_TOOLS if all(t in v for v in out["optimiser"].values())]
+        L += ["### The optimisers, rows (c) and (d)\n",
+              "Each tool's own optimiser, as it ships, scored by that tool's own figure. (c) ours: "
+              f"`tools/optimise.mjs` at its default budget ({BUDGET_MS / 1000:g} s = {BUDGET_MS // 2} plans per path "
+              "file), seed 1, curves only: the tangent direction and scale at every waypoint change; waypoints and "
+              "headings never move. (d) PathPlanner 2027: `pp_optimizer.py`, a port of the GUI's optimiser "
+              "(`lib/util/path_optimizer.dart`): a genetic algorithm, 50 paths for 100 generations (4,551 plans per "
+              "path file), that turns each waypoint's handles by up to 5 deg and changes their lengths by up to "
+              "0.1 m, anchors fixed; seeded. The extra rows move waypoints: ours with `--move-waypoints` (within "
+              "0.5 m, headings kept), and our search (`pp_objective.py`, a port of `optimiser.ts`) on PathPlanner "
+              "2027's anchors and handles and on path2's waypoints. PathPlanner has no optimiser that moves anchors, "
+              "and none for path2. The bench has no obstacles, so a moved waypoint can cut into the hub, bumps or "
+              "trench arms. Planned time before -> after, summed over the target's path files:\n",
+              "| target | " + " | ".join(OPT_TITLES[t] for t in tools_run) + " |",
+              "|---|" + "---|" * len(tools_run)]
         for name, tools in out["optimiser"].items():
             cells = []
-            for t in ("ours", "pp2027", "path2"):
+            for t in tools_run:
                 r = tools[t]
-                if t == "ours":
+                if t.startswith("ours"):
                     pairs = [tuple(float(v) for v in x.split(": ")[1].split(" (")[0].replace(" s", "").split(" -> "))
                              for x in r]
                 else:
@@ -486,13 +511,17 @@ def main(seeds, procs, names=None):
 def _optimise_job(args):
     name, tool = args
     if tool.startswith("ours"):
-        return [optimise_ours(leg, mu=tool_mu(tool)) for leg in targets()[name]]
+        return [optimise_ours(leg, mu=tool_mu(tool), move_waypoints=tool == "ours_moved") for leg in targets()[name]]
+    if tool == "pp2027ga":
+        import pp_optimizer
+
+        return pp_optimizer.optimise_target(name)
     from pp_objective import optimise_target
 
     return optimise_target(name, tool, BUDGET_MS / 1000)
 
 
-def prepare_optimised(pool, names, tools=("ours", "pp2027", "path2"), path=OPTIMISED_FILE):
+def prepare_optimised(pool, names, tools=OPT_TOOLS, path=OPTIMISED_FILE):
     """Runs the optimiser once per target and tool (it is deterministic) into `path`, which the bench runs
     read. Returns the before/after planned times per path file."""
     jobs = [(n, t) for n in names for t in tools]
@@ -544,7 +573,7 @@ def _robot(mu=0.7):
     return robot_json(mu)
 
 
-def optimise_ours(course, budget_ms=BUDGET_MS, seed=1, mu=0.7):
+def optimise_ours(course, budget_ms=BUDGET_MS, seed=1, mu=0.7, move_waypoints=False):
     """The headless optimiser on one leg of ours: `node tools/optimise.mjs <path.json> --robot <robot.json>
     --field <field.json> --budget-ms N --seed S --out <file> --pin ...`. Waypoints where the course sets a
     heading are pinned (ours authors those headings as rotation targets, which the optimiser doesn't treat
@@ -565,5 +594,15 @@ def optimise_ours(course, budget_ms=BUDGET_MS, seed=1, mu=0.7):
                "--out", o]
         if pins:
             cmd += ["--pin", ",".join(pins)]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        if move_waypoints:
+            cmd.append("--move-waypoints")
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 3:  # blocked: the optimiser writes the path unchanged and says what blocks it
+            from followers.ours_v2 import call_fresh
+
+            tree = json.load(open(o))
+            t = call_fresh(op="load", path=tree, robot=_robot(mu))["totalTimeSeconds"]
+            return tree, f"optimise: {t:.3f} s -> {t:.3f} s (unchanged: {res.stderr.strip()})"
+        if res.returncode != 0:
+            raise subprocess.CalledProcessError(res.returncode, cmd, res.stdout, res.stderr)
         return json.load(open(o)), res.stderr.strip()
