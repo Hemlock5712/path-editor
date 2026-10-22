@@ -32,8 +32,9 @@ if HERE not in sys.path:
 
 import numpy as np  # noqa: E402
 
-from courses import COURSES, QUICK_COURSES, NeutralPath, t_end  # noqa: E402
-from courses_extra import EXTRA_COURSES, EXTRAS  # noqa: E402
+from courses import COURSES, MAIN_COURSES, QUICK_COURSES, NeutralPath, t_end  # noqa: E402
+from courses_extra import EXTRA_COURSES, EXTRAS, FULL_TRACTION, FULL_TRACTION_ACCEL  # noqa: E402
+from common import Limits  # noqa: E402
 from followers import LABELS, METHODS, build  # noqa: E402
 
 OUT = os.path.join(HERE, "out")
@@ -44,6 +45,8 @@ MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_cap
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
                 "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_noadapt", "ours_tuned"]
 MAIN_METHODS += ["pp_path2", "pp_path2_tuned"]  # PathPlanner's new path system (new-path branch, pre-release)
+# the full-traction block: who can use the new grip (the shared acceleration raised, the rest unchanged)
+FT_METHODS = ["ours_v2", "pathplanner_tuned", "choreo"]
 TUNED_BASE = {"bline_tuned": "bline_readme", "bline_tuned_caps": "bline_readme", "ours_tuned": "ours_v2"}
 TUNED_BASE["pp_path2_tuned"] = "pp_path2"
 EXTRA = {  # registry entries that only exist in the bench driver
@@ -246,7 +249,7 @@ def main():
         export_editor(path, [int(x) for x in a.trace_seeds.split(",") if x != ""], min(a.procs, 4), a.trace_pose)
         return
     seeds = list(range(a.seeds if a.seeds else (2 if a.quick else 10)))
-    courses = QUICK_COURSES if a.quick else list(COURSES)
+    courses = QUICK_COURSES if a.quick else list(MAIN_COURSES)
     poses = ["odom", "slipodom", "truth"] if a.both else (["truth"] if a.perfect_pose else ["odom"])
     t0 = time.time()
     out = {"meta": {"seeds": seeds, "sweep_seeds": SWEEP_SEEDS, "courses": courses, "poses": poses,
@@ -259,7 +262,7 @@ def main():
     if a.resume and os.path.exists(partial):
         prev = json.load(open(partial))
         if all(prev["meta"][k] == out["meta"][k] for k in ("seeds", "courses", "poses", "quick")):
-            out.update({k: prev[k] for k in ("sweeps", "tuned", "runs", "pathfind") if k in prev})
+            out.update({k: prev[k] for k in ("sweeps", "tuned", "runs", "full_traction", "pathfind") if k in prev})
             print("resuming: sweeps", sorted(out["sweeps"]), "poses", sorted(out["runs"]), flush=True)
 
     def checkpoint():
@@ -295,6 +298,23 @@ def main():
                 by.setdefault(c, {}).setdefault(m, []).append(r)
             out["runs"][pose] = {c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()}
             print(pose, "grid done", f"({time.time() - t0:.0f} s)", flush=True)
+            checkpoint()
+        if not a.quick and "full_traction" not in out:
+            ft = list(FULL_TRACTION)
+            out["full_traction"] = {}
+            for pose in poses:
+                jobs, keys = [], []
+                for c in ft:
+                    for m in FT_METHODS:
+                        key, opts = resolve(m, out["tuned"])
+                        for s in seeds:
+                            jobs.append((c, key, opts, s, pose))
+                            keys.append((c, m))
+                by = {}
+                for (c, m), r in zip(keys, run_jobs(pool, jobs)):
+                    by.setdefault(c, {}).setdefault(m, []).append(r)
+                out["full_traction"][pose] = {c: {m: agg(v) for m, v in ms.items()} for c, ms in by.items()}
+            print("full traction done", f"({time.time() - t0:.0f} s)", flush=True)
             checkpoint()
         if not a.quick and "pathfind" not in out:
             out["pathfind"] = pathfind_grid(pool, seeds, poses)
@@ -667,6 +687,35 @@ def _winner(rows, key, lowest=True, valid=None):
     return best
 
 
+def full_traction_md(out):
+    """The original nine courses with the shared acceleration at FULL_TRACTION_ACCEL, against the main grid."""
+    ft = out.get("full_traction")
+    if not ft:
+        return "Not run (--quick, or a run from before the block existed).\n"
+    titles = {"truth": "Perfect pose", "odom": "Wheel odometry + gyro", "slipodom": "Slip-aware odometry + IMU"}
+    L = [f"The original nine courses again with the shared acceleration limit raised from "
+         f"{Limits().max_accel:g} to {FULL_TRACTION_ACCEL:g} m/s^2 (the library's traction limit for the team's "
+         f"modules); the speed cap stays {Limits().max_speed:g} m/s. Only {', '.join(label(m) for m in FT_METHODS)}. "
+         "Each cell: time settled s (runs settled) and mean wheel slip ms, then the same at the main grid's "
+         "limits.\n"]
+    for pose in ft:
+        L.append(f"### {titles[pose]}\n")
+        L.append("| course | " + " | ".join(f"{label(m)}: full traction / shared" for m in FT_METHODS) + " |")
+        L.append("|---|" + "---|" * len(FT_METHODS))
+        for c, ms in ft[pose].items():
+            base = out["runs"][pose].get(c[3:], {})
+
+            def cell(a):
+                if a is None:
+                    return "-"
+                n, ns = a["n"], a["t_settle_nan"]
+                st = "never" if ns == n else f"{a['t_settle_mean']:.2f} ({n - ns}/{n})"
+                return f"{st}, {a['wheel_slip_ms_mean']:.0f} ms"
+            L.append(f"| {c[3:]} | " + " | ".join(f"{cell(ms.get(m))} / {cell(base.get(m))}" for m in FT_METHODS) + " |")
+        L.append("")
+    return "\n".join(L)
+
+
 def harder_md(out):
     """The harder courses: what each tests, how each method meets it, and per pose source the winner on each
     course with ours' numbers next to it."""
@@ -890,6 +939,7 @@ def write_md(out):
         "is only loading the .traj, its solver time is in the geometry section).\n",
         tables(out),
         "## Harder courses\n", harder_md(out),
+        "## Full traction\n", full_traction_md(out),
         "## Pathfinding course\n", pathfind_md(out),
         "## Geometry each method authored\n", geometry_md(out), END])
     text = open(MD).read() if os.path.exists(MD) else f"# Path-following bench: results\n\n{START}\n{END}\n"

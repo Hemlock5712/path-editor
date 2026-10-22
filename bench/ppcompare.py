@@ -104,10 +104,10 @@ ROUTES = {
 def targets():
     """Every row target: the 2026 routes, then the existing courses (one leg each)."""
     out = {name: r["legs"] for name, r in ROUTES.items()}
-    from courses_extra import EXTRA_COURSES
+    from courses_extra import EXTRA_COURSES, FULL_TRACTION
 
     for name, c in COURSES.items():
-        if name not in EXTRA_COURSES:  # the harder courses need more than a path (scenarios.py)
+        if name not in EXTRA_COURSES and name not in FULL_TRACTION:  # the harder courses need more than a path
             out[name] = [c]
     return out
 

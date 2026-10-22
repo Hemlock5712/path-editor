@@ -473,3 +473,10 @@ from courses_extra import EXTRA_COURSES  # noqa: E402
 COURSES.update(EXTRA_COURSES)
 CHOREO_TRAJ.update({c: "extra/" + c for c in EXTRA_COURSES if c != "heavy_robot"})
 CHOREO_TRAJ["heavy_robot"] = "heavy/heavy_robot"
+
+# the full-traction block's copies of the original nine (run.py runs them apart from the main grid)
+from courses_extra import FULL_TRACTION  # noqa: E402
+
+CHOREO_TRAJ.update({c: "fulltraction/ft_" + CHOREO_TRAJ[c[3:]] for c in FULL_TRACTION})
+COURSES.update(FULL_TRACTION)
+MAIN_COURSES = [c for c in COURSES if c not in FULL_TRACTION]

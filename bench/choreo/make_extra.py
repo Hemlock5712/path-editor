@@ -12,7 +12,8 @@ the originals (StopPoint at both ends, the course's limits, course headings fixe
   (a ChoreoLib auto follows one trajectory, split at the pickups, rather than three that each stop);
 - fast_long: MaxVelocity 5 m/s, the course's cap (the motors limit it to the 4.57 m/s free speed).
 heavy/ is the same robot at 68 kg, 6.8 kg m^2 and a 96 A current limit (tmax 0.0194 x 96 N m), with the
-S-curve as heavy_robot.
+S-curve as heavy_robot. fulltraction/ is the original courses with MaxAcceleration at the full-traction
+block's 11.2 m/s^2 (courses_extra.FULL_TRACTION).
 """
 
 import argparse
@@ -27,13 +28,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 import courses  # noqa: E402,F401  (first: it adds the extra courses to COURSES)
-from courses_extra import EXTRA_COURSES, EXTRAS  # noqa: E402
+from courses_extra import EXTRA_COURSES, EXTRAS, FULL_TRACTION  # noqa: E402
 from make_project import e, project, trajectory  # noqa: E402
 
 
 def extra_trajectory(name):
     t = trajectory(name)
-    course = EXTRA_COURSES[name]
+    course = courses.COURSES[name]
     if course.end_speed > 0:
         cons = t["params"]["constraints"]
         last_stop = [c for c in cons if c["from"] == "last" and c["data"]["type"] == "StopPoint"]
@@ -67,10 +68,11 @@ def write(folder, proj, names):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cli", help="path to choreo-cli(.exe) from the official release")
-    ap.add_argument("--only", choices=["extra", "heavy"], help="write and generate one project")
+    ap.add_argument("--only", choices=["extra", "heavy", "fulltraction"], help="write and generate one project")
     a = ap.parse_args()
     projects = {"extra": (project(), [n for n in EXTRA_COURSES if n != "heavy_robot"]),
-                "heavy": (heavy_project(), ["heavy_robot"])}
+                "heavy": (heavy_project(), ["heavy_robot"]),
+                "fulltraction": (project(), sorted({courses.CHOREO_TRAJ[c].split("/")[1] for c in FULL_TRACTION}))}
     for folder, (proj, names) in projects.items():
         if a.only and folder != a.only:
             continue

@@ -18,7 +18,7 @@ Each entry of EXTRAS says what is special about a course:
 import math
 
 from common import Limits
-from courses import S_CURVE, Course, Waypoint
+from courses import S_CURVE, Course, Waypoint  # noqa: F401 (courses imports this module at its end)
 
 
 def W(x, y, h=None, t=None):
@@ -89,6 +89,25 @@ def _joined(legs):
         wps += list(leg.waypoints[1:])
     return tuple(wps)
 
+
+# The full-traction block (run.py): the original nine courses with the shared acceleration limit raised to the
+# library's traction limit (0.9 x min(mu g, tip) = 11.2 m/s^2 for the team's modules), the speed cap unchanged.
+FULL_TRACTION_ACCEL = 11.2
+
+
+def _full_traction():
+    from dataclasses import replace
+
+    from courses import COURSES
+
+    out = {}
+    for n, c in list(COURSES.items())[:9]:
+        out["ft_" + n] = replace(c, name="ft_" + n, limits=replace(c.limits, max_accel=FULL_TRACTION_ACCEL),
+                                 description=c.description + f"; shared acceleration {FULL_TRACTION_ACCEL:g} m/s^2")
+    return out
+
+
+FULL_TRACTION = _full_traction()
 
 EXTRA_COURSES = {
     "spin_while_driving": Course(
