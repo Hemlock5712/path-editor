@@ -334,16 +334,36 @@ public final class BenchServer {
   private String geometry(Map<String, Object> msg) {
     need();
     double step = msg.get("step") == null ? 0.02 : number(msg, "step");
+    boolean profile = Boolean.TRUE.equals(msg.get("profile"));
     List<Object> xs = new ArrayList<>();
     List<Object> ys = new ArrayList<>();
+    List<Object> ts = new ArrayList<>();
+    List<Object> vs = new ArrayList<>();
+    List<Object> as = new ArrayList<>();
+    List<Object> ks = new ArrayList<>();
+    List<Object> hs = new ArrayList<>();
     for (double s : ProfileSamples.stations(path.lengthMeters(), step)) {
       PathSample p = path.sample(s);
       xs.add(p.xMeters());
       ys.add(p.yMeters());
+      if (profile) {
+        ts.add(p.seconds());
+        vs.add(p.metersPerSecond());
+        as.add(p.metersPerSecondSquared());
+        ks.add(p.curvature());
+        hs.add(p.headingRadiansPerMeter());
+      }
     }
     Map<String, Object> r = new LinkedHashMap<>();
     r.put("x", xs);
     r.put("y", ys);
+    if (profile) { // the plan along the path: time, speed, tangential acceleration, curvature, heading rate
+      r.put("t", ts);
+      r.put("v", vs);
+      r.put("a", as);
+      r.put("k", ks);
+      r.put("dh", hs);
+    }
     return line(r);
   }
 
