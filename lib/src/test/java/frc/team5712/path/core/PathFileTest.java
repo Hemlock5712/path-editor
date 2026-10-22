@@ -200,6 +200,10 @@ class PathFileTest {
     Map<String, Object> tree = RobotFile.toJson(r);
     assertEquals(r, RobotFile.read(Json.write(tree, Json::exact)));
     assertEquals(RobotConfig.DEFAULT, RobotFile.read("{}"));
+    RobotConfig tall = RobotConfig.DEFAULT.withCenterOfMassHeightMeters(0.3).withTipDistanceMeters(0.254)
+        .withTractionRule(RobotConfig.TractionRule.EQUAL_PUSH);
+    assertEquals(tall, RobotFile.read(Json.write(RobotFile.toJson(tall), Json::exact)));
+    assertEquals(false, RobotFile.toJson(RobotConfig.DEFAULT).containsKey("tipDistanceMeters"), "a square base writes none");
     RobotConfig partial = RobotFile.read("{ \"massKg\": 50, \"motor\": { \"stallCurrentAmps\": 400 } }");
     assertEquals(50.0, partial.massKg(), 0.0);
     assertEquals(400.0, partial.driveMotor().stallCurrentAmps(), 0.0);
