@@ -428,25 +428,58 @@ class PathFollowerTest {
   // ------------------------------------------------------------------------------ moving goal
 
   @Test
-  void aMovingGoalMovesTheFinish() {
+  void aMovingGoalReplansTheRestOfThePathWithASmoothJoin() {
     Path path = Path.build(FixturePaths.sCurve(), ROBOT);
     PathFollower f = new PathFollower(path, CFG);
     Pose[] goal = {null};
     f.bindGoal(() -> Optional.ofNullable(goal[0]));
+    double[] join = new double[4];
     Run r = run(path, f, FieldFrame.BLUE, 20, (t, plant, ff) -> {
       if (Math.abs(t - 1.0) < 1e-9) {
+        PathSample at = path.sample(ff.progressMeters());
+        join[0] = at.xMeters();
+        join[1] = at.yMeters();
+        join[2] = Math.atan2(at.tangentY(), at.tangentX());
+        join[3] = at.curvature();
         goal[0] = new Pose(4.3, 1.4, 0.3); // the target moved 50 cm and turned
       }
       if (Math.abs(t - 1.5) < 1e-9) {
         goal[0] = null; // lost sight of it: hold the last estimate
       }
     });
-    assertTrue(f.path() == path, "the path itself is never rebuilt");
+    Path tail = f.activePath();
+    assertTrue(tail != path, "the rest of the path was planned again");
+    GeometrySample start = tail.geometry().sample(0);
+    assertEquals(join[0], start.xMeters(), 1e-9);
+    assertEquals(join[1], start.yMeters(), 1e-9);
+    assertEquals(0.0, Angles.wrap(join[2] - start.tangentRadians()), 1e-9);
+    assertEquals(join[3], start.curvature(), 1e-6);
     assertTrue(r.finished());
     Pose end = r.trace().get(r.trace().size() - 1);
     assertEquals(4.3, end.xMeters(), 0.02);
     assertEquals(1.4, end.yMeters(), 0.02);
     assertEquals(0.3, end.headingRadians(), Math.toRadians(1));
+  }
+
+  @Test
+  void aPathThatDrivesThroughItsGoalFollowsTheGoalAndKeepsGoing() {
+    // an intake: the path ends at 2 m/s through a game piece, which is seen 10 cm to the side on the way
+    Path path = Path.build(FixturePaths.sCurve().withEndSpeeds(0.0, 2.0), ROBOT);
+    PathFollower f = new PathFollower(path, CFG);
+    PathSample end = path.sample(path.lengthMeters());
+    Pose moved = new Pose(end.xMeters() - 0.1 * end.tangentY(), end.yMeters() + 0.1 * end.tangentX(), end.headingRadians());
+    Pose[] goal = {null};
+    f.bindGoal(() -> Optional.ofNullable(goal[0]));
+    double[] closest = {Double.POSITIVE_INFINITY};
+    Run r = run(path, f, FieldFrame.BLUE, 20, (t, plant, ff) -> {
+      if (Math.abs(t - 0.6) < 1e-9) {
+        goal[0] = moved;
+      }
+      closest[0] = Math.min(closest[0], Math.hypot(plant.pose().xMeters() - moved.xMeters(), plant.pose().yMeters() - moved.yMeters()));
+    });
+    assertTrue(r.finished());
+    assertTrue(closest[0] < 0.02, "passes " + closest[0] + " m from the moved piece");
+    assertTrue(Math.hypot(f.endCommand().vxMetersPerSecond(), f.endCommand().vyMetersPerSecond()) > 1.5, "still going");
   }
 
   // ------------------------------------------------------------------------------ overrides

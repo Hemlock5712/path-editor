@@ -109,9 +109,10 @@ public final class FollowPathCommandV2 extends Command {
   /**
    * Lets the end of the path follow a moving goal, e.g. a tag or a game piece seen by vision: a pose in the
    * real field frame (as the robot's own pose; it is not flipped on red), or empty to keep the last one.
-   * The path is followed as drawn and, in its last 0.3 m, DriveToPose's law drives straight to the latest
-   * goal ({@link PathFollower#bindGoal}). A goal that may move far, or round obstacles, wants an on-the-fly
-   * path ({@code Pathfinding.to(...).withMovingGoal}), which plans again when the goal moves. Binds the follower, so it applies to every run of this command.
+   * When the goal moves more than 2 cm or 2°, the rest of the path is planned again from the robot's progress
+   * to the goal, joining smoothly ({@link PathFollower#bindGoal}); in the last 0.3 m DriveToPose's law drives
+   * straight to it. It doesn't know the obstacles: a goal that may move round one wants an on-the-fly path
+   * ({@code Pathfinding.to(...).withMovingGoal}), which plans again round them. Binds the follower, so it applies to every run of this command.
    */
   public FollowPathCommandV2 withMovingGoal(Supplier<Optional<Pose2d>> realGoal) {
     follower.bindGoal(() -> realGoal.get().map(Conversions::toPose));

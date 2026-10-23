@@ -154,11 +154,14 @@ Each loop, in the blue frame:
 
 The other pieces:
 
-- **Moving goal.** `bindGoal(Supplier<Optional<Pose>>)` binds the end of the path. The path itself
-  is never changed: the robot follows it as drawn, and its DriveToPose finish drives to the goal's
-  latest value. An empty value holds the last goal. On-the-fly paths also plan again, round the
-  obstacles, once the goal moves more than 10 cm (`OnTheFly`). Latching estimates in the odometry
-  frame is the supplier's job, as in DriveToTag.
+- **Moving goal.** `bindGoal(Supplier<Optional<Pose>>)` binds the end of the path. When the goal
+  moves more than 2 cm or 2°, the rest of the path is planned again: one quintic piece from the robot's
+  progress to the goal, joining with matching position, tangent and curvature, starting at the planned
+  speed and ending at the path's end speed (so an intake path still drives through its piece). The
+  heading blends to the goal's. An empty value holds the last goal; the DriveToPose finish drives to the
+  latest. The piece knows no obstacles: on-the-fly paths also plan again round them once the goal moves
+  more than 10 cm (`OnTheFly`). Latching estimates in the odometry frame is the supplier's job, as in
+  DriveToTag.
 - **Events.** The path file's `events` are registered when the follower is made; code can add more
   with `addEvent(name, s, action)` and `addEventAtWaypoint`. They fire in order, each on the loop
   nearest to passing it (less than half a loop's progress ahead), so the error is at most half a loop
@@ -425,12 +428,14 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   library path, an optimised one included, built with the same drivetrain, settings, clock and alliance. It plans
   nothing at go. `withMovingGoal(Supplier<Optional<Pose2d>>)` is on `FollowPathCommand` and `FollowPathCommandV2`
   themselves too, for commands built by hand. The supplier gives the goal in the real field frame, like the
-  robot's pose (not flipped on red), or empty to keep the last one. A library path is followed as drawn and, in
-  its last 0.3 m, DriveToPose's law drives straight to the latest goal (`PathFollower.bindGoal`). On an on-the-fly
-  path a goal that has moved more than 10 cm from where the path was planned to is planned to again, round the
-  obstacles (`OnTheFly.GOAL_REPLAN_METERS`, at most every 0.2 s): one mechanism, re-planning, for any move that
-  matters. On the bench's six fields every moving-goal run with a perfect pose finishes, none touching anything
-  (`bench/h2h.py`). The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
+  robot's pose (not flipped on red), or empty to keep the last one. When the goal moves more than 2 cm or 2°, the
+  rest of the path is planned again from the robot's progress to the goal (`PathFollower.bindGoal`), and in the
+  last 0.3 m DriveToPose's law drives straight to it. That piece knows no obstacles, so on an on-the-fly path a
+  goal that has moved more than 10 cm from where the path was planned to is planned to again, round them
+  (`OnTheFly.GOAL_REPLAN_METERS`, at most every 0.2 s). Either alone falls short on the bench: the re-plan alone
+  missed a game piece by 10 cm on a drive-through (a library path has no pathfinder), and the piece alone
+  touched an obstacle in 36 of 72 on-the-fly moving-goal runs with a perfect pose. Together: every run
+  finishes, none touching (`bench/h2h.py`). The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
   away once the robot is 1.5 m out. `PathLibrary` holds no drivetrain, so the factory lives on `Pathfinding`
   rather than as `paths.follow(...)`.
 
