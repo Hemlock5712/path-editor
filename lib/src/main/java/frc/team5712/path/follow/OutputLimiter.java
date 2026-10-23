@@ -21,9 +21,7 @@ import frc.team5712.path.core.RobotConfig;
  */
 final class OutputLimiter {
   private final RobotConfig robot;
-  private final double nominalGrip;
-  private double grip;
-  private double brakeGrip;
+  private final double grip;
   private final double lever;
   private final double maxAlpha;
   private double vx;
@@ -32,9 +30,7 @@ final class OutputLimiter {
 
   OutputLimiter(RobotConfig robot, double budgetMetersPerSecondSquared, double maxAlphaRadPerSecSquared) {
     this.robot = robot;
-    this.nominalGrip = budgetMetersPerSecondSquared;
-    this.grip = nominalGrip;
-    this.brakeGrip = nominalGrip;
+    this.grip = budgetMetersPerSecondSquared;
     this.lever = robot.spinLeverMeters();
     this.maxAlpha = maxAlphaRadPerSecSquared;
   }
@@ -43,24 +39,6 @@ final class OutputLimiter {
     vx = vxMetersPerSecond;
     vy = vyMetersPerSecond;
     omega = omegaRadPerSec;
-  }
-
-  /**
-   * Lowers (or restores) the budget for steps that speed the robot up, m/s², capped at the configured
-   * one. Braking has its own budget ({@link #setBrakeBudget}).
-   */
-  void setSpeedingUpBudget(double accel) {
-    grip = Math.min(nominalGrip, accel);
-  }
-
-  /**
-   * The budget for steps that slow the robot down. It is kept above the speeding-up one on purpose.
-   * A cap below what the floor still gives stops the robot using that grip exactly when it must stop:
-   * on a slick floor a sliding tread still brakes at kinetic friction. The brake law plans with the
-   * low μ, so the robot starts braking early instead.
-   */
-  void setBrakeBudget(double accel) {
-    brakeGrip = Math.min(nominalGrip, accel);
   }
 
   /** Steps the command toward the wanted velocity over {@code dt} seconds. */
@@ -85,9 +63,8 @@ final class OutputLimiter {
     }
 
     double total = Math.sqrt(ax * ax + ay * ay) + lever * Math.abs(alpha);
-    double budget = speedingUp ? grip : brakeGrip;
-    if (total > budget) {
-      double k = budget / total;
+    if (total > grip) {
+      double k = grip / total;
       ax *= k;
       ay *= k;
       alpha *= k;
@@ -97,7 +74,7 @@ final class OutputLimiter {
     omega += alpha * dt;
   }
 
-  /** Replaces one part of the command outright (a BYPASS override). */
+  /** Sets the command outright (zero at a finish). */
   void force(double newVx, double newVy, double newOmega) {
     vx = newVx;
     vy = newVy;

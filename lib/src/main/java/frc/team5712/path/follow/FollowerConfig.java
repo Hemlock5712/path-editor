@@ -40,22 +40,6 @@ import frc.team5712.path.core.RobotConfig;
  * @param headingToleranceRadians finish: this well aligned
  * @param settledMetersPerSecond finish: slower than this (measured)
  * @param debounceSeconds finish: all three held this long
- * @param adaptiveGrip when a {@link frc.team5712.path.slip.SlipSignal} is attached: on slip, lower
- *     the grip the limiter, the brake and the speed plan use to what the floor gave, then recover
- * @param slipConfidence the slip signal's confidence that counts as slipping
- * @param slipMargin take this share off the acceleration achieved when slip began
- * @param slipRecoveryPerSecond how fast the lowered μ climbs back, μ per second (0.065: the 0.05 tuned on a
- *     μ 1.15 floor, scaled with the tread to 1.5)
- * @param minSlipFriction never plan below this μ (0.39: 0.3 scaled the same way)
- * @param slipBrakeFriction while slip has lowered the grip, the limiter still lets braking use at
- *     least this μ: the brake law plans with the lowered μ (braking early), and the limiter does not
- *     forbid the robot from braking harder if it must (1.11: 0.85 scaled the same way)
- * @param expectedSlipShare adaptive grip ignores slip that the tread's own weight transfer explains: slip in a
- *     spell that has asked for at least this share of the wheel-slip onset {@code μ·g / (1 + μ·h/x)}. Every
- *     wheel pushes about the same, so above that the light wheels slip on a good floor too; it says nothing
- *     about the floor. Slip while asking for less does
- * @param slideGapMetersPerSecondSquared ...and so does slip while the wheels' acceleration is this far from the
- *     IMU's: the wheels spinning up together while the chassis doesn't follow, so the loaded wheels slide too
  */
 public record FollowerConfig(
     RobotConfig robot,
@@ -78,15 +62,7 @@ public record FollowerConfig(
     double positionToleranceMeters,
     double headingToleranceRadians,
     double settledMetersPerSecond,
-    double debounceSeconds,
-    boolean adaptiveGrip,
-    double slipConfidence,
-    double slipMargin,
-    double slipRecoveryPerSecond,
-    double minSlipFriction,
-    double slipBrakeFriction,
-    double expectedSlipShare,
-    double slideGapMetersPerSecondSquared) {
+    double debounceSeconds) {
 
   /** The defaults for a robot. */
   public static FollowerConfig defaults(RobotConfig robot) {
@@ -128,14 +104,6 @@ public record FollowerConfig(
     b.headingToleranceRadians = headingToleranceRadians;
     b.settledMetersPerSecond = settledMetersPerSecond;
     b.debounceSeconds = debounceSeconds;
-    b.adaptiveGrip = adaptiveGrip;
-    b.slipConfidence = slipConfidence;
-    b.slipMargin = slipMargin;
-    b.slipRecoveryPerSecond = slipRecoveryPerSecond;
-    b.minSlipFriction = minSlipFriction;
-    b.slipBrakeFriction = slipBrakeFriction;
-    b.expectedSlipShare = expectedSlipShare;
-    b.slideGapMetersPerSecondSquared = slideGapMetersPerSecondSquared;
     return b;
   }
 
@@ -162,14 +130,6 @@ public record FollowerConfig(
     private double headingToleranceRadians = Math.toRadians(1.0);
     private double settledMetersPerSecond = 0.05;
     private double debounceSeconds = 0.1;
-    private boolean adaptiveGrip = true;
-    private double slipConfidence = 0.3;
-    private double slipMargin = 0.1;
-    private double slipRecoveryPerSecond = 0.065;
-    private double minSlipFriction = 0.39;
-    private double slipBrakeFriction = 1.11;
-    private double expectedSlipShare = 0.8;
-    private double slideGapMetersPerSecondSquared = 3.5;
 
     private Builder(RobotConfig robot) {
       this.robot = robot;
@@ -195,14 +155,6 @@ public record FollowerConfig(
     public Builder headingToleranceRadians(double v) { headingToleranceRadians = v; return this; }
     public Builder settledMetersPerSecond(double v) { settledMetersPerSecond = v; return this; }
     public Builder debounceSeconds(double v) { debounceSeconds = v; return this; }
-    public Builder adaptiveGrip(boolean v) { adaptiveGrip = v; return this; }
-    public Builder slipConfidence(double v) { slipConfidence = v; return this; }
-    public Builder slipMargin(double v) { slipMargin = v; return this; }
-    public Builder slipRecoveryPerSecond(double v) { slipRecoveryPerSecond = v; return this; }
-    public Builder minSlipFriction(double v) { minSlipFriction = v; return this; }
-    public Builder slipBrakeFriction(double v) { slipBrakeFriction = v; return this; }
-    public Builder expectedSlipShare(double v) { expectedSlipShare = v; return this; }
-    public Builder slideGapMetersPerSecondSquared(double v) { slideGapMetersPerSecondSquared = v; return this; }
 
     /**
      * Sets a field by its name (the record component's name), for option maps such as the bench's.
@@ -230,14 +182,6 @@ public record FollowerConfig(
         case "headingToleranceRadians" -> headingToleranceRadians = v;
         case "settledMetersPerSecond" -> settledMetersPerSecond = v;
         case "debounceSeconds" -> debounceSeconds = v;
-        case "adaptiveGrip" -> adaptiveGrip = v != 0.0;
-        case "slipConfidence" -> slipConfidence = v;
-        case "slipMargin" -> slipMargin = v;
-        case "slipRecoveryPerSecond" -> slipRecoveryPerSecond = v;
-        case "minSlipFriction" -> minSlipFriction = v;
-        case "slipBrakeFriction" -> slipBrakeFriction = v;
-        case "expectedSlipShare" -> expectedSlipShare = v;
-        case "slideGapMetersPerSecondSquared" -> slideGapMetersPerSecondSquared = v;
         default -> {
           return false;
         }
@@ -251,9 +195,7 @@ public record FollowerConfig(
           easeInPerSecond,
           stopDeadbandMeters, maxOmegaRadPerSec, maxAlphaRadPerSecSquared, headingEaseInPerSecond,
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
-          headingToleranceRadians, settledMetersPerSecond, debounceSeconds, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
-          minSlipFriction, slipBrakeFriction,
-          expectedSlipShare, slideGapMetersPerSecondSquared);
+          headingToleranceRadians, settledMetersPerSecond, debounceSeconds);
     }
   }
 }

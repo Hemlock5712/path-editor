@@ -162,8 +162,6 @@ class OursV2(Follower):
         self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
                         "brakeMetersPerSecondSquared": min(limits.max_accel, BRAKE)}
         self.options.update(follower_options)
-        # adaptive grip (on by default) needs the slip detector fed every odometry tick (see slipsense.py)
-        self.wants_sensing = bool(self.options.get("adaptiveGrip", 1))
 
     @staticmethod
     def adapt(course):

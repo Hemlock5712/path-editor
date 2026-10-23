@@ -39,7 +39,7 @@ START, END = "<!-- generated:start -->", "<!-- generated:end -->"
 
 MAIN_METHODS = ["old_followpath", "bline_readme", "bline_readme_r45", "bline_caps", "bline_tuned", "bline_tuned_caps",
                 "pathplanner", "pathplanner_hold", "pathplanner_tuned", "pathplanner_hold_cof09",
-                "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_noadapt", "ours_tuned"]
+                "drive_to_pose_chain", "choreo", "choreo_hybrid", "ours_v2", "ours_tuned"]
 MAIN_METHODS += ["pp_path2", "pp_path2_tuned"]  # PathPlanner's new path system (new-path branch, pre-release)
 MAIN_METHODS += ["ours_equalpush"]  # ours under the library's other traction rule
 # the full-traction block: ours under each traction rule with its own acceleration (FT_OURS, on the copies with the

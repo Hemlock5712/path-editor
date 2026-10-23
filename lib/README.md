@@ -184,63 +184,16 @@ The robot runs SDS MK5 Spike Grip, μ 1.5. Acceleration and cornering are held t
 Precision-Drive's AccelerationLimiter uses, so paths plan to the limits teleop drives to (Joe's call: one set of
 numbers, in the robot code and the editor alike). The 0.9 is `tractionShare` in the robot file.
 
-There used to be a second, more cautious rule, equal push, `0.9 · μ·g / (1 + μ·h/x)` (6.5 and 6.1 m/s²): every
-wheel pushing the same, the light ones slip first. It was the default for a while, from bench-builder's
-re-baseline of ours under both (240 A plant, 1.5 / 1.3, centre of mass 0.2 m, bench/out/rebaseline/rules.md).
-Under wheel odometry, equal push:
-- ends 8.5 cm off on average against 11.2 cm;
-- settles 24 runs of 90 against 17;
-- on the grip drop, ends 4.2 cm off against 10.2 cm.
-
-With a perfect pose `tipOrGrip` is faster on most clean courses, because the loaded wheels make up for the
-slipping light ones. That costs wheel slip and so odometry. It was removed so the robot code and the editor
-have one rule; if the real robot slips on the paths, lower `tractionShare` (and the limiter's 0.9 with it).
 The planner's grip circle uses `A`, so the editor's plan is what the robot will try. The follower's output
-limiter allows `A / 0.9`, the rule's limit without its margin, so feedback has room. Before this change the
-plan used μ 0.7 and the limiter 1.0, on a 1.15 / 1.0 bench floor.
+limiter allows `A / 0.9`, the rule's limit without its margin, so feedback has room.
 
-Whether the plan needs its own margin under `A` was checked on the bench plant set to 1.5 / 1.3, low grip
-0.91 / 0.79, and the centre of mass 0.2 m up (weight transfer on). The figures below use the `tipOrGrip` rule. They are ours over all 16
-courses that stop, 10 seeds, perfect pose: the sum of the settle times, and the mean wheel slip per run.
+**On a slippery floor** the follower does nothing special: it has no slip detection. If the robot slips on its
+paths, lower `frictionCoefficient` (the floor's real μ) or `tractionShare` in robot.json, and the limiter's 0.9
+in the robot code with it. On the bench's slippery floor (μ 0.91 under a plan for 1.5), wheel odometry alone ends
+31 cm off; told the floor's μ, 10.6 cm (adaptive grip, removed 2026-10-23, got 7.2 cm). A camera fixes the pose
+either way.
 
-| plan at | as shipped (adaptive grip) | adaptive grip off |
-|---|---|---|
-| 1.0 · A | 45.4 s, slip 1.58 s | 41.5 s, slip 2.55 s |
-| 0.85 · A | 43.6 s, slip 1.77 s | 41.8 s, slip 2.34 s |
-| 0.7 · A | 43.6 s, slip 1.70 s | 42.5 s, slip 2.06 s |
-| 0.55 · A | 44.5 s, slip 1.33 s | 44.0 s, slip 1.55 s |
-| old: μ 0.7 plan, limiter 1.0, on the 1.15 floor without weight transfer | 44.9 s, slip 0.58 s | 44.8 s, slip 1.14 s |
-
-No fraction wins outright, so the plan uses `A` itself, with no extra margin. Most of the slip comes from
-weight transfer, not from cornering:
-- On this plant the straight 3 m slips for 0.34 s at the path's 6 m/s², against none with the centre of
-  mass at 0.
-- Every module pushes about the same, so the wheels that unload slip first. That happens at about
-  `μ·g / (1 + μ·h/x)`: 7.2 m/s² static for these numbers, well under `tipOrGrip`'s 12.8. bench-builder
-  found the same: that was the equal-push rule.
-- Planning above that is deliberate under `tipOrGrip`: the loaded wheels make up for a slipping light one
-  while the stators have headroom, at some cost in odometry. A real centre-of-mass height and a slip check
-  on the real robot should decide between the two.
-
-Adaptive grip used to cost time at `1.0 · A` (45.4 s against 41.5 s off), because it read the light wheels
-letting go as a slick floor. Now it ignores slip that load transfer explains (see Slip, below). The figures
-are from bench-builder's 240 A plant (1.5 / 1.3, centre of mass 0.2 m), all 26 courses, 10 evaluation seeds
-(tuned on 100-102), ours with adaptive grip on and off:
-
-| | tipOrGrip: on / off | equalPush: on / off | old adaptive grip (tipOrGrip) |
-|---|---|---|---|
-| 21 clean courses, perfect pose, summed settle | 53.7 / 52.8 s | 63.0 / 63.2 s | 58.4 s |
-| clean runs where adaptive grip acted (false positives) | 14 / 190 | 0 / 190 | 152 / 190 |
-| low grip, wheel odometry, end error | 4.1 / 8.0 cm | 4.1 / 4.1 cm (no slip to react to) | 4.1 cm |
-| grip drop, perfect pose, settle | 2.06 / 2.22 s | 2.22 / 2.22 s | 2.28 s |
-| grip drop, slip-aware odometry, end error | 6.7 / 7.4 cm | 4.2 / 4.2 cm | 4.2 cm |
-
-The false positives left under `tipOrGrip` are mostly launches, where the detector flags slip at 60 ms,
-before the filtered command has risen. Holding the command's peak instead removes most of them. But low
-grip is caught the same way, at its launch, so that costs the low-grip win (8.3 cm), and it wasn't taken.
-Under `equalPush` the plan stays under the onset, so adaptive grip never acts on these courses.
-
-### Slip: detection, adaptive grip and slip-aware odometry (`frc.team5712.path.slip`)
+### Slip: detection and slip-aware odometry (`frc.team5712.path.slip`)
 
 - **`SlipDetector`** takes one sample per odometry update: wheel speeds and angles, the gyro
   heading, optionally the accelerometer and the command. It weighs three kinds of evidence:
@@ -253,25 +206,6 @@ Under `equalPush` the plan stays under the onset, so adaptive grip never acts on
   The output is a flag per module and a chassis confidence, which rises at once and decays over
   0.15 s. On the bench the IMU gap is what finds slip. In that plant all four wheels tend to slip
   together, so the per-module residuals rarely stand out.
-- **Adaptive grip** in `PathFollower` (`withSlipSignal`, on by default; `adaptiveGrip(false)` turns
-  it off). Once the confidence reaches 0.3, it takes the acceleration achieved, less 10 %, as the
-  floor's μ (never below 0.39). It ignores slip the tread's own weight transfer explains, though.
-  Every wheel pushes about the same, so on a good floor the light wheels let go once the robot asks for
-  the equal-push onset, `μ·g / (1 + μ·h/x)` (7.2 m/s² for the defaults). Slip in a spell that has asked
-  for at least 0.8 of that (`expectedSlipShare`) changes nothing, unless the wheels are spinning up at least
-  3.5 m/s² faster than the IMU says the chassis is (`slideGapMetersPerSecondSquared`). That means the loaded
-  wheels are sliding too. On the bench that gap stays under about 3 m/s² for load-transfer slip on a good
-  floor, and is 3.4-7.8 m/s² when the whole robot slides on a slick one (`SlipSignal.imuGapMetersPerSecondSquared`).
-  Expected slip early in a spell also undoes what the spell's first samples latched, since the filtered
-  acceleration lags the slip. Slip while asking for less than the onset means a slicker floor. The limiter's budget for speeding up, the brake law's deceleration
-  and the planned speed (× sqrt(μ_slip / μ_plan), μ_plan = A/g) all follow it. Braking keeps a limiter budget of
-  at least μ 1.11 (`slipBrakeFriction`): the brake law plans with the low μ, so the robot starts
-  braking early, but the limiter never forbids it to brake harder. Capping braking at the measured
-  μ made the robot overshoot when the floor turned slick mid-run (up to 24.9 cm on the bench's grip
-  drop). The μ it measured was below what a sliding tread still gives, so it braked too gently.
-  Afterwards μ_slip climbs back at 0.065 μ/s, but never in the terminal phase. The profile is not
-  rebuilt. The three μ values were 0.3, 0.85 and 0.05 μ/s, tuned on a 1.15 / 1.0 floor; they are scaled
-  with the tread (× 1.5 / 1.15).
 - **`SlipAwareOdometry`** is optional and replaces `SwerveDriveOdometry`:
   - The wheels' least-squares step down-weights slipping modules (weight 0.01).
   - On a clean run it equals WPILib's odometry exactly (tested to 1e-9).
@@ -286,52 +220,6 @@ Under `equalPush` the plan stays under the onset, so adaptive grip never acts on
 - **Tuning.** All thresholds were tuned on the bench's tuning seeds only: IMU gap 2.5 m/s²,
   follower confidence 0.3, recovery 0.05 μ/s. The IMU-gap threshold and the spell limits are where
   the sweep scored best after widening the grid once.
-
-### Adaptive grip and steps
-
-Rewritten 2026-10-23 after a review found the old rules overfit to the tuning seeds. They compared the best
-acceleration of a whole spell with the most it ever asked for, so good floor early in a spell hid bad floor later.
-They read μ while the robot was still ramping up, and they exempted any hard ramp, not just a step. The floor is now
-judged on the recent past:
-- **A short window.** Over the last `GRIP_WINDOW_SECONDS` (0.06 s) the follower compares the mean commanded
-  acceleration (filtered and lagged like the robot's response, as a vector, and never above what the motors can
-  give at the wheels' speed) with the best the IMU saw at the same moments. The robot must achieve at least
-  `EXPECTED_ACHIEVED_SHARE` (0.9) of it for the slip to count as the tread's own; the loaded wheels make up for
-  the light ones on the robot's own floor. A floor giving out falls short, however hard the ask.
-- **Only while the ask holds.** The window counts only while the raw command is at least 0.9 times the filtered
-  one (`HOLD_SHARE`), so easing off at top speed isn't read as the floor giving out. Filtering the command as a
-  vector matters too: a scalar made every switch from speeding up to braking look like a shortfall.
-- **μ from the window.** The floor's μ is the best the IMU saw in the window (less the margin). For 0.1 s after the
-  first latch the lowest reading counts, while the filtered IMU settles after a drop.
-- **Steps.** A spell that starts within 0.1 s of a one-loop jump in the command (a launch, the first loop of
-  braking) is that step's transient for up to `BRIEF_SPELL_SECONDS` (0.3 s), not any steady ramp.
-- **Cruise.** A spell that never asked for more than 0.1 g (`CRUISE_SHARE`) doesn't lower the grip.
-- **Slides.** The wheels well ahead of the IMU (`slideGapMetersPerSecondSquared`) are a slide unless the robot is
-  getting at least 95 % of its ask.
-
-Bench, ours optimised with the library defaults, 80 seeds (0-39 and 100-139), true end error with wheel odometry
-only:
-
-| Floor | Off | Old rules | New rules |
-| --- | --- | --- | --- |
-| μ 1.2 | 9.9 cm | 11.8 cm | 7.1 cm |
-| μ 1.0 | 24.3 cm | 9.6 cm | 6.9 cm |
-| μ 0.91 | 31.8 cm | 9.2 cm | 6.6 cm |
-| μ 0.75 | 36.8 cm | 8.4 cm | 6.2 cm |
-| Grip drops halfway | 11.1 cm | 10.4 cm | 10.5 cm |
-
-With slip-aware odometry every floor ends about 4 cm off under both rules. On the 10 clean courses the grip was
-lowered in 0 of 800 runs (the old rules: 9) and the clean courses lost no time. Counting every slip spell would
-give 4.2 cm on every floor, but costs 3.9 s over the 10 clean courses.
-
-Still open:
-- **The grip drop.** Both rules lower the grip about 1.15 s in, and the error builds while braking, where
-  `slipBrakeFriction` still allows 1.11 g.
-- **Planning a known slick floor below its own wheel-slip onset** gave about 5 cm at +0.3 s in a quick test. It
-  isn't in.
-
-Wheel force feedforward shared by each wheel's load was tried (2026-10-23) and taken out: on the bench it gave
-the same time, 13 % less wheel slip, worse odometry on slippery floors and more time past the tipping limit.
 
 ### WPILib adapters (`src/wpilib`)
 

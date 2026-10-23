@@ -2,9 +2,7 @@
 // (frc.team5712.path.follow), for the editor's sim preview. Keep the arithmetic in Java's order: the
 // closed-loop golden traces (fixtures/follow) must come out to 1e-9.
 //
-// Left out, and Java-only: adaptive grip and slip sensing (the preview assumes the floor grips), and the
-// moving goal's tail rebuild. With no slip signal, Java's adaptive grip leaves every number unchanged, so
-// the port matches it as is.
+// Left out, and Java-only: the moving goal (bindGoal), which the preview has no use for.
 
 import { wrap } from "./angles.ts";
 import { flipPose, flipSpeeds, type FieldFrame, type FieldSpeeds, type Pose } from "./frame.ts";
@@ -111,7 +109,7 @@ export const StoppingLaw = {
   },
 };
 
-/** The one limit every output goes through (OutputLimiter.java), with the full grip budget. */
+/** The one limit every output goes through (OutputLimiter.java). */
 export class OutputLimiter {
   private readonly robot: RobotConfig;
   private readonly grip: number;
@@ -154,9 +152,8 @@ export class OutputLimiter {
       }
     }
     const total = Math.sqrt(ax * ax + ay * ay) + this.lever * Math.abs(alpha);
-    const budget = this.grip; // Java: grip or brakeGrip, both the full budget without slip
-    if (total > budget) {
-      const k = budget / total;
+    if (total > this.grip) {
+      const k = this.grip / total;
       ax *= k;
       ay *= k;
       alpha *= k;
@@ -306,9 +303,8 @@ export class PathFollower {
       return this.output();
     }
 
-    const brakeSetting = Number.isNaN(cfg.brakeMetersPerSecondSquared) ? tractionMetersPerSecondSquared(cfg.robot) : cfg.brakeMetersPerSecondSquared;
-    const brakeDecel = Math.min(brakeSetting, Infinity * GRAVITY); // no slip: Java's slipMu is +∞
-    const gripScale = 1.0;
+    const brakeDecel = Number.isNaN(cfg.brakeMetersPerSecondSquared)
+      ? tractionMetersPerSecondSquared(cfg.robot) : cfg.brakeMetersPerSecondSquared;
     this.updateProgress(pose);
     const active = this.active;
     const remaining = active.lengthMeters - this.s;
@@ -344,7 +340,7 @@ export class PathFollower {
       // at least one loop ahead, or a robot at rest reads 0 m/s and never starts (PathFollower.java readAheadSeconds)
       const ahead = active.sample(profile.sAtTime(profile.timeAt(this.s) + Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS)));
       const headingError = wrap(active.heading.sample(this.s).radians - pose.headingRadians);
-      wantOmega = gripScale * ahead.metersPerSecond * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
+      wantOmega = ahead.metersPerSecond * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
       wantOmega = Math.max(-cfg.maxOmegaRadPerSec, Math.min(cfg.maxOmegaRadPerSec, wantOmega));
       wantVx = cfg.crossTrackKp * (goal.xMeters - pose.xMeters);
       wantVy = cfg.crossTrackKp * (goal.yMeters - pose.yMeters);
@@ -368,7 +364,7 @@ export class PathFollower {
       const here: PathSample = active.sample(this.s);
       const ahead: PathSample = active.sample(sAhead);
       const brake = StoppingLaw.brake(remaining, this.limiter.speed(), brakeDecel, cfg.latencySeconds, this.endSpeed);
-      const speed = Math.min(gripScale * ahead.metersPerSecond, brake);
+      const speed = Math.min(ahead.metersPerSecond, brake);
       const nx = -here.tangentY;
       const ny = here.tangentX;
       this.crossTrack = (pose.xMeters - here.xMeters) * nx + (pose.yMeters - here.yMeters) * ny;

@@ -15,7 +15,6 @@ import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.follow.PathFollower;
 import frc.team5712.path.slip.SlipAwareOdometry;
 import frc.team5712.path.slip.SlipConfig;
-import frc.team5712.path.slip.SlipSignal;
 import frc.team5712.path.plan.FieldMap;
 import frc.team5712.path.plan.OnTheFly;
 import frc.team5712.path.plan.Pathfinder;
@@ -46,23 +45,6 @@ public final class BenchServer {
   private Optional<Pose> goal = Optional.empty();
   private SlipAwareOdometry sensing;
 
-  /** The follower's slip signal: whatever the current sensing session's detector says. */
-  private final SlipSignal slipSignal = new SlipSignal() {
-    @Override
-    public double confidence() {
-      return sensing == null ? 0.0 : sensing.detector().confidence();
-    }
-
-    @Override
-    public double achievedAccelMetersPerSecondSquared() {
-      return sensing == null ? 0.0 : sensing.detector().achievedAccelMetersPerSecondSquared();
-    }
-
-    @Override
-    public double imuGapMetersPerSecondSquared() {
-      return sensing == null ? Double.NaN : sensing.detector().imuGapMetersPerSecondSquared();
-    }
-  };
   private Pathfinder pathfinder;
   private String pathfinderKey;
   private Pathfinder widePathfinder; // the on-the-fly runs' 0.15 m pathfinder, tried first as on the robot
@@ -158,7 +140,6 @@ public final class BenchServer {
       sensing = null; // a run's sensing session starts after its load (sense_reset)
     } // the next path of a chain keeps the run's session
     follower.bindGoal(() -> goal);
-    follower.withSlipSignal(slipSignal);
     Map<String, Object> r = new LinkedHashMap<>();
     r.put("ok", Boolean.TRUE);
     r.put("lengthMeters", path.lengthMeters());
@@ -328,9 +309,6 @@ public final class BenchServer {
     r.put("s", follower.progressMeters());
     r.put("crossTrack", follower.crossTrackMeters());
     r.put("micros", micros);
-    if (Double.isFinite(follower.slipFrictionCoefficient())) {
-      r.put("slipMu", follower.slipFrictionCoefficient());
-    }
     return line(r);
   }
 

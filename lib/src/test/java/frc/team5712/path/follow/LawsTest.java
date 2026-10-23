@@ -66,17 +66,4 @@ class LawsTest {
     assertEquals(r.driveAccelMetersPerSecondSquared(v), (lim.vx() - v) / 0.02, 1e-9);
   }
 
-  @Test
-  void aLoweredGripLimitsSpeedingUpButNotBraking() {
-    RobotConfig r = RobotConfig.DEFAULT;
-    OutputLimiter lim = new OutputLimiter(r, 1.0 * RobotConfig.GRAVITY, 12);
-    lim.setSpeedingUpBudget(0.3 * RobotConfig.GRAVITY);
-    lim.setBrakeBudget(0.85 * RobotConfig.GRAVITY);
-    lim.reset(2.0, 0, 0);
-    lim.limit(4.0, 0, 0, 0.02); // speeding up: 0.3 g
-    assertEquals(0.3 * RobotConfig.GRAVITY, (lim.vx() - 2.0) / 0.02, 1e-9);
-    lim.reset(2.0, 0, 0);
-    lim.limit(0.0, 0, 0, 0.02); // braking: 0.85 g
-    assertEquals(-0.85 * RobotConfig.GRAVITY, (lim.vx() - 2.0) / 0.02, 1e-9);
-  }
 }
