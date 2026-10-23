@@ -1,10 +1,10 @@
 // Writes dist/sw.js at build time: the service worker that lets the installed app (Edge/Chrome's
 // "Install app") open offline. It precaches every file the build emitted plus public/ (but not the
 // bench snapshot, which is cached the first time it's opened), and names its cache after a hash of
-// them, so a new deploy replaces the old cache.
+// them and their contents, so a new deploy replaces the old cache (even one that only changes an icon).
 
 import { createHash } from "node:crypto";
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { Plugin } from "vite";
 
@@ -25,7 +25,9 @@ export function serviceWorker(publicDir: string): Plugin {
         .map((p) => relative(publicDir, p).split("\\").join("/"))
         .filter((p) => !p.startsWith("bench/") && p !== "sw.js");
       const files = ["", ...new Set([...emitted, ...extra])].map((f) => `/${f}`).sort();
-      const version = createHash("sha256").update(files.join("\n")).update(JSON.stringify(emitted.map((f) => [f, (bundle[f] as { code?: string }).code?.length ?? 0]))).digest("hex").slice(0, 12);
+      const hash = createHash("sha256").update(files.join("\n")).update(JSON.stringify(emitted.map((f) => [f, (bundle[f] as { code?: string }).code?.length ?? 0])));
+      for (const p of extra) hash.update(readFileSync(join(publicDir, p)));
+      const version = hash.digest("hex").slice(0, 12);
       this.emitFile({ type: "asset", fileName: "sw.js", source: workerSource(version, files) });
     },
   };
