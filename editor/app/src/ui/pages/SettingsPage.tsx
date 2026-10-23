@@ -17,7 +17,8 @@ import {
 import { isValidPackage } from "../../io/javaEnum.ts";
 import { PATHS_DIR } from "../../io/projectIo.ts";
 import { withRobotLimits } from "../../model/edits.ts";
-import { parseTunerConstants, type TunerImport } from "../../io/tunerConstants.ts";
+import { parseRobotCode, type RobotCodeImport } from "../../io/robotCode.ts";
+import { importSummary, slipCurrentWarning, withRobotCode } from "../../model/robotImport.ts";
 import {
   DEFAULT_ROBOT_SETTINGS,
   DEFAULT_SIM_PREVIEW,
@@ -94,26 +95,31 @@ function RobotSettingsTab() {
     editProject(label, (p) => ({ ...p, robot: withTopSpeed({ ...p.robot, ...extra, config: checkedRobot({ ...p.robot.config, ...change }) }) }));
   const setBumpers = (change: Partial<RobotSettings>) => editProject("Bumper size", (p) => ({ ...p, robot: { ...p.robot, ...change } }));
   const rpm = (radPerSec: number) => (radPerSec * 60) / (2 * Math.PI);
-  const [imported, setImported] = useState<TunerImport | string | null>(null);
-  const importTuner = async (file: File) => {
-    let t: TunerImport;
-    try {
-      t = parseTunerConstants(await file.text());
-    } catch (e) {
-      setImported(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
-      return;
+  const [imported, setImported] = useState<{ readonly done: readonly string[]; readonly problems: readonly string[] } | null>(null);
+  // TunerConstants.java and AccelerationLimiter.java, one or both: TunerConstants first, so the slip
+  // current is checked against the limiter's MODEL_CURRENT when both come together
+  const importCode = async (files: readonly File[]) => {
+    const read: { file: string; imp: RobotCodeImport }[] = [];
+    const problems: string[] = [];
+    for (const file of files) {
+      try {
+        read.push({ file: file.name, imp: parseRobotCode(await file.text()) });
+      } catch (e) {
+        problems.push(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
-    set(
-      "Import TunerConstants",
-      {
-        ...(t.driveGearRatio !== undefined && { driveGearRatio: t.driveGearRatio }),
-        ...(t.wheelRadiusMeters !== undefined && { wheelRadiusMeters: t.wheelRadiusMeters }),
-        ...(t.moduleRadiusMeters !== undefined && { moduleRadiusMeters: t.moduleRadiusMeters }),
-        ...(t.tipDistanceMeters !== undefined && { tipDistanceMeters: t.tipDistanceMeters }),
-      },
-      t.speedAt12VoltsMetersPerSecond !== undefined ? { speedAt12VoltsMetersPerSecond: t.speedAt12VoltsMetersPerSecond } : {},
-    );
-    setImported(t);
+    read.sort((x, y) => (x.imp.kind === y.imp.kind ? 0 : x.imp.kind === "tuner" ? -1 : 1));
+    let next = robot;
+    for (const { imp } of read) next = withRobotCode(next, imp);
+    if (read.length > 0) {
+      const after = next;
+      editProject("Import robot code", (p) => ({ ...p, robot: { ...after, config: checkedRobot(after.config) } }));
+    }
+    for (const { imp } of read) {
+      const warning = slipCurrentWarning(next, imp);
+      if (warning) problems.push(warning);
+    }
+    setImported({ done: read.map(({ file, imp }) => importSummary(file, imp)), problems });
   };
   return (
     <section className="settings-section" aria-label="Robot">
@@ -126,43 +132,35 @@ function RobotSettingsTab() {
       <div className="settings-group" aria-label="Import">
         <h4>Start from your robot code</h4>
         <p className="hint">
-          Import the drivetrain's <code>TunerConstants.java</code> (CTRE Tuner X): it fills in the gear ratio, the wheel radius, the module
-          positions and the speed at 12 V. Then measure the mass, μ and the centre of mass height, below.
+          Import <code>TunerConstants.java</code> (CTRE Tuner X) for the drivetrain: the gear ratio, the wheel radius, the module positions
+          and the speed at 12 V. Import <code>AccelerationLimiter.java</code> for what paths plan with: μ, the mass, the centre of mass height,
+          the motor current, the turning cap and the 0.9. Pick one or both.
         </p>
         <label className="btn import-btn">
-          Import TunerConstants.java
+          Import robot code
           <input
             type="file"
             accept=".java"
+            multiple
             hidden
-            data-testid="import-tuner"
+            data-testid="import-robot-code"
             onChange={(e) => {
-              const f = e.target.files?.[0];
+              const files = [...(e.target.files ?? [])];
               e.target.value = "";
-              if (f) void importTuner(f);
+              if (files.length > 0) void importCode(files);
             }}
           />
         </label>
-        {typeof imported === "string" && (
-          <p className="check error" role="alert" data-testid="tuner-import-error">
-            {imported}
+        {imported?.done.map((line) => (
+          <p className="stats" key={line} data-testid="robot-code-imported">
+            Imported {line}
           </p>
-        )}
-        {imported && typeof imported !== "string" && (
-          <p className="stats" data-testid="tuner-imported">
-            Imported {imported.found.join(", ")}:{" "}
-            {[
-              imported.driveGearRatio !== undefined && `gear ratio ${formatNumber(imported.driveGearRatio, 3)}:1`,
-              imported.wheelRadiusMeters !== undefined && `wheel radius ${formatNumber(imported.wheelRadiusMeters, 4)} m`,
-              imported.moduleRadiusMeters !== undefined && `module radius ${formatNumber(imported.moduleRadiusMeters, 3)} m`,
-              imported.tipDistanceMeters !== undefined && `tip distance ${formatNumber(imported.tipDistanceMeters, 3)} m`,
-              imported.speedAt12VoltsMetersPerSecond !== undefined && `speed at 12 V ${formatNumber(imported.speedAt12VoltsMetersPerSecond, 2)} m/s`,
-            ]
-              .filter(Boolean)
-              .join(", ")}
-            .
+        ))}
+        {imported?.problems.map((line) => (
+          <p className="settings-note" role="note" key={line} data-testid="robot-code-problem">
+            <span>{line}</span>
           </p>
-        )}
+        ))}
       </div>
       <MarginsGroup robot={robot} set={set} />
       <LimitsSummary config={c} />
@@ -394,8 +392,8 @@ function MarginsGroup({ robot, set }: { robot: RobotSettings; set: (label: strin
     <div className="settings-group" aria-label="Margins">
       <h4>How hard paths drive</h4>
       <p className="hint">
-        The share of the robot's top speed and grip that paths plan to. The rest is room for the follower to catch up. 90 % is a good start;
-        AccelerationLimiter uses 0.9 for acceleration.
+        The share of the robot's top speed, grip and turning cap that paths plan to; the follower is held to the full limits, so the rest is
+        room to catch up. 90 % is a good start; AccelerationLimiter uses 0.9 for acceleration.
       </p>
       <div className="grid2">
         <ShareSlider
@@ -409,7 +407,12 @@ function MarginsGroup({ robot, set }: { robot: RobotSettings; set: (label: strin
           label="Acceleration"
           value={c.tractionShare}
           testId="traction-share"
-          working={`of ${what}, ${formatNumber(limit, 1)} m/s² = ${formatNumber(c.tractionShare * limit, 1)} m/s²`}
+          working={
+            `of ${what}, ${formatNumber(limit, 1)} m/s² = ${formatNumber(c.tractionShare * limit, 1)} m/s²` +
+            (Number.isFinite(c.maxAngularRadPerSecSquared)
+              ? `; turning ${formatNumber(c.maxAngularRadPerSecSquared, 1)} rad/s² = ${formatNumber(c.tractionShare * c.maxAngularRadPerSecSquared, 1)} rad/s²`
+              : "")
+          }
           code="the 0.9 in TRACTION_ACCEL"
           onCommit={(share) => set("Acceleration share", { tractionShare: share })}
         />
@@ -434,7 +437,11 @@ function LimitsSummary({ config: c }: { config: RobotConfig }) {
           <strong>Top wheel speed {formatNumber(wheelSpeedCapMetersPerSecond(c), 2)} m/s</strong>
         </li>
         <li>
-          <strong>Turning acceleration {Number.isFinite(spin) ? `${formatNumber(spin, 1)} rad/s²` : "not capped"}</strong> <code>ANGULAR_ACCEL</code>
+          <strong>
+            Turning acceleration{" "}
+            {Number.isFinite(spin) ? `${formatNumber(c.tractionShare * spin, 1)} rad/s² (${Math.round(c.tractionShare * 100)} % of ${formatNumber(spin, 1)})` : "not capped"}
+          </strong>{" "}
+          <code>ANGULAR_ACCEL</code>
         </li>
       </ul>
       <p className="hint">Every path plans to these unless its own Top speed or Max accel is set lower.</p>

@@ -22,9 +22,11 @@ package frc.team5712.path.core;
  * @param frictionCoefficient the tread's friction coefficient μ (1.5 for Spike Grip on carpet)
  * @param maxWheelMetersPerSecond fastest any wheel may be asked to roll; NaN = the motor's free speed
  * @param maxAngularRadPerSec spin cap for the planned heading (+∞ = only the wheel-speed cap)
- * @param maxAngularRadPerSecSquared spin acceleration cap for the planned heading (+∞ = only grip and
- *     motors). With a cap, a fast turn over a short distance slows the plan down instead of asking
- *     for more spin than the follower will give.
+ * @param maxAngularRadPerSecSquared the robot's spin acceleration cap, AccelerationLimiter's ANGULAR_ACCEL (+∞ =
+ *     only grip and motors). The plan turns at {@code tractionShare} of it ({@link
+ *     #plannedSpinAccelRadPerSecSquared}) and the follower is held to it, so feedback has room, as for
+ *     traction. With a cap, a fast turn over a short distance slows the plan down instead of asking for more
+ *     spin than the follower will give.
  * @param centerOfMassHeightMeters height of the centre of mass above the floor (0 = no load transfer)
  * @param tipDistanceMeters how far the centre is from the nearest tipping edge, {@code min(|module x|,
  *     |module y|)}: one value for every direction (for a square base the wheelbase and the track are
@@ -209,6 +211,11 @@ public record RobotConfig(
    */
   public double wheelSlipOnsetMetersPerSecondSquared() {
     return gripMetersPerSecondSquared() / (1.0 + frictionCoefficient * centerOfMassHeightMeters / tipDistanceInUseMeters());
+  }
+
+  /** The spin acceleration the plan uses: {@code tractionShare} of the cap, rad/s² (+∞ with no cap). */
+  public double plannedSpinAccelRadPerSecSquared() {
+    return tractionShare * maxAngularRadPerSecSquared;
   }
 
   /** What sets {@link #tractionMetersPerSecondSquared} (with the centre of mass at 0, grip). */

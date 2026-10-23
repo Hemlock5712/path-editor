@@ -122,6 +122,11 @@ export function wheelSlipOnsetMetersPerSecondSquared(r: RobotConfig): number {
   return gripMetersPerSecondSquared(r) / (1.0 + (r.frictionCoefficient * r.centerOfMassHeightMeters) / tipDistanceInUseMeters(r));
 }
 
+/** The spin acceleration the plan uses: tractionShare of the cap, rad/s² (Infinity with no cap; RobotConfig's). */
+export function plannedSpinAccelRadPerSecSquared(r: RobotConfig): number {
+  return r.tractionShare * r.maxAngularRadPerSecSquared;
+}
+
 /** What sets the traction limit (with the centre of mass at 0, grip). */
 export function tractionLimit(r: RobotConfig): TractionLimit {
   return tipMetersPerSecondSquared(r) < gripMetersPerSecondSquared(r) ? "tipping" : "grip";

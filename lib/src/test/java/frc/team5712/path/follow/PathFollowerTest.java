@@ -469,9 +469,10 @@ class PathFollowerTest {
       peak = Math.max(peak, Math.hypot(b.xMeters() - a.xMeters(), b.yMeters() - a.yMeters()) / DT);
     }
     assertTrue(r.finished());
-    // 1.2x here (it was 3.5x): the last 2° are the DriveToPose law's, which closes the last centimetres
-    // a little faster than the plan's crawl
-    assertTrue(peak < 1.25 * planPeak, "peak " + peak + " m/s against the plan's " + planPeak);
+    // 1.28x here (it was 3.5x): the last 2° are the DriveToPose law's, which closes the last centimetres
+    // a little faster than the plan's crawl. That speed (0.32 m/s) doesn't depend on the plan; the plan
+    // turns at 90 % of the robot's spin cap, so its own peak is 0.26 m/s (0.27 when it turned at all of it)
+    assertTrue(peak < 1.35 * planPeak, "peak " + peak + " m/s against the plan's " + planPeak);
     assertTrue(r.seconds() < path.totalTimeSeconds() + 0.35, "took " + r.seconds() + " s for a " + path.totalTimeSeconds() + " s plan");
   }
 

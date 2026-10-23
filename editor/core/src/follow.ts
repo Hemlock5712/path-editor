@@ -60,6 +60,13 @@ export const REJOIN_METERS = 1.0;
 /** At most one rejoin per this long. */
 export const REJOIN_COOLDOWN_SECONDS = 0.5;
 
+/** The spin acceleration cap in use: the set one, or the robot's, or 720°/s² (FollowerConfig.alphaCap). */
+export function alphaCap(cfg: FollowerConfig): number {
+  if (!Number.isNaN(cfg.maxAlphaRadPerSecSquared)) return cfg.maxAlphaRadPerSecSquared;
+  const robotCap = cfg.robot.maxAngularRadPerSecSquared;
+  return Number.isFinite(robotCap) ? robotCap : 720.0 * DEG;
+}
+
 /** The defaults for a robot, with any fields overridden by name (as FollowerConfig.Builder.set). */
 export function followerConfig(robot: RobotConfig, options: Partial<Omit<FollowerConfig, "robot">> = {}): FollowerConfig {
   return {
@@ -76,7 +83,7 @@ export function followerConfig(robot: RobotConfig, options: Partial<Omit<Followe
     easeInPerSecond: 12.0,
     stopDeadbandMeters: 0.003,
     maxOmegaRadPerSec: 540.0 * DEG,
-    maxAlphaRadPerSecSquared: 720.0 * DEG,
+    maxAlphaRadPerSecSquared: Number.NaN,
     headingEaseInPerSecond: 5.0,
     headingDeadbandRadians: 0.3 * DEG,
     limiterFrictionCoefficient: Number.NaN,
@@ -264,7 +271,7 @@ export class PathFollower {
     this.active = path;
     this.track = path;
     this.cfg = config;
-    this.limiter = new OutputLimiter(config.robot, limiterBudget(config), config.maxAlphaRadPerSecSquared);
+    this.limiter = new OutputLimiter(config.robot, limiterBudget(config), alphaCap(config));
     this.endSpeed = path.spec.endMetersPerSecond;
     this.rollingEnd = this.endSpeed > 0.0;
     const end = path.sample(path.lengthMeters);
@@ -506,7 +513,7 @@ export class PathFollower {
       wantVx = d > 1e-6 ? (ex / d) * speed : 0.0;
       wantVy = d > 1e-6 ? (ey / d) * speed : 0.0;
       const headingError = wrap(goal.headingRadians - pose.headingRadians);
-      wantOmega = StoppingLaw.spin(headingError, this.limiter.omega, cfg.maxAlphaRadPerSecSquared,
+      wantOmega = StoppingLaw.spin(headingError, this.limiter.omega, alphaCap(cfg),
         cfg.latencySeconds, cfg.maxOmegaRadPerSec, cfg.headingEaseInPerSecond, cfg.headingDeadbandRadians);
       this.crossTrack = 0.0;
       this.refX = gx;

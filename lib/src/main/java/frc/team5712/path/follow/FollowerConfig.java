@@ -27,7 +27,8 @@ import frc.team5712.path.core.RobotConfig;
  * @param easeInPerSecond DriveToPose's ease-in line, m/s per metre left
  * @param stopDeadbandMeters ask for zero speed inside this
  * @param maxOmegaRadPerSec spin cap
- * @param maxAlphaRadPerSecSquared spin acceleration cap, also the heading stopping law's
+ * @param maxAlphaRadPerSecSquared spin acceleration cap, also the heading stopping law's; NaN (the default) = the
+ *     robot's maxAngularRadPerSecSquared (ANGULAR_ACCEL), or 720°/s² when the robot has none ({@link #alphaCap})
  * @param headingEaseInPerSecond the heading ease-in line, rad/s per radian left
  * @param headingDeadbandRadians ask for zero spin inside this
  * @param limiterFrictionCoefficient the output limiter's budget as a μ (μ·g shared by translation and
@@ -112,6 +113,15 @@ public record FollowerConfig(
     return builder(robot).build();
   }
 
+  /** The spin acceleration cap in use: the set one, or the robot's, or 720°/s² (rad/s²). */
+  public double alphaCap() {
+    if (!Double.isNaN(maxAlphaRadPerSecSquared)) {
+      return maxAlphaRadPerSecSquared;
+    }
+    double robotCap = robot.maxAngularRadPerSecSquared();
+    return Double.isFinite(robotCap) ? robotCap : Math.toRadians(720.0);
+  }
+
   public static Builder builder(RobotConfig robot) {
     return new Builder(robot);
   }
@@ -168,7 +178,7 @@ public record FollowerConfig(
     private double easeInPerSecond = 12.0; // DriveToPose ships 6; the bench sweep's pick (tuning seeds)
     private double stopDeadbandMeters = 0.003;
     private double maxOmegaRadPerSec = Math.toRadians(540.0);
-    private double maxAlphaRadPerSecSquared = Math.toRadians(720.0);
+    private double maxAlphaRadPerSecSquared = Double.NaN;
     private double headingEaseInPerSecond = 5.0;
     private double headingDeadbandRadians = Math.toRadians(0.3);
     private double limiterFrictionCoefficient = Double.NaN;

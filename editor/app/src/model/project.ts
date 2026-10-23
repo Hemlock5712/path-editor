@@ -179,8 +179,12 @@ export function withTopSpeed(robot: RobotSettings): RobotSettings {
   return robot.config.maxWheelMetersPerSecond === cap ? robot : { ...robot, config: { ...robot.config, maxWheelMetersPerSecond: cap } };
 }
 
+/**
+ * A new project's robot: the core's default with Precision-Drive's AccelerationLimiter's planning numbers,
+ * MODEL_CURRENT 150 A and ANGULAR_ACCEL 12 rad/s². Neither is in TunerConstants, so an import keeps them.
+ */
 export const DEFAULT_ROBOT_SETTINGS: RobotSettings = withTopSpeed({
-  config: DEFAULT_ROBOT,
+  config: { ...DEFAULT_ROBOT, statorCurrentLimitAmps: 150.0, maxAngularRadPerSecSquared: 12.0 },
   bumperLengthMeters: 0.85,
   bumperWidthMeters: 0.85,
   topSpeedShare: DEFAULT_SHARE,

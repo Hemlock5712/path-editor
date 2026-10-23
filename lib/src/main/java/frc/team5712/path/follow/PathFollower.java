@@ -168,7 +168,7 @@ public final class PathFollower {
   public PathFollower(Path path, FollowerConfig config) {
     this.basePath = path;
     this.cfg = config;
-    this.limiter = new OutputLimiter(config.robot(), limiterBudget(config), config.maxAlphaRadPerSecSquared());
+    this.limiter = new OutputLimiter(config.robot(), limiterBudget(config), config.alphaCap());
     this.endSpeed = path.spec().endMetersPerSecond();
     this.rollingEnd = endSpeed > 0.0;
     PathSample end = path.sample(path.lengthMeters());
@@ -503,7 +503,7 @@ public final class PathFollower {
       wantVx = d > 1e-6 ? ex / d * speed : 0.0;
       wantVy = d > 1e-6 ? ey / d * speed : 0.0;
       double headingError = Angles.wrap(goal.headingRadians() - pose.headingRadians());
-      wantOmega = StoppingLaw.spin(headingError, limiter.omega(), cfg.maxAlphaRadPerSecSquared(),
+      wantOmega = StoppingLaw.spin(headingError, limiter.omega(), cfg.alphaCap(),
           cfg.latencySeconds(), cfg.maxOmegaRadPerSec(), cfg.headingEaseInPerSecond(),
           cfg.headingDeadbandRadians());
       crossTrack = 0.0;

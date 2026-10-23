@@ -7,6 +7,7 @@ import type { HeadingProfile, HeadingSample } from "./heading.ts";
 import {
   brakeAccelMetersPerSecondSquared,
   driveAccelMetersPerSecondSquared,
+  plannedSpinAccelRadPerSecSquared,
   tractionMetersPerSecondSquared,
   spinLeverMeters,
   wheelSpeedCapMetersPerSecond,
@@ -116,7 +117,7 @@ export class VelocityProfile {
     const moduleRadius = robot.moduleRadiusMeters;
     const wheelCap = wheelSpeedCapMetersPerSecond(robot);
     const spinCap = robot.maxAngularRadPerSec;
-    const spinAccelCap = robot.maxAngularRadPerSecSquared;
+    const spinAccelCap = plannedSpinAccelRadPerSecSquared(robot);
 
     const budget = new Budget(robot, nodes);
     const speedCap = new Float64Array(nodes);
@@ -340,7 +341,7 @@ class Budget {
     this.grip = tractionMetersPerSecondSquared(robot);
     this.lever = spinLeverMeters(robot);
     this.brake = brakeAccelMetersPerSecondSquared(robot);
-    this.spinAccelCap = robot.maxAngularRadPerSecSquared;
+    this.spinAccelCap = plannedSpinAccelRadPerSecSquared(robot);
     this.curvature = new Float64Array(nodes);
     this.spin = new Float64Array(nodes);
     this.wheels = new Float64Array(nodes);

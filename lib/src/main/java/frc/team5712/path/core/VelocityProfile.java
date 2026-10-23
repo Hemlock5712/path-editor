@@ -193,7 +193,7 @@ public final class VelocityProfile {
     double moduleRadius = robot.moduleRadiusMeters();
     double wheelCap = robot.wheelSpeedCapMetersPerSecond();
     double spinCap = robot.maxAngularRadPerSec();
-    double spinAccelCap = robot.maxAngularRadPerSecSquared();
+    double spinAccelCap = robot.plannedSpinAccelRadPerSecSquared();
 
     // Per grid point: |κ|, |θ'|, |θ''|, the speed ceiling and the acceleration cap
     Budget budget = new Budget(robot, nodes);
@@ -361,7 +361,7 @@ public final class VelocityProfile {
       this.grip = robot.tractionMetersPerSecondSquared();
       this.lever = robot.spinLeverMeters();
       this.brake = robot.brakeAccelMetersPerSecondSquared();
-      this.spinAccelCap = robot.maxAngularRadPerSecSquared();
+      this.spinAccelCap = robot.plannedSpinAccelRadPerSecSquared();
       curvature = new double[nodes];
       spin = new double[nodes];
       wheels = new double[nodes];
