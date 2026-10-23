@@ -399,7 +399,7 @@ EXPORT_METHODS = {"ours_opt": "Ours, optimised", "ours": "Ours, as drawn", "chor
                   "choreo_hold": "Choreo + ChoreoLib + final hold",
                   "pathplanner": "PathPlanner (tuned) + hold",
                   "bline": "BLine (tuned, corner caps)", "ours_on_choreo": "Ours following Choreo's plan"}
-STATS = ("t_5cm", "t_settle", "err_end_cm", "ct_own_rms_cm", "ct_own_max_cm", "wheel_slip_ms", "overshoot_cm")
+STATS = ("t_5cm", "t_settle", "err_end_cm", "ct_own_rms_cm", "ct_own_max_cm", "wheel_slip_ms", "tip_ms", "overshoot_cm")
 
 
 def _stats(rows):

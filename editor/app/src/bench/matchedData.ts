@@ -10,6 +10,8 @@ export interface RunStats {
   readonly err_end_cm: number | null;
   readonly ct_own_rms_cm: number | null;
   readonly wheel_slip_ms: number | null;
+  /** Time past the tipping limit (an edge's wheels lifting), ms; absent in older snapshots. */
+  readonly tip_ms?: number | null;
   readonly overshoot_cm: number | null;
 }
 
@@ -137,6 +139,8 @@ export interface Summary {
   readonly endErrorCm: number;
   /** Sum over the courses of the mean time wheels spent slipping (wheel-seconds: two wheels for 1 s is 2). */
   readonly slipSeconds: number;
+  /** Sum over the courses of the mean time past the tipping limit, s. */
+  readonly tipSeconds: number;
 }
 
 function mean(xs: readonly number[]): number {
@@ -154,6 +158,7 @@ export function summaries(d: MatchedData, rule: string, pose: string, group: Cou
     const never: string[] = [];
     const err: number[] = [];
     let slip = 0;
+    let tip = 0;
     for (const c of courses) {
       const s = stats(d, rule, pose, c, m);
       if (!s) {
@@ -166,6 +171,7 @@ export function summaries(d: MatchedData, rule: string, pose: string, group: Cou
       total += s.t_settle ?? Number.NaN;
       if (s.err_end_cm !== null) err.push(s.err_end_cm);
       slip += (s.wheel_slip_ms ?? Number.NaN) / 1000;
+      tip += (s.tip_ms ?? 0) / 1000;
     }
     if (runs === 0) continue;
     out.push({
@@ -178,6 +184,7 @@ export function summaries(d: MatchedData, rule: string, pose: string, group: Cou
       neverFinished: never,
       endErrorCm: mean(err),
       slipSeconds: slip,
+      tipSeconds: tip,
     });
   }
   return out;

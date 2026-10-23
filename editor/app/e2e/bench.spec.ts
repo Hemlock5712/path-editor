@@ -16,6 +16,7 @@ test("the bench page tells the comparison in plain words", async ({ page }) => {
   await expect(page.getByTestId("bench-tile-finish")).toContainText("Choreo 0");
   await expect(page.getByTestId("bench-speed-bars").locator("li")).toHaveCount(6);
   await expect(page.getByTestId("bench-slip-bars").locator("li")).toHaveCount(6);
+  await expect(page.getByTestId("bench-tip-bars").locator("li")).toHaveCount(6);
   await expect(page.getByTestId("bench-disturbed-table").locator("tbody tr")).toHaveCount(3);
   await expect(page.getByTestId("bench-slipaware-bars").locator("li")).toHaveCount(6);
   await expect(page.getByTestId("bench-course-table").locator("tbody tr")).toHaveCount(10);

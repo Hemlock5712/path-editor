@@ -230,6 +230,7 @@ def run_one(job, trace=False):
         "t_settle": t_settle,
         "t_done": float("nan") if t_done is None else t_done,
         "wheel_slip_ms": 1000 * wheel_slip,
+        "tip_ms": 1000 * plant.tip_time,
         "odo_err_cm": r["odo_err_cm"],
         "gen_ms": gen_ms,
         "max_step_ms": max_step_ms,

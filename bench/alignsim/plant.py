@@ -37,6 +37,8 @@ class SwervePlant:
         self.ext = (0.0, 0.0, 0.0)  # external field-frame force (N) and torque (Nm)
         self.ext_until = -1.0
         self.slip_time = 0.0
+        self.tipping = False
+        self.tip_time = 0.0  # s with an edge's wheels lifting (see step)
         # Gyro error terms (per trial)
         self.rng = rng
         self.gyro_bias = 0.0
@@ -180,6 +182,20 @@ class SwervePlant:
         # rolling resistance
         fxr -= 2.0 * vxr
         fyr -= 2.0 * vyr
+        # Tipping (cg_height > 0): the floor can hold the chassis level only while the centre of pressure stays
+        # inside the square of wheels, |a| h / g <= x along each axis. Past that the wheels on one edge lift and
+        # the excess goes into pitching the robot, not into the floor: the push is capped there.
+        self.tipping = False
+        if rp.cg_height > 0:
+            tip = G * rp.module_xy / rp.cg_height * rp.mass
+            if abs(fxr) > tip:
+                fxr = math.copysign(tip, fxr)
+                self.tipping = True
+            if abs(fyr) > tip:
+                fyr = math.copysign(tip, fyr)
+                self.tipping = True
+            if self.tipping:
+                self.tip_time += dt
         ffx, ffy = rot((fxr, fyr), self.th)
         if self.t < self.ext_until:
             ffx += self.ext[0]

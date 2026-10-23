@@ -166,6 +166,9 @@ function Speed({ d, rule }: { d: MatchedData; rule: string }) {
   const slipRows: BarRow[] = clean
     .map((s) => ({ method: s.method, value: s.slipSeconds, text: `${s.slipSeconds.toFixed(1)} s`, tip: METHOD_NOTES[s.method] }))
     .sort((a, b) => a.value - b.value);
+  const tipRows: BarRow[] = clean
+    .map((s) => ({ method: s.method, value: s.tipSeconds, text: `${s.tipSeconds.toFixed(1)} s`, tip: METHOD_NOTES[s.method] }))
+    .sort((a, b) => a.value - b.value);
   const choreoPlan = plans.choreo;
   const oursPlan = plans.ours_opt;
   const choreo = byMethod(clean, "choreo");
@@ -183,6 +186,13 @@ function Speed({ d, rule }: { d: MatchedData; rule: string }) {
       </p>
       <Bars rows={slipRows} testId="bench-slip-bars" label="Time wheels spent slipping" />
       <p className="hint">Time wheels spent slipping, added up over the {d.courses.plan.length} courses (two wheels slipping for 1 s counts 2 s).</p>
+      <p className="bench-lead">
+        <strong>Past the tipping point.</strong> Speeding up or braking harder than about {(9.81 * 0.254 / 0.2).toFixed(1)} m/s² lifts the
+        wheels on one edge (the centre of mass is 0.2 m up, the wheels 0.254 m out). The simulated robot can't push harder than that, but
+        a follower that keeps asking spends that time on the edge of a wheelie. Less is better.
+      </p>
+      <Bars rows={tipRows} testId="bench-tip-bars" label="Time past the tipping point" />
+      <p className="hint">Time past the tipping point, added up over the {d.courses.plan.length} courses.</p>
       {choreoPlan !== undefined && oursPlan !== undefined && (
         <>
           <p className="bench-lead">
@@ -350,7 +360,8 @@ function CourseByCourse({ d, rule }: { d: MatchedData; rule: string }) {
                           <span className="cell-sub warn">{done < s.n ? `${done} of ${s.n} finished` : `ends ${cm(s.err_end_cm ?? Number.NaN)} cm off`}</span>
                         )}
                         <span className="cell-sub">
-                          slip {((s.wheel_slip_ms ?? Number.NaN) / 1000).toFixed(1)} s{typeof odo === "number" ? ` · odometry ${cm(odo)} cm` : ""}
+                          slip {((s.wheel_slip_ms ?? Number.NaN) / 1000).toFixed(1)} s{(s.tip_ms ?? 0) >= 50 ? ` · tipping ${((s.tip_ms ?? 0) / 1000).toFixed(2)} s` : ""}
+                          {typeof odo === "number" ? ` · odometry ${cm(odo)} cm` : ""}
                         </span>
                       </td>
                     );
