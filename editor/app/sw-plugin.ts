@@ -39,7 +39,8 @@ const CACHE = "path-editor-${version}";
 const PRECACHE = ${JSON.stringify(files)};
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
+  // cache: "reload" skips the browser's HTTP cache, which would otherwise hand back the old icons for hours
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE.map((f) => new Request(f, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
