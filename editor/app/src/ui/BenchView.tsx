@@ -1,7 +1,7 @@
 // The Bench page (read-only): how our planner and follower compare with Choreo, PathPlanner and BLine when
 // every library plans to the same limits on the same simulated robot. It reads one snapshot
-// (public/bench/matched.json, from bench/matched.py) and tells it in order: the short version, speed,
-// when something goes wrong, without vision, course by course, and how it was tested.
+// (public/bench/matched.json, from bench/matched.py) and tells it in order: the short version, why they differ,
+// speed, when something goes wrong, without vision, course by course, and how it was tested.
 
 import type { ReactNode } from "react";
 import {
@@ -134,6 +134,91 @@ function ShortVersion({ d, rule }: { d: MatchedData; rule: string }) {
         detail={distOthers.map((s) => `${name(s.method)} ${cm(s.endErrorCm)} cm`).join(" · ")}
       />
     </div>
+  );
+}
+
+/** How each library plans and follows, in words: the reason behind every number below. */
+const DESIGNS: readonly { key: string; label: string; plans: string; follows: string; good: string; costs: string }[] = [
+  {
+    key: "ours",
+    label: "Ours",
+    plans: "A smooth curve through your waypoints, with the speed along it planned up to the traction limit. The heading turns along the distance.",
+    follows: "By position: it looks where the robot really is, reads the plan a moment ahead to cover the drivetrain's lag, and brakes onto the target the way DriveToPose does.",
+    good: "Ends on the target every time, even when the robot is heavier, slipperier or slower to respond than the plan assumed. The same follower drives on-the-fly paths round obstacles.",
+    costs: "It rides its plan at full traction, so it strays further from the line and slips more than BLine or path2. It turns while driving fast, so plans that spin are slower than Choreo's.",
+  },
+  {
+    key: "choreo",
+    label: "Choreo",
+    plans: "A solver picks the line, the speeds and when to turn, all at once.",
+    follows: "On a clock: at each moment it drives to where the plan says the robot should be by then, with the plan's wheel forces as feedforward.",
+    good: "The fastest plans, most of all when turning: it spins while the robot is slow.",
+    costs: "When the robot falls behind the clock it catches up by overshooting, and it stops when the clock runs out. Plans are made ahead of time, never on the field.",
+  },
+  {
+    key: "pp_path2",
+    label: "PathPlanner path2",
+    plans: "No timed plan: a list of waypoints, each with a speed cap for its corner.",
+    follows: "By position, steering for one waypoint and handing over to the next as it gets close.",
+    good: "Stays close to the line with little slip.",
+    costs: "Slow through corners unless it hands over early, which cuts inside the waypoints. Fails more runs when the robot isn't what it was tuned on.",
+  },
+  {
+    key: "bline",
+    label: "BLine",
+    plans: "Straight lines between the waypoints, with a radius to hand over to the next one.",
+    follows: "By position, toward the current waypoint, with its speed changes rate-limited.",
+    good: "The cleanest line and the least slip.",
+    costs: "The slowest by far, and it has no pathfinding: it can't find its own way round obstacles.",
+  },
+];
+
+function Differences() {
+  return (
+    <Section
+      id="differences"
+      title="Why they differ"
+      lead="Every library plans to the same limits here. What differs is how each one draws the line and how it keeps the robot on it, and that decides who is fast, who ends on the target, and who copes when the real robot isn't what the plan assumed."
+    >
+      <div className="bench-table-scroll">
+        <table className="benchmark bench-compare" data-testid="bench-differences-table">
+          <thead>
+            <tr>
+              <th className="target">Library</th>
+              <th>How it plans</th>
+              <th>How it follows</th>
+              <th>Good at</th>
+              <th>What it gives up</th>
+            </tr>
+          </thead>
+          <tbody>
+            {DESIGNS.map((r) => (
+              <tr key={r.key} className={OURS.has(r.key) ? "ours" : ""}>
+                <th className="target">{r.label}</th>
+                <td>{r.plans}</td>
+                <td>{r.follows}</td>
+                <td>{r.good}</td>
+                <td>{r.costs}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="bench-lead">
+        <strong>Why ours comes out ahead.</strong> It follows by position, so a robot that lags just takes a little longer, where a
+        follower on a clock overshoots and has to come back. It brakes onto the target instead of stopping when time is up, so it needs no
+        extra hold. And it keeps doing that when the robot is off from what was planned: tested on a robot with the centre of mass higher,
+        less grip, more lag, more weight or slower steering, it still finished every run within a few millimetres, while the others
+        missed runs or overshot.
+      </p>
+      <p className="bench-lead" data-testid="bench-differences-caveats">
+        <strong>Where it isn't ahead.</strong> Ours runs on the library's defaults here, nothing tuned for this robot. One of those
+        defaults reads the plan 0.05 s ahead to cover the drivetrain's lag; ChoreoLib reads its trajectory at the current time, and
+        given a 0.06 s lead on its feedforward, Choreo + final hold finishes these courses faster than ours. Choreo's plans are also
+        faster on courses that turn while driving, path2 wins the straight and the long fast courses, and BLine and path2 follow the
+        line more closely.
+      </p>
+    </Section>
   );
 }
 
@@ -402,8 +487,9 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
           their robot settings; PathPlanner path2 and BLine from their acceleration caps.
         </li>
         <li>
-          <strong>Tuned followers.</strong> Each library's follower uses the settings a sweep picked as its best: the fastest that finishes
-          every run on target and through every waypoint. Choreo uses ChoreoLib's documented controller, as teams start from, and sends
+          <strong>The followers' settings.</strong> Ours runs on its library's defaults, with nothing tuned for this robot: a new robot
+          should work without a sweep. The others use the settings a sweep picked as their best: the fastest that finishes every run on
+          target and through every waypoint. Choreo uses ChoreoLib's documented controller, as teams start from, and sends
           its plan's wheel forces as feedforward, as CTRE's Choreo example does; ours sends velocities only, as our robot code does.
           PathPlanner path2 and BLine get each waypoint's speed capped for its corner, as a team drawing their paths would.
         </li>
@@ -429,8 +515,8 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
           robot. Before each run the robot stands still for 2 s with its odometry running, as it does before auto.
         </li>
         <li>
-          <strong>Traction.</strong> The limit is 95 % of grip or tipping, whichever comes first: {r.traction.toFixed(2)} m/s². Ours
-          follows its plan closely enough to use more than the library's default 90 %. The loaded wheels push harder than the light
+          <strong>Traction.</strong> The limit is 95 % of grip or tipping, whichever comes first: {r.traction.toFixed(2)} m/s², the
+          same for every planner (our library's own default is 90 %). The loaded wheels push harder than the light
           ones, so a follower has to cope with some slip. Past about {(9.81 * 0.254 / 0.2).toFixed(1)} m/s² the robot would start to
           tip, and the simulated one can't push harder than that.
         </li>
@@ -477,6 +563,7 @@ export function BenchView() {
         {d && (
           <>
             <ShortVersion d={d} rule={rule} />
+            <Differences />
             <Speed d={d} rule={rule} />
             <GoesWrong d={d} rule={rule} />
             <WithoutVision d={d} rule={rule} />

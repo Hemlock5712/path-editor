@@ -2382,6 +2382,30 @@ dialog::backdrop {
   color: var(--text);
 }
 
+/* the "why they differ" table: words, not numbers */
+.benchmark.bench-compare th,
+.benchmark.bench-compare td {
+  text-align: left;
+  white-space: normal;
+  vertical-align: top;
+  line-height: 1.45;
+}
+
+.benchmark.bench-compare td {
+  min-width: 180px;
+  color: var(--text);
+}
+
+.benchmark.bench-compare tbody tr.ours th,
+.benchmark.bench-compare tbody tr.ours td {
+  background: rgba(76, 166, 255, 0.1);
+}
+
+.benchmark.bench-compare tbody tr.ours th {
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .benchmark tfoot th,
 .benchmark tfoot td {
   border-bottom: none;

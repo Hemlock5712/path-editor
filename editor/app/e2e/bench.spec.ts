@@ -1,5 +1,5 @@
-// The Bench page on the committed snapshot (public/bench/matched.json): the short version, speed, when
-// something goes wrong, without vision, course by course, and how it was tested.
+// The Bench page on the committed snapshot (public/bench/matched.json): the short version, why they differ,
+// speed, when something goes wrong, without vision, course by course, and how it was tested.
 
 import { expect, test } from "@playwright/test";
 
@@ -14,6 +14,8 @@ test("the bench page tells the comparison in plain words", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Path followers, head to head" })).toBeVisible();
   // tip or grip, the robot's traction rule: Choreo finishes none of its runs
   await expect(page.getByTestId("bench-tile-finish")).toContainText("Choreo 0");
+  await expect(page.getByTestId("bench-differences-table").locator("tbody tr")).toHaveCount(4);
+  await expect(page.getByTestId("bench-differences-caveats")).toContainText("Where it isn't ahead");
   await expect(page.getByTestId("bench-speed-bars").locator("li")).toHaveCount(6);
   await expect(page.getByTestId("bench-slip-bars").locator("li")).toHaveCount(6);
   await expect(page.getByTestId("bench-tip-bars").locator("li")).toHaveCount(6);
@@ -23,7 +25,7 @@ test("the bench page tells the comparison in plain words", async ({ page }) => {
   await expect(page.getByTestId("bench-course-table")).toContainText("never finished");
   await expect(page.getByRole("radio", { name: "Equal push" })).toHaveCount(0);
   await page.screenshot({ path: "test-results/bench-page.png" });
-  for (const id of ["bench-speed", "bench-disturbed", "bench-odometry", "bench-courses"]) {
+  for (const id of ["bench-differences", "bench-speed","bench-disturbed", "bench-odometry", "bench-courses"]) {
     await page.getByTestId(id).screenshot({ path: `test-results/${id}.png` });
   }
   await page.getByTestId("bench-how").locator("summary").click();

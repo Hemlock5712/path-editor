@@ -325,13 +325,15 @@ RUN_METHODS = {"choreo": ("choreo", "choreo"), "choreo_hold": ("choreo", "choreo
 # libraries' 2 deg defaults a follower that arrives still turning (spin_while_driving) stops between 1 and 2 deg.
 # Swept at the robot's limits (95 % of grip-or-tip, 11.84 m/s^2, up to 4.5 m/s; 2026-10-23, 2 seeds x the 10 courses):
 # the best total with every run finished on target AND through every waypoint (within 10 cm; sim.py wp_miss_cm).
-# - Ours: brake 8 m/s^2, heading ease-in 12, latency 0.06 s (23.77 s; 0.05 s was 24.24, 0.09 s overshoots).
+# - Ours: the library's defaults, nothing tuned (2026-10-23, Joe: a tuned latency is one more knob a new robot must get
+#   right, and the rivals had no such lead). The sweep's brake 8, heading ease-in 12, latency 0.06 s gave 23.54 s
+#   against 24.37 s at the defaults (seeds 0-9); the defaults pass closer to the waypoints and slip less.
 # - Choreo + hold: ChoreoLib's documented kP 10 / 7.5 (stiffer gains miss waypoints and slip far more).
 # - path2: kP 4, cross-track 1, handoff 0.25 m, path2 waypoints capped at their corner's speed (27.33 s). Handoffs of
 #   0.75-1.25 m are faster (22.7 s) only by cutting 20-45 cm inside the waypoints.
 # - BLine: kP 4, cross-track 4, radius 0.1 m (37.4 s); its 0.6 m radius cut past the waypoints the same way.
 # PathPlanner's time-based follower (2027 branch) is off the page: path2 is what ships this season (Joe).
-TUNED = {"ours": {"brakeMetersPerSecondSquared": 8.0, "headingEaseInPerSecond": 12.0, "latencySeconds": 0.06},
+TUNED = {"ours": {},
          "pp": {"kp": 20.0, "kp_rot": 10.0, "hold": True, "ff": True, "hold_deg": 0.5},
          "choreo": {"ff": True}, "choreo_hold": {"kp": 10.0, "kp_rot": 7.5, "ff": True, "hold": True, "hold_deg": 0.5},
          "pp2": {"kp": 4.0, "kp_ct": 1.0, "handoff": 0.25, "end_distance": 0.02, "end_degrees": 0.5, "corner_caps": True},
