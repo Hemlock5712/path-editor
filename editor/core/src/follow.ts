@@ -233,11 +233,6 @@ export class PathFollower {
   private eventFired: boolean[] = [];
   private readonly listeners: ((name: string) => void)[] = [];
 
-  /** Metres left of the path to shift the reference by. */
-  lateralOffset: () => number = () => 0.0;
-  /** Along-track speed scale, 0..1. */
-  alongTrackScale: () => number = () => 1.0;
-
   private frame: FieldFrame = "BLUE";
   private goal: Pose;
   private phaseNow: Phase = "IDLE";
@@ -499,16 +494,13 @@ export class PathFollower {
     let wantVx: number;
     let wantVy: number;
     let wantOmega: number;
-    const offset = this.lateralOffset();
-    const scale = Math.max(0.0, Math.min(1.0, this.alongTrackScale()));
     if (this.phaseNow === "TERMINAL") {
-      const end = active.sample(active.lengthMeters);
-      const gx = goal.xMeters - end.tangentY * offset;
-      const gy = goal.yMeters + end.tangentX * offset;
+      const gx = goal.xMeters;
+      const gy = goal.yMeters;
       const ex = gx - pose.xMeters;
       const ey = gy - pose.yMeters;
       const d = Math.sqrt(ex * ex + ey * ey);
-      const speed = scale * StoppingLaw.speed(d, this.limiter.speed(), brakeDecel, cfg.latencySeconds,
+      const speed = StoppingLaw.speed(d, this.limiter.speed(), brakeDecel, cfg.latencySeconds,
         active.spec.maxMetersPerSecond, cfg.easeInPerSecond, cfg.stopDeadbandMeters);
       wantVx = d > 1e-6 ? (ex / d) * speed : 0.0;
       wantVy = d > 1e-6 ? (ey / d) * speed : 0.0;
@@ -524,7 +516,7 @@ export class PathFollower {
       // at least one loop ahead, or a robot at rest reads 0 m/s and never starts (PathFollower.java readAheadSeconds)
       const ahead = active.sample(profile.sAtTime(profile.timeAt(this.s) + Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS)));
       const headingError = wrap(active.heading.sample(this.s).radians - pose.headingRadians);
-      wantOmega = scale * gripScale * ahead.metersPerSecond * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
+      wantOmega = gripScale * ahead.metersPerSecond * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
       wantOmega = Math.max(-cfg.maxOmegaRadPerSec, Math.min(cfg.maxOmegaRadPerSec, wantOmega));
       wantVx = cfg.crossTrackKp * (goal.xMeters - pose.xMeters);
       wantVy = cfg.crossTrackKp * (goal.yMeters - pose.yMeters);
@@ -548,19 +540,19 @@ export class PathFollower {
       const here: PathSample = active.sample(this.s);
       const ahead: PathSample = active.sample(sAhead);
       const brake = StoppingLaw.brake(remaining, this.limiter.speed(), brakeDecel, cfg.latencySeconds, this.endSpeed);
-      const speed = scale * Math.min(gripScale * ahead.metersPerSecond, brake);
+      const speed = Math.min(gripScale * ahead.metersPerSecond, brake);
       const nx = -here.tangentY;
       const ny = here.tangentX;
       this.crossTrack = (pose.xMeters - here.xMeters) * nx + (pose.yMeters - here.yMeters) * ny;
       const drift = vel.vxMetersPerSecond * nx + vel.vyMetersPerSecond * ny;
-      const sideways = -cfg.crossTrackKp * (this.crossTrack - offset) - cfg.crossTrackKd * drift;
+      const sideways = -cfg.crossTrackKp * this.crossTrack - cfg.crossTrackKd * drift;
       wantVx = speed * ahead.tangentX + sideways * nx;
       wantVy = speed * ahead.tangentY + sideways * ny;
       const headingError = wrap(here.headingRadians - pose.headingRadians);
       wantOmega = speed * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
       wantOmega = Math.max(-cfg.maxOmegaRadPerSec, Math.min(cfg.maxOmegaRadPerSec, wantOmega));
-      this.refX = here.xMeters + nx * offset;
-      this.refY = here.yMeters + ny * offset;
+      this.refX = here.xMeters;
+      this.refY = here.yMeters;
       this.refHeading = here.headingRadians;
     }
 

@@ -127,7 +127,7 @@ the bit.
 Each loop, in the blue frame:
 
 1. **Frame.** The measured pose and velocity go into the blue frame through `FieldFrame`; the output
-   comes back out. Overrides and goals are given in the robot's own frame and converted the same way.
+   comes back out. Goals are given in the robot's own frame and converted the same way.
 2. **Progress.** `s` is the closest point within ±0.5 m of the last `s`. If that point is more than
    0.5 m away (a shove), the whole path is searched too and the nearer answer wins.
 3. **Along the path.** The plan is read one latency (50 ms) ahead *in plan time*:
@@ -175,10 +175,6 @@ The other pieces:
   goal's turn). An empty value holds the last goal. In the terminal phase the DriveToPose law just
   drives to the new goal. Latching estimates in the odometry frame is the supplier's job, as in
   DriveToTag.
-- **Overrides.** `lateralOffset` (metres left of the path; it also moves the goal sideways) and
-  `alongTrackScale` (0..1). Raw `overrideX/Y/Omega` take a supplier (NaN = off) and an
-  `OverrideMode`: `RESPECT_LIMITS` replaces the wish before the limiter, `BYPASS` replaces the
-  output after it.
 - **Events.** The path file's `events` are registered when the follower is made; code can add more
   with `addEvent(name, s, action)` and `addEventAtWaypoint`. They fire in order, each on the loop
   nearest to passing it (less than half a loop's progress ahead), so the error is at most half a loop

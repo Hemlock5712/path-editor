@@ -649,52 +649,6 @@ class PathFollowerTest {
 
   // ------------------------------------------------------------------------------ overrides
 
-  @Test
-  void lateralOffsetShiftsTheTrack() {
-    Path path = Path.build(FixturePaths.straight(), ROBOT);
-    PathFollower f = new PathFollower(path, CFG).lateralOffset(() -> 0.2);
-    Run r = run(path, f, FieldFrame.BLUE, 10, NONE);
-    assertTrue(r.finished());
-    Pose end = r.trace().get(r.trace().size() - 1);
-    assertEquals(0.2, end.yMeters(), 0.02, "ends 20 cm to the left of the goal");
-    Pose mid = r.trace().get(r.trace().size() / 2);
-    assertEquals(0.2, mid.yMeters(), 0.03);
-  }
-
-  @Test
-  void alongTrackScaleSlowsTheRobot() {
-    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
-    double full = run(path, new PathFollower(path, CFG), FieldFrame.BLUE, 20, NONE).seconds();
-    double half = run(path, new PathFollower(path, CFG).alongTrackScale(() -> 0.5), FieldFrame.BLUE, 20, NONE).seconds();
-    assertTrue(half > 1.5 * full - 0.5, full + " s vs " + half + " s");
-  }
-
-  @Test
-  void bypassOverrideTakesEffectAtOnceAndRespectRamps() {
-    Path path = Path.build(FixturePaths.straight(), ROBOT);
-    PathFollower bypass = new PathFollower(path, CFG).overrideY(() -> 1.0, OverrideMode.BYPASS);
-    bypass.start(0, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0), FieldFrame.BLUE);
-    assertEquals(1.0, bypass.step(DT, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0)).vyMetersPerSecond(), 0.0);
-
-    PathFollower respect = new PathFollower(path, CFG).overrideY(() -> 1.0, OverrideMode.RESPECT_LIMITS);
-    respect.start(0, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0), FieldFrame.BLUE);
-    double vy = respect.step(DT, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0)).vyMetersPerSecond();
-    assertTrue(vy > 0 && vy <= PathFollower.limiterBudget(CFG) * DT + 1e-9, "ramps: " + vy);
-
-    PathFollower off = new PathFollower(path, CFG).overrideOmega(() -> Double.NaN, OverrideMode.BYPASS);
-    off.start(0, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0), FieldFrame.BLUE);
-    assertEquals(0.0, off.step(DT, new Pose(-1.5, 0, 0), new FieldSpeeds(0, 0, 0)).omegaRadPerSec(), 1e-12,
-        "NaN means no override");
-  }
-
-  @Test
-  void overridesAreInTheRobotsFrame() {
-    Path path = Path.build(FixturePaths.straight(), ROBOT);
-    PathFollower f = new PathFollower(path, CFG).overrideX(() -> 0.5, OverrideMode.BYPASS);
-    f.start(0, new Pose(1.5, 0, Math.PI), new FieldSpeeds(0, 0, 0), FieldFrame.RED_HALF_TURN);
-    assertEquals(0.5, f.step(DT, new Pose(1.5, 0, Math.PI), new FieldSpeeds(0, 0, 0)).vxMetersPerSecond(), 1e-12);
-  }
-
   // ------------------------------------------------------------------------------ telemetry
 
   @Test

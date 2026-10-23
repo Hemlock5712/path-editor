@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.BiPredicate;
-import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -102,16 +101,6 @@ public final class PathFollower {
   private double[] eventS = new double[0];
   private boolean[] eventFired = new boolean[0];
   private final List<Consumer<String>> eventListeners = new ArrayList<>();
-
-  // Overrides
-  private DoubleSupplier lateralOffset = () -> 0.0;
-  private DoubleSupplier alongTrackScale = () -> 1.0;
-  private DoubleSupplier overrideX;
-  private DoubleSupplier overrideY;
-  private DoubleSupplier overrideOmega;
-  private OverrideMode overrideXMode = OverrideMode.RESPECT_LIMITS;
-  private OverrideMode overrideYMode = OverrideMode.RESPECT_LIMITS;
-  private OverrideMode overrideOmegaMode = OverrideMode.RESPECT_LIMITS;
 
   // Moving goal
   private Supplier<Optional<Pose>> goalSupplier;
@@ -262,37 +251,6 @@ public final class PathFollower {
   /** Attaches a slip signal (e.g. {@code SlipAwareOdometry.detector()}) for adaptive grip. */
   public PathFollower withSlipSignal(SlipSignal signal) {
     this.slipSignal = signal;
-    return this;
-  }
-
-  /** Shifts the reference sideways from the path, metres to the left of travel. */
-  public PathFollower lateralOffset(DoubleSupplier meters) {
-    this.lateralOffset = meters;
-    return this;
-  }
-
-  /** Scales the along-track speed, 0..1. */
-  public PathFollower alongTrackScale(DoubleSupplier scale) {
-    this.alongTrackScale = scale;
-    return this;
-  }
-
-  /** Field-axis velocity override for x (robot's frame); a NaN from the supplier means no override. */
-  public PathFollower overrideX(DoubleSupplier metersPerSecond, OverrideMode mode) {
-    this.overrideX = metersPerSecond;
-    this.overrideXMode = mode;
-    return this;
-  }
-
-  public PathFollower overrideY(DoubleSupplier metersPerSecond, OverrideMode mode) {
-    this.overrideY = metersPerSecond;
-    this.overrideYMode = mode;
-    return this;
-  }
-
-  public PathFollower overrideOmega(DoubleSupplier radPerSec, OverrideMode mode) {
-    this.overrideOmega = radPerSec;
-    this.overrideOmegaMode = mode;
     return this;
   }
 
@@ -520,17 +478,14 @@ public final class PathFollower {
     double wantVx;
     double wantVy;
     double wantOmega;
-    double offset = lateralOffset.getAsDouble();
-    double scale = Math.max(0.0, Math.min(1.0, alongTrackScale.getAsDouble()));
     if (phase == Phase.TERMINAL) {
-      // DriveToPose on the goal (shifted sideways by the offset, along the end's normal)
-      PathSample end = active.sample(active.lengthMeters());
-      double gx = goal.xMeters() - end.tangentY() * offset;
-      double gy = goal.yMeters() + end.tangentX() * offset;
+      // DriveToPose on the goal
+      double gx = goal.xMeters();
+      double gy = goal.yMeters();
       double ex = gx - pose.xMeters();
       double ey = gy - pose.yMeters();
       double d = Math.sqrt(ex * ex + ey * ey);
-      double speed = scale * StoppingLaw.speed(d, limiter.speed(), brakeDecel,
+      double speed = StoppingLaw.speed(d, limiter.speed(), brakeDecel,
           cfg.latencySeconds(), active.spec().maxMetersPerSecond(), cfg.easeInPerSecond(),
           cfg.stopDeadbandMeters());
       wantVx = d > 1e-6 ? ex / d * speed : 0.0;
@@ -550,7 +505,7 @@ public final class PathFollower {
       VelocityProfile profile = active.profile();
       PathSample ahead = active.sample(profile.sAtTime(profile.timeAt(s) + readAheadSeconds()));
       double headingError = Angles.wrap(active.heading().sample(s).radians() - pose.headingRadians());
-      wantOmega = scale * gripScale * ahead.metersPerSecond() * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
+      wantOmega = gripScale * ahead.metersPerSecond() * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
       wantOmega = Math.max(-cfg.maxOmegaRadPerSec(), Math.min(cfg.maxOmegaRadPerSec(), wantOmega));
       wantVx = cfg.crossTrackKp() * (goal.xMeters() - pose.xMeters());
       wantVy = cfg.crossTrackKp() * (goal.yMeters() - pose.yMeters());
@@ -576,39 +531,25 @@ public final class PathFollower {
       PathSample here = active.sample(s);
       PathSample ahead = active.sample(sAhead);
       double brake = StoppingLaw.brake(remaining, limiter.speed(), brakeDecel, cfg.latencySeconds(), endSpeed);
-      double speed = scale * Math.min(gripScale * ahead.metersPerSecond(), brake);
+      double speed = Math.min(gripScale * ahead.metersPerSecond(), brake);
       // Across: P and D along the normal at s (left of travel is positive)
       double nx = -here.tangentY();
       double ny = here.tangentX();
       crossTrack = (pose.xMeters() - here.xMeters()) * nx + (pose.yMeters() - here.yMeters()) * ny;
       double drift = vel.vxMetersPerSecond() * nx + vel.vyMetersPerSecond() * ny;
-      double sideways = -cfg.crossTrackKp() * (crossTrack - offset) - cfg.crossTrackKd() * drift;
+      double sideways = -cfg.crossTrackKp() * crossTrack - cfg.crossTrackKd() * drift;
       wantVx = speed * ahead.tangentX() + sideways * nx;
       wantVy = speed * ahead.tangentY() + sideways * ny;
       double headingError = Angles.wrap(here.headingRadians() - pose.headingRadians());
       wantOmega = speed * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
       wantOmega = Math.max(-cfg.maxOmegaRadPerSec(), Math.min(cfg.maxOmegaRadPerSec(), wantOmega));
-      refX = here.xMeters() + nx * offset;
-      refY = here.yMeters() + ny * offset;
+      refX = here.xMeters();
+      refY = here.yMeters();
       refHeading = here.headingRadians();
     }
 
     headingError = Angles.wrap(refHeading - pose.headingRadians());
 
-    // Raw field-axis overrides, given in the robot's frame: into blue, then before or after the limiter
-    double ox = overrideX == null ? Double.NaN : overrideX.getAsDouble();
-    double oy = overrideY == null ? Double.NaN : overrideY.getAsDouble();
-    double oo = overrideOmega == null ? Double.NaN : overrideOmega.getAsDouble();
-    FieldSpeeds over = frame.toBlue(new FieldSpeeds(ox, oy, oo)); // NaN stays NaN, signs flip
-    if (overrideXMode == OverrideMode.RESPECT_LIMITS && !Double.isNaN(ox)) {
-      wantVx = over.vxMetersPerSecond();
-    }
-    if (overrideYMode == OverrideMode.RESPECT_LIMITS && !Double.isNaN(oy)) {
-      wantVy = over.vyMetersPerSecond();
-    }
-    if (overrideOmegaMode == OverrideMode.RESPECT_LIMITS && !Double.isNaN(oo)) {
-      wantOmega = over.omegaRadPerSec();
-    }
     double lastVx = limiter.vx();
     double lastVy = limiter.vy();
     limiter.limit(wantVx, wantVy, wantOmega, dt);
@@ -628,14 +569,6 @@ public final class PathFollower {
     filteredAx += (ax - filteredAx) * k;
     filteredAy += (ay - filteredAy) * k;
     commandedAccel = Math.hypot(filteredAx, filteredAy);
-    if (!Double.isNaN(ox) && overrideXMode == OverrideMode.BYPASS
-        || !Double.isNaN(oy) && overrideYMode == OverrideMode.BYPASS
-        || !Double.isNaN(oo) && overrideOmegaMode == OverrideMode.BYPASS) {
-      limiter.force(
-          !Double.isNaN(ox) && overrideXMode == OverrideMode.BYPASS ? over.vxMetersPerSecond() : limiter.vx(),
-          !Double.isNaN(oy) && overrideYMode == OverrideMode.BYPASS ? over.vyMetersPerSecond() : limiter.vy(),
-          !Double.isNaN(oo) && overrideOmegaMode == OverrideMode.BYPASS ? over.omegaRadPerSec() : limiter.omega());
-    }
 
     // Events fire on the loop nearest to passing them: the progress made per loop says how far the
     // robot gets before the next one, and an event less than half of that ahead fires now. Firing on
@@ -975,7 +908,6 @@ public final class PathFollower {
     if (phase != Phase.TERMINAL) {
       return;
     }
-    // the terminal reference is the goal moved sideways by any lateral offset
     double d = Math.hypot(refX - pose.xMeters(), refY - pose.yMeters());
     double yaw = Math.abs(Angles.wrap(goal.headingRadians() - pose.headingRadians()));
     double speed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
