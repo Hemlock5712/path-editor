@@ -34,7 +34,7 @@ export interface MatchedData {
 export type CourseGroup = "plan" | "disturbed";
 
 /** The methods on the page, ours first. */
-export const SHOWN: readonly string[] = ["ours_opt", "ours", "choreo_hold", "choreo", "pathplanner", "pp_path2", "bline"];
+export const SHOWN: readonly string[] = ["ours_opt", "ours", "choreo_hold", "choreo", "pathplanner", "bline"];
 export const OURS = new Set<string>(["ours_opt", "ours"]);
 
 export const METHOD_NAMES: Record<string, string> = {

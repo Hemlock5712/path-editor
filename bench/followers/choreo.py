@@ -99,14 +99,15 @@ def dense_geometry(samples, dt=0.005):
 class ChoreoLib(Follower):
     """ff=True sends each sample's module forces as wheel force feedforward, as CTRE's Choreo example does
     (ApplyFieldSpeeds.withWheelForceFeedforwardsX/Y(sample.moduleForcesX/Y())). hold=True keeps the
-    controller on the final sample once the clock runs out, until within 2 cm / 2 deg and under 5 cm/s
+    controller on the final sample once the clock runs out, until within 2 cm / hold_deg and under 5 cm/s
     (the same final hold PathPlanner gets): what a team adds when it wants the robot to end on the target."""
 
     ff_forces = None
 
-    def __init__(self, kp=10.0, kp_rot=7.5, ff=False, hold=False, limits: Limits = Limits()):
+    def __init__(self, kp=10.0, kp_rot=7.5, ff=False, hold=False, hold_deg=2.0, limits: Limits = Limits()):
         self.kp, self.kp_rot = kp, kp_rot
         self.ff, self.hold = ff, hold
+        self.hold_rad = math.radians(hold_deg)  # the hold's heading tolerance
         self.lim = limits
 
     @staticmethod
@@ -135,7 +136,7 @@ class ChoreoLib(Follower):
         if self.state == "holding":
             g = self.samples[-1]
             ex, ey, eth = g[1] - pose[0], g[2] - pose[1], wrap(g[3] - pose[2])
-            if math.hypot(ex, ey) < 0.02 and abs(eth) < math.radians(2) and math.hypot(vel[0], vel[1]) < 0.05:
+            if math.hypot(ex, ey) < 0.02 and abs(eth) < self.hold_rad and math.hypot(vel[0], vel[1]) < 0.05:
                 self.state = "done"
                 return (0.0, 0.0, 0.0)
             return (self.kp * ex, self.kp * ey, self.kp_rot * eth)

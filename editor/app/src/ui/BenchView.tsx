@@ -194,7 +194,7 @@ function Speed({ d, rule }: { d: MatchedData; rule: string }) {
             follows by position and brakes onto the target. Choreo + final hold adds the hold many teams add, and finishes.
           </p>
           <Bars rows={planRows} testId="bench-plan-bars" label="Planned time" />
-          <p className="hint">Planned time, before driving. PathPlanner path2 and BLine steer toward waypoints as they go and have no plan to time.</p>
+          <p className="hint">Planned time, before driving. BLine steers toward waypoints as it goes and has no plan to time.</p>
         </>
       )}
     </Section>
@@ -382,7 +382,7 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
         <li>
           <strong>The same limits for everyone.</strong> Each planner may accelerate and corner up to {r.traction.toFixed(2)} m/s² (the
           traction limit, see below), at up to 4 m/s (5 m/s on the long, fast course). Ours, Choreo and PathPlanner
-          take that from their robot settings; path2 and BLine from their acceleration caps.
+          take that from their robot settings; BLine from its acceleration cap.
         </li>
         <li>
           <strong>Tuned followers.</strong> Each library's follower uses the gains a sweep picked as its best. Choreo uses ChoreoLib's

@@ -315,10 +315,18 @@ RUN_METHODS = {"choreo": ("choreo", "choreo"), "choreo_hold": ("choreo", "choreo
 # to the whole command vector like Choreo's.
 # Choreo and PathPlanner send their plans' wheel forces as feedforward, as CTRE's templates for them do; ours sends
 # velocities only, as the robot code does (TeleopDrive / FieldCentric Velocity).
-TUNED = {"pp": {"kp": 10.0, "kp_rot": 10.0, "hold": True, "ff": True},
-         "choreo": {"ff": True}, "choreo_hold": {"ff": True, "hold": True},
+# Every end tolerance in heading is 0.5 deg, half the finish rule's 1 deg, as the position ones are tuned under its
+# 2 cm (BLine 1 cm; the holds' 2 cm sits on it, but they keep driving until the speed is under 5 cm/s). With the
+# libraries' 2 deg defaults a follower that arrives still turning (spin_while_driving) stops between 1 and 2 deg.
+# Re-swept at 11.2 m/s^2 (2026-10-23, 2 seeds x the 10 courses, best total with every run finished): PathPlanner kP 20 /
+# rot 10 (24.42 s; was kP 10: 25.23), Choreo + hold kP 15 / rot 10 (24.50 s; ChoreoLib's documented 10 / 7.5: 25.05).
+# Stiffer gains (30+) lose finishes and double the slip. Stock Choreo keeps the documented gains: it is "as teams start".
+TUNED = {"pp": {"kp": 20.0, "kp_rot": 10.0, "hold": True, "ff": True, "hold_deg": 0.5},
+         "choreo": {"ff": True}, "choreo_hold": {"kp": 15.0, "kp_rot": 10.0, "ff": True, "hold": True, "hold_deg": 0.5},
          "pp2": {"kp": 2.0, "kp_ct": 2.0, "handoff": 0.75, "end_distance": 0.02, "end_degrees": 1.0},
-         "bline": {"kp": 2.0, "kp_ct": 6.0, "tol": 0.01, "radius": 0.6, "caps": True}}
+         # kP 2 / cross-track 6 were swept at the old 6 m/s^2; re-swept at 11.2 (2026-10-23): kP 4 / 4 finishes every
+         # run, 27.7 s over the 10 courses vs 37.4; kP 4.5 and up overshoot and miss finishes
+         "bline": {"kp": 4.0, "kp_ct": 4.0, "tol": 0.01, "tol_deg": 0.5, "radius": 0.6, "caps": True}}
 
 
 def run_options(m, rule):
@@ -385,7 +393,7 @@ def run(procs, seeds, methods, poses, courses):
 EXPORT = os.path.join(os.path.dirname(HERE), "editor", "app", "public", "bench", "matched.json")
 EXPORT_METHODS = {"ours_opt": "Ours, optimised", "ours": "Ours, as drawn", "choreo": "Choreo + ChoreoLib",
                   "choreo_hold": "Choreo + ChoreoLib + final hold",
-                  "pathplanner": "PathPlanner (tuned) + hold", "pp_path2": "PathPlanner path2 (tuned)",
+                  "pathplanner": "PathPlanner (tuned) + hold",
                   "bline": "BLine (tuned, corner caps)", "ours_on_choreo": "Ours following Choreo's plan"}
 STATS = ("t_5cm", "t_settle", "err_end_cm", "ct_own_rms_cm", "ct_own_max_cm", "wheel_slip_ms", "overshoot_cm")
 

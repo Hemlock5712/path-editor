@@ -533,13 +533,14 @@ def sample(states, time):
 
 class PathPlanner(Follower):
     """FollowPathCommand + PPHolonomicDriveController (kP 5 / 5 by default). hold=True keeps running the
-    controller on the final state (feedforward 0) until its own pose is within 2 cm / 2 deg and the
+    controller on the final state (feedforward 0) until its own pose is within 2 cm / hold_deg (2) and the
     measured speed is under 5 cm/s, as the drive-to-pose race's '+ final hold' variant."""
 
     ff_forces = None
 
-    def __init__(self, kp=5.0, kp_rot=5.0, hold=False, cof=None, ff=False, limits: Limits = Limits()):
+    def __init__(self, kp=5.0, kp_rot=5.0, hold=False, cof=None, ff=False, hold_deg=2.0, limits: Limits = Limits()):
         self.kp, self.kp_rot, self.hold, self.ff = kp, kp_rot, hold, ff
+        self.hold_rad = math.radians(hold_deg)  # the hold's heading tolerance
         self.lim = limits
         self.cfg = RobotConfig() if cof is None else RobotConfig(wheel_cof=cof)
 
@@ -577,7 +578,7 @@ class PathPlanner(Follower):
                 return (0.0, 0.0, 0.0)
             g = self.goal
             ex, ey, eth = g[0] - pose[0], g[1] - pose[1], wrap(g[2] - pose[2])
-            if math.hypot(ex, ey) < 0.02 and abs(eth) < math.radians(2) and math.hypot(vel[0], vel[1]) < 0.05:
+            if math.hypot(ex, ey) < 0.02 and abs(eth) < self.hold_rad and math.hypot(vel[0], vel[1]) < 0.05:
                 self.finished = True
                 return (0.0, 0.0, 0.0)
             return (self.kp * ex, self.kp * ey, self.kp_rot * eth)
