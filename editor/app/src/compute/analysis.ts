@@ -62,7 +62,8 @@ export type CheckKind = "cusp" | "curvature" | "heading" | "bumper" | "event" | 
 
 export interface Check {
   readonly kind: CheckKind;
-  readonly severity: "error" | "warning";
+  /** "info" is a note, not a problem: the badge doesn't count it. */
+  readonly severity: "error" | "warning" | "info";
   readonly message: string;
   /** The stretch of path it applies to, metres. */
   readonly sFrom: number;
@@ -102,6 +103,10 @@ export const CHECKS = {
   headingSlowShare: 0.75,
   /** ...and by at least this much, m/s. */
   headingSlowMetersPerSecond: 0.3,
+  /** A tight bend is a hairpin (a note, not a warning) when the travel direction either side differs by at least this, degrees... */
+  hairpinDegrees: 135,
+  /** ...measured this far before and after the bend, metres. */
+  hairpinLookMeters: 0.5,
   /** Bumper clearance below this is a warning (the pathfinder's default margin). */
   bumperMarginMeters: 0.05,
 };
@@ -280,17 +285,31 @@ function curvatureChecks(input: AnalysisInput, path: Path, st: Stations): Check[
     let worst = a;
     for (let i = a; i <= b; i++) if (Math.abs(st.kappa[i]!) > Math.abs(st.kappa[worst]!)) worst = i;
     const radius = 1 / Math.abs(st.kappa[worst]!);
+    const hairpin = travelTurnDegrees(st, a, b) >= CHECKS.hairpinDegrees;
     return {
       kind: "curvature",
-      severity: "warning",
-      message:
-        `Tight bend at ${f2(st.s[worst]!)} m: radius ${f2(radius)} m caps the speed at ${f2(cap(worst))} m/s ` +
-        `(path top speed ${f2(top)} m/s). Spread the waypoints or lengthen the tangents.`,
+      severity: hairpin ? "info" : "warning",
+      message: hairpin
+        ? `Hairpin at ${f2(st.s[worst]!)} m: the path doubles back here, so the plan slows to ${f2(cap(worst))} m/s ` +
+          `whatever the curve. Nothing to fix; a wider loop would only add distance.`
+        : `Tight bend at ${f2(st.s[worst]!)} m: radius ${f2(radius)} m caps the speed at ${f2(cap(worst))} m/s ` +
+          `(path top speed ${f2(top)} m/s). Spread the waypoints or lengthen the tangents.`,
       capMetersPerSecond: cap(worst),
       sFrom: st.s[a]!,
       sTo: Math.min(path.lengthMeters, st.s[b]!),
     };
   });
+}
+
+/** How far the direction of travel swings across stations a..b, looking a little either side, degrees (0 to 180). */
+function travelTurnDegrees(st: Stations, a: number, b: number): number {
+  const n = st.s.length;
+  const look = Math.round(CHECKS.hairpinLookMeters / STATION_METERS);
+  const dir = (i: number) => {
+    const j = Math.min(n - 2, Math.max(0, i));
+    return Math.atan2(st.y[j + 1]! - st.y[j]!, st.x[j + 1]! - st.x[j]!);
+  };
+  return Math.abs(wrapDiff(dir(b + look) - dir(a - look))) * (180 / Math.PI);
 }
 
 /**

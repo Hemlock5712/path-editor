@@ -187,9 +187,19 @@ function ChecksBadge() {
   const drawn = isDrawn(useActivePath().spec);
   const checks = a?.checks ?? [];
   const errors = checks.filter((c) => c.severity === "error").length;
-  const level = drawn && (failure || errors > 0) ? "error" : drawn && checks.length > 0 ? "warning" : "ok";
+  const issues = checks.filter((c) => c.severity !== "info").length;
+  const notes = checks.length - issues;
+  const level = drawn && (failure || errors > 0) ? "error" : drawn && issues > 0 ? "warning" : "ok";
   const Icon = level === "error" ? CircleAlert : level === "warning" ? TriangleAlert : CircleCheck;
-  const text = !drawn ? "No path yet" : failure ? "Can't plan" : checks.length === 0 ? "No issues" : `${checks.length} ${checks.length === 1 ? "issue" : "issues"}`;
+  const text = !drawn
+    ? "No path yet"
+    : failure
+      ? "Can't plan"
+      : issues > 0
+        ? `${issues} ${issues === 1 ? "issue" : "issues"}`
+        : notes > 0
+          ? `No issues (${notes} ${notes === 1 ? "note" : "notes"})`
+          : "No issues";
   return (
     <>
       <button
@@ -232,7 +242,7 @@ function ChecksBadge() {
                 )}
               </>
             )}
-            {a && checks.length === 0 && <p className="hint">No problems found: the plan keeps to the robot's limits and clear of obstacles.</p>}
+            {a && issues === 0 && <p className="hint">No problems found: the plan keeps to the robot's limits and clear of obstacles.</p>}
             <ul className="checks" aria-label="Checks" data-testid="checks">
               {checks.map((c, i) => (
                 <li key={i}>

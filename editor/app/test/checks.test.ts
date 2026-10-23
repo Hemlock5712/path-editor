@@ -94,6 +94,18 @@ describe("checks", () => {
     expect(gentle.totalTimeSeconds).toBeLessThan(before.totalTimeSeconds - 0.5);
   });
 
+  it("notes a hairpin rather than warning about it", () => {
+    // down to a point and straight back up: the robot slows there whatever the curve
+    const hairpin = makePathSpec({
+      waypoints: [makeWaypoint(-4, 3, 0), makeWaypoint(-0.6, 0.4, Math.PI, 0.26), makeWaypoint(-1.5, 3.4, Math.PI / 2)],
+      maxMetersPerSecond: 4,
+    });
+    const bends = kinds(ok(hairpin).checks, "curvature");
+    expect(bends).toHaveLength(1);
+    expect(bends[0]!.severity).toBe("info");
+    expect(bends[0]!.message).toMatch(/^Hairpin at/);
+  });
+
   it("flags a bend too tight for the path's speed", () => {
     // a short tangent handle at the corner makes it nearly sharp
     const corner = makePathSpec({
@@ -103,6 +115,7 @@ describe("checks", () => {
     const bends = kinds(ok(corner).checks, "curvature");
     expect(bends).toHaveLength(1);
     expect(bends[0]!.message).toMatch(/radius 0\.0\d m caps the speed at 0\.\d\d m\/s/);
+    expect(bends[0]!.severity).toBe("warning"); // a 90° corner is worth rounding
     // the default handle rounds the same corner enough
     const rounder = { ...corner, waypoints: [corner.waypoints[0]!, makeWaypoint(0, 0, Math.PI / 4, 1), corner.waypoints[2]!] };
     expect(kinds(ok(rounder).checks, "curvature")).toEqual([]);

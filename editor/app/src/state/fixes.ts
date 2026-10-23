@@ -43,7 +43,7 @@ export function fixesFor(check: Check): Fix[] {
       ];
     case "curvature": {
       const cap = check.capMetersPerSecond;
-      if (!g || cap === undefined) return [];
+      if (!g || cap === undefined || check.severity === "info") return [];
       const v = Math.max(0.1, Math.floor(cap * 20) / 20);
       const from = round5(waypointAtS(g, Math.max(0, check.sFrom - 0.3)));
       const to = round5(waypointAtS(g, Math.min(g.lengthMeters, check.sTo + 0.3)));

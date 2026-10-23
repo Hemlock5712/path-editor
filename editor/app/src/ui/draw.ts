@@ -490,7 +490,8 @@ function drawChecks(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const a = m.analysis;
   if (!a) return;
   for (const c of a.checks) {
-    const colour = c.severity === "error" ? "rgba(239,68,68,0.55)" : "rgba(245,158,11,0.45)";
+    const colour =
+      c.severity === "error" ? "rgba(239,68,68,0.55)" : c.severity === "info" ? "rgba(59,130,246,0.3)" : "rgba(245,158,11,0.45)";
     if (c.sTo - c.sFrom < 0.02) {
       const g = m.geometry;
       if (!g) continue;

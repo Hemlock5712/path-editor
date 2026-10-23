@@ -32,6 +32,10 @@ describe("fix-its", () => {
     expect(z.toWaypoint).toBeGreaterThan(z.fromWaypoint);
   });
 
+  it("offer nothing for a hairpin note", () => {
+    expect(fixesFor(check({ kind: "curvature", severity: "info", capMetersPerSecond: 0.7, sFrom: 2, sTo: 3 }))).toEqual([]);
+  });
+
   it("lengthen a face-point zone's blend for a turn too sharp for its distance", () => {
     const fixes = fixesFor(check({ kind: "heading", sFrom: 3, sTo: 4 }));
     expect(fixes[0]!.label).toMatch(/^Lengthen the blend to [\d.]+ m$/);
