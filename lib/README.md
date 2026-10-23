@@ -643,5 +643,22 @@ halfway through. The results table is `e2e/RESULTS.md`, and the pass marks are i
 | `onEvent` replaced the listener, so robot code calling it silently disconnected the adapters' event commands | Listeners add up |
 | Commands v2: a path chained after a rolling end sent nothing for one loop | `FollowPathCommandV2` steps in `initialize()` |
 
+**Open at the robot's full limits.** The suite authors its paths at 4 m/s and 6 m/s². Planned to the
+default robot's own limits (4.1 m/s, 12.8 m/s²) it is 65 of 66: Slalom (Commands v3, blue) settles 0.52 s
+after arriving, against 0.50 s; the other five Slalom runs take 0.36 to 0.40 s. Traced (`-Pe2eTrace=Slalom`),
+every hard arrival does the same two things:
+- **A ~2 cm overshoot.** Braking at the plan's 12.8 m/s² into a drivetrain that answers in about 70 ms (20 ms
+  latency, 40 ms lag, half a loop), the robot reaches the goal still doing ~0.7 m/s, rolls 2 cm past and creeps
+  back (~0.25 s).
+- **A dither in the last millimetres.** `SimDrive`'s 2 mm pose noise moves the measured error across the
+  3 mm stop deadband, and the ease-in (12/s) turns each crossing into a 2–6 cm/s nudge, so the 5 cm/s settle
+  check's 0.1 s hold restarts by chance. That luck is the difference between 0.38 and 0.52 s.
+
+Tried and not kept: a slower ease-in (12, 10, 8/s gave 0.52, 0.60, 0.44 s, so no trend); the reaction margin
+from the measured speed (no overshoot, 0.36 s, but arrivals up to 0.145 s late: 18 of 66); braking at 90 % of
+the plan (no change); stop-deadband hysteresis to 6 mm (worse, 64 of 66: the noise crosses 6 mm too). On the
+robot the latency, lag and pose noise are its own, so `latencySeconds` and `easeInPerSecond` are the knobs to
+tune there.
+
 None of these touch the core, so the fixtures are unchanged. The bench's tests pass, but its RESULTS.md numbers
 were measured before these changes and haven't been re-run.
