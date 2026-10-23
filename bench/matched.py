@@ -204,28 +204,13 @@ def ours_plan(n, rule, tree=None):
     return _envelope(call_fresh(op="load", path=tree or to_ours(COURSES[n]), robot=_robot(n, rule)))
 
 
-def ours_on_choreo_plan(n, rule):
-    """Path.fromTrajectory on the course's .traj: its planned time should be Choreo's."""
-    from followers.ours_v2 import call_fresh
-
-    return _envelope(call_fresh(op="load", trajectory=_traj(n), robot=_robot(n, rule)))
-
-
-def _traj(n):
-    from followers.choreo import load_traj
-
-    s = load_traj(n)["samples"]
-    return {k: [float(r[i]) for r in s] for i, k in enumerate(("t", "x", "y", "heading", "vx", "vy"))}
-
-
 def plans():
     opt = _optimised()
     out = {}
     for tag, rule in RULES.items():
         for b in BASE:
             n = name(tag, b)
-            out[n] = {"choreo": choreo_plan(n), "ours": ours_plan(n, rule), "traction": traction(rule),
-                      "ours_on_choreo": ours_on_choreo_plan(n, rule)}
+            out[n] = {"choreo": choreo_plan(n), "ours": ours_plan(n, rule), "traction": traction(rule)}
             if n in opt:
                 out[n]["ours_opt"] = ours_plan(n, rule, opt[n]["path"])
     json.dump(out, open(os.path.join(OUT, "matched_plans.json"), "w"), indent=1)
@@ -312,7 +297,7 @@ _register_methods()
 # method key in the results -> (registry key, whether it takes ours' traction rule)
 RUN_METHODS = {"choreo": ("choreo", "choreo"), "choreo_hold": ("choreo", "choreo_hold"),
                "choreo_hybrid": ("choreo_hybrid", False), "ours": ("ours_v2", True),
-               "ours_on_choreo": ("ours_on_choreo", True), "ours_opt": ("ours_opt", True),
+               "ours_opt": ("ours_opt", True),
                "pathplanner": ("pathplanner", "pp"), "pp_path2": ("pp_path2", "pp2"), "bline": ("bline_readme", "bline")}
 # The rivals keep the gains the main sweep tuned (run.py, out/results.json "tuned"), and plan to the shared limit:
 # PathPlanner and path2 get wheel COF = traction / 9.8 (their friction model's g) in place of the tuned COF, path2's
@@ -405,7 +390,7 @@ EXPORT = os.path.join(os.path.dirname(HERE), "editor", "app", "public", "bench",
 EXPORT_METHODS = {"ours_opt": "Ours, optimised", "ours": "Ours, as drawn", "choreo": "Choreo + ChoreoLib",
                   "choreo_hold": "Choreo + ChoreoLib + final hold",
                   "pp_path2": "PathPlanner path2 (pre-release, tuned)",
-                  "bline": "BLine (tuned, corner caps)", "ours_on_choreo": "Ours following Choreo's plan"}
+                  "bline": "BLine (tuned, corner caps)"}
 STATS = ("t_5cm", "t_settle", "err_end_cm", "ct_own_rms_cm", "ct_own_max_cm", "wheel_slip_ms", "tip_ms", "wp_miss_cm", "overshoot_cm")
 
 
@@ -435,8 +420,7 @@ def export():
         for b in BASE:
             p = P[name(tag, b)]
             r_out["plans"][b] = {"choreo": round(p["choreo"]["T"], 4), "ours": round(p["ours"]["T"], 4),
-                                 "ours_opt": round(p["ours_opt"]["T"], 4),
-                                 "ours_on_choreo": round(p["ours_on_choreo"]["T"], 4)}
+                                 "ours_opt": round(p["ours_opt"]["T"], 4)}
         for pose in POSES:
             r_out["runs"][pose] = {}
             for b in BASE + DISTURB:
@@ -459,10 +443,9 @@ def _mean(rows, k):
     return (float(g.mean()) if len(g) else float("nan")), int(np.isnan(a).sum())
 
 
-PLAN_COLS = [("choreo", "Choreo"), ("ours", "ours as drawn"), ("ours_opt", "ours optimised"),
-             ("ours_on_choreo", "ours' path from the .traj")]
+PLAN_COLS = [("choreo", "Choreo"), ("ours", "ours as drawn"), ("ours_opt", "ours optimised")]
 RUN_COLS = [("choreo", "Choreo + ChoreoLib"), ("choreo_hybrid", "hybrid prototype"),
-            ("ours_on_choreo", "ours on Choreo"), ("ours", "ours as drawn"), ("ours_opt", "ours optimised")]
+            ("ours", "ours as drawn"), ("ours_opt", "ours optimised")]
 
 
 def md():

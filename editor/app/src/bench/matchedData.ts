@@ -49,7 +49,6 @@ export const METHOD_NAMES: Record<string, string> = {
   pathplanner: "PathPlanner",
   pp_path2: "PathPlanner path2",
   bline: "BLine",
-  ours_on_choreo: "Ours following Choreo's plan",
 };
 
 export const METHOD_NOTES: Record<string, string> = {
