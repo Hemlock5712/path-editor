@@ -785,7 +785,7 @@ class PathFollowerTest {
   }
 
   @Test
-  void slipWhileAskingForMoreThanTheEqualPushOnsetIsTheTreadsOwn() {
+  void slipWhileAskingForMoreThanTheWheelSlipOnsetIsTheTreadsOwn() {
     // A launch at 9 m/s² asks for more than the light wheels hold (7.2 m/s² for the default robot), so
     // they slip on a good floor: adaptive grip leaves the grip alone. The same slip on a gentle path,
     // asking for 2 m/s², says the floor is slick.
@@ -796,7 +796,7 @@ class PathFollowerTest {
       slip.achieved = 5.0;
       lowest[0] = Math.min(lowest[0], ff.slipFrictionCoefficient());
     };
-    RobotConfig tipOrGrip = ROBOT.withTractionRule(RobotConfig.TractionRule.TIP_OR_GRIP); // a plan that reaches 9
+    RobotConfig tipOrGrip = ROBOT; // a plan that reaches 9
     FollowerConfig tipCfg = FollowerConfig.defaults(tipOrGrip);
     Path hard = Path.build(FixturePaths.straight().withLimits(4.0, 9.0), tipOrGrip);
     run(hard, new PathFollower(hard, tipCfg).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);

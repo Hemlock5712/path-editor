@@ -2,7 +2,16 @@
 // here, so the headless tools (tools/optimise.mjs) can load it under Node.
 
 import { fixed5, robotFromJson, robotToJson, writeJson, type JsonValue } from "../../../core/src/index.ts";
-import { DEFAULT_FIELD, DEFAULT_ROBOT_SETTINGS, type FieldDoc, type Obstacle, type RobotSettings } from "../model/project.ts";
+import {
+  DEFAULT_FIELD,
+  DEFAULT_ROBOT_SETTINGS,
+  DEFAULT_SHARE,
+  topSpeedMetersPerSecond,
+  withTopSpeed,
+  type FieldDoc,
+  type Obstacle,
+  type RobotSettings,
+} from "../model/project.ts";
 
 type JsonObject = { [key: string]: JsonValue };
 
@@ -49,19 +58,41 @@ const OPTIONAL_LIMITS = ["maxWheelMetersPerSecond", "maxAngularRadPerSec", "maxA
 export function parseRobot(text: string): RobotSettings {
   const root = JSON.parse(text) as JsonObject;
   const num = (key: string, fallback: number) => (typeof root[key] === "number" ? (root[key] as number) : fallback);
-  return {
-    config: robotFromJson(root),
+  const config = robotFromJson(root);
+  const speedAt12VoltsMetersPerSecond = num("speedAt12VoltsMetersPerSecond", Number.NaN);
+  // an older file without a share: a wheel-speed cap it set is kept as its share of the top speed
+  const top = topSpeedMetersPerSecond({ config, speedAt12VoltsMetersPerSecond });
+  const kept = Number.isFinite(config.maxWheelMetersPerSecond) ? Math.min(1, Math.max(0.05, config.maxWheelMetersPerSecond / top)) : DEFAULT_SHARE;
+  return withTopSpeed({
+    config,
     bumperLengthMeters: num("bumperLengthMeters", DEFAULT_ROBOT_SETTINGS.bumperLengthMeters),
     bumperWidthMeters: num("bumperWidthMeters", DEFAULT_ROBOT_SETTINGS.bumperWidthMeters),
+    topSpeedShare: num("topSpeedShare", kept),
+    speedAt12VoltsMetersPerSecond,
     extra: root,
-  };
+  });
 }
 
+/** Keys robot.json's writer owns; any others are the team's, kept after them as they were. */
+const OWN_KEYS = new Set([
+  ...Object.keys(robotToJson(DEFAULT_ROBOT_SETTINGS.config)),
+  ...OPTIONAL_LIMITS,
+  "tipDistanceMeters",
+  "bumperLengthMeters",
+  "bumperWidthMeters",
+  "topSpeedShare",
+  "speedAt12VoltsMetersPerSecond",
+  "tractionRule", // the old second traction rule: there is only the one now
+]);
+
+/** Always in the same order (RobotConfig's, then the bumpers and the editor's keys, then the team's). */
 export function writeRobot(robot: RobotSettings): string {
-  const root: JsonObject = { ...(robot.extra as JsonObject) };
-  for (const key of OPTIONAL_LIMITS) delete root[key];
-  Object.assign(root, robotToJson(robot.config));
+  const root: JsonObject = { ...robotToJson(robot.config) };
   root.bumperLengthMeters = robot.bumperLengthMeters;
   root.bumperWidthMeters = robot.bumperWidthMeters;
+  // editor-only (the robot reads maxWheelMetersPerSecond): what the top speed share is of
+  root.topSpeedShare = robot.topSpeedShare;
+  if (Number.isFinite(robot.speedAt12VoltsMetersPerSecond)) root.speedAt12VoltsMetersPerSecond = robot.speedAt12VoltsMetersPerSecond;
+  for (const [key, value] of Object.entries(robot.extra as JsonObject)) if (!OWN_KEYS.has(key)) root[key] = value;
   return writeJson(root, fixed5);
 }

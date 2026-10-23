@@ -201,7 +201,8 @@ class PathFileTest {
     assertEquals(r, RobotFile.read(Json.write(tree, Json::exact)));
     assertEquals(RobotConfig.DEFAULT, RobotFile.read("{}"));
     RobotConfig tall = RobotConfig.DEFAULT.withCenterOfMassHeightMeters(0.3).withTipDistanceMeters(0.254)
-        .withTractionRule(RobotConfig.TractionRule.EQUAL_PUSH);
+        .withTractionShare(0.8);
+    assertEquals(RobotConfig.DEFAULT, RobotFile.read("{ \"tractionRule\": \"equalPush\" }"), "an old file's rule is ignored");
     assertEquals(tall, RobotFile.read(Json.write(RobotFile.toJson(tall), Json::exact)));
     assertEquals(false, RobotFile.toJson(RobotConfig.DEFAULT).containsKey("tipDistanceMeters"), "a square base writes none");
     RobotConfig partial = RobotFile.read("{ \"massKg\": 50, \"motor\": { \"stallCurrentAmps\": 400 } }");

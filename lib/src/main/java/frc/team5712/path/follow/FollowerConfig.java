@@ -22,7 +22,8 @@ import frc.team5712.path.core.RobotConfig;
  *     spin sharing the grip as planned, and handed over only for its last degrees, where the plan
  *     has slowed its spin; handed over at 10° the robot was still spinning too fast to stop in the
  *     heading left and overshot by 7° (the end-to-end suite's short hop)
- * @param brakeMetersPerSecondSquared the stopping law's deceleration, sqrt(2·a·d)
+ * @param brakeMetersPerSecondSquared the stopping law's deceleration, sqrt(2·a·d); NaN (the default) = the robot's
+ *     traction limit, so the robot brakes as hard as the plan does (a fixed 6 made it brake early and arrive late)
  * @param easeInPerSecond DriveToPose's ease-in line, m/s per metre left
  * @param stopDeadbandMeters ask for zero speed inside this
  * @param maxOmegaRadPerSec spin cap
@@ -55,7 +56,7 @@ import frc.team5712.path.core.RobotConfig;
  *     hundred microseconds at most. On by default (Joe's call); at rest, and on paths that plan their own start
  *     speed (rolling hand-overs, on-the-fly paths), it does nothing
  * @param expectedSlipShare adaptive grip ignores slip that the tread's own weight transfer explains: slip in a
- *     spell that has asked for at least this share of the equal-push onset {@code μ·g / (1 + μ·h/x)}. Every
+ *     spell that has asked for at least this share of the wheel-slip onset {@code μ·g / (1 + μ·h/x)}. Every
  *     wheel pushes about the same, so above that the light wheels slip on a good floor too; it says nothing
  *     about the floor. Slip while asking for less does
  * @param slideGapMetersPerSecondSquared ...and so does slip while the wheels' acceleration is this far from the
@@ -163,7 +164,7 @@ public record FollowerConfig(
     private double headingKp = 5.0;
     private double terminalRadiusMeters = 0.3;
     private double terminalTurnRadians = Math.toRadians(2.0);
-    private double brakeMetersPerSecondSquared = 6.0;
+    private double brakeMetersPerSecondSquared = Double.NaN;
     private double easeInPerSecond = 12.0; // DriveToPose ships 6; the bench sweep's pick (tuning seeds)
     private double stopDeadbandMeters = 0.003;
     private double maxOmegaRadPerSec = Math.toRadians(540.0);

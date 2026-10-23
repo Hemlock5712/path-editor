@@ -72,7 +72,6 @@ export const COURSE_NAMES: Record<string, string> = {
   grip_drop_s_curve: "Grip drops halfway",
 };
 
-export const RULE_NAMES: Record<string, string> = { equalPush: "Equal push", tipOrGrip: "Tip or grip" };
 
 /** A finished run that still ends further off than this doesn't count as a clean finish. */
 export const END_TOLERANCE_CM = 5;

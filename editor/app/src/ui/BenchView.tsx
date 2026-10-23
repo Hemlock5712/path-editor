@@ -15,7 +15,6 @@ import {
   name,
   OURS,
   planTotals,
-  RULE_NAMES,
   SHOWN,
   stats,
   summaries,
@@ -24,7 +23,6 @@ import {
 } from "../bench/matchedData.ts";
 import { bench } from "../state/bench.ts";
 import { useStore } from "../state/store.ts";
-import { Segmented } from "./controls.tsx";
 
 const SHOVE = "hit_mid_path";
 
@@ -368,7 +366,7 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
         </li>
         <li>
           <strong>The same limits for everyone.</strong> Each planner may accelerate and corner up to {r.traction.toFixed(2)} m/s² (the
-          traction limit under {RULE_NAMES[rule]}, see below), at up to 4 m/s (5 m/s on the long, fast course). Ours, Choreo and PathPlanner
+          traction limit, see below), at up to 4 m/s (5 m/s on the long, fast course). Ours, Choreo and PathPlanner
           take that from their robot settings; path2 and BLine from their acceleration caps.
         </li>
         <li>
@@ -380,10 +378,8 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
           robot.
         </li>
         <li>
-          <strong>Equal push or Tip or grip.</strong> The traction limit is 90 % of what the tread can hold. <em>Equal push</em> (our default)
-          assumes every wheel pushes the same, so the lightly loaded wheels slip first: {d.rules.equalPush?.traction.toFixed(2)} m/s².{" "}
-          <em>Tip or grip</em> lets the loaded wheels push harder, up to grip or tipping: {d.rules.tipOrGrip?.traction.toFixed(2)} m/s². It is
-          faster, but only a follower that copes with some slip finishes under it.
+          <strong>Traction.</strong> The limit is 90 % of grip or tipping, whichever comes first, as AccelerationLimiter:{" "}
+          {r.traction.toFixed(2)} m/s². The loaded wheels push harder than the light ones, so a follower has to cope with some slip.
         </li>
         <li>
           <strong>Optimised</strong> is the editor's Optimise path: it reshapes the curves between the waypoints you drew, which stay put.
@@ -399,7 +395,8 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
 export function BenchView() {
   const s = useStore(bench, (b) => b);
   const d = s.data;
-  const rule = s.rule;
+  // the snapshot was run under two traction rules; the robot uses tip or grip (AccelerationLimiter's)
+  const rule = d ? (d.rules.tipOrGrip ? "tipOrGrip" : Object.keys(d.rules)[0]!) : "tipOrGrip";
   return (
     <main className="bench-page" aria-label="Bench comparison (read-only)">
       <div className="bench-doc">
@@ -417,19 +414,6 @@ export function BenchView() {
           )}
           {d && (
             <div className="bench-controls-row">
-              <div className="field">
-                <span className="field-label">Traction rule</span>
-                <Segmented
-                  label="Traction rule"
-                  value={rule}
-                  options={Object.keys(d.rules).map((k) => ({
-                    value: k,
-                    label: RULE_NAMES[k] ?? k,
-                    tip: k === "equalPush" ? "Our default: every wheel pushes the same" : "Faster: the loaded wheels push harder",
-                  }))}
-                  onChange={(v) => bench.set({ rule: v })}
-                />
-              </div>
               <p className="hint">
                 Up to {d.rules[rule]!.traction.toFixed(2)} m/s² of acceleration and cornering. {d.courses.plan.length} courses, {d.seeds} runs
                 each. A run <em>finishes</em> when the robot stops within 2 cm and 1° of the target and stays there.

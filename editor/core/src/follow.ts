@@ -17,7 +17,6 @@ import {
   driveAccelMetersPerSecondSquared,
   spinLeverMeters,
   tractionMetersPerSecondSquared,
-  TRACTION_MARGIN,
   type RobotConfig,
 } from "./robot.ts";
 
@@ -73,7 +72,7 @@ export function followerConfig(robot: RobotConfig, options: Partial<Omit<Followe
     headingKp: 5.0,
     terminalRadiusMeters: 0.3,
     terminalTurnRadians: 2.0 * DEG,
-    brakeMetersPerSecondSquared: 6.0,
+    brakeMetersPerSecondSquared: Number.NaN,
     easeInPerSecond: 12.0,
     stopDeadbandMeters: 0.003,
     maxOmegaRadPerSec: 540.0 * DEG,
@@ -207,7 +206,7 @@ const MAX_POSE_SPEED_RATIO = 1.5;
  * feedback has that room), or the configured μ·g (PathFollower.limiterBudget).
  */
 export function limiterBudget(cfg: FollowerConfig): number {
-  return Number.isNaN(cfg.limiterFrictionCoefficient) ? tractionMetersPerSecondSquared(cfg.robot) / TRACTION_MARGIN
+  return Number.isNaN(cfg.limiterFrictionCoefficient) ? tractionMetersPerSecondSquared(cfg.robot) / cfg.robot.tractionShare
     : cfg.limiterFrictionCoefficient * GRAVITY;
 }
 
@@ -454,7 +453,8 @@ export class PathFollower {
       return this.output();
     }
 
-    const brakeDecel = Math.min(cfg.brakeMetersPerSecondSquared, Infinity * GRAVITY); // no slip: Java's slipMu is +∞
+    const brakeSetting = Number.isNaN(cfg.brakeMetersPerSecondSquared) ? tractionMetersPerSecondSquared(cfg.robot) : cfg.brakeMetersPerSecondSquared;
+    const brakeDecel = Math.min(brakeSetting, Infinity * GRAVITY); // no slip: Java's slipMu is +∞
     const gripScale = 1.0;
     this.updateProgress(pose);
     if (this.head !== null && this.headJoinS < this.track.lengthMeters - 1e-9 && this.headDone(pose)) {
@@ -561,11 +561,12 @@ export class PathFollower {
     const progress = this.trackProgress();
     const rate = Math.max(0.0, Math.min(MAX_PROGRESS_RATE, (progress - this.lastS) / dt));
     this.lastS = progress;
-    this.fireEventsUpTo(progress + 0.5 * rate * dt);
+    const lead = 0.5 * rate * dt; // half the travel to the next loop
+    this.fireEventsUpTo(progress + lead);
     if (this.phaseNow === "TERMINAL" && this.arrived(pose)) this.fireEventsUpTo(this.track.lengthMeters);
     // not done while a piece is still to meet the track
     if (this.head === null || this.headJoinS >= this.track.lengthMeters - 1e-9) {
-      this.checkFinished(timeSeconds, pose, vel, remaining);
+      this.checkFinished(timeSeconds, pose, vel, remaining, lead);
     }
     return this.output();
   }
@@ -670,12 +671,13 @@ export class PathFollower {
     return best;
   }
 
-  private checkFinished(t: number, pose: Pose, vel: FieldSpeeds, remaining: number): void {
+  /** lead: half a loop's travel, so a rolling end hands over on the loop nearest its line, as events fire (Java's). */
+  private checkFinished(t: number, pose: Pose, vel: FieldSpeeds, remaining: number, lead: number): void {
     if (this.rollingEnd) {
       const end = this.active.sample(this.active.lengthMeters);
       const past = (pose.xMeters - end.xMeters) * end.tangentX + (pose.yMeters - end.yMeters) * end.tangentY;
-      // past the end's line, once near the end (a path can start beyond that line, e.g. an on-the-fly one)
-      if (remaining <= 1e-6 || (past >= 0.0 && remaining <= this.cfg.windowMeters)) this.finish();
+      // at the end's line (nearest loop), once near the end (a path can start beyond that line, e.g. an on-the-fly one)
+      if (remaining <= 1e-6 || (past + lead >= 0.0 && remaining <= this.cfg.windowMeters)) this.finish();
       return;
     }
     if (this.phaseNow !== "TERMINAL") return;

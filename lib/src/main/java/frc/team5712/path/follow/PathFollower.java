@@ -447,8 +447,9 @@ public final class PathFollower {
     pollGoal(pose);
     updateGrip(timeSeconds, dt);
     double slipBudget = slipBudget();
-    double brakeDecel = Math.min(cfg.brakeMetersPerSecondSquared(), slipBudget);
     double planned = cfg.robot().tractionMetersPerSecondSquared();
+    double brakeSetting = Double.isNaN(cfg.brakeMetersPerSecondSquared()) ? planned : cfg.brakeMetersPerSecondSquared();
+    double brakeDecel = Math.min(brakeSetting, slipBudget);
     double gripScale = slipBudget < planned ? Math.sqrt(slipBudget / planned) : 1.0;
     updateProgress(pose);
     if (head != null && headJoinS < track.lengthMeters() - 1e-9 && headDone(pose)) {
@@ -596,12 +597,13 @@ public final class PathFollower {
     double progress = trackProgress();
     double rate = Math.max(0.0, Math.min(MAX_PROGRESS_RATE, (progress - lastS) / dt));
     lastS = progress;
-    fireEventsUpTo(progress + 0.5 * rate * dt);
+    double lead = 0.5 * rate * dt; // half the travel to the next loop
+    fireEventsUpTo(progress + lead);
     if (phase == Phase.TERMINAL && arrived(pose)) {
       fireEventsUpTo(track.lengthMeters()); // an event at the end fires when the robot gets there, not after it settles
     }
     if (head == null || headJoinS >= track.lengthMeters() - 1e-9) { // not done while a piece is still to meet the track
-      checkFinished(timeSeconds, pose, vel, remaining);
+      checkFinished(timeSeconds, pose, vel, remaining, lead);
     }
     return output();
   }
@@ -640,7 +642,7 @@ public final class PathFollower {
    */
   static double limiterBudget(FollowerConfig cfg) {
     return Double.isNaN(cfg.limiterFrictionCoefficient())
-        ? cfg.robot().tractionMetersPerSecondSquared() / RobotConfig.TRACTION_MARGIN
+        ? cfg.robot().tractionMetersPerSecondSquared() / cfg.robot().tractionShare()
         : cfg.limiterFrictionCoefficient() * RobotConfig.GRAVITY;
   }
 
@@ -666,7 +668,7 @@ public final class PathFollower {
         spellMaxCommanded = 0.0;
       }
       // Every wheel pushes about the same, so on the tread's own floor the wheels that weight transfer
-      // unloads let go once the robot asks for μ·g / (1 + μ·h/x) (the equal-push onset): some wheels slip
+      // unloads let go once the robot asks for μ·g / (1 + μ·h/x) (the wheel-slip onset): some wheels slip
       // while the rest grip. That slip is expected, not a slick floor, and changes nothing. A slick floor
       // shows either way: slip while asking for less than expectedSlipShare of that onset, or the wheels
       // together spinning up faster than the IMU says the chassis does (the gap at least
@@ -675,7 +677,7 @@ public final class PathFollower {
       // early in a spell also undoes what the spell's first samples latched.
       floorMu = slipSignal.achievedAccelMetersPerSecondSquared() / RobotConfig.GRAVITY;
       spellMaxCommanded = Math.max(spellMaxCommanded, commandedAccel);
-      double onset = cfg.robot().equalPushMetersPerSecondSquared() / RobotConfig.TRACTION_MARGIN;
+      double onset = cfg.robot().wheelSlipOnsetMetersPerSecondSquared();
       boolean sliding = slipSignal.imuGapMetersPerSecondSquared() >= cfg.slideGapMetersPerSecondSquared();
       expected = spellMaxCommanded >= cfg.expectedSlipShare() * onset && !sliding;
       if (expected && timeSeconds - spellStart <= SPELL_ONSET_SECONDS) {
@@ -833,13 +835,16 @@ public final class PathFollower {
     return best;
   }
 
-  private void checkFinished(double t, Pose pose, FieldSpeeds vel, double remaining) {
+  /** {@code lead}: half a loop's travel, so a rolling end hands over on the loop nearest its line, as events fire. */
+  private void checkFinished(double t, Pose pose, FieldSpeeds vel, double remaining, double lead) {
     if (rollingEnd) {
       PathSample end = active.sample(active.lengthMeters());
       double past = (pose.xMeters() - end.xMeters()) * end.tangentX()
           + (pose.yMeters() - end.yMeters()) * end.tangentY();
-      // past the end's line, once near the end (a path can start beyond that line, e.g. an on-the-fly one)
-      if (remaining <= 1e-6 || (past >= 0.0 && remaining <= cfg.windowMeters())) {
+      // at the end's line (nearest loop), once near the end (a path can start beyond that line, e.g. an
+      // on-the-fly one). Waiting for the first loop past it started the next path up to a loop late, so its
+      // start events fired up to a loop of travel past their point (8 cm at 4 m/s)
+      if (remaining <= 1e-6 || (past + lead >= 0.0 && remaining <= cfg.windowMeters())) {
         finish();
       }
       return;

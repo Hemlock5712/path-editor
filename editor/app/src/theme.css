@@ -2776,3 +2776,61 @@ dialog.transform legend {
   margin-top: var(--s4);
   align-items: center;
 }
+
+/* the robot-code constant a setting mirrors, under its field */
+.field-code {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.limits-summary ul {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  font-size: var(--fs-sm);
+}
+
+.limits-summary code {
+  margin-left: var(--s1);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.settings-advanced > summary {
+  cursor: pointer;
+  list-style: revert;
+}
+
+.settings-advanced > summary > h4 {
+  display: inline;
+}
+
+.settings-advanced:not([open]) {
+  gap: 0;
+}
+
+/* a share of a limit (Settings, Robot: how hard paths drive) */
+.share-slider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.share-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.share-slider .field-label strong {
+  margin-left: var(--s1);
+  color: var(--text);
+}
+
+.import-btn {
+  align-self: flex-start;
+  cursor: pointer;
+}

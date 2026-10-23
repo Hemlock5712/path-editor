@@ -21,7 +21,8 @@ import {
 } from "../src/io/projectIo.ts";
 import { crc32, zip } from "../src/io/zip.ts";
 import { addNamedPoint, linkToPoint } from "../src/model/namedPoints.ts";
-import { DEFAULT_ROBOT_SETTINGS, emptyProject, makeEditorPath, starterSpec, type Project } from "../src/model/project.ts";
+import { withRobotLimits, withSpec } from "../src/model/edits.ts";
+import { DEFAULT_ROBOT_SETTINGS, emptyProject, hasOldPathLimits, makeEditorPath, starterSpec, type Project } from "../src/model/project.ts";
 import { DEFAULT_VIEW } from "../src/state/editor.ts";
 
 /** A new project with a short drawn path (a new one in the app starts empty). */
@@ -91,6 +92,34 @@ describe("project files", () => {
     expect(loaded.project.paths[0]!.pinned.every((p) => !p)).toBe(true);
     expect(loaded.view.shapeCurve).toBe(true);
     expect(loaded.view.gridSnap).toBe(true);
+  });
+
+  it("new paths plan to the robot's limits; the defaults save blank and read back blank", () => {
+    const project = starterProject();
+    expect(project.paths[0]!.spec.maxMetersPerSecond).toBe(Infinity);
+    expect(project.paths[0]!.spec.maxMetersPerSecondSquared).toBe(Infinity);
+    const files = toFiles(project, DEFAULT_VIEW);
+    expect(files.get(`${PATHS_DIR}/Path1${PATH_SUFFIX}`)).not.toContain("maxMetersPerSecond");
+    const loaded = fromFiles(files)!.project.settings.pathDefaults;
+    expect(loaded.maxMetersPerSecond).toBe(Infinity);
+    expect(loaded.maxMetersPerSecondSquared).toBe(Infinity);
+  });
+
+  it("clears the old fixed 4 m/s and 6 m/s² from the defaults and the paths that still have them, and keeps chosen ones", () => {
+    const base = sampleProject();
+    const old = { maxMetersPerSecond: 4, maxMetersPerSecondSquared: 6 };
+    const project: Project = {
+      ...base,
+      paths: [withSpec(base.paths[0]!, old), withSpec(base.paths[1]!, { maxMetersPerSecond: 3, maxMetersPerSecondSquared: 6 })],
+      settings: { ...base.settings, pathDefaults: { ...base.settings.pathDefaults, ...old } },
+    };
+    expect(hasOldPathLimits(project.settings.pathDefaults)).toBe(true);
+    const fixed = withRobotLimits(project);
+    expect(fixed.paths[0]!.spec.maxMetersPerSecondSquared).toBe(Infinity);
+    expect(fixed.paths[0]!.spec.maxMetersPerSecond).toBe(Infinity);
+    expect(fixed.paths[1]!.spec.maxMetersPerSecond).toBe(3);
+    expect(fixed.paths[1]!.spec.maxMetersPerSecondSquared).toBe(6);
+    expect(hasOldPathLimits(fixed.settings.pathDefaults)).toBe(false);
   });
 
   it("keeps the tab order from the sidecar and adds new files after", () => {

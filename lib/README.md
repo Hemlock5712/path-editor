@@ -63,22 +63,17 @@ inside the zone.
 The model (also in the class comment):
 
 - traction, for the worst wheel: `√(a² + (v²κ)²) + c·|α| ≤ A`, with `α = a·θ' + v²·θ''`,
-  `c = I/(m·r)` and `A` the traction limit, by the robot file's `tractionRule`:
-  - `"equalPush"` (the default; old robot files without the key get it too): `A = 0.9 · μ·g / (1 + μ·h/x)`.
-    Swerve velocity control pushes every wheel about equally, so the wheels that weight transfer unloads
-    slip first;
-  - `"tipOrGrip"` (opt-in, Precision-Drive's AccelerationLimiter): `A = 0.9 · min(μ·g, g·x/h)`, whichever
-    comes first, the tread's grip or tipping over.
+  `c = I/(m·r)` and `A` the traction limit, Precision-Drive's AccelerationLimiter's TRACTION_ACCEL:
+  `A = tractionShare · min(μ·g, g·x/h)`, a share (0.9 by default) of whichever comes first, the tread's grip or
+  tipping over.
 
   The defaults are SDS MK5 Spike Grip (μ 1.5), the centre of mass 0.2 m up (to be measured) and
-  modules at ±0.29 m (x = 0.29 m), giving `tipOrGrip` 12.8 m/s² (tipping first) and `equalPush`
-  6.5 m/s². With Joe's ±0.254 m modules they are 11.2 and 6.1 m/s². The other robot-file keys are
-  `frictionCoefficient`, `centerOfMassHeightMeters` (0 = no load transfer: both rules give 0.9·μ·g) and
-  the optional `tipDistanceMeters`. The last is min(|module x|, |module y|), one value for every
-  direction, and defaults to a square base's `moduleRadiusMeters / √2`.
-  `RobotConfig.tipOrGripMetersPerSecondSquared()`, `equalPushMetersPerSecondSquared()` and
-  `tractionLimit()` (grip, tipping or equal push) give the editor both values and which one binds. The
-  limiter (below) allows `A / 0.9`, the rule's limit without its margin;
+  modules at ±0.29 m (x = 0.29 m), giving 12.8 m/s² (tipping first). With Joe's ±0.254 m modules it is
+  11.2 m/s². The other robot-file keys are `frictionCoefficient`, `centerOfMassHeightMeters` (0 = no
+  tipping limit), `tractionShare` and the optional `tipDistanceMeters`. The last is min(|module x|,
+  |module y|), one value for every direction, and defaults to a square base's `moduleRadiusMeters / √2`.
+  `tractionLimit()` says which binds, grip or tipping. An older file's `tractionRule` is ignored. The
+  limiter (below) allows `A / tractionShare`, the limit without its margin;
 - motors, speeding up: `a + c·|α| ≤` the Kraken X60 FOC push at the fastest wheel's speed
   `v·(1 + r|θ'|)` (12 V minus back-EMF, capped by the stator limit). The sideways `v²κ` comes from
   tyre side-grip, not torque. Braking: only the stator limit;
@@ -124,7 +119,7 @@ one exception is `replanStartFromMeasuredVelocity`, on by default. A path planne
 the robot already moving (not backwards along the path), gets its speeds re-planned from the measured
 speed, as PathPlanner does. Only the profile is rebuilt, never the curve: 0.2-0.3 ms warm for the 16 m
 route on this PC, less on shorter paths. At rest it does nothing. It also does nothing on paths that plan
-their own start speed (rolling hand-overs, on-the-fly paths). Under equalPush on the bench it changes only
+their own start speed (rolling hand-overs, on-the-fly paths). Under equal push on the bench it changed only
 the moving start: 2.10 → 2.02 s with a perfect pose, and 3.6 → 3.3 cm end error with odometry, but wheel
 slip goes from 1.52 to 2.13 s. three_piece_chain and the courses that start at rest give the same runs to
 the bit.
@@ -155,11 +150,13 @@ Each loop, in the blue frame:
    turn), the reference becomes the goal pose and DriveToPose's law takes over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. The
    ease-in line `k` is 12/s, against DriveToPose's 6/s. The bench sweep picked that value on its
    tuning seeds, and it sits inside the swept range. Both
-   laws brake on the same distance with the same 6 m/s², so the hand-over has no seam.
+   laws brake on the same distance at the robot's traction limit (`brakeMetersPerSecondSquared` NaN, the
+   default), so the hand-over has no seam. A fixed 6 m/s² made the robot brake early, and arrive late, on
+   paths planned harder than that.
 7. **One limiter.** Every output goes through `OutputLimiter`. It caps spin acceleration, then caps
    the motors' push at the fastest wheel's speed when speeding up. Then `|a| + c·|α| ≤ A`
    (c = I/(m·r), the profile's model), scaling translation and spin together. Here `A` is the plan's
-   traction limit without its 10 % margin, `A / 0.9`: 7.2 m/s² under equalPush, the onset where the light
+   traction limit without its 10 % margin, `A / 0.9`: 7.2 m/s² for the defaults, the onset where the light
    wheels let go. The plan keeps the margin and feedback has the rest
    (`limiterFrictionCoefficient` NaN, the default; a number sets μ·g instead). With the limiter at the
    plan's own limit, the fixture auto route strayed 9.3 cm where the plan used all of it. At `A / 0.9` it
@@ -201,20 +198,22 @@ options.
 ### Traction: μ 1.5 and tipping
 
 The robot runs SDS MK5 Spike Grip, μ 1.5. Acceleration and cornering are held to a traction limit `A`
-(`RobotConfig.tractionMetersPerSecondSquared`). By default that's the equal-push rule,
-`0.9 · μ·g / (1 + μ·h/x)`: 6.5 m/s² for the defaults, 6.1 m/s² with Joe's ±0.254 m modules. The other rule,
-`tipOrGrip`, is 90 % of whichever comes first, grip or tipping, `0.9 · min(μ·g, g·x/h)`. That's 12.8 and
-11.2 m/s².
+(`RobotConfig.tractionMetersPerSecondSquared`): 90 % of whichever comes first, grip or tipping,
+`0.9 · min(μ·g, g·x/h)`: 12.8 m/s² for the defaults, 11.2 m/s² with Joe's ±0.254 m modules. It is what
+Precision-Drive's AccelerationLimiter uses, so paths plan to the limits teleop drives to (Joe's call: one set of
+numbers, in the robot code and the editor alike). The 0.9 is `tractionShare` in the robot file.
 
-Joe chose `equalPush` from bench-builder's re-baseline of ours under both rules (240 A plant, 1.5 / 1.3,
-centre of mass 0.2 m, bench/out/rebaseline/rules.md). Under wheel odometry, equalPush:
+There used to be a second, more cautious rule, equal push, `0.9 · μ·g / (1 + μ·h/x)` (6.5 and 6.1 m/s²): every
+wheel pushing the same, the light ones slip first. It was the default for a while, from bench-builder's
+re-baseline of ours under both (240 A plant, 1.5 / 1.3, centre of mass 0.2 m, bench/out/rebaseline/rules.md).
+Under wheel odometry, equal push:
 - ends 8.5 cm off on average against 11.2 cm;
 - settles 24 runs of 90 against 17;
 - on the grip drop, ends 4.2 cm off against 10.2 cm.
 
 With a perfect pose `tipOrGrip` is faster on most clean courses, because the loaded wheels make up for the
-slipping light ones. That costs wheel slip and so odometry. `tipOrGrip` is worth trying once the centre of
-mass's height is measured and slip has been checked on the real robot, with vision correcting the pose.
+slipping light ones. That costs wheel slip and so odometry. It was removed so the robot code and the editor
+have one rule; if the real robot slips on the paths, lower `tractionShare` (and the limiter's 0.9 with it).
 The planner's grip circle uses `A`, so the editor's plan is what the robot will try. The follower's output
 limiter allows `A / 0.9`, the rule's limit without its margin, so feedback has room. Before this change the
 plan used μ 0.7 and the limiter 1.0, on a 1.15 / 1.0 bench floor.
@@ -237,7 +236,7 @@ weight transfer, not from cornering:
   mass at 0.
 - Every module pushes about the same, so the wheels that unload slip first. That happens at about
   `μ·g / (1 + μ·h/x)`: 7.2 m/s² static for these numbers, well under `tipOrGrip`'s 12.8. bench-builder
-  found the same, and that is the `equalPush` rule.
+  found the same: that was the equal-push rule.
 - Planning above that is deliberate under `tipOrGrip`: the loaded wheels make up for a slipping light one
   while the stators have headroom, at some cost in odometry. A real centre-of-mass height and a slip check
   on the real robot should decide between the two.
@@ -635,6 +634,8 @@ halfway through. The results table is `e2e/RESULTS.md`, and the pass marks are i
 | --- | --- |
 | Events fired on the first loop after the robot passed them: up to 8 cm late at 4 m/s | They fire on the loop nearest to passing (`PathFollower`) |
 | A path shorter than the 0.3 m terminal radius (a 0.2 m hop with an 80° turn) ignored its plan: 1.0 m/s against 0.29 planned, with events 0.48 s off | The DriveToPose hand-over also waits until the plan has no more than `terminalTurnRadians` (2°) left to turn. At 10° the robot was still spinning too fast to stop and overshot by 7° |
+| A rolling end handed over on the first loop past its end line, so the next path started up to a loop late and its start events fired up to 8 cm past their point (RollA → RollB, 3.0 cm against 3 cm allowed) | It hands over on the loop nearest the line, as events fire (`PathFollower.checkFinished`); the chain also arrives 0.06 s sooner |
+| The end-of-path brake law used a fixed 6 m/s², so on paths planned harder the robot braked early and arrived about 0.2 s late | `brakeMetersPerSecondSquared` defaults to the robot's traction limit |
 | A turn on the spot fired every event at once and stalled mid-turn: progress came from projecting onto a 1 mm segment, and the distance brake capped the spin | Progress comes from the heading; the follower spins on the plan and holds the point |
 | The first step after `start()` comes at the same timestamp, so dt clamped to 1 ms and the limiter allowed a millisecond's acceleration: every path started a loop late | That step plans for a nominal loop |
 | An event at the end fired only after the robot settled (0.1 s hold plus the ease-in) | It fires when the robot gets inside the finish band |

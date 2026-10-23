@@ -34,9 +34,11 @@ interface NumberFieldProps {
   readonly title?: string;
   readonly testId?: string;
   readonly className?: string;
+  /** The robot-code constant this mirrors, shown under the field (e.g. "MU"). */
+  readonly code?: string;
 }
 
-export function NumberField({ label, value, onCommit, unit, blank, blankValue, decimals = 5, min, max, step, title, testId, className }: NumberFieldProps) {
+export function NumberField({ label, value, onCommit, unit, blank, blankValue, decimals = 5, min, max, step, title, testId, className, code }: NumberFieldProps) {
   const id = useId();
   const shown = formatNumber(value, decimals);
   const [text, setText] = useState(shown);
@@ -154,6 +156,7 @@ export function NumberField({ label, value, onCommit, unit, blank, blankValue, d
           </button>
         </span>
       </span>
+      {code && <code className="field-code">{code}</code>}
     </div>
   );
 }

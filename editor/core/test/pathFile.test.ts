@@ -6,10 +6,9 @@ import { eventMeters, Path } from "../src/path.ts";
 import { pathToJson, readPath, robotFromJson, robotToJson, writePath } from "../src/pathFile.ts";
 import {
   DEFAULT_ROBOT,
-  equalPushMetersPerSecondSquared,
-  tipOrGripMetersPerSecondSquared,
   tractionLimit,
   tractionMetersPerSecondSquared,
+  wheelSlipOnsetMetersPerSecondSquared,
 } from "../src/robot.ts";
 import { eventAtMeters, eventAtWaypoint, makePathSpec, makeWaypoint } from "../src/spec.ts";
 import { allSamples, COUNT, SEED } from "./pathFileSamples.ts";
@@ -114,29 +113,25 @@ describe("path files", () => {
     expect(robotFromJson(JSON.parse(writeJson(robotToJson(r), exact)))).toEqual(r);
     expect(robotFromJson({})).toEqual(DEFAULT_ROBOT);
     expect(robotFromJson({ massKg: 50, motor: { stallCurrentAmps: 400 } }).driveMotor.stallTorqueNewtonMeters).toBe(9.362);
-    const tall = { ...DEFAULT_ROBOT, centerOfMassHeightMeters: 0.3, tipDistanceMeters: 0.254, tractionRule: "equalPush" as const };
+    const tall = { ...DEFAULT_ROBOT, centerOfMassHeightMeters: 0.3, tipDistanceMeters: 0.254, tractionShare: 0.8 };
     expect(robotFromJson(JSON.parse(writeJson(robotToJson(tall), exact)))).toEqual(tall);
     expect("tipDistanceMeters" in robotToJson(DEFAULT_ROBOT)).toBe(false); // a square base writes none
-    expect(() => robotFromJson({ tractionRule: "halfway" })).toThrow(RangeError);
+    expect(robotFromJson({ tractionRule: "equalPush" })).toEqual(DEFAULT_ROBOT); // an old file's rule is ignored
+    expect(() => robotFromJson({ tractionShare: 1.2 })).toThrow(RangeError);
   });
 
-  it("works out both traction rules the way RobotConfig.java does", () => {
-    // the default is equal push; tip-or-grip (tip 0.29 m, centre of mass 0.2 m) tips before it grips
-    expect(DEFAULT_ROBOT.tractionRule).toBe("equalPush");
-    expect(tractionMetersPerSecondSquared(DEFAULT_ROBOT)).toBe(equalPushMetersPerSecondSquared(DEFAULT_ROBOT));
-    expect(tractionLimit(DEFAULT_ROBOT)).toBe("equalPush");
-    const tipOrGrip = { ...DEFAULT_ROBOT, tractionRule: "tipOrGrip" as const };
-    expect(tractionMetersPerSecondSquared(tipOrGrip)).toBe(0.9 * Math.min(1.5 * 9.81, (9.81 * 0.29) / 0.2));
-    expect(tractionLimit(tipOrGrip)).toBe("tipping");
-    // Joe's 0.254 m modules: 11.2 m/s² by tip-or-grip, 6.1 m/s² by equal push
+  it("works out the traction limit the way RobotConfig.java does", () => {
+    // as AccelerationLimiter: 0.9 of grip or tipping (tip 0.29 m, centre of mass 0.2 m: tips before it grips)
+    expect(tractionMetersPerSecondSquared(DEFAULT_ROBOT)).toBe(0.9 * Math.min(1.5 * 9.81, (9.81 * 0.29) / 0.2));
+    expect(tractionLimit(DEFAULT_ROBOT)).toBe("tipping");
+    // Joe's 0.254 m modules: 11.2 m/s²
     const joe = { ...DEFAULT_ROBOT, tipDistanceMeters: 0.254 };
-    expect(tipOrGripMetersPerSecondSquared(joe)).toBeCloseTo(11.21, 2);
-    expect(equalPushMetersPerSecondSquared(joe)).toBeCloseTo(6.07, 2);
-    const equal = { ...joe, tractionRule: "equalPush" as const };
-    expect(tractionMetersPerSecondSquared(equal)).toBe(equalPushMetersPerSecondSquared(joe));
-    expect(tractionLimit(equal)).toBe("equalPush");
-    expect(tractionLimit({ ...equal, centerOfMassHeightMeters: 0 })).toBe("grip");
-    expect(tractionMetersPerSecondSquared({ ...equal, centerOfMassHeightMeters: 0 })).toBe(0.9 * 1.5 * 9.81);
+    expect(tractionMetersPerSecondSquared(joe)).toBeCloseTo(11.21, 2);
+    expect(tractionMetersPerSecondSquared({ ...joe, tractionShare: 0.8 })).toBeCloseTo((0.8 / 0.9) * 11.21, 2);
+    expect(tractionLimit({ ...joe, centerOfMassHeightMeters: 0 })).toBe("grip");
+    expect(tractionMetersPerSecondSquared({ ...joe, centerOfMassHeightMeters: 0 })).toBe(0.9 * 1.5 * 9.81);
+    // where the light wheels let go, for the adaptive grip: μg / (1 + μh/x), no margin
+    expect(wheelSlipOnsetMetersPerSecondSquared(DEFAULT_ROBOT)).toBe((1.5 * 9.81) / (1 + (1.5 * 0.2) / 0.29));
   });
 });
 

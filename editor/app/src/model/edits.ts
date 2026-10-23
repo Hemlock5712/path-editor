@@ -14,11 +14,22 @@ import {
   type RotationTarget,
   type Waypoint,
 } from "../../../core/src/index.ts";
-import { draftSpec, type EditorPath } from "./project.ts";
+import { draftSpec, hasOldPathLimits, type EditorPath, type Project } from "./project.ts";
 import { afterDelete, afterInsert, normalAngle } from "./positions.ts";
 
 export function withSpec(path: EditorPath, parts: Partial<PathSpec>): EditorPath {
   return { ...path, spec: draftSpec({ ...path.spec, ...parts }) };
+}
+
+/** The project with the old fixed 4 m/s and 6 m/s² cleared from the path defaults and every path that still has them. */
+export function withRobotLimits(project: Project): Project {
+  const robot = { maxMetersPerSecond: Infinity, maxMetersPerSecondSquared: Infinity };
+  const d = project.settings.pathDefaults;
+  return {
+    ...project,
+    paths: project.paths.map((p) => (hasOldPathLimits(p.spec) ? withSpec(p, robot) : p)),
+    settings: { ...project.settings, pathDefaults: hasOldPathLimits(d) ? { ...d, ...robot } : d },
+  };
 }
 
 function replaceAt<T>(list: readonly T[], i: number, item: T): T[] {

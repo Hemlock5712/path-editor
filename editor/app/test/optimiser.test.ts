@@ -11,7 +11,7 @@ import {
   type PathSpec,
 } from "../../core/src/index.ts";
 import { analyse, CHECKS, type AnalysisInput } from "../src/compute/analysis.ts";
-import { DEFAULT_FIELD } from "../src/model/project.ts";
+import { DEFAULT_FIELD, DEFAULT_ROBOT_SETTINGS } from "../src/model/project.ts";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -199,18 +199,20 @@ describe("optimiser", () => {
       return { status: r.status, stderr: r.stderr, out: readFileSync(out, "utf8") };
     };
     const budget = { maxEvaluations: evaluationsFor(0.4), timeBudgetMs: Infinity, seed: 5 };
+    // without --robot the tool plans with the editor's default robot (its top speed share applied)
+    const tool = (spec: PathSpec, obstacles: AnalysisInput["obstacles"] = []) => ({ ...input(spec, obstacles), robot: DEFAULT_ROBOT_SETTINGS.config });
     // without --field it plans on the editor's default field, the 2026 one with its obstacles: the wall run
     // is cleared by the curve alone, exactly as in the editor
     const a = run(wallRun);
     expect(a.status, a.stderr).toBe(0);
     expect(a.stderr).toContain("clear of obstacles by");
-    expect(a.out).toBe(writePath(optimise(input(readPath(writePath(wallRun)), DEFAULT_FIELD.obstacles), budget).spec));
+    expect(a.out).toBe(writePath(optimise(tool(readPath(writePath(wallRun)), DEFAULT_FIELD.obstacles), budget).spec));
     // --move-waypoints moves them too (on an open field here)
     const open = join(dir, "field.json");
     writeFileSync(open, JSON.stringify({ field: { length_m: 16.54, width_m: 8.07 }, obstacles: [] }));
     const b = run(weave, "--move-waypoints", "--field", open);
     expect(b.status, b.stderr).toBe(0);
-    expect(b.out).toBe(writePath(optimise(input(readPath(writePath(weave))), { ...budget, moveWaypoints: true }).spec));
+    expect(b.out).toBe(writePath(optimise(tool(readPath(writePath(weave))), { ...budget, moveWaypoints: true }).spec));
     // a hit the curve can't clear: exit code 3, the path unchanged, and where
     const c = run(throughHub);
     expect(c.status).toBe(3);

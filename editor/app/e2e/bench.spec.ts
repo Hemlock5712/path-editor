@@ -12,22 +12,18 @@ test("the bench page tells the comparison in plain words", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("page-bench").click();
   await expect(page.getByRole("heading", { name: "Path followers, head to head" })).toBeVisible();
-  await expect(page.getByTestId("bench-tile-finish")).toContainText("100 of 100");
+  // tip or grip, the robot's traction rule: Choreo finishes none of its runs
+  await expect(page.getByTestId("bench-tile-finish")).toContainText("Choreo 0");
   await expect(page.getByTestId("bench-speed-bars").locator("li")).toHaveCount(6);
-  await expect(page.getByTestId("bench-speed")).toContainText("Choreo makes the fastest plans");
   await expect(page.getByTestId("bench-disturbed-table").locator("tbody tr")).toHaveCount(3);
-  await expect(page.getByTestId("bench-shove-note")).toContainText("slip-aware odometry");
   await expect(page.getByTestId("bench-slipaware-bars").locator("li")).toHaveCount(6);
   await expect(page.getByTestId("bench-course-table").locator("tbody tr")).toHaveCount(10);
-  await expect(page.getByTestId("bench-course-table")).not.toContainText("✕");
+  await expect(page.getByTestId("bench-course-table")).toContainText("never finished");
+  await expect(page.getByRole("radio", { name: "Equal push" })).toHaveCount(0);
   await page.screenshot({ path: "test-results/bench-page.png" });
   for (const id of ["bench-speed", "bench-disturbed", "bench-odometry", "bench-courses"]) {
     await page.getByTestId(id).screenshot({ path: `test-results/${id}.png` });
   }
-  // the other traction rule: Choreo finishes none of its runs
-  await page.getByRole("radio", { name: "Tip or grip" }).click();
-  await expect(page.getByTestId("bench-tile-finish")).toContainText("Choreo 0");
-  await expect(page.getByTestId("bench-course-table")).toContainText("never finished");
   await page.getByTestId("bench-how").locator("summary").click();
-  await expect(page.getByTestId("bench-how")).toContainText("Equal push");
+  await expect(page.getByTestId("bench-how")).toContainText("90 % of grip or tipping");
 });

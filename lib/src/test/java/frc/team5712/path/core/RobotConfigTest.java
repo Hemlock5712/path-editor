@@ -40,10 +40,9 @@ class RobotConfigTest {
   }
 
   @Test
-  void tipOrGripIsNinetyPercentOfGripOrTipWhicheverComesFirst() {
-    // the default robot is equal-push; this rule is the opt-in
-    assertEquals(RobotConfig.TractionRule.EQUAL_PUSH, R.tractionRule());
-    RobotConfig tg = R.withTractionRule(RobotConfig.TractionRule.TIP_OR_GRIP);
+  void tractionIsNinetyPercentOfGripOrTipWhicheverComesFirst() {
+    // as Precision-Drive's AccelerationLimiter
+    RobotConfig tg = R;
     // modules at ±0.29 m (tip 0.29 m), centre of mass 0.2 m up: tipping first
     assertEquals(0.29, tg.tipDistanceInUseMeters(), 1e-12);
     assertEquals(9.81 * 0.29 / 0.2, tg.tipMetersPerSecondSquared(), 1e-12);
@@ -60,22 +59,20 @@ class RobotConfigTest {
   }
 
   @Test
-  void equalPushIsTheLimitWhenEveryWheelPushesTheSame() {
-    // the light wheels slip first: 0.9 · μg / (1 + μh/x); for Joe's 0.254 m modules 6.1 m/s²
-    RobotConfig joe = R.withTipDistanceMeters(0.254); // the default rule
-    assertEquals(0.9 * 1.5 * 9.81 / (1 + 1.5 * 0.2 / 0.29), R.tractionMetersPerSecondSquared(), 1e-12);
-    assertEquals(0.9 * 1.5 * 9.81 / (1 + 1.5 * 0.2 / 0.254), joe.tractionMetersPerSecondSquared(), 1e-12);
-    assertEquals(6.07, joe.tractionMetersPerSecondSquared(), 0.01);
-    assertEquals(RobotConfig.TractionLimit.EQUAL_PUSH, joe.tractionLimit());
-    // both values are there whichever rule is chosen, for the editor to show
-    assertEquals(joe.equalPushMetersPerSecondSquared(), R.withTipDistanceMeters(0.254).equalPushMetersPerSecondSquared(), 0.0);
-    assertEquals(11.21, joe.tipOrGripMetersPerSecondSquared(), 0.01);
-    // no load transfer: both rules are 90 % of grip
-    RobotConfig flat = joe.withCenterOfMassHeightMeters(0);
-    assertEquals(0.9 * 1.5 * 9.81, flat.tractionMetersPerSecondSquared(), 1e-12);
-    assertEquals(RobotConfig.TractionLimit.GRIP, flat.tractionLimit());
-    assertEquals(RobotConfig.TractionRule.EQUAL_PUSH, RobotConfig.TractionRule.fromFileName("equalPush"));
-    assertThrows(IllegalArgumentException.class, () -> RobotConfig.TractionRule.fromFileName("halfway"));
+  void theShareIsTheMargin() {
+    assertEquals(0.9, R.tractionShare(), 0.0);
+    RobotConfig softer = R.withTractionShare(0.75);
+    assertEquals(0.75 * 9.81 * 0.29 / 0.2, softer.tractionMetersPerSecondSquared(), 1e-12);
+    assertThrows(IllegalArgumentException.class, () -> R.withTractionShare(0.0));
+    assertThrows(IllegalArgumentException.class, () -> R.withTractionShare(1.1));
+  }
+
+  @Test
+  void theWheelSlipOnsetIsWhereTheUnloadedWheelsLetGo() {
+    // every wheel pushing the same, the light ones slip at μg / (1 + μh/x): 7.2 m/s² for the defaults
+    assertEquals(1.5 * 9.81 / (1 + 1.5 * 0.2 / 0.29), R.wheelSlipOnsetMetersPerSecondSquared(), 1e-12);
+    // no load transfer: grip
+    assertEquals(1.5 * 9.81, R.withCenterOfMassHeightMeters(0).wheelSlipOnsetMetersPerSecondSquared(), 1e-12);
   }
 
   @Test

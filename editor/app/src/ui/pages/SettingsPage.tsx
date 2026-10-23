@@ -2,19 +2,38 @@
 // paths, the field and its obstacles (field.json), the project (red flip, the generated names), the Sim
 // preview's drivetrain, and the editor's own preferences.
 
+import { useEffect, useState } from "react";
 import { Bot, Cpu, FolderCog, Hexagon, Map as MapIcon, Route, SlidersHorizontal, Trash2 } from "lucide-react";
-import { checkRobot, KRAKEN_X60_FOC, tipDistanceInUseMeters, type Motor, type RobotConfig } from "../../../../core/src/index.ts";
+import {
+  checkRobot,
+  gripMetersPerSecondSquared,
+  KRAKEN_X60_FOC,
+  tipDistanceInUseMeters,
+  tipMetersPerSecondSquared,
+  wheelSpeedCapMetersPerSecond,
+  type Motor,
+  type RobotConfig,
+} from "../../../../core/src/index.ts";
 import { isValidPackage } from "../../io/javaEnum.ts";
 import { PATHS_DIR } from "../../io/projectIo.ts";
-import { DEFAULT_ROBOT_SETTINGS, DEFAULT_SIM_PREVIEW, type PathDefaults, type RobotSettings, type SimPreviewSettings } from "../../model/project.ts";
+import { withRobotLimits } from "../../model/edits.ts";
+import { parseTunerConstants, type TunerImport } from "../../io/tunerConstants.ts";
 import {
-  equalPushSlipMetersPerSecondSquared,
+  DEFAULT_ROBOT_SETTINGS,
+  DEFAULT_SIM_PREVIEW,
+  hasOldPathLimits,
+  topSpeedMetersPerSecond,
+  withTopSpeed,
+  type PathDefaults,
+  type RobotSettings,
+  type SimPreviewSettings,
+} from "../../model/project.ts";
+import {
+  wheelSlipOnsetOnFloor,
   hasOldDefaultMu,
   simFloorCapMetersPerSecondSquared,
   SPIKE_GRIP_MU,
-  equalPushWorking,
-  TIP_OR_GRIP_ADVICE,
-  tipOrGripWorking,
+  tractionWorking,
   tractionHeadline,
 } from "../../model/traction.ts";
 import { editProject, select, setTool, setView } from "../../state/editor.ts";
@@ -72,61 +91,156 @@ function RobotSettingsTab() {
   const robot = useEditor((s) => s.project.robot);
   const c = robot.config;
   const set = (label: string, change: Partial<RobotConfig>, extra: Partial<RobotSettings> = {}) =>
-    editProject(label, (p) => ({ ...p, robot: { ...p.robot, ...extra, config: checkedRobot({ ...p.robot.config, ...change }) } }));
+    editProject(label, (p) => ({ ...p, robot: withTopSpeed({ ...p.robot, ...extra, config: checkedRobot({ ...p.robot.config, ...change }) }) }));
   const setBumpers = (change: Partial<RobotSettings>) => editProject("Bumper size", (p) => ({ ...p, robot: { ...p.robot, ...change } }));
   const rpm = (radPerSec: number) => (radPerSec * 60) / (2 * Math.PI);
+  const [imported, setImported] = useState<TunerImport | string | null>(null);
+  const importTuner = async (file: File) => {
+    let t: TunerImport;
+    try {
+      t = parseTunerConstants(await file.text());
+    } catch (e) {
+      setImported(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    set(
+      "Import TunerConstants",
+      {
+        ...(t.driveGearRatio !== undefined && { driveGearRatio: t.driveGearRatio }),
+        ...(t.wheelRadiusMeters !== undefined && { wheelRadiusMeters: t.wheelRadiusMeters }),
+        ...(t.moduleRadiusMeters !== undefined && { moduleRadiusMeters: t.moduleRadiusMeters }),
+        ...(t.tipDistanceMeters !== undefined && { tipDistanceMeters: t.tipDistanceMeters }),
+      },
+      t.speedAt12VoltsMetersPerSecond !== undefined ? { speedAt12VoltsMetersPerSecond: t.speedAt12VoltsMetersPerSecond } : {},
+    );
+    setImported(t);
+  };
   return (
     <section className="settings-section" aria-label="Robot">
       <h3>Robot</h3>
       <p className="hint">
-        <code>deploy/paths/robot.json</code>: what the plan and the robot's <code>RobotFile</code> use. Blank limits mean none.
+        Saved to <code>deploy/paths/robot.json</code>, which the path follower reads on the robot. Each number under{" "}
+        <strong>Match your robot code</strong> should equal the constant named under it, in <code>AccelerationLimiter.java</code> or{" "}
+        <code>TunerConstants</code>: then the paths plan to the same limits teleop drives to.
       </p>
-      <div className="settings-group">
-        <h4>Body</h4>
-        <div className="grid3">
-          <NumberField label="Mass" unit="kg" min={1} value={c.massKg} onCommit={(v) => set("Robot mass", { massKg: v })} />
-          <NumberField label="Moment of inertia" unit="kg·m²" min={0.01} value={c.momentOfInertiaKgM2} onCommit={(v) => set("Moment of inertia", { momentOfInertiaKgM2: v })} />
-          <NumberField label="Module radius" unit="m" min={0.01} value={c.moduleRadiusMeters} title="Centre to each swerve module" onCommit={(v) => set("Module radius", { moduleRadiusMeters: v })} />
-          <NumberField label="Bumper length" unit="m" min={0.1} value={robot.bumperLengthMeters} title="Front to back, with bumpers" onCommit={(v) => setBumpers({ bumperLengthMeters: v })} />
-          <NumberField label="Bumper width" unit="m" min={0.1} value={robot.bumperWidthMeters} onCommit={(v) => setBumpers({ bumperWidthMeters: v })} />
-        </div>
-      </div>
-      <div className="settings-group">
-        <h4>Drive</h4>
-        <div className="grid3">
-          <SelectField
-            label="Drive motor"
-            value={motorKey(c.driveMotor)}
-            options={[...MOTORS.map((m) => ({ value: m.value, label: m.label })), { value: "custom", label: "Custom (from robot.json)" }]}
-            onChange={(v) => {
-              const m = MOTORS.find((x) => x.value === v);
-              if (m) set("Drive motor", { driveMotor: m.motor });
+      <div className="settings-group" aria-label="Import">
+        <h4>Start from your robot code</h4>
+        <p className="hint">
+          Import the drivetrain's <code>TunerConstants.java</code> (CTRE Tuner X): it fills in the gear ratio, the wheel radius, the module
+          positions and the speed at 12 V. Then measure the mass, μ and the centre of mass height, below.
+        </p>
+        <label className="btn import-btn">
+          Import TunerConstants.java
+          <input
+            type="file"
+            accept=".java"
+            hidden
+            data-testid="import-tuner"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void importTuner(f);
             }}
           />
-          <NumberField label="Drive motors" min={1} decimals={0} value={c.driveMotorCount} onCommit={(v) => set("Drive motors", { driveMotorCount: Math.round(v) })} />
-          <NumberField label="Gear ratio" unit=":1" min={0.1} value={c.driveGearRatio} onCommit={(v) => set("Gear ratio", { driveGearRatio: v })} />
-          <NumberField label="Wheel radius" unit="m" min={0.001} step={0.001} value={c.wheelRadiusMeters} onCommit={(v) => set("Wheel radius", { wheelRadiusMeters: v })} />
-          <NumberField label="Stator limit" unit="A" min={1} value={c.statorCurrentLimitAmps} onCommit={(v) => set("Current limit", { statorCurrentLimitAmps: v })} />
-        </div>
-        <p className="stats">
-          Motor: {formatNumber(c.driveMotor.stallTorqueNewtonMeters, 3)} N·m stall, {formatNumber(c.driveMotor.stallCurrentAmps, 1)} A,{" "}
-          {formatNumber(rpm(c.driveMotor.freeSpeedRadPerSec), 0)} rpm free
-        </p>
+        </label>
+        {typeof imported === "string" && (
+          <p className="check error" role="alert" data-testid="tuner-import-error">
+            {imported}
+          </p>
+        )}
+        {imported && typeof imported !== "string" && (
+          <p className="stats" data-testid="tuner-imported">
+            Imported {imported.found.join(", ")}:{" "}
+            {[
+              imported.driveGearRatio !== undefined && `gear ratio ${formatNumber(imported.driveGearRatio, 3)}:1`,
+              imported.wheelRadiusMeters !== undefined && `wheel radius ${formatNumber(imported.wheelRadiusMeters, 4)} m`,
+              imported.moduleRadiusMeters !== undefined && `module radius ${formatNumber(imported.moduleRadiusMeters, 3)} m`,
+              imported.tipDistanceMeters !== undefined && `tip distance ${formatNumber(imported.tipDistanceMeters, 3)} m`,
+              imported.speedAt12VoltsMetersPerSecond !== undefined && `speed at 12 V ${formatNumber(imported.speedAt12VoltsMetersPerSecond, 2)} m/s`,
+            ]
+              .filter(Boolean)
+              .join(", ")}
+            .
+          </p>
+        )}
       </div>
-      <TractionGroup config={c} set={set} />
-      <div className="settings-group">
-        <h4>Limits</h4>
+      <MarginsGroup robot={robot} set={set} />
+      <LimitsSummary config={c} />
+      <div className="settings-group" aria-label="Match your robot code">
+        <h4>Match your robot code</h4>
         <div className="grid3">
+          <NumberField label="Mass" unit="kg" min={1} value={c.massKg} code="ROBOT_MASS" onCommit={(v) => set("Robot mass", { massKg: v })} />
           <NumberField
-            label="Max wheel speed"
-            unit="m/s"
-            blank="motor free speed"
-            blankValue={Number.NaN}
-            min={0.1}
-            value={c.maxWheelMetersPerSecond}
-            onCommit={(v) => set("Max wheel speed", { maxWheelMetersPerSecond: v })}
+            label="Tread μ"
+            min={0.05}
+            step={0.05}
+            value={c.frictionCoefficient}
+            code="MU"
+            title="The tread's friction on carpet: about 1.5 for SDS MK5 Spike Grip"
+            testId="tread-mu"
+            onCommit={(v) => set("Tread μ", { frictionCoefficient: v })}
           />
-          <NumberField label="Max spin" unit="rad/s" blank="none" blankValue={Infinity} min={0.1} value={c.maxAngularRadPerSec} onCommit={(v) => set("Max spin", { maxAngularRadPerSec: v })} />
+          <NumberField
+            label="Centre of mass height"
+            unit="m"
+            min={0}
+            step={0.01}
+            value={c.centerOfMassHeightMeters}
+            code="COM_HEIGHT"
+            title="Above the floor. 0 = no tipping limit"
+            testId="com-height"
+            onCommit={(v) => set("Centre of mass height", { centerOfMassHeightMeters: v })}
+          />
+          <NumberField
+            label="Tip distance"
+            unit="m"
+            blank="auto (square base)"
+            blankValue={Number.NaN}
+            min={0.01}
+            step={0.01}
+            value={c.tipDistanceMeters}
+            code="TIP_DISTANCE"
+            title="Centre to the line the robot tips over: the nearer of the modules' x and y. Blank = module radius ÷ √2"
+            testId="tip-distance"
+            onCommit={(v) => set("Tip distance", { tipDistanceMeters: v })}
+          />
+          <NumberField
+            label="Module radius"
+            unit="m"
+            min={0.01}
+            value={c.moduleRadiusMeters}
+            code="BASE_RADIUS"
+            title="Centre to each swerve module: the hypot of TunerConstants' module X and Y"
+            onCommit={(v) => set("Module radius", { moduleRadiusMeters: v })}
+          />
+          <NumberField
+            label="Wheel radius"
+            unit="m"
+            min={0.001}
+            step={0.001}
+            value={c.wheelRadiusMeters}
+            code="WheelRadius"
+            title="TunerConstants' WheelRadius"
+            onCommit={(v) => set("Wheel radius", { wheelRadiusMeters: v })}
+          />
+          <NumberField
+            label="Gear ratio"
+            unit=":1"
+            min={0.1}
+            value={c.driveGearRatio}
+            code="DriveMotorGearRatio"
+            title="TunerConstants' DriveMotorGearRatio"
+            onCommit={(v) => set("Gear ratio", { driveGearRatio: v })}
+          />
+          <NumberField
+            label="Motor current"
+            unit="A"
+            min={1}
+            value={c.statorCurrentLimitAmps}
+            code="MODEL_CURRENT"
+            title="Amps per drive motor the plan counts on when it works out how hard the motors can push"
+            onCommit={(v) => set("Current limit", { statorCurrentLimitAmps: v })}
+          />
           <NumberField
             label="Max spin accel"
             unit="rad/s²"
@@ -134,10 +248,85 @@ function RobotSettingsTab() {
             blankValue={Infinity}
             min={0.1}
             value={c.maxAngularRadPerSecSquared}
+            code="ANGULAR_ACCEL"
+            title="The turning cap: AccelerationLimiter uses 12"
             onCommit={(v) => set("Max spin acceleration", { maxAngularRadPerSecSquared: v })}
           />
+          <div className="field">
+            <SelectField
+              label="Drive motor"
+              value={motorKey(c.driveMotor)}
+              options={[...MOTORS.map((m) => ({ value: m.value, label: m.label })), { value: "custom", label: "Custom (from robot.json)" }]}
+              onChange={(v) => {
+                const m = MOTORS.find((x) => x.value === v);
+                if (m) set("Drive motor", { driveMotor: m.motor });
+              }}
+            />
+            <code className="field-code">DRIVE_MOTOR</code>
+          </div>
+        </div>
+        <p className="stats">
+          Motor: {formatNumber(c.driveMotor.stallTorqueNewtonMeters, 3)} N·m stall, {formatNumber(c.driveMotor.stallCurrentAmps, 1)} A,{" "}
+          {formatNumber(rpm(c.driveMotor.freeSpeedRadPerSec), 0)} rpm free
+        </p>
+        {hasOldDefaultMu(c) && (
+          <div className="settings-note" role="note" data-testid="old-mu-note">
+            <span>μ 0.7 is the old planning default. μ is now the tread's own (about 1.5 for Spike Grip), and the plan takes 0.9 of the limit it makes.</span>
+            <Button onClick={() => set("Tread μ", { frictionCoefficient: SPIKE_GRIP_MU })}>Use 1.5</Button>
+          </div>
+        )}
+        <div className="hint" data-testid="traction-calibrate">
+          <strong>μ and the centre of mass height are estimates: measure them, then change them here and in the robot code.</strong>
+          <ul className="calibrate">
+            <li>
+              <strong>μ</strong>: brake the wheels and pull the robot slowly across carpet with a luggage scale. μ = the peak pull ÷ the
+              robot's weight (both in kg).
+            </li>
+            <li>
+              <strong>Centre of mass height</strong>: lift the front until the robot balances on its back wheels. h = the back wheels'
+              distance from the centre ({formatNumber(tipDistanceInUseMeters(c), 2)} m on this base) ÷ tan(the tilt).
+            </li>
+          </ul>
         </div>
       </div>
+      <div className="settings-group" aria-label="Bumpers">
+        <h4>Bumpers</h4>
+        <p className="hint">For the wall and obstacle checks and the pathfinder. Not in the limiter.</p>
+        <div className="grid3">
+          <NumberField label="Bumper length" unit="m" min={0.1} value={robot.bumperLengthMeters} title="Front to back, with bumpers" onCommit={(v) => setBumpers({ bumperLengthMeters: v })} />
+          <NumberField label="Bumper width" unit="m" min={0.1} value={robot.bumperWidthMeters} onCommit={(v) => setBumpers({ bumperWidthMeters: v })} />
+        </div>
+      </div>
+      <details className="settings-group settings-advanced" aria-label="Advanced" data-testid="robot-advanced">
+        <summary>
+          <h4>Advanced: path follower only</h4>
+        </summary>
+        <p className="hint">Limits the path follower can use that AccelerationLimiter doesn't have. The defaults are fine for most robots.</p>
+        <NumberField
+          label="Speed at 12 V"
+          unit="m/s"
+          blank="motor free speed"
+          blankValue={Number.NaN}
+          min={0.1}
+          value={robot.speedAt12VoltsMetersPerSecond}
+          code="kSpeedAt12Volts"
+          title="What the top speed share is of. Blank: the motor's free speed through the gearing"
+          testId="speed-at-12v"
+          onCommit={(v) => set("Speed at 12 V", {}, { speedAt12VoltsMetersPerSecond: v })}
+        />
+        <div className="grid3">
+          <NumberField
+            label="Moment of inertia"
+            unit="kg·m²"
+            min={0.01}
+            value={c.momentOfInertiaKgM2}
+            title="How hard the robot is to spin; the sims use it"
+            onCommit={(v) => set("Moment of inertia", { momentOfInertiaKgM2: v })}
+          />
+          <NumberField label="Drive motors" min={1} decimals={0} value={c.driveMotorCount} onCommit={(v) => set("Drive motors", { driveMotorCount: Math.round(v) })} />
+          <NumberField label="Max spin" unit="rad/s" blank="none" blankValue={Infinity} min={0.1} value={c.maxAngularRadPerSec} onCommit={(v) => set("Max spin", { maxAngularRadPerSec: v })} />
+        </div>
+      </details>
       <div>
         <Button onClick={() => editProject("Reset robot", (p) => ({ ...p, robot: { ...DEFAULT_ROBOT_SETTINGS, extra: p.robot.extra } }))}>
           Reset the robot to the defaults
@@ -147,86 +336,129 @@ function RobotSettingsTab() {
   );
 }
 
-/**
- * Tread μ, centre of mass height, tip distance and the traction rule, and the limit they make: the plan
- * and the follower accelerate and corner at no more than it.
- */
-function TractionGroup({ config: c, set }: { config: RobotConfig; set: (label: string, change: Partial<RobotConfig>) => void }) {
+/** One share of a limit, 50 to 100 %, as a slider with the number it makes. */
+function ShareSlider({
+  label,
+  value,
+  onCommit,
+  working,
+  code,
+  testId,
+}: {
+  label: string;
+  value: number;
+  onCommit: (share: number) => void;
+  working: string;
+  code?: string;
+  testId: string;
+}) {
+  const [shown, setShown] = useState(Math.round(value * 100));
+  useEffect(() => setShown(Math.round(value * 100)), [value]);
+  const commit = () => {
+    if (shown / 100 !== value) onCommit(shown / 100);
+  };
   return (
-    <div className="settings-group" aria-label="Traction">
-      <h4>Traction</h4>
-      <div className="grid3">
-        <NumberField
-          label="Tread μ (1.5 for Spike Grip)"
-          min={0.05}
-          step={0.05}
-          value={c.frictionCoefficient}
-          title="The tread's friction on carpet: about 1.5 for SDS MK5 Spike Grip"
-          testId="tread-mu"
-          onCommit={(v) => set("Tread μ", { frictionCoefficient: v })}
-        />
-        <NumberField
-          label="Centre of mass height"
-          unit="m"
-          min={0}
-          step={0.01}
-          value={c.centerOfMassHeightMeters}
-          title="Above the floor. 0 = no tipping limit"
-          testId="com-height"
-          onCommit={(v) => set("Centre of mass height", { centerOfMassHeightMeters: v })}
-        />
-        <NumberField
-          label="Tip distance"
-          unit="m"
-          blank="auto (square base)"
-          blankValue={Number.NaN}
-          min={0.01}
-          step={0.01}
-          value={c.tipDistanceMeters}
-          title="Centre to the line the robot tips over: the nearer of the modules' x and y. Blank = module radius ÷ √2"
-          testId="tip-distance"
-          onCommit={(v) => set("Tip distance", { tipDistanceMeters: v })}
-        />
-      </div>
-      <Segmented
-        label="Traction rule"
-        value={c.tractionRule}
-        options={[
-          { value: "equalPush", label: "Equal push", tip: "0.9 × μ·g ÷ (1 + μ·h/tip): every wheel pushes the same, so the unloaded ones slip first" },
-          { value: "tipOrGrip", label: "Tip or grip", tip: `0.9 × the lower of μ·g and g·tip/h. ${TIP_OR_GRIP_ADVICE}` },
-        ]}
-        onChange={(tractionRule) => set("Traction rule", { tractionRule })}
+    <div className="share-slider">
+      <label className="field-label" htmlFor={testId}>
+        {label} <strong>{shown} %</strong>
+      </label>
+      <input
+        id={testId}
+        data-testid={testId}
+        type="range"
+        min={50}
+        max={100}
+        step={1}
+        value={shown}
+        onChange={(e) => setShown(Number(e.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
       />
-      <div className="stats" data-testid="traction-limit">
-        <strong>{tractionHeadline(c)}</strong>
-        <ul className="traction-rules">
-          <li className={c.tractionRule === "equalPush" ? "in-use" : undefined}>{equalPushWorking(c)}</li>
-          <li className={c.tractionRule === "tipOrGrip" ? "in-use" : undefined}>
-            {tipOrGripWorking(c)}
-            <br />
-            <span data-testid="tip-or-grip-advice">{TIP_OR_GRIP_ADVICE}.</span>
-          </li>
-        </ul>
+      <span className="stats">
+        {working}
+        {code && <code className="field-code">{code}</code>}
+      </span>
+    </div>
+  );
+}
+
+/** How much of the robot's top speed and traction paths use: 90 % each by default, the rest for feedback. */
+function MarginsGroup({ robot, set }: { robot: RobotSettings; set: (label: string, change: Partial<RobotConfig>, extra?: Partial<RobotSettings>) => void }) {
+  const c = robot.config;
+  const top = topSpeedMetersPerSecond(robot);
+  const of = robot.speedAt12VoltsMetersPerSecond > 0 ? "the speed at 12 V" : "the motor's free speed";
+  const limit = Math.min(gripMetersPerSecondSquared(c), tipMetersPerSecondSquared(c));
+  const what = tipMetersPerSecondSquared(c) < gripMetersPerSecondSquared(c) ? "tipping" : "grip";
+  return (
+    <div className="settings-group" aria-label="Margins">
+      <h4>How hard paths drive</h4>
+      <p className="hint">
+        The share of the robot's top speed and grip that paths plan to. The rest is room for the follower to catch up. 90 % is a good start;
+        AccelerationLimiter uses 0.9 for acceleration.
+      </p>
+      <div className="grid2">
+        <ShareSlider
+          label="Top speed"
+          value={robot.topSpeedShare}
+          testId="top-speed-share"
+          working={`of ${of}, ${formatNumber(top, 2)} m/s = ${formatNumber(robot.topSpeedShare * top, 2)} m/s`}
+          onCommit={(share) => set("Top speed share", {}, { topSpeedShare: share })}
+        />
+        <ShareSlider
+          label="Acceleration"
+          value={c.tractionShare}
+          testId="traction-share"
+          working={`of ${what}, ${formatNumber(limit, 1)} m/s² = ${formatNumber(c.tractionShare * limit, 1)} m/s²`}
+          code="the 0.9 in TRACTION_ACCEL"
+          onCommit={(share) => set("Acceleration share", { tractionShare: share })}
+        />
       </div>
-      {hasOldDefaultMu(c) && (
-        <div className="settings-note" role="note" data-testid="old-mu-note">
-          <span>μ 0.7 is the old planning default. μ is now the tread's own (about 1.5 for Spike Grip), and the plan takes 0.9 of the limit it makes.</span>
-          <Button onClick={() => set("Tread μ", { frictionCoefficient: SPIKE_GRIP_MU })}>Use 1.5</Button>
-        </div>
-      )}
-      <div className="hint" data-testid="traction-calibrate">
-        <strong>Estimates: calibrate on your robot.</strong>
-        <ul className="calibrate">
-          <li>
-            <strong>μ</strong>: brake the wheels and pull the robot slowly across carpet with a luggage scale. μ = the peak pull ÷ the
-            robot's weight (both in kg).
-          </li>
-          <li>
-            <strong>Centre of mass height</strong>: lift the front until the robot balances on its back wheels. h = the back wheels'
-            distance from the centre ({formatNumber(tipDistanceInUseMeters(c), 2)} m on this base) ÷ tan(the tilt).
-          </li>
-        </ul>
-      </div>
+    </div>
+  );
+}
+
+/** The limits the numbers above make: what AccelerationLimiter works out from the same constants. */
+function LimitsSummary({ config: c }: { config: RobotConfig }) {
+  const spin = c.maxAngularRadPerSecSquared;
+  return (
+    <div className="settings-group limits-summary" aria-label="Limits">
+      <h4>What the robot plans to</h4>
+      <ul>
+        <li data-testid="traction-limit">
+          <strong>{tractionHeadline(c)}</strong>: speeding up, braking and cornering <code>TRACTION_ACCEL</code>
+          <br />
+          <span className="stats" data-testid="traction-working">{tractionWorking(c)}</span>
+        </li>
+        <li>
+          <strong>Top wheel speed {formatNumber(wheelSpeedCapMetersPerSecond(c), 2)} m/s</strong>
+        </li>
+        <li>
+          <strong>Turning acceleration {Number.isFinite(spin) ? `${formatNumber(spin, 1)} rad/s²` : "not capped"}</strong> <code>ANGULAR_ACCEL</code>
+        </li>
+      </ul>
+      <p className="hint">Every path plans to these unless its own Top speed or Max accel is set lower.</p>
+      <OldPathLimitsNote />
+    </div>
+  );
+}
+
+/** Paths (or the defaults) still on the old fixed 4 m/s and 6 m/s², which hold them under the robot's limits. */
+function OldPathLimitsNote() {
+  const project = useEditor((s) => s.project);
+  const paths = project.paths.filter((p) => hasOldPathLimits(p.spec)).length;
+  const defaults = hasOldPathLimits(project.settings.pathDefaults);
+  if (paths === 0 && !defaults) return null;
+  const which = [paths > 0 ? `${paths} ${paths === 1 ? "path" : "paths"}` : "", defaults ? "the path defaults" : ""].filter(Boolean).join(" and ");
+  return (
+    <div className="settings-note" role="note" data-testid="old-path-limits-note">
+      <span>
+        {which[0]!.toUpperCase() + which.slice(1)} still {paths === 1 && !defaults ? "has" : "have"} the old fixed 4 m/s and 6 m/s², which hold
+        them under the robot's limits. Blank, they plan to the robot's own.
+      </span>
+      <Button testId="use-robot-limits" onClick={() => editProject("Use the robot's limits", withRobotLimits)}>
+        Use the robot's limits
+      </Button>
     </div>
   );
 }
@@ -237,11 +469,33 @@ function DefaultsTab() {
   return (
     <section className="settings-section" aria-label="Path defaults">
       <h3>Path defaults</h3>
-      <p className="hint">What a new path starts with. Each path keeps its own copy (change it in the path's Global constraints).</p>
+      <p className="hint">
+        What a new path starts with. Leave the limits blank and paths plan to the robot's own (Settings, Robot); set one only to make paths
+        slower than the robot can go. Each path keeps its own copy (change it in the path's Global constraints).
+      </p>
+      <OldPathLimitsNote />
       <div className="settings-group">
         <div className="grid3">
-          <NumberField label="Top speed" unit="m/s" min={0.1} value={d.maxMetersPerSecond} onCommit={(v) => set({ maxMetersPerSecond: v })} />
-          <NumberField label="Max accel" unit="m/s²" min={0.1} value={d.maxMetersPerSecondSquared} onCommit={(v) => set({ maxMetersPerSecondSquared: v })} />
+          <NumberField
+            label="Top speed"
+            unit="m/s"
+            blank="robot's limit"
+            blankValue={Infinity}
+            min={0.1}
+            value={d.maxMetersPerSecond}
+            testId="default-top-speed"
+            onCommit={(v) => set({ maxMetersPerSecond: v })}
+          />
+          <NumberField
+            label="Max accel"
+            unit="m/s²"
+            blank="robot's limit"
+            blankValue={Infinity}
+            min={0.1}
+            value={d.maxMetersPerSecondSquared}
+            testId="default-max-accel"
+            onCommit={(v) => set({ maxMetersPerSecondSquared: v })}
+          />
           <SelectField
             label="Heading between set headings"
             value={d.headingMode}
@@ -422,7 +676,7 @@ function SimTab() {
               </strong>
               : the lower of μ·g and tipping, with the Robot tab's centre of mass and tip distance, and no margin. The sim moves the chassis
               as one body, so it doesn't show wheel slip: with all four wheels pushing equally, the light wheels start slipping at{" "}
-              {formatNumber(equalPushSlipMetersPerSecondSquared(sim.gripMu, robot), 1)} m/s².
+              {formatNumber(wheelSlipOnsetOnFloor(sim.gripMu, robot), 1)} m/s².
             </>
           )}
         </p>

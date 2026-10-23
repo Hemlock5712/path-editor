@@ -2,6 +2,7 @@
 // overview: Optimise path first, then collapsible cards in PathPlanner's order (waypoints open).
 
 import { ArrowLeft, ChevronLeft, ChevronRight, Link2, Lock, Plus, Trash2 } from "lucide-react";
+import { tractionMetersPerSecondSquared, wheelSpeedCapMetersPerSecond } from "../../../../core/src/index.ts";
 import { withSpec } from "../../model/edits.ts";
 import { deleteItem, unlinkActivePath } from "../../state/actions.ts";
 import { TRANSFORM_LABELS } from "../../model/mirror.ts";
@@ -60,6 +61,7 @@ function WaypointsCard() {
 
 function ConstraintsCard() {
   const spec = useActivePath().spec;
+  const robot = useEditor((s) => s.project.robot.config);
   return (
     <Card title="Global constraints" cardKey="constraints">
       <div className="grid2">
@@ -67,7 +69,7 @@ function ConstraintsCard() {
           label="Top speed"
           unit="m/s"
           value={spec.maxMetersPerSecond}
-          blank="robot"
+          blank={`robot's (${formatNumber(wheelSpeedCapMetersPerSecond(robot), 2)})`}
           blankValue={Infinity}
           min={0.01}
           onCommit={(v) => editPath("Top speed", (p) => withSpec(p, { maxMetersPerSecond: v }))}
@@ -76,13 +78,13 @@ function ConstraintsCard() {
           label="Max accel"
           unit="m/s²"
           value={spec.maxMetersPerSecondSquared}
-          blank="grip"
+          blank={`robot's (${formatNumber(tractionMetersPerSecondSquared(robot), 1)})`}
           blankValue={Infinity}
           min={0.01}
           onCommit={(v) => editPath("Max acceleration", (p) => withSpec(p, { maxMetersPerSecondSquared: v }))}
         />
       </div>
-      <p className="hint">Blank: the robot's own limits (motor speed, grip). Spin limits are the robot's, in Settings.</p>
+      <p className="hint">Blank: the robot's own limits, from Settings, Robot. Set one only to make this path slower.</p>
     </Card>
   );
 }

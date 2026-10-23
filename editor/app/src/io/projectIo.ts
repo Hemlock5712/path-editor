@@ -53,6 +53,20 @@ export interface LoadedProject {
 }
 
 /** The sim preview's drivetrain from the sidecar, each value checked (older files had none). */
+const finiteOrNull = (v: number) => (Number.isFinite(v) ? v : null);
+
+/** The saved path defaults; a limit saved blank (null: JSON has no Infinity) is the robot's own. */
+function pathDefaultsOf(stored: unknown): ProjectSettings["pathDefaults"] {
+  const saved = stored as Partial<Record<string, unknown>> | undefined;
+  const d = DEFAULT_SETTINGS.pathDefaults;
+  const limit = (v: unknown) => (typeof v === "number" && v > 0 ? v : Infinity);
+  return {
+    maxMetersPerSecond: limit(saved?.maxMetersPerSecond),
+    maxMetersPerSecondSquared: limit(saved?.maxMetersPerSecondSquared),
+    headingMode: saved?.headingMode === "hold" || saved?.headingMode === "faceTravel" ? saved.headingMode : d.headingMode,
+  };
+}
+
 function simPreviewOf(stored: unknown): ProjectSettings["simPreview"] {
   const saved = stored as Partial<Record<string, unknown>> | undefined;
   const d = DEFAULT_SETTINGS.simPreview;
@@ -99,7 +113,12 @@ export function writeSidecar(project: Project, view: ViewState): string {
     settings: {
       redFrame: project.settings.redFrame,
       javaPackage: project.settings.javaPackage,
-      pathDefaults: { ...project.settings.pathDefaults },
+      pathDefaults: {
+        ...project.settings.pathDefaults,
+        // blank (the robot's own limit) is null: JSON has no Infinity
+        maxMetersPerSecond: finiteOrNull(project.settings.pathDefaults.maxMetersPerSecond),
+        maxMetersPerSecondSquared: finiteOrNull(project.settings.pathDefaults.maxMetersPerSecondSquared),
+      },
       simPreview: { latencyMs: project.settings.simPreview.latencyMs, lagMs: project.settings.simPreview.lagMs, gripMu: project.settings.simPreview.gripMu },
     },
     view: {
@@ -234,7 +253,7 @@ export function fromFiles(files: ReadonlyMap<string, string>): LoadedProject | n
     settings: {
       ...DEFAULT_SETTINGS,
       ...(sidecar?.settings ?? {}),
-      pathDefaults: { ...DEFAULT_SETTINGS.pathDefaults, ...(sidecar?.settings?.pathDefaults ?? {}) },
+      pathDefaults: pathDefaultsOf(sidecar?.settings?.pathDefaults),
       simPreview: simPreviewOf(sidecar?.settings?.simPreview),
     },
   };

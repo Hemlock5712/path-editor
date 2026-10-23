@@ -462,8 +462,14 @@ test("author the end-to-end suite in the editor and save it", async ({ page }) =
   // feedback room to catch up, as the plan's grip (μ 0.7) sits under the limiter's (1.0)
   await page.getByTestId("settings").click();
   await page.getByTestId("settings-robot").click();
+  await page.getByTestId("robot-advanced").locator("summary").click(); // Max spin is follower-only
   await setNumber(page.getByLabel("Max spin", { exact: true }), 7.5);
   await setNumber(page.getByLabel("Max spin accel", { exact: true }), 10);
+  // the suite's paths keep the 4 m/s and 6 m/s² its tolerances were set at (new paths otherwise plan to
+  // the robot's own limits: 90 % of top speed and of grip or tipping)
+  await page.getByTestId("settings-defaults").click();
+  await setNumber(page.getByTestId("default-top-speed"), 4);
+  await setNumber(page.getByTestId("default-max-accel"), 6);
   await page.getByTestId("page-editor").click();
 
   for (const [i, plan] of chosen.entries()) await author(page, plan, i === 0);

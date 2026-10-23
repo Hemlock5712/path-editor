@@ -60,9 +60,14 @@ export interface FieldDoc {
 
 /** The robot file: RobotConfig plus the bumper size (read by PlannerConfig.fromRobotFile in Java). */
 export interface RobotSettings {
+  /** The robot's numbers; config.maxWheelMetersPerSecond is topSpeedShare of the top speed (withTopSpeed). */
   readonly config: RobotConfig;
   readonly bumperLengthMeters: number;
   readonly bumperWidthMeters: number;
+  /** The share of the top speed paths may ask any wheel for, in (0, 1]: 0.9 leaves feedback room. */
+  readonly topSpeedShare: number;
+  /** TunerConstants' kSpeedAt12Volts, m/s; NaN = the motor's free speed through the gearing. */
+  readonly speedAt12VoltsMetersPerSecond: number;
   /** Keys the editor doesn't know, kept on save. */
   readonly extra: Readonly<Record<string, unknown>>;
 }
@@ -157,14 +162,42 @@ export const DEFAULT_FIELD: FieldDoc = {
   fieldExtra: {},
 };
 
-export const DEFAULT_ROBOT_SETTINGS: RobotSettings = {
+/** The default share of the top speed and of the traction limit: 90 %, as AccelerationLimiter's 0.9. */
+export const DEFAULT_SHARE = 0.9;
+
+/** The speed the top speed share is of: kSpeedAt12Volts, or the motor's free speed at the wheel, m/s. */
+export function topSpeedMetersPerSecond(robot: Pick<RobotSettings, "config" | "speedAt12VoltsMetersPerSecond">): number {
+  const c = robot.config;
+  return robot.speedAt12VoltsMetersPerSecond > 0
+    ? robot.speedAt12VoltsMetersPerSecond
+    : (c.driveMotor.freeSpeedRadPerSec / c.driveGearRatio) * c.wheelRadiusMeters;
+}
+
+/** The robot with its wheel-speed cap set from the top speed share (call after any change to the drive). */
+export function withTopSpeed(robot: RobotSettings): RobotSettings {
+  const cap = Number((robot.topSpeedShare * topSpeedMetersPerSecond(robot)).toFixed(5));
+  return robot.config.maxWheelMetersPerSecond === cap ? robot : { ...robot, config: { ...robot.config, maxWheelMetersPerSecond: cap } };
+}
+
+export const DEFAULT_ROBOT_SETTINGS: RobotSettings = withTopSpeed({
   config: DEFAULT_ROBOT,
   bumperLengthMeters: 0.85,
   bumperWidthMeters: 0.85,
+  topSpeedShare: DEFAULT_SHARE,
+  speedAt12VoltsMetersPerSecond: Number.NaN,
   extra: {},
-};
+});
 
-export const DEFAULT_PATH_DEFAULTS: PathDefaults = { maxMetersPerSecond: 4.0, maxMetersPerSecondSquared: 6.0, headingMode: "hold" };
+/** A new path plans to the robot's own limits (Infinity: none of its own). */
+export const DEFAULT_PATH_DEFAULTS: PathDefaults = { maxMetersPerSecond: Infinity, maxMetersPerSecondSquared: Infinity, headingMode: "hold" };
+
+/** The fixed limits new paths started with before they took the robot's: 4 m/s and 6 m/s². */
+export const OLD_PATH_LIMITS = { maxMetersPerSecond: 4.0, maxMetersPerSecondSquared: 6.0 } as const;
+
+/** Whether these limits are still the old fixed defaults, not ones somebody chose. */
+export function hasOldPathLimits(l: { readonly maxMetersPerSecond: number; readonly maxMetersPerSecondSquared: number }): boolean {
+  return l.maxMetersPerSecond === OLD_PATH_LIMITS.maxMetersPerSecond && l.maxMetersPerSecondSquared === OLD_PATH_LIMITS.maxMetersPerSecondSquared;
+}
 
 export const DEFAULT_SIM_PREVIEW: SimPreviewSettings = { latencyMs: 20, lagMs: 40, gripMu: null };
 

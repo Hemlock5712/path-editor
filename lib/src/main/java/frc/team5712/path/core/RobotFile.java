@@ -17,8 +17,8 @@ import java.util.Map;
  *   "bumperLengthMeters": 0.85, "bumperWidthMeters": 0.85 }
  * </pre>
  *
- * {@code tipDistanceMeters} is optional (a square base without it); {@code tractionRule} is
- * {@code "equalPush"} (the default) or {@code "tipOrGrip"}. The bumper keys aren't part of {@link RobotConfig}; {@code PlannerConfig.fromRobotFile} reads them.
+ * {@code tipDistanceMeters} is optional (a square base without it); {@code tractionShare} (0.9 if left out) is the
+ * share of grip-or-tipping the robot plans and drives to. An older file's {@code tractionRule} is ignored. The bumper keys aren't part of {@link RobotConfig}; {@code PlannerConfig.fromRobotFile} reads them.
  */
 public final class RobotFile {
   private RobotFile() {}
@@ -55,8 +55,7 @@ public final class RobotFile {
         PathFile.number(m, "maxAngularRadPerSecSquared", d.maxAngularRadPerSecSquared()),
         PathFile.number(m, "centerOfMassHeightMeters", d.centerOfMassHeightMeters()),
         PathFile.number(m, "tipDistanceMeters", d.tipDistanceMeters()),
-        m.get("tractionRule") == null ? d.tractionRule()
-            : RobotConfig.TractionRule.fromFileName(String.valueOf(m.get("tractionRule"))));
+        PathFile.number(m, "tractionShare", d.tractionShare()));
   }
 
   /** The JSON tree; unset optional limits are left out. */
@@ -83,7 +82,7 @@ public final class RobotFile {
     if (Double.isFinite(r.tipDistanceMeters())) {
       m.put("tipDistanceMeters", r.tipDistanceMeters());
     }
-    m.put("tractionRule", r.tractionRule().fileName());
+    m.put("tractionShare", r.tractionShare());
     Map<String, Object> motor = new LinkedHashMap<>();
     motor.put("nominalVolts", r.driveMotor().nominalVolts());
     motor.put("stallTorqueNewtonMeters", r.driveMotor().stallTorqueNewtonMeters());
