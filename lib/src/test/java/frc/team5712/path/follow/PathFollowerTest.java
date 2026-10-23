@@ -807,12 +807,19 @@ class PathFollowerTest {
     Path gentle = Path.build(FixturePaths.straight().withLimits(4.0, 2.0), ROBOT);
     run(gentle, new PathFollower(gentle, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
     assertTrue(lowest[0] < 1.0, "a gentle launch's slip lowers the grip: " + lowest[0]);
-    // the hard launch again, but the wheels spin up 5 m/s² faster than the chassis: all of them slide
+    // the hard launch again, the wheels spinning up 5 m/s² faster than the chassis and the chassis short of the ask:
+    // all of them slide
     slip.gap = 5.0;
+    achieved[0] = 7.5;
     lowest[0] = Double.POSITIVE_INFINITY;
     run(hard, new PathFollower(hard, tipCfg).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
     assertTrue(lowest[0] < 1.0, "a slide lowers the grip whatever the robot asked for: " + lowest[0]);
-    // the hard launch again, no slide, but the robot gets only 5 of the 9 it asked for: the floor is giving out
+    // ...but with the chassis getting all it asked for, only the light wheels spin: the tread's own
+    achieved[0] = 11.0;
+    lowest[0] = Double.POSITIVE_INFINITY;
+    run(hard, new PathFollower(hard, tipCfg).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
+    assertEquals(Double.POSITIVE_INFINITY, lowest[0], "light wheels spinning while the robot gets its ask");
+    // the hard launch again, no gap, but the robot gets only 5 of the 9 it asked for: the floor is giving out
     slip.gap = 0.0;
     achieved[0] = 5.0;
     lowest[0] = Double.POSITIVE_INFINITY;

@@ -38,6 +38,12 @@ describe("the bench page's data", () => {
     expect(courseWinners(TINY, "equalPush", "truth", "b")).toEqual(["choreo"]);
   });
 
+  it("doesn't count a finish that cut past a waypoint", () => {
+    expect(allFinished({ ...run(1.0), wp_miss_cm: 3 })).toBe(true);
+    expect(allFinished({ ...run(1.0), wp_miss_cm: 25 })).toBe(false);
+    expect(allFinished(run(1.0))).toBe(true); // older snapshots have no waypoint figure
+  });
+
   it("counts a tie at the hundredth for both", () => {
     const tie: MatchedData = { ...TINY, rules: { equalPush: { ...TINY.rules.equalPush!, runs: { truth: { a: { ours_opt: run(2.562), choreo: run(2.558) } } } } } };
     expect(courseWinners(tie, "equalPush", "truth", "a")).toEqual(["ours_opt", "choreo"]);

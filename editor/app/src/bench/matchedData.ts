@@ -13,6 +13,8 @@ export interface RunStats {
   /** Time past the tipping limit (an edge's wheels lifting), ms; absent in older snapshots. */
   readonly tip_ms?: number | null;
   readonly overshoot_cm: number | null;
+  /** The worst of how close the robot came to each waypoint between start and end, cm; absent in older snapshots. */
+  readonly wp_miss_cm?: number | null;
 }
 
 export interface MatchedRule {
@@ -36,7 +38,7 @@ export interface MatchedData {
 export type CourseGroup = "plan" | "disturbed";
 
 /** The methods on the page, ours first. */
-export const SHOWN: readonly string[] = ["ours_opt", "ours", "choreo_hold", "choreo", "pathplanner", "bline"];
+export const SHOWN: readonly string[] = ["ours_opt", "ours", "choreo_hold", "choreo", "pp_path2", "bline"];
 export const OURS = new Set<string>(["ours_opt", "ours"]);
 
 export const METHOD_NAMES: Record<string, string> = {
@@ -45,7 +47,7 @@ export const METHOD_NAMES: Record<string, string> = {
   choreo: "Choreo",
   choreo_hold: "Choreo + final hold",
   pathplanner: "PathPlanner",
-  pp_path2: "PathPlanner path2 (beta)",
+  pp_path2: "PathPlanner path2",
   bline: "BLine",
   ours_on_choreo: "Ours following Choreo's plan",
 };
@@ -56,8 +58,8 @@ export const METHOD_NOTES: Record<string, string> = {
   choreo_hold: "Choreo's trajectory and ChoreoLib's documented controller with its wheel forces, then held on the end pose until it gets there",
   choreo: "Choreo's trajectory, followed by ChoreoLib with its documented controller and its wheel forces, as CTRE's Choreo example sends them. It stops when the trajectory's time runs out",
   pathplanner: "PathPlanner 2027's trajectory and follower, tuned, with its wheel forces as CTRE's template sends them, holding on the end pose",
-  pp_path2: "PathPlanner's new path system (pre-release), tuned",
-  bline: "BLine, tuned, with BLine-Web's corner speed caps",
+  pp_path2: "PathPlanner's new path system (this season's; the app's own controller until the robot command is released), tuned, with each waypoint's speed capped for its corner",
+  bline: "BLine, tuned, with BLine-Web's corner speed caps and a 0.1 m handoff so it passes through the waypoints",
 };
 
 export const COURSE_NAMES: Record<string, string> = {
@@ -69,7 +71,7 @@ export const COURSE_NAMES: Record<string, string> = {
   figure_eight: "Figure eight",
   wall_hug: "Along a wall",
   spin_while_driving: "Full spin while driving",
-  fast_long: "Long and fast (5 m/s)",
+  fast_long: "Long and fast",
   heavy_robot: "Heavy robot (S-curve)",
   hit_mid_path: "Shoved halfway",
   low_grip_s_curve: "Slippery floor",
@@ -79,6 +81,9 @@ export const COURSE_NAMES: Record<string, string> = {
 
 /** A finished run that still ends further off than this doesn't count as a clean finish. */
 export const END_TOLERANCE_CM = 5;
+
+/** Nor does one that passed further than this from a waypoint it was drawn through (on average over the runs). */
+export const WAYPOINT_TOLERANCE_CM = 10;
 
 export function parseMatched(text: string): MatchedData {
   const d = JSON.parse(text) as MatchedData;
@@ -103,9 +108,10 @@ export function finished(s: RunStats): number {
   return s.n - s.t_settle_nan;
 }
 
-/** Every run finished, and ended within the tolerance. */
+/** Every run finished, ended within the tolerance and went through the waypoints. */
 export function allFinished(s: RunStats | null): boolean {
-  return !!s && s.t_settle_nan === 0 && s.t_settle !== null && (s.err_end_cm ?? Infinity) <= END_TOLERANCE_CM;
+  return !!s && s.t_settle_nan === 0 && s.t_settle !== null && (s.err_end_cm ?? Infinity) <= END_TOLERANCE_CM
+    && (s.wp_miss_cm ?? 0) <= WAYPOINT_TOLERANCE_CM;
 }
 
 /** Times this close count as a tie (the page shows hundredths). */

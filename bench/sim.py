@@ -69,13 +69,43 @@ def make_robot(course, seed):
     return rp, rng
 
 
-def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_rng=None):
+class Guard:
+    """The drivetrain guard a team puts between any follower and the modules: the commanded speed capped at the
+    course's, and its change per loop at the course's acceleration (translation) and spin acceleration limits.
+    Applied the same to every follower; one that already keeps to the limits is untouched."""
+
+    def __init__(self, limits, v0):
+        self.lim = limits
+        self.last = tuple(v0)
+
+    def __call__(self, cmd, dt):
+        lim, (lx, ly, lw) = self.lim, self.last
+        vx, vy, w = cmd
+        sp = math.hypot(vx, vy)
+        if sp > lim.max_speed:
+            vx, vy = vx * lim.max_speed / sp, vy * lim.max_speed / sp
+        dx, dy = vx - lx, vy - ly
+        step = math.hypot(dx, dy)
+        if step > lim.max_accel * dt:
+            k = lim.max_accel * dt / step
+            vx, vy = lx + dx * k, ly + dy * k
+        w = max(-lim.max_omega, min(lim.max_omega, w))
+        w = lw + max(-lim.max_alpha * dt, min(lim.max_alpha * dt, w - lw))
+        self.last = (vx, vy, w)
+        return self.last
+
+
+PREROLL_SECONDS = 2.0  # standing still before a run that starts at rest (slip sensing only)
+
+
+def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_rng=None, guard=None):
     """Run one follower on its native path from `start` (pose) with field velocity v0 for T seconds
     (reset is called here and timed). Returns a dict of 250 Hz traces
     (t, x, y, unwrapped heading, true speed) and run facts.
 
     pose_src: 'truth', 'odom' (WPILib wheel odometry + gyro) or 'slipodom' (lib's SlipAwareOdometry with
-    the bench IMU, see slipsense.py). Slip sensing also runs for any follower with `wants_sensing`."""
+    the bench IMU, see slipsense.py). Slip sensing also runs for any follower with `wants_sensing`.
+    guard: a Limits; every command then goes through the same Guard (speed and acceleration caps)."""
     if plant is None:
         plant = DisturbedPlant(rp, start, v0, rng)
     gyro0, modules0 = plant.read_gyro(), plant.read_modules()
@@ -107,9 +137,16 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
         from slipsense import Sensing
 
         sensing = Sensing(plant, Imu(plant, imu_rng or np.random.default_rng(0)), start, gyro0, modules0)
+        if not any(v0):
+            # the robot stands still before auto with its odometry running (robotPeriodic runs while disabled),
+            # so the slip-aware odometry has learnt the IMU's bias by the time it moves
+            for k in range(int(round(PREROLL_SECONDS / LP.odom_period)), 0, -1):
+                sensing.update(-k * LP.odom_period, gyro0, modules0, (0.0, 0.0, 0.0), start[2])
 
     dt = LP.sim_dt
     t, next_odom, next_main = 0.0, 0.0, LP.main_period
+    guarding = Guard(guard, v0) if guard is not None else None
+    last_main = 0.0
     requests, cur_req, cur_ff = [], (v0[0], v0[1], v0[2]), None
     ts, xs, ys, ths, sp = [], [], [], [], []
     wheel_slip = 0.0
@@ -151,6 +188,9 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
                     t_done = t
                     cmd = (0.0, 0.0, 0.0) if follower.end_output == "zero" else "idle"
                     ff = None
+                if guarding is not None and cmd != "idle":
+                    cmd = guarding(tuple(cmd), max(t - last_main, 1e-3))
+                last_main = t
                 requests.append((t + LP.actuation_delay, cmd if cmd == "idle" else tuple(cmd), ff))
         plant.step(dt)
         t += dt
@@ -183,6 +223,10 @@ def run_one(job, trace=False):
     """job = (course name, method key, options dict or None, seed, pose source 'odom' | 'truth').
     trace=True adds the true path every 40 ms as [[t, x, y, heading], ...]."""
     cname, mkey, opts, seed, pose_src = job
+    guard = None
+    if opts and "guard" in opts:  # the drivetrain guard at the course's limits (see Guard)
+        guard = COURSES[cname].limits if opts["guard"] else None
+        opts = {k: v for k, v in opts.items() if k != "guard"}
     course = COURSES[cname]
     npath = NeutralPath(course)
     rp, rng = make_robot(course, seed)
@@ -198,7 +242,7 @@ def run_one(job, trace=False):
     if getattr(follower, "needs_plant", False):  # an end that moves when it is seen needs the true pose
         follower.plant = plant
     imu_rng = np.random.default_rng([seed, 7919])  # its own stream: the IMU changes no other number
-    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant, imu_rng)
+    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant, imu_rng, guard)
     ts, xs, ys, ths = r["t"], r["x"], r["y"], r["th"]
     end = getattr(follower, "true_end", course.end_pose)
     dist, eth, t_5cm, t_settle = end_metrics(r, end)
@@ -218,7 +262,12 @@ def run_one(job, trace=False):
     near = np.flatnonzero(dist < 0.5)
     i0 = reached[0] if len(reached) else (near[0] if len(near) else 0)
     over = float(max(0.0, ((xs[i0:] - end[0]) * tx + (ys[i0:] - end[1]) * ty).max()))
+    # how close the robot came to each waypoint drawn between the start and the end (the worst of them): the
+    # waypoints are where the driver said the robot must go, so a follower that cuts past them doesn't follow
+    inner = course.waypoints[1:-1]
+    wp_miss = max((float(np.min(np.hypot(xs - w.x, ys - w.y))) for w in inner), default=0.0)
     out = {
+        "wp_miss_cm": 100 * wp_miss,
         "ct_rms_cm": 100 * float(np.sqrt(np.mean(d_neutral ** 2))),
         "ct_max_cm": 100 * float(d_neutral.max()),
         "ct_own_rms_cm": 100 * float(np.sqrt(np.mean(d_own ** 2))),

@@ -27,5 +27,6 @@ test("the bench page tells the comparison in plain words", async ({ page }) => {
     await page.getByTestId(id).screenshot({ path: `test-results/${id}.png` });
   }
   await page.getByTestId("bench-how").locator("summary").click();
-  await expect(page.getByTestId("bench-how")).toContainText("90 % of grip or tipping");
+  await expect(page.getByTestId("bench-how")).toContainText("95 % of grip or tipping");
+  await expect(page.getByTestId("bench-hold-note")).toContainText("+ final hold");
 });

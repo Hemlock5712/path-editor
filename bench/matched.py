@@ -57,7 +57,12 @@ DISTURB = ["hit_mid_path", "low_grip_s_curve", "grip_drop_s_curve"]
 POSES = ["truth", "odom", "slipodom"]
 RULES = {"tg": "tipOrGrip"}  # the robot's rule (AccelerationLimiter, 11.2 m/s^2); equal push was dropped 2026-10-23
 CHOREO_G = 9.8  # trajoptlib swerve_trajectory_generator.cpp: normal force = mass * 9.8 / wheels
-OURS_G, MARGIN = 9.81, 0.9  # RobotConfig.GRAVITY, TRACTION_MARGIN
+OURS_G = 9.81  # RobotConfig.GRAVITY
+# Every planner plans to the robot's real limits (2026-10-23, Joe): 95 % of grip-or-tip (ours tracks its plan closely
+# enough not to need the library's default 10 % margin; the others overrun theirs anyway) and up to 4.5 m/s, just
+# under the motors' 4.57 m/s free speed, on every course (fast_long's own 5 m/s is past the free speed).
+MARGIN = 0.95
+TOP_SPEED = 4.5
 METHODS = {"choreo": "Choreo + ChoreoLib follower", "choreo_hybrid": "Choreo geometry + DriveToPose finish",
            "ours": "Ours v2"}
 
@@ -81,7 +86,7 @@ def register():
         for b in BASE:
             c = COURSES[b]
             n = name(tag, b)
-            COURSES[n] = replace(c, name=n, limits=replace(c.limits, max_accel=a),
+            COURSES[n] = replace(c, name=n, limits=replace(c.limits, max_accel=a, max_speed=TOP_SPEED),
                                  description=c.description + f"; matched limits, {rule} {a:.2f} m/s^2")
             folder = f"{tag}_heavy" if b == "heavy_robot" else tag
             CHOREO_TRAJ[n] = f"matched/{folder}/{b}"
@@ -90,7 +95,7 @@ def register():
         for b in DISTURB:
             c = COURSES[b]
             n = name(tag, b)
-            COURSES[n] = replace(c, name=n, limits=replace(c.limits, max_accel=a),
+            COURSES[n] = replace(c, name=n, limits=replace(c.limits, max_accel=a, max_speed=TOP_SPEED),
                                  description=c.description + f"; matched limits, {rule} {a:.2f} m/s^2")
             CHOREO_TRAJ[n] = f"matched/{tag}/s_curve"
 
@@ -176,7 +181,7 @@ def _robot(n, rule):
     """Ours' robot file for a matched course: the bench plant, the rule, the course's robot where it has one."""
     from followers.ours_v2 import OURS_MU, robot_json
 
-    robot = dict(robot_json(OURS_MU), tractionRule=rule)
+    robot = dict(robot_json(OURS_MU), tractionRule=rule, tractionShare=MARGIN)
     r = EXTRAS.get(n, {}).get("robot")
     if r:
         robot.update(massKg=r["mass"], momentOfInertiaKgM2=r["inertia"], statorCurrentLimitAmps=r["stator_limit"])
@@ -318,19 +323,19 @@ RUN_METHODS = {"choreo": ("choreo", "choreo"), "choreo_hold": ("choreo", "choreo
 # Every end tolerance in heading is 0.5 deg, half the finish rule's 1 deg, as the position ones are tuned under its
 # 2 cm (BLine 1 cm; the holds' 2 cm sits on it, but they keep driving until the speed is under 5 cm/s). With the
 # libraries' 2 deg defaults a follower that arrives still turning (spin_while_driving) stops between 1 and 2 deg.
-# Re-swept at 11.2 m/s^2 (2026-10-23, 2 seeds x the 10 courses, best total with every run finished): PathPlanner kP 20 /
-# rot 10 (24.42 s; was kP 10: 25.23), Choreo + hold kP 15 / rot 10 (24.50 s; ChoreoLib's documented 10 / 7.5: 25.05).
-# Stiffer gains (30+) lose finishes and double the slip. Stock Choreo keeps the documented gains: it is "as teams start".
-# Ours, swept the same way (2 seeds): brake 8 m/s^2 (the bench's default is the library's 6) and heading ease-in 12
-# (default 5): 24.69 s vs 25.01 as shipped. Braking at the full 11.2 is no faster and slips more; the follower's
-# other gains move the total by under 0.2 s.
-TUNED = {"ours": {"brakeMetersPerSecondSquared": 8.0, "headingEaseInPerSecond": 12.0},
+# Swept at the robot's limits (95 % of grip-or-tip, 11.84 m/s^2, up to 4.5 m/s; 2026-10-23, 2 seeds x the 10 courses):
+# the best total with every run finished on target AND through every waypoint (within 10 cm; sim.py wp_miss_cm).
+# - Ours: brake 8 m/s^2, heading ease-in 12, latency 0.06 s (23.77 s; 0.05 s was 24.24, 0.09 s overshoots).
+# - Choreo + hold: ChoreoLib's documented kP 10 / 7.5 (stiffer gains miss waypoints and slip far more).
+# - path2: kP 4, cross-track 1, handoff 0.25 m, path2 waypoints capped at their corner's speed (27.33 s). Handoffs of
+#   0.75-1.25 m are faster (22.7 s) only by cutting 20-45 cm inside the waypoints.
+# - BLine: kP 4, cross-track 4, radius 0.1 m (37.4 s); its 0.6 m radius cut past the waypoints the same way.
+# PathPlanner's time-based follower (2027 branch) is off the page: path2 is what ships this season (Joe).
+TUNED = {"ours": {"brakeMetersPerSecondSquared": 8.0, "headingEaseInPerSecond": 12.0, "latencySeconds": 0.06},
          "pp": {"kp": 20.0, "kp_rot": 10.0, "hold": True, "ff": True, "hold_deg": 0.5},
-         "choreo": {"ff": True}, "choreo_hold": {"kp": 15.0, "kp_rot": 10.0, "ff": True, "hold": True, "hold_deg": 0.5},
-         "pp2": {"kp": 2.0, "kp_ct": 2.0, "handoff": 0.75, "end_distance": 0.02, "end_degrees": 1.0},
-         # kP 2 / cross-track 6 were swept at the old 6 m/s^2; re-swept at 11.2 (2026-10-23): kP 4 / 4 finishes every
-         # run, 27.7 s over the 10 courses vs 37.4; kP 4.5 and up overshoot and miss finishes
-         "bline": {"kp": 4.0, "kp_ct": 4.0, "tol": 0.01, "tol_deg": 0.5, "radius": 0.6, "caps": True}}
+         "choreo": {"ff": True}, "choreo_hold": {"kp": 10.0, "kp_rot": 7.5, "ff": True, "hold": True, "hold_deg": 0.5},
+         "pp2": {"kp": 4.0, "kp_ct": 1.0, "handoff": 0.25, "end_distance": 0.02, "end_degrees": 0.5, "corner_caps": True},
+         "bline": {"kp": 4.0, "kp_ct": 4.0, "tol": 0.01, "tol_deg": 0.5, "radius": 0.1, "caps": True}}
 
 
 def run_options(m, rule):
@@ -338,7 +343,7 @@ def run_options(m, rule):
     key, kind = RUN_METHODS[m]
     a = traction(rule)
     if kind is True:
-        return key, dict(TUNED["ours"], robot={"tractionRule": rule})
+        return key, dict(TUNED["ours"], robot={"tractionRule": rule, "tractionShare": MARGIN})
     if kind == "pp":
         return key, dict(TUNED["pp"], cof=a / CHOREO_G)
     if kind == "pp2":
@@ -397,9 +402,9 @@ def run(procs, seeds, methods, poses, courses):
 EXPORT = os.path.join(os.path.dirname(HERE), "editor", "app", "public", "bench", "matched.json")
 EXPORT_METHODS = {"ours_opt": "Ours, optimised", "ours": "Ours, as drawn", "choreo": "Choreo + ChoreoLib",
                   "choreo_hold": "Choreo + ChoreoLib + final hold",
-                  "pathplanner": "PathPlanner (tuned) + hold",
+                  "pp_path2": "PathPlanner path2 (pre-release, tuned)",
                   "bline": "BLine (tuned, corner caps)", "ours_on_choreo": "Ours following Choreo's plan"}
-STATS = ("t_5cm", "t_settle", "err_end_cm", "ct_own_rms_cm", "ct_own_max_cm", "wheel_slip_ms", "tip_ms", "overshoot_cm")
+STATS = ("t_5cm", "t_settle", "err_end_cm", "ct_own_rms_cm", "ct_own_max_cm", "wheel_slip_ms", "tip_ms", "wp_miss_cm", "overshoot_cm")
 
 
 def _stats(rows):

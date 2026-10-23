@@ -298,6 +298,10 @@ Under `equalPush` the plan stays under the onset, so adaptive grip never acts on
     gripping. Each spell starts by rewinding the detection lag (60 ms) and replaying the stored IMU
     samples. A spell lasts at most 0.1 s with no bias learnt, growing to 1.5 s as the bias is
     learnt; after that the wheels take over again.
+- **Keep it running while disabled.** It learns the IMU's bias whenever the wheels grip, standing still included,
+  and only trusts the IMU through a slide for as long as that bias is learnt (0.1 s with nothing learnt, up to
+  1.5 s). Update it in `robotPeriodic`, so the robot starts auto with the bias known. On the bench, a shove at
+  4.5 m/s 0.86 s into a run ended 60 cm off without that, and 9 cm with 2 s of standing still first.
 - **Tuning.** All thresholds were tuned on the bench's tuning seeds only: IMU gap 2.5 m/s²,
   follower confidence 0.3, recovery 0.05 μ/s. The IMU-gap threshold and the spell limits are where
   the sweep scored best after widening the grid once.
@@ -312,8 +316,14 @@ for a loop, and the slip detector holds the spell for about 0.25 s. The follower
 - slip only counts as the tread's own while the robot achieves at least 80 % of the acceleration it was
   commanded (the best the IMU saw in the spell, since it lags). On its own floor the loaded wheels make up for
   the light ones; a floor giving out falls short, however hard the ask.
-The slippery floor (odometry only, 3 seeds) went from 12.9 to 9.2 cm and the grip drop from 7.7 to 7.2 cm
-(2.36 to 2.17 s); clean courses are unchanged.
+- the slide check (the wheels well ahead of the IMU, `slideGapMetersPerSecondSquared`) only counts while the robot
+  is also getting under 95 % of its ask. Near top speed the light wheels spin up fast, so a launch's end read as a
+  slide (gap 3.51 against 3.5) while the robot was getting 97 % of its ask; on those runs the grip latched at μ 0.67
+  and the rest of the path was 0.4 s slower.
+
+On the bench at the robot's limits (95 %, 4.5 m/s) this took the hairpin and long-and-fast outliers from 2.75 s to
+2.33 s; the clean courses lost no time. Odometry on the slippery-floor courses is noisy run to run (6 to 23 cm per
+seed), so judge it on the full 10-seed bench.
 
 Wheel force feedforward shared by each wheel's load was tried (2026-10-23) and taken out: on the bench it gave
 the same time, 13 % less wheel slip, worse odometry on slippery floors and more time past the tipping limit.

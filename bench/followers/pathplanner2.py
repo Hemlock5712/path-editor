@@ -470,6 +470,29 @@ def to_path2(course_or_legs, limits: Limits = Limits(), handoff=DEFAULT_HANDOFF)
     return {"paths": paths, "end_distance": DEFAULT_END_DISTANCE, "end_angle": math.radians(DEFAULT_END_DEGREES)}
 
 
+def path2_corner_caps(wps, max_accel):
+    """Caps each interior waypoint's max velocity at the corner's: the robot hands off within h of it and turns
+    by theta, an arc of radius max(h, h / tan(theta / 2)), so sqrt(a r) (BLine-Web's corner rule, safety 1).
+    The cap goes on the corner and on the waypoint after it (the approach and the way out)."""
+    caps = [w["vmax"] for w in wps]
+    for k in range(1, len(wps) - 1):
+        (x0, y0), (x1, y1), (x2, y2) = wps[k - 1]["xy"], wps[k]["xy"], wps[k + 1]["xy"]
+        l0, l1 = math.hypot(x1 - x0, y1 - y0), math.hypot(x2 - x1, y2 - y1)
+        if l0 <= 1e-9 or l1 <= 1e-9:
+            continue
+        dot = max(-1.0, min(1.0, ((x1 - x0) * (x2 - x1) + (y1 - y0) * (y2 - y1)) / (l0 * l1)))
+        turn = math.acos(dot)
+        if turn < 1e-4:
+            continue
+        h = max(wps[k]["handoff"], 0.05)
+        r = max(h, h / math.tan(turn / 2)) if turn < math.pi - 1e-6 else h
+        cap = min(wps[k]["vmax"], max(0.2, math.sqrt(max_accel * r)))
+        caps[k] = min(caps[k], cap)
+        caps[k + 1] = min(caps[k + 1], cap)
+    for w, c in zip(wps, caps):
+        w["vmax"] = c
+
+
 def fractional_targets(legs):
     return [h for leg in legs for h in leg.heading_targets if h.pos != int(h.pos)]
 
@@ -508,8 +531,12 @@ class PathPlanner2(Follower):
     speeds. A chain of paths: the next starts when one finishes, targeting its second waypoint."""
 
     def __init__(self, accel_cap=None, handoff=DEFAULT_HANDOFF, end_distance=DEFAULT_END_DISTANCE,
-                 end_degrees=DEFAULT_END_DEGREES, kp=4.0, kp_ct=2.0, kp_rot=5.0, limits: Limits = Limits(), cof=None):
+                 end_degrees=DEFAULT_END_DEGREES, kp=4.0, kp_ct=2.0, kp_rot=5.0, limits: Limits = Limits(), cof=None,
+                 corner_caps=False):
+        """corner_caps: each waypoint's max velocity set to what its corner allows, as a team drawing a path2
+        path would (path2 waypoints have no curves, so the robot must slow to turn through a sharp one)."""
         self.accel_cap, self.handoff, self.lim = accel_cap, handoff, limits
+        self.corner_caps = corner_caps
         self.gains = (kp, kp_ct, kp_rot)
         self.end_distance, self.end_angle = end_distance, math.radians(end_degrees)
         self.cfg = robot_config(cof)
@@ -519,6 +546,9 @@ class PathPlanner2(Follower):
     def adapt(self, course):
         native = to_path2(course, self.lim, self.handoff)
         native["end_distance"], native["end_angle"] = self.end_distance, self.end_angle
+        if self.corner_caps:
+            for wps in native["paths"]:
+                path2_corner_caps(wps, self.accel_cap or self.lim.max_accel)
         return native
 
     @staticmethod

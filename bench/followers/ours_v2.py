@@ -149,7 +149,11 @@ class OursV2(Follower):
 
     robot_overrides = {}  # robot file fields that differ from the bench plant (set for the heavy_robot course)
 
-    def __init__(self, mu=OURS_MU, limits: Limits = Limits(), robot=None, **follower_options):
+    def __init__(self, mu=OURS_MU, limits: Limits = Limits(), robot=None, plan_speed=None, plan_accel=None,
+                 **follower_options):
+        """plan_speed / plan_accel: the path's own speed and acceleration caps in place of the course's (the
+        robot's real limits instead of the shared ones)."""
+        self.plan_speed, self.plan_accel = plan_speed, plan_accel
         self.mu = mu
         if robot:  # robot file fields beyond the plant's (e.g. the traction rule)
             self.robot_overrides = dict(robot)
@@ -174,6 +178,13 @@ class OursV2(Follower):
     def reset(self, native, start):
         # a path that starts after t = 0 is the next one of a chain: it keeps the run's slip-sensing session
         src = {"trajectory": native["trajectory"]} if "trajectory" in native else {"path": native["path"]}
+        if "path" in src and (self.plan_speed or self.plan_accel):
+            src["path"] = dict(src["path"])
+            # raised, never lowered: a course faster than this keeps its own cap
+            if self.plan_speed:
+                src["path"]["maxMetersPerSecond"] = max(self.plan_speed, src["path"]["maxMetersPerSecond"])
+            if self.plan_accel:
+                src["path"]["maxMetersPerSecondSquared"] = max(self.plan_accel, src["path"]["maxMetersPerSecondSquared"])
         r = call_fresh(op="load", **src, robot=dict(robot_json(self.mu), **self.robot_overrides),
                        options=self.options, keepSensing=start.t > 0)
         self.srv = server()

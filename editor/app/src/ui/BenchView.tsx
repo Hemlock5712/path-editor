@@ -187,7 +187,7 @@ function Speed({ d, rule }: { d: MatchedData; rule: string }) {
       <Bars rows={slipRows} testId="bench-slip-bars" label="Time wheels spent slipping" />
       <p className="hint">Time wheels spent slipping, added up over the {d.courses.plan.length} courses (two wheels slipping for 1 s counts 2 s).</p>
       <p className="bench-lead">
-        <strong>Past the tipping point.</strong> Speeding up or braking harder than about {(9.81 * 0.254 / 0.2).toFixed(1)} m/s� lifts the
+        <strong>Past the tipping point.</strong> Speeding up or braking harder than about {(9.81 * 0.254 / 0.2).toFixed(1)} m/s² lifts the
         wheels on one edge (the centre of mass is 0.2 m up, the wheels 0.254 m out). The simulated robot can't push harder than that, but
         a follower that keeps asking spends that time on the edge of a wheelie. Less is better.
       </p>
@@ -204,7 +204,7 @@ function Speed({ d, rule }: { d: MatchedData; rule: string }) {
             follows by position and brakes onto the target. Choreo + final hold adds the hold many teams add, and finishes.
           </p>
           <Bars rows={planRows} testId="bench-plan-bars" label="Planned time" />
-          <p className="hint">Planned time, before driving. BLine steers toward waypoints as it goes and has no plan to time.</p>
+          <p className="hint">Planned time, before driving. PathPlanner path2 and BLine steer toward waypoints as they go and have no plan to time.</p>
         </>
       )}
     </Section>
@@ -357,11 +357,17 @@ function CourseByCourse({ d, rule }: { d: MatchedData; rule: string }) {
                       <td key={m} className={cls} data-tip={tip}>
                         {s.t_settle === null ? <span className="cell-warn">never finished</span> : `${s2(s.t_settle)}`}
                         {s.t_settle !== null && !allFinished(s) && (
-                          <span className="cell-sub warn">{done < s.n ? `${done} of ${s.n} finished` : `ends ${cm(s.err_end_cm ?? Number.NaN)} cm off`}</span>
+                          <span className="cell-sub warn">
+                            {done < s.n
+                              ? `${done} of ${s.n} finished`
+                              : (s.err_end_cm ?? Infinity) > END_TOLERANCE_CM
+                                ? `ends ${cm(s.err_end_cm ?? Number.NaN)} cm off`
+                                : `misses a waypoint by ${cm(s.wp_miss_cm ?? Number.NaN)} cm`}
+                          </span>
                         )}
                         <span className="cell-sub">
-                          slip {((s.wheel_slip_ms ?? Number.NaN) / 1000).toFixed(1)} s{(s.tip_ms ?? 0) >= 50 ? ` � tipping ${((s.tip_ms ?? 0) / 1000).toFixed(2)} s` : ""}
-                          {typeof odo === "number" ? ` � odometry ${cm(odo)} cm` : ""}
+                          slip {((s.wheel_slip_ms ?? Number.NaN) / 1000).toFixed(1)} s{(s.tip_ms ?? 0) >= 50 ? ` · tipping ${((s.tip_ms ?? 0) / 1000).toFixed(2)} s` : ""}
+                          {typeof odo === "number" ? ` · odometry ${cm(odo)} cm` : ""}
                         </span>
                       </td>
                     );
@@ -392,21 +398,41 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
         </li>
         <li>
           <strong>The same limits for everyone.</strong> Each planner may accelerate and corner up to {r.traction.toFixed(2)} m/s² (the
-          traction limit, see below), at up to 4 m/s (5 m/s on the long, fast course). Ours, Choreo and PathPlanner
-          take that from their robot settings; BLine from its acceleration cap.
+          traction limit, see below), at up to 4.5 m/s, just under the motors' 4.57 m/s free speed. Ours and Choreo take that from
+          their robot settings; PathPlanner path2 and BLine from their acceleration caps.
         </li>
         <li>
-          <strong>Tuned followers.</strong> Each library's follower uses the gains a sweep picked as its best. Choreo uses ChoreoLib's
-          documented controller, as teams start from. Choreo and PathPlanner also send their plans' wheel forces as feedforward, as CTRE's
-          templates for them do; ours sends velocities only, as our robot code does.
+          <strong>Tuned followers.</strong> Each library's follower uses the settings a sweep picked as its best: the fastest that finishes
+          every run on target and through every waypoint. Choreo uses ChoreoLib's documented controller, as teams start from, and sends
+          its plan's wheel forces as feedforward, as CTRE's Choreo example does; ours sends velocities only, as our robot code does.
+          PathPlanner path2 and BLine get each waypoint's speed capped for its corner, as a team drawing their paths would.
+        </li>
+        <li data-testid="bench-path2-note">
+          <strong>PathPlanner path2</strong> is PathPlanner's new path system, the one coming this season. Its robot command isn't
+          released yet, so this is the controller from the PathPlanner app's own simulator (the new-path branch), which the release
+          may change.
+        </li>
+        <li data-testid="bench-waypoint-note">
+          <strong>Through every waypoint.</strong> A clean finish also passes within 10 cm of every waypoint you drew: they are where
+          the robot must go, past an obstacle or through a gap. Followers that steer toward waypoints (path2, BLine) can be tuned to
+          go faster by turning for the next waypoint early, which cuts 20 to 45 cm inside the corners; that doesn't count.
+        </li>
+        <li data-testid="bench-hold-note">
+          <strong>+ final hold.</strong> Choreo's follower runs on a clock: when the trajectory's time is up the command ends,
+          wherever the robot is, and if it is still a few centimetres short of or past the target it stays there. "+ final hold"
+          keeps the controller pushing toward the end pose after the clock runs out, until the robot is within 2 cm and 0.5° and
+          stopped, as many teams add. "Choreo" is ChoreoLib as shipped, without it. Ours follows by position and brakes onto the
+          target, so it needs no hold.
         </li>
         <li>
           <strong>Finishing</strong> means {d.settleRule}. Every course is driven {d.seeds} times with small random differences in the
-          robot.
+          robot. Before each run the robot stands still for 2 s with its odometry running, as it does before auto.
         </li>
         <li>
-          <strong>Traction.</strong> The limit is 90 % of grip or tipping, whichever comes first, as AccelerationLimiter:{" "}
-          {r.traction.toFixed(2)} m/s². The loaded wheels push harder than the light ones, so a follower has to cope with some slip.
+          <strong>Traction.</strong> The limit is 95 % of grip or tipping, whichever comes first: {r.traction.toFixed(2)} m/s². Ours
+          follows its plan closely enough to use more than the library's default 90 %. The loaded wheels push harder than the light
+          ones, so a follower has to cope with some slip. Past about {(9.81 * 0.254 / 0.2).toFixed(1)} m/s² the robot would start to
+          tip, and the simulated one can't push harder than that.
         </li>
         <li>
           <strong>Optimised</strong> is the editor's Optimise path: it reshapes the curves between the waypoints you drew, which stay put.

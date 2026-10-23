@@ -691,8 +691,7 @@ public final class PathFollower {
       spellMaxCommanded = Math.max(spellMaxCommanded, commandedAccel);
       spellMaxStep = Math.max(spellMaxStep, stepPeak);
       double onset = cfg.robot().wheelSlipOnsetMetersPerSecondSquared();
-      boolean sliding = slipSignal.imuGapMetersPerSecondSquared() >= cfg.slideGapMetersPerSecondSquared();
-      expected = spellMaxCommanded >= cfg.expectedSlipShare() * onset && !sliding;
+      expected = spellMaxCommanded >= cfg.expectedSlipShare() * onset;
       // A spell that starts just after a hard step (a launch, the first loop of braking) is the step's own
       // transient while it lasts no longer than BRIEF_SPELL_SECONDS: a step slips the wheels at once, and the
       // detector holds the spell a while after. A slick floor is still slipping after that.
@@ -704,7 +703,12 @@ public final class PathFollower {
       double asked = spellMaxCommanded;
       spellMaxAchieved = Math.max(spellMaxAchieved, slipSignal.achievedAccelMetersPerSecondSquared()); // the IMU lags
       boolean delivering = spellMaxAchieved >= EXPECTED_ACHIEVED_SHARE * asked;
-      expected = (expected || stepTransient && !sliding) && delivering;
+      // The wheels spinning up well ahead of the chassis (the IMU gap) is a slide, unless the chassis is getting
+      // (nearly) all it asked for: then the loaded wheels grip and only the light ones spin (near top speed they
+      // spin up fast)
+      boolean sliding = slipSignal.imuGapMetersPerSecondSquared() >= cfg.slideGapMetersPerSecondSquared()
+          && spellMaxAchieved < SLIDE_ACHIEVED_SHARE * asked;
+      expected = (expected || stepTransient) && delivering && !sliding;
       if (expected && timeSeconds - spellStart <= BRIEF_SPELL_SECONDS) {
         slipMu = spellStartMu;
         spellLatched = false;
@@ -785,6 +789,8 @@ public final class PathFollower {
   private static final double BRIEF_SPELL_SECONDS = 0.3;
   /** Slip the tread's own still delivers at least this share of the acceleration asked for. */
   private static final double EXPECTED_ACHIEVED_SHARE = 0.8;
+  /** With the wheels well ahead of the IMU, a robot still getting this share of its ask isn't sliding. */
+  private static final double SLIDE_ACHIEVED_SHARE = 0.95;
 
   /** Shorter steps than this don't give a velocity from the pose (the measured one is used). */
   private static final double MIN_POSE_DT = 0.005;
