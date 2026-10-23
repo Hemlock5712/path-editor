@@ -378,10 +378,6 @@ function WithoutVision({ d, rule }: { d: MatchedData; rule: string }) {
     .map((s) => ({ method: s.method, value: s.endErrorCm, text: `${cm(s.endErrorCm)} cm`, tip: METHOD_NOTES[s.method] }))
     .sort((a, b) => a.value - b.value);
   const shove = SHOWN.map((m) => stats(d, rule, "odom", SHOVE, m)?.err_end_cm).filter((v): v is number => typeof v === "number");
-  const slipAware: BarRow[] = SHOWN.flatMap((m) => {
-    const e = stats(d, rule, "slipodom", SHOVE, m)?.err_end_cm;
-    return typeof e === "number" ? [{ method: m, value: e, text: `${cm(e)} cm`, tip: METHOD_NOTES[m] }] : [];
-  }).sort((a, b) => a.value - b.value);
   return (
     <Section
       id="odometry"
@@ -394,15 +390,9 @@ function WithoutVision({ d, rule }: { d: MatchedData; rule: string }) {
       {shove.length > 0 && (
         <p className="bench-lead" data-testid="bench-shove-note">
           A shove is the hard case. The robot slides sideways, the wheels don't count the slide, and with plain wheel odometry every
-          follower ends {Math.min(...shove).toFixed(0)}–{Math.max(...shove).toFixed(0)} cm off while sure it is on target.{" "}
-          {slipAware.length > 0 && "Our library's slip-aware odometry uses the IMU to notice the slide. Given to every follower, the shove ends:"}
+          follower ends {Math.min(...shove).toFixed(0)}–{Math.max(...shove).toFixed(0)} cm off while sure it is on target. Only a
+          camera (vision) sees where the robot really is after a slide.
         </p>
-      )}
-      {slipAware.length > 0 && (
-        <>
-          <Bars rows={slipAware} testId="bench-slipaware-bars" label="Shoved halfway, slip-aware odometry: distance from the target at the end" />
-          <p className="hint">Shoved halfway, slip-aware odometry: average distance from the target at the end. Shorter is better.</p>
-        </>
       )}
     </Section>
   );
@@ -512,7 +502,7 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
         </li>
         <li>
           <strong>Finishing</strong> means {d.settleRule}. Every course is driven {d.seeds} times with small random differences in the
-          robot. Before each run the robot stands still for 2 s with its odometry running, as it does before auto.
+          robot.
         </li>
         <li>
           <strong>Traction.</strong> The limit is 95 % of grip or tipping, whichever comes first: {r.traction.toFixed(2)} m/s², the

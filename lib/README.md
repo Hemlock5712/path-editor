@@ -3,10 +3,9 @@
 | Package | What | Depends on |
 | --- | --- | --- |
 | `frc.team5712.path.core` (phase 2) | geometry, heading and velocity profiles, frame flips, path files | nothing |
-| `frc.team5712.path.follow` (phase 3) | `PathFollower`: one controller from path to pose | core, slip |
-| `frc.team5712.path.slip` | `SlipDetector`, `SlipAwareOdometry` (optional), `SlipSignal` | core |
+| `frc.team5712.path.follow` (phase 3) | `PathFollower`: one controller from path to pose | core |
 | `frc.team5712.path.plan` (phase 4) | `Pathfinder`: obstacle-avoiding paths during a match; `OnTheFly`: plan, follow, re-plan | core |
-| `frc.team5712.path.tools` | `FixtureGen`, `ProfileCli`, `PlanCli`, `BenchServer` (the bench bridge) | core, follow, plan, slip |
+| `frc.team5712.path.tools` | `FixtureGen`, `ProfileCli`, `PlanCli`, `BenchServer` (the bench bridge) | core, follow, plan |
 | `frc.team5712.path.wpilib` (source set `src/wpilib`) | Commands v3 and v2 adapters, `PathLibrary`, telemetry | WPILib 2027 |
 
 The core and the follower have no dependencies, so they test in seconds; the core ports line for
@@ -193,34 +192,6 @@ in the robot code with it. On the bench's slippery floor (μ 0.91 under a plan f
 31 cm off; told the floor's μ, 10.6 cm (adaptive grip, removed 2026-10-23, got 7.2 cm). A camera fixes the pose
 either way.
 
-### Slip: detection and slip-aware odometry (`frc.team5712.path.slip`)
-
-- **`SlipDetector`** takes one sample per odometry update: wheel speeds and angles, the gyro
-  heading, optionally the accelerometer and the command. It weighs three kinds of evidence:
-  - each module's residual against the rigid-body fit (median chassis velocity, with the gyro's yaw
-    rate known);
-  - a wheel turning faster than its commanded module speed;
-  - the gap between the wheels' implied acceleration and the accelerometer's (both low-passed,
-    30 ms).
-
-  The output is a flag per module and a chassis confidence, which rises at once and decays over
-  0.15 s. On the bench the IMU gap is what finds slip. In that plant all four wheels tend to slip
-  together, so the per-module residuals rarely stand out.
-- **`SlipAwareOdometry`** is optional and replaces `SwerveDriveOdometry`:
-  - The wheels' least-squares step down-weights slipping modules (weight 0.01).
-  - On a clean run it equals WPILib's odometry exactly (tested to 1e-9).
-  - While slipping, an IMU-driven velocity carries the pose. The IMU's bias is learnt while
-    gripping. Each spell starts by rewinding the detection lag (60 ms) and replaying the stored IMU
-    samples. A spell lasts at most 0.1 s with no bias learnt, growing to 1.5 s as the bias is
-    learnt; after that the wheels take over again.
-- **Keep it running while disabled.** It learns the IMU's bias whenever the wheels grip, standing still included,
-  and only trusts the IMU through a slide for as long as that bias is learnt (0.1 s with nothing learnt, up to
-  1.5 s). Update it in `robotPeriodic`, so the robot starts auto with the bias known. On the bench, a shove at
-  4.5 m/s 0.86 s into a run ended 60 cm off without that, and 9 cm with 2 s of standing still first.
-- **Tuning.** All thresholds were tuned on the bench's tuning seeds only: IMU gap 2.5 m/s²,
-  follower confidence 0.3, recovery 0.05 μ/s. The IMU-gap threshold and the spell limits are where
-  the sweep scored best after widening the grid once.
-
 ### WPILib adapters (`src/wpilib`)
 
 These are compiled against WPILib 2027.0.0-alpha-7 from the installer's offline maven repo
@@ -281,7 +252,7 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 
 | Request | Reply |
 | --- | --- |
-| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session) and `"startCurvature"` (fix the first waypoint's curvature, e.g. the last leg's `endCurvature`): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs", "endCurvature"}` |
+| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"startCurvature"` (fix the first waypoint's curvature, e.g. the last leg's `endCurvature`): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs", "endCurvature"}` |
 | `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()`, plus optional `"handed": [vx, vy, omega]` (the last path's `endCommand`, for a rolling hand-over; default the measured velocity) | `{"ok", "startMicros"}` |
 | `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
@@ -346,8 +317,6 @@ shares. See the notes below for what that means for the boot budget.
 - **The limiter and the plan now share one traction limit** (see below). Before the μ 1.5 change
   the limiter's grip (1.0) sat above the plan's (0.7) so feedback had room.
 - **Events were set in code only in phase 3.** Phase 5 added them to the path file (schema 2).
-- **Slip handling is not in PLAN.md.** The detector, adaptive grip and slip-aware odometry were
-  added after the phase 3 bench showed the low-grip weakness with odometry.
 - **Commands v3 events are forked children,** so they end with the path command unless they finish
   first. v2 schedules them independently.
 - **The first `start()` in a fresh JVM takes about 1.4 ms of class loading,** but no path work. One

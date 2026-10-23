@@ -54,7 +54,7 @@ BASE = ["straight_3m", "s_curve", "hairpin", "slalom", "long_auto", "figure_eigh
         "spin_while_driving", "fast_long", "heavy_robot"]
 # the S-curve with the plant disturbed (a shove, low grip, a grip drop): the S-curve's Choreo trajectory and optimised path
 DISTURB = ["hit_mid_path", "low_grip_s_curve", "grip_drop_s_curve"]
-POSES = ["truth", "odom", "slipodom"]
+POSES = ["truth", "odom"]
 RULES = {"tg": "tipOrGrip"}  # the robot's rule (AccelerationLimiter, 11.2 m/s^2); equal push was dropped 2026-10-23
 CHOREO_G = 9.8  # trajoptlib swerve_trajectory_generator.cpp: normal force = mass * 9.8 / wheels
 OURS_G = 9.81  # RobotConfig.GRAVITY

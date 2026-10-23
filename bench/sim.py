@@ -95,22 +95,17 @@ class Guard:
         return self.last
 
 
-PREROLL_SECONDS = 2.0  # standing still before a run that starts at rest (slip sensing only)
-
-
-def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_rng=None, guard=None):
+def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, guard=None):
     """Run one follower on its native path from `start` (pose) with field velocity v0 for T seconds
     (reset is called here and timed). Returns a dict of 250 Hz traces
     (t, x, y, unwrapped heading, true speed) and run facts.
 
-    pose_src: 'truth', 'odom' (WPILib wheel odometry + gyro) or 'slipodom' (lib's SlipAwareOdometry with
-    the bench IMU, see slipsense.py). Slip sensing also runs for any follower with `wants_sensing`.
+    pose_src: 'truth' or 'odom' (WPILib wheel odometry + gyro).
     guard: a Limits; every command then goes through the same Guard (speed and acceleration caps)."""
     if plant is None:
         plant = DisturbedPlant(rp, start, v0, rng)
     gyro0, modules0 = plant.read_gyro(), plant.read_modules()
     odo = SwerveOdometry(rp.module_positions, gyro0, modules0, start)
-    sensing = None
 
     def measure():
         mods = plant.module_velocities()
@@ -121,8 +116,6 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
             wr += (-my * s * math.cos(a) + mx * s * math.sin(a)) / (mx * mx + my * my)
         if pose_src == "truth":
             pose = plant.pose()
-        elif pose_src == "slipodom" and sensing is not None:
-            pose = sensing.pose
         else:
             pose = odo.pose
         v = rot((vxr, vyr), pose[2])
@@ -132,16 +125,6 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
     t0 = time.perf_counter()
     follower.reset(native, Start(0.0, pose, vel))
     gen_ms = 1000 * (time.perf_counter() - t0)
-    if pose_src == "slipodom" or getattr(follower, "wants_sensing", False):
-        from imu import Imu
-        from slipsense import Sensing
-
-        sensing = Sensing(plant, Imu(plant, imu_rng or np.random.default_rng(0)), start, gyro0, modules0)
-        if not any(v0):
-            # the robot stands still before auto with its odometry running (robotPeriodic runs while disabled),
-            # so the slip-aware odometry has learnt the IMU's bias by the time it moves
-            for k in range(int(round(PREROLL_SECONDS / LP.odom_period)), 0, -1):
-                sensing.update(-k * LP.odom_period, gyro0, modules0, (0.0, 0.0, 0.0), start[2])
 
     dt = LP.sim_dt
     t, next_odom, next_main = 0.0, 0.0, LP.main_period
@@ -167,8 +150,6 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
                 plant.set_chassis_robot(vr[0], vr[1], cur_req[2], [rot(f, -odo.pose[2]) for f in ff])
             gyro, modules = plant.read_gyro(), plant.read_modules()
             odo.update(gyro, modules)
-            if sensing is not None:
-                sensing.update(t, gyro, modules, cur_req, odo.pose[2])
             plant.poll((plant.x, plant.y))
             ts.append(t)
             xs.append(plant.x)
@@ -197,7 +178,6 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
     ts, xs, ys, ths, sp = map(np.array, (ts, xs, ys, ths, sp))
     return {"t": ts, "x": xs, "y": ys, "th": ths, "speed": sp, "t_done": t_done, "wheel_slip": wheel_slip,
             "max_step_ms": max_step_ms, "gen_ms": gen_ms, "plant": plant,
-            "slip_metrics": sensing.metrics() if sensing is not None else (float("nan"), float("nan")),
             "odo_err_cm": 100 * math.hypot(odo.pose[0] - plant.x, odo.pose[1] - plant.y)}
 
 
@@ -241,8 +221,7 @@ def run_one(job, trace=False):
     follower, native = make_follower(cname, mkey, opts, seed)
     if getattr(follower, "needs_plant", False):  # an end that moves when it is seen needs the true pose
         follower.plant = plant
-    imu_rng = np.random.default_rng([seed, 7919])  # its own stream: the IMU changes no other number
-    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant, imu_rng, guard)
+    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant, guard)
     ts, xs, ys, ths = r["t"], r["x"], r["y"], r["th"]
     end = getattr(follower, "true_end", course.end_pose)
     dist, eth, t_5cm, t_settle = end_metrics(r, end)
@@ -285,8 +264,6 @@ def run_one(job, trace=False):
         "max_step_ms": max_step_ms,
         "hit_s": float("nan") if plant.fired_at is None else plant.fired_at[1],
         "t_sim": T,
-        "slip_fp": r["slip_metrics"][0],
-        "slip_recall": r["slip_metrics"][1],
     }
     out.update(course_metrics(cname, r, follower))
     if trace:

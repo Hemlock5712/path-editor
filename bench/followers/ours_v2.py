@@ -175,7 +175,6 @@ class OursV2(Follower):
         return native["geometry"]
 
     def reset(self, native, start):
-        # a path that starts after t = 0 is the next one of a chain: it keeps the run's slip-sensing session
         src = {"trajectory": native["trajectory"]} if "trajectory" in native else {"path": native["path"]}
         if "path" in src and (self.plan_speed or self.plan_accel):
             src["path"] = dict(src["path"])
@@ -185,7 +184,7 @@ class OursV2(Follower):
             if self.plan_accel:
                 src["path"]["maxMetersPerSecondSquared"] = max(self.plan_accel, src["path"]["maxMetersPerSecondSquared"])
         r = call_fresh(op="load", **src, robot=dict(robot_json(self.mu), **self.robot_overrides),
-                       options=self.options, keepSensing=start.t > 0)
+                       options=self.options)
         self.srv = server()
         self.build_ms = r["buildMs"]
         extra = {} if start.handed is None else {"handed": [float(v) for v in start.handed]}

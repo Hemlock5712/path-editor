@@ -286,8 +286,7 @@ def run_job(job, trace=False):
     native = optimised_native(name, key) if key in BASE else f.adapt(legs)
     plan = planned_seconds(key, legs, native)
     T = sim_seconds(legs)
-    r = simulate(f, native, first.start_pose, first.start_velocity, rp, rng, T, pose_src, plant,
-                 np.random.default_rng([seed, 7919]))
+    r = simulate(f, native, first.start_pose, first.start_velocity, rp, rng, T, pose_src, plant)
     end = legs[-1].end_pose
     dist, eth, t_5cm, t_settle = end_metrics(r, end)
     xs, ys = r["x"], r["y"]
