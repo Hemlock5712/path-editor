@@ -321,7 +321,11 @@ RUN_METHODS = {"choreo": ("choreo", "choreo"), "choreo_hold": ("choreo", "choreo
 # Re-swept at 11.2 m/s^2 (2026-10-23, 2 seeds x the 10 courses, best total with every run finished): PathPlanner kP 20 /
 # rot 10 (24.42 s; was kP 10: 25.23), Choreo + hold kP 15 / rot 10 (24.50 s; ChoreoLib's documented 10 / 7.5: 25.05).
 # Stiffer gains (30+) lose finishes and double the slip. Stock Choreo keeps the documented gains: it is "as teams start".
-TUNED = {"pp": {"kp": 20.0, "kp_rot": 10.0, "hold": True, "ff": True, "hold_deg": 0.5},
+# Ours, swept the same way (2 seeds): brake 8 m/s^2 (the bench's default is the library's 6) and heading ease-in 12
+# (default 5): 24.69 s vs 25.01 as shipped. Braking at the full 11.2 is no faster and slips more; the follower's
+# other gains move the total by under 0.2 s.
+TUNED = {"ours": {"brakeMetersPerSecondSquared": 8.0, "headingEaseInPerSecond": 12.0},
+         "pp": {"kp": 20.0, "kp_rot": 10.0, "hold": True, "ff": True, "hold_deg": 0.5},
          "choreo": {"ff": True}, "choreo_hold": {"kp": 15.0, "kp_rot": 10.0, "ff": True, "hold": True, "hold_deg": 0.5},
          "pp2": {"kp": 2.0, "kp_ct": 2.0, "handoff": 0.75, "end_distance": 0.02, "end_degrees": 1.0},
          # kP 2 / cross-track 6 were swept at the old 6 m/s^2; re-swept at 11.2 (2026-10-23): kP 4 / 4 finishes every
@@ -334,7 +338,7 @@ def run_options(m, rule):
     key, kind = RUN_METHODS[m]
     a = traction(rule)
     if kind is True:
-        return key, {"robot": {"tractionRule": rule}}
+        return key, dict(TUNED["ours"], robot={"tractionRule": rule})
     if kind == "pp":
         return key, dict(TUNED["pp"], cof=a / CHOREO_G)
     if kind == "pp2":
