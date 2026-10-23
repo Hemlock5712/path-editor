@@ -110,7 +110,7 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
 
     dt = LP.sim_dt
     t, next_odom, next_main = 0.0, 0.0, LP.main_period
-    requests, cur_req = [], (v0[0], v0[1], v0[2])
+    requests, cur_req, cur_ff = [], (v0[0], v0[1], v0[2]), None
     ts, xs, ys, ths, sp = [], [], [], [], []
     wheel_slip = 0.0
     t_done = None
@@ -119,12 +119,15 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
         if t >= next_odom - 1e-9:
             next_odom += LP.odom_period
             while requests and requests[0][0] <= t:
-                cur_req = requests.pop(0)[1]
+                _, cur_req, cur_ff = requests.pop(0)
             if cur_req == "idle":
                 plant.set_neutral()
             else:
                 vr = rot((cur_req[0], cur_req[1]), -odo.pose[2])
-                plant.set_chassis_robot(vr[0], vr[1], cur_req[2])
+                # wheel force feedforward (field frame per module, FL FR BL BR), turned into the robot frame the
+                # way CTRE's ApplyFieldSpeeds does; zero when the follower sends none
+                ff = cur_ff or ((0.0, 0.0),) * 4
+                plant.set_chassis_robot(vr[0], vr[1], cur_req[2], [rot(f, -odo.pose[2]) for f in ff])
             gyro, modules = plant.read_gyro(), plant.read_modules()
             odo.update(gyro, modules)
             if sensing is not None:
@@ -143,10 +146,12 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, imu_
                 c0 = time.perf_counter()
                 cmd = follower.step(t, pose, vel)
                 max_step_ms = max(max_step_ms, 1000 * (time.perf_counter() - c0))
+                ff = getattr(follower, "ff_forces", None)  # set by step() for a follower that sends wheel forces
                 if follower.done():
                     t_done = t
                     cmd = (0.0, 0.0, 0.0) if follower.end_output == "zero" else "idle"
-                requests.append((t + LP.actuation_delay, cmd if cmd == "idle" else tuple(cmd)))
+                    ff = None
+                requests.append((t + LP.actuation_delay, cmd if cmd == "idle" else tuple(cmd), ff))
         plant.step(dt)
         t += dt
     ts, xs, ys, ths, sp = map(np.array, (ts, xs, ys, ths, sp))

@@ -8,7 +8,10 @@ Line-for-line in structure. Approximations (see RESULTS.md):
 - RobotConfig comes from the sim (mass 60 kg, MOI 6, wheel radius, gearing 6.75, Kraken X60 FOC from
   WPILib's DCMotor numbers, the plant's current limit, max drive speed = the sim's free speed) with wheel COF
   the sim's static mu (1.5); it is NOT changed for the low-grip course (nobody adapts).
-- Drive feedforwards (wheel forces/currents) are not computed: the plant takes velocity requests only.
+- Drive feedforwards: with ff=True, each state's module forces as PathPlannerTrajectory computes them (the module
+  speed change to the next state over the time between, times mass / modules, along the module's angle), linearly
+  blended between states and sent as wheel force feedforward the way CTRE's PathPlanner template does
+  (ApplyRobotSpeeds.withWheelForceFeedforwardsX/Y(feedforwards.robotRelativeForcesX/Y())). Off by default.
 - Events, point-towards zones, constraint zones, flipping and Choreo paths are not ported.
 - A non-zero GoalEndState velocity (a chain of paths) is ported: the end state carries it, and at the end
   the command stops with the last output standing (FollowPathCommand.end only zeroes below 0.1 m/s).
@@ -264,7 +267,7 @@ class PathPlannerPath:
 # ============================================================================================ trajectory
 class State:
     __slots__ = ("t", "vel", "pose", "lin", "heading", "dpos", "mod_v", "mod_fpos", "mod_dpos", "mod_fangle",
-                 "mod_angle")
+                 "mod_angle", "ff")
 
     def __init__(self):
         self.t = 0.0
@@ -362,7 +365,41 @@ def generate_trajectory(path: PathPlannerPath, start_field_speeds, start_rotatio
             st.t = prev.t
         else:
             st.t = prev.t + 2 * st.dpos / sv
+    _feedforwards(states, cfg)
     return states
+
+
+def _feedforwards(states, cfg):
+    """DriveFeedforwards per state: robot-relative (fx, fy) per module; zero at the last state."""
+    for i, st in enumerate(states):
+        if i == len(states) - 1:
+            st.ff = [(0.0, 0.0)] * cfg.n
+            continue
+        nxt = states[i + 1]
+        dt = nxt.t - st.t
+        out = []
+        for m in range(cfg.n):
+            f = (nxt.mod_v[m] - st.mod_v[m]) / dt * cfg.mass / cfg.n if dt > 1e-9 else 0.0
+            out.append((f * math.cos(st.mod_angle[m]), f * math.sin(st.mod_angle[m])))
+        st.ff = out
+
+
+def feedforward_at(states, time):
+    """The sampled state's feedforwards (PathPlannerTrajectoryState.interpolate blends them linearly)."""
+    if time <= states[0].t:
+        return states[0].ff
+    if time >= states[-1].t:
+        return states[-1].ff
+    lo, hi = 1, len(states) - 1
+    while lo != hi:
+        mid = (lo + hi) // 2
+        if states[mid].t < time:
+            lo = mid + 1
+        else:
+            hi = mid
+    b, a = states[lo], states[lo - 1]
+    u = 0.0 if b.t - a.t < 1e-3 else (time - a.t) / (b.t - a.t)
+    return [(p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u) for p, q in zip(a.ff, b.ff)]
 
 
 def _pass_accel(st, cfg, lim, mod_vel_ref, reverse):
@@ -499,8 +536,10 @@ class PathPlanner(Follower):
     controller on the final state (feedforward 0) until its own pose is within 2 cm / 2 deg and the
     measured speed is under 5 cm/s, as the drive-to-pose race's '+ final hold' variant."""
 
-    def __init__(self, kp=5.0, kp_rot=5.0, hold=False, cof=None, limits: Limits = Limits()):
-        self.kp, self.kp_rot, self.hold = kp, kp_rot, hold
+    ff_forces = None
+
+    def __init__(self, kp=5.0, kp_rot=5.0, hold=False, cof=None, ff=False, limits: Limits = Limits()):
+        self.kp, self.kp_rot, self.hold, self.ff = kp, kp_rot, hold, ff
         self.lim = limits
         self.cfg = RobotConfig() if cof is None else RobotConfig(wheel_cof=cof)
 
@@ -525,6 +564,7 @@ class PathPlanner(Follower):
         self.last = tuple(start.vel)
 
     def step(self, t, pose, vel):
+        self.ff_forces = None
         if self.finished:
             return (0.0, 0.0, 0.0)
         now = t - self.t0
@@ -542,6 +582,8 @@ class PathPlanner(Follower):
                 return (0.0, 0.0, 0.0)
             return (self.kp * ex, self.kp * ey, self.kp_rot * eth)
         tp, ff = sample(self.states, now)
+        if self.ff:  # robot-relative to the field frame by the robot's measured heading, as CTRE turns it back
+            self.ff_forces = [rot(f, pose[2]) for f in feedforward_at(self.states, now)]
         self.last = (ff[0] + self.kp * (tp[0] - pose[0]), ff[1] + self.kp * (tp[1] - pose[1]),
                      ff[2] + self.kp_rot * wrap(tp[2] - pose[2]))
         return self.last

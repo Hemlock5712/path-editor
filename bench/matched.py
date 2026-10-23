@@ -7,9 +7,13 @@
 
 Why: the main grid gives every method "6 m/s^2", but the libraries read it differently. Choreo's MaxAcceleration
 caps the WHOLE acceleration vector, cornering included; ours caps only speeding up and slowing down along the
-path and corners at its traction limit (12.8 m/s^2 under tipOrGrip). So ours cornered twice as hard.
+path and corners at its traction limit (11.2 m/s^2 under tipOrGrip). So ours cornered twice as hard.
 
-The matched block, per traction rule (ours' 0.9 law, RobotConfig.tractionMetersPerSecondSquared):
+The matched block, at the robot's traction rule, tipOrGrip (ours' 0.9 law, RobotConfig.tractionMetersPerSecondSquared;
+11.2 m/s^2 with the plant's 0.254 m modules). equalPush was dropped 2026-10-23: the robot plans at tipOrGrip and lets
+the light wheels slip, so the page shows the slip next to every time instead.
+Choreo and PathPlanner send their plans' wheel forces as feedforward (CTRE's templates for both do); ours sends
+velocities only, as the robot code does. choreo_hold is ChoreoLib with the final hold PathPlanner gets.
 - ours: the course's acceleration cap is raised to the traction limit, so the 0.9 law alone sets |a|, speeding
   up, braking and cornering together (a friction circle, spin sharing it through the I / (m r) lever);
 - Choreo: wheel_cof = traction / 9.8 (Choreo's own g), so each module's grip circle is a quarter of the same
@@ -17,9 +21,7 @@ The matched block, per traction rule (ours' 0.9 law, RobotConfig.tractionMetersP
   = traction as well (redundant, a guard); MaxVelocity and MaxAngularVelocity the course's, as before.
 What still differs (the planners' models, not the limits):
 - the motors: ours has the Kraken curve (back-EMF cuts the push near free speed), Choreo a flat torque up to the
-  wheel speed cap. With equalPush (6.5 m/s^2) the curve only binds above about 4.2 m/s, so at the 4 m/s courses
-  the plans are bound by the same limits; with tipOrGrip (12.8 m/s^2) it binds from about 3.8 m/s, and on
-  fast_long (5 m/s cap) under both rules. `plans` prints where each plan exceeds the other's envelope;
+  wheel speed cap. At 11.2 m/s^2 it binds from about 3.95 m/s, and on fast_long (5 m/s cap). `plans` prints where each plan exceeds the other's envelope;
 - Choreo picks the shape between waypoints and the free headings; ours runs its spline and heading blend.
   That is the planner difference this block is meant to measure.
 Courses: the ones that start and end at rest and have a Choreo trajectory of their own (moving_start, the chain,
@@ -53,7 +55,7 @@ BASE = ["straight_3m", "s_curve", "hairpin", "slalom", "long_auto", "figure_eigh
 # the S-curve with the plant disturbed (a shove, low grip, a grip drop): the S-curve's Choreo trajectory and optimised path
 DISTURB = ["hit_mid_path", "low_grip_s_curve", "grip_drop_s_curve"]
 POSES = ["truth", "odom", "slipodom"]
-RULES = {"ep": "equalPush", "tg": "tipOrGrip"}
+RULES = {"tg": "tipOrGrip"}  # the robot's rule (AccelerationLimiter, 11.2 m/s^2); equal push was dropped 2026-10-23
 CHOREO_G = 9.8  # trajoptlib swerve_trajectory_generator.cpp: normal force = mass * 9.8 / wheels
 OURS_G, MARGIN = 9.81, 0.9  # RobotConfig.GRAVITY, TRACTION_MARGIN
 METHODS = {"choreo": "Choreo + ChoreoLib follower", "choreo_hybrid": "Choreo geometry + DriveToPose finish",
@@ -303,14 +305,18 @@ _register_methods()
 
 # ============================================================================================ run
 # method key in the results -> (registry key, whether it takes ours' traction rule)
-RUN_METHODS = {"choreo": ("choreo", False), "choreo_hybrid": ("choreo_hybrid", False), "ours": ("ours_v2", True),
+RUN_METHODS = {"choreo": ("choreo", "choreo"), "choreo_hold": ("choreo", "choreo_hold"),
+               "choreo_hybrid": ("choreo_hybrid", False), "ours": ("ours_v2", True),
                "ours_on_choreo": ("ours_on_choreo", True), "ours_opt": ("ours_opt", True),
                "pathplanner": ("pathplanner", "pp"), "pp_path2": ("pp_path2", "pp2"), "bline": ("bline_readme", "bline")}
 # The rivals keep the gains the main sweep tuned (run.py, out/results.json "tuned"), and plan to the shared limit:
 # PathPlanner and path2 get wheel COF = traction / 9.8 (their friction model's g) in place of the tuned COF, path2's
 # acceleration cap is the traction limit; BLine's acceleration cap is the course's (the traction limit), applied
 # to the whole command vector like Choreo's.
-TUNED = {"pp": {"kp": 10.0, "kp_rot": 10.0, "hold": True},
+# Choreo and PathPlanner send their plans' wheel forces as feedforward, as CTRE's templates for them do; ours sends
+# velocities only, as the robot code does (TeleopDrive / FieldCentric Velocity).
+TUNED = {"pp": {"kp": 10.0, "kp_rot": 10.0, "hold": True, "ff": True},
+         "choreo": {"ff": True}, "choreo_hold": {"ff": True, "hold": True},
          "pp2": {"kp": 2.0, "kp_ct": 2.0, "handoff": 0.75, "end_distance": 0.02, "end_degrees": 1.0},
          "bline": {"kp": 2.0, "kp_ct": 6.0, "tol": 0.01, "radius": 0.6, "caps": True}}
 
@@ -327,6 +333,8 @@ def run_options(m, rule):
         return key, dict(TUNED["pp2"], cof=a / CHOREO_G, accel_cap=a)
     if kind == "bline":
         return key, dict(TUNED["bline"])
+    if kind in ("choreo", "choreo_hold"):
+        return key, dict(TUNED[kind])
     return key, None
 RESULTS = os.path.join(OUT, "matched.json")
 
@@ -376,6 +384,7 @@ def run(procs, seeds, methods, poses, courses):
 # ============================================================================================ export
 EXPORT = os.path.join(os.path.dirname(HERE), "editor", "app", "public", "bench", "matched.json")
 EXPORT_METHODS = {"ours_opt": "Ours, optimised", "ours": "Ours, as drawn", "choreo": "Choreo + ChoreoLib",
+                  "choreo_hold": "Choreo + ChoreoLib + final hold",
                   "pathplanner": "PathPlanner (tuned) + hold", "pp_path2": "PathPlanner path2 (tuned)",
                   "bline": "BLine (tuned, corner caps)", "ours_on_choreo": "Ours following Choreo's plan"}
 STATS = ("t_5cm", "t_settle", "err_end_cm", "ct_own_rms_cm", "ct_own_max_cm", "wheel_slip_ms", "overshoot_cm")

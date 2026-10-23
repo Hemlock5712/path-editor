@@ -57,8 +57,8 @@ describe("the bench page's data", () => {
     expect(andList(["a", "b", "c"])).toBe("a, b and c");
   });
 
-  it("reads the committed snapshot: every shown method on every course, both rules and pose sources", () => {
-    expect(Object.keys(SNAPSHOT.rules)).toEqual(["equalPush", "tipOrGrip"]);
+  it("reads the committed snapshot: every shown method on every course and pose source, at the robot's rule", () => {
+    expect(Object.keys(SNAPSHOT.rules)).toEqual(["tipOrGrip"]);
     for (const rule of Object.keys(SNAPSHOT.rules)) {
       for (const pose of ["truth", "odom"]) {
         for (const group of ["plan", "disturbed"] as const) {

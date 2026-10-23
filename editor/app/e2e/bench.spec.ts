@@ -14,9 +14,10 @@ test("the bench page tells the comparison in plain words", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Path followers, head to head" })).toBeVisible();
   // tip or grip, the robot's traction rule: Choreo finishes none of its runs
   await expect(page.getByTestId("bench-tile-finish")).toContainText("Choreo 0");
-  await expect(page.getByTestId("bench-speed-bars").locator("li")).toHaveCount(6);
+  await expect(page.getByTestId("bench-speed-bars").locator("li")).toHaveCount(7);
+  await expect(page.getByTestId("bench-slip-bars").locator("li")).toHaveCount(7);
   await expect(page.getByTestId("bench-disturbed-table").locator("tbody tr")).toHaveCount(3);
-  await expect(page.getByTestId("bench-slipaware-bars").locator("li")).toHaveCount(6);
+  await expect(page.getByTestId("bench-slipaware-bars").locator("li")).toHaveCount(7);
   await expect(page.getByTestId("bench-course-table").locator("tbody tr")).toHaveCount(10);
   await expect(page.getByTestId("bench-course-table")).toContainText("never finished");
   await expect(page.getByRole("radio", { name: "Equal push" })).toHaveCount(0);

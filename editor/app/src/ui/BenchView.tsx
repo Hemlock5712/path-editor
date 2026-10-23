@@ -163,6 +163,9 @@ function Speed({ d, rule }: { d: MatchedData; rule: string }) {
     .filter(([m]) => SHOWN.includes(m))
     .map(([m, t]) => ({ method: m, value: t, text: `${s2(t)} s` }))
     .sort((a, b) => a.value - b.value);
+  const slipRows: BarRow[] = clean
+    .map((s) => ({ method: s.method, value: s.slipSeconds, text: `${s.slipSeconds.toFixed(1)} s`, tip: METHOD_NOTES[s.method] }))
+    .sort((a, b) => a.value - b.value);
   const choreoPlan = plans.choreo;
   const oursPlan = plans.ours_opt;
   const choreo = byMethod(clean, "choreo");
@@ -173,6 +176,13 @@ function Speed({ d, rule }: { d: MatchedData; rule: string }) {
       lead={`Time to drive all ${d.courses.plan.length} courses and finish on the target (the average of ${d.seeds} runs each, added up). Shorter is better. The ones that finished every run come first.`}
     >
       <Bars rows={rows} testId="bench-speed-bars" label="Total time to finish" />
+      <p className="bench-lead">
+        <strong>Wheel slip.</strong> At this limit the light wheels slip now and then (the back ones when braking, the front ones when
+        speeding up) and the loaded ones push harder to make up for it. The robot still gets there, but a slipping wheel's encoder counts
+        distance the robot never drove, so odometry drifts. Less is better.
+      </p>
+      <Bars rows={slipRows} testId="bench-slip-bars" label="Time wheels spent slipping" />
+      <p className="hint">Time wheels spent slipping, added up over the {d.courses.plan.length} courses (two wheels slipping for 1 s counts 2 s).</p>
       {choreoPlan !== undefined && oursPlan !== undefined && (
         <>
           <p className="bench-lead">
@@ -181,7 +191,7 @@ function Speed({ d, rule }: { d: MatchedData; rule: string }) {
             and heading between the waypoints. It doesn't keep that lead on the floor: ChoreoLib follows on a clock, so when the robot lags it
             catches up by overshooting, and when the clock runs out it stops wherever it is
             {choreo && choreo.runs > choreo.finished ? ` (${choreo.runs - choreo.finished} of ${choreo.runs} runs never finished)` : ""}. Ours
-            follows by position and brakes onto the target.
+            follows by position and brakes onto the target. Choreo + final hold adds the hold many teams add, and finishes.
           </p>
           <Bars rows={planRows} testId="bench-plan-bars" label="Planned time" />
           <p className="hint">Planned time, before driving. PathPlanner path2 and BLine steer toward waypoints as they go and have no plan to time.</p>
@@ -305,7 +315,7 @@ function WithoutVision({ d, rule }: { d: MatchedData; rule: string }) {
 
 function CourseByCourse({ d, rule }: { d: MatchedData; rule: string }) {
   return (
-    <Section id="courses" title="Course by course" lead="Average time to finish, in seconds. Bold: the fastest among those that finished every run (both, when they tie to the hundredth).">
+    <Section id="courses" title="Course by course" lead="Average time to finish, in seconds, with the wheel slip and, with wheel odometry only, how far off it ended. Bold: the fastest among those that finished every run (both, when they tie to the hundredth).">
       <div className="bench-table-scroll">
         <table className="benchmark" data-testid="bench-course-table">
           <thead>
@@ -332,12 +342,16 @@ function CourseByCourse({ d, rule }: { d: MatchedData; rule: string }) {
                     const done = finished(s);
                     const cls = [OURS.has(m) ? "ours" : "", win.includes(m) ? "best" : ""].filter(Boolean).join(" ");
                     const tip = `${done} of ${s.n} runs finished; ended ${cm(s.err_end_cm ?? Number.NaN)} cm from the target on average`;
+                    const odo = stats(d, rule, "odom", c, m)?.err_end_cm;
                     return (
                       <td key={m} className={cls} data-tip={tip}>
                         {s.t_settle === null ? <span className="cell-warn">never finished</span> : `${s2(s.t_settle)}`}
                         {s.t_settle !== null && !allFinished(s) && (
                           <span className="cell-sub warn">{done < s.n ? `${done} of ${s.n} finished` : `ends ${cm(s.err_end_cm ?? Number.NaN)} cm off`}</span>
                         )}
+                        <span className="cell-sub">
+                          slip {((s.wheel_slip_ms ?? Number.NaN) / 1000).toFixed(1)} s{typeof odo === "number" ? ` · odometry ${cm(odo)} cm` : ""}
+                        </span>
                       </td>
                     );
                   })}
@@ -362,7 +376,8 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
       <ul>
         <li>
           <strong>The robot</strong> is a simulated swerve drive at 500 Hz with tyres that grip and slip: 60 kg, Kraken X60 motors, SDS
-          Spike Grip tread (grip 1.5), a 240 A current limit. Every library is given these numbers.
+          Spike Grip tread (grip 1.5), a 240 A current limit, modules 0.254 m from the centre and the centre of mass 0.2 m up, so weight
+          shifts onto the wheels it accelerates away from. Every library is given these numbers.
         </li>
         <li>
           <strong>The same limits for everyone.</strong> Each planner may accelerate and corner up to {r.traction.toFixed(2)} m/sÂ² (the
@@ -371,7 +386,8 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
         </li>
         <li>
           <strong>Tuned followers.</strong> Each library's follower uses the gains a sweep picked as its best. Choreo uses ChoreoLib's
-          documented controller, as teams start from.
+          documented controller, as teams start from. Choreo and PathPlanner also send their plans' wheel forces as feedforward, as CTRE's
+          templates for them do; ours sends velocities only, as our robot code does.
         </li>
         <li>
           <strong>Finishing</strong> means {d.settleRule}. Every course is driven {d.seeds} times with small random differences in the

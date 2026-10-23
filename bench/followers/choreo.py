@@ -47,7 +47,21 @@ def load_traj(course_name):
     if not samples:
         raise RuntimeError(f"{name}.traj has not been generated (run bench/choreo/make_project.py --cli ...)")
     return {"name": name, "samples": [(s["t"], s["x"], s["y"], s["heading"], s["vx"], s["vy"], s["omega"],
-                                       s["ax"], s["ay"], s["alpha"]) for s in samples]}
+                                       s["ax"], s["ay"], s["alpha"]) for s in samples],
+            # moduleForcesX / moduleForcesY, field frame, FL FR BL BR (absent from older files)
+            "forces": [tuple(zip(s["fx"], s["fy"])) if "fx" in s else ((0.0, 0.0),) * 4 for s in samples]}
+
+
+def forces_at(times, forces, t):
+    """SwerveSample.interpolate's module forces: a linear blend of the two samples around t."""
+    if t <= times[0]:
+        return forces[0]
+    if t >= times[-1]:
+        return forces[-1]
+    i = bisect.bisect_right(times, t)
+    a, b = times[i - 1], times[i]
+    u = 0.0 if b - a < 1e-6 else (t - a) / (b - a)
+    return tuple((p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u) for p, q in zip(forces[i - 1], forces[i]))
 
 
 def sample_at(samples, t):
@@ -83,8 +97,16 @@ def dense_geometry(samples, dt=0.005):
 
 
 class ChoreoLib(Follower):
-    def __init__(self, kp=10.0, kp_rot=7.5, limits: Limits = Limits()):
+    """ff=True sends each sample's module forces as wheel force feedforward, as CTRE's Choreo example does
+    (ApplyFieldSpeeds.withWheelForceFeedforwardsX/Y(sample.moduleForcesX/Y())). hold=True keeps the
+    controller on the final sample once the clock runs out, until within 2 cm / 2 deg and under 5 cm/s
+    (the same final hold PathPlanner gets): what a team adds when it wants the robot to end on the target."""
+
+    ff_forces = None
+
+    def __init__(self, kp=10.0, kp_rot=7.5, ff=False, hold=False, limits: Limits = Limits()):
         self.kp, self.kp_rot = kp, kp_rot
+        self.ff, self.hold = ff, hold
         self.lim = limits
 
     @staticmethod
@@ -97,23 +119,36 @@ class ChoreoLib(Follower):
 
     def reset(self, native, start):
         self.samples = native["samples"]
+        self.forces = native.get("forces")
+        self.times = [s[0] for s in self.samples]
         self.total = self.samples[-1][0]
         self.t0 = start.t
         self.state = "running"
+        self.ff_forces = None
 
     def _control(self, s, pose):
         return (s[4] + self.kp * (s[1] - pose[0]), s[5] + self.kp * (s[2] - pose[1]),
                 s[6] + self.kp_rot * wrap(s[3] - pose[2]))
 
     def step(self, t, pose, vel):
+        self.ff_forces = None
+        if self.state == "holding":
+            g = self.samples[-1]
+            ex, ey, eth = g[1] - pose[0], g[2] - pose[1], wrap(g[3] - pose[2])
+            if math.hypot(ex, ey) < 0.02 and abs(eth) < math.radians(2) and math.hypot(vel[0], vel[1]) < 0.05:
+                self.state = "done"
+                return (0.0, 0.0, 0.0)
+            return (self.kp * ex, self.kp * ey, self.kp_rot * eth)
         if self.state != "running":
             self.state = "done"
             return (0.0, 0.0, 0.0)
         now = t - self.t0
         out = self._control(sample_at(self.samples, now), pose)  # cmdExecute
+        if self.ff and self.forces:
+            self.ff_forces = forces_at(self.times, self.forces, now)
         if now > self.total:  # cmdIsFinished -> cmdEnd: the controller on the final sample, once
             out = self._control(self.samples[-1], pose)
-            self.state = "ended"
+            self.state = "holding" if self.hold else "ended"
         return out
 
     def done(self):

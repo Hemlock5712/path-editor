@@ -8,7 +8,7 @@ config matches the alignsim plant (bench/alignsim/params.py RobotParams):
 
 | Choreo field | value | from |
 |---|---|---|
-| frontLeft / backLeft | (+0.29, +0.29) / (-0.29, +0.29) m | module_xy 0.29 |
+| frontLeft / backLeft | (+x, +x) / (-x, +x) m | module_xy (0.254) |
 | mass | 60 kg | mass |
 | inertia | 6 kg m^2 | inertia |
 | gearing | 6.75 | drive_gear |
@@ -55,8 +55,8 @@ def project():
         "name": PROJECT, "version": 2, "type": "Swerve",
         "variables": {"expressions": {}, "poses": {}},
         "config": {
-            "frontLeft": {"x": e(0.29, "m"), "y": e(0.29, "m")},
-            "backLeft": {"x": e(-0.29, "m"), "y": e(0.29, "m")},
+            "frontLeft": {"x": e(RP.module_xy, "m"), "y": e(RP.module_xy, "m")},
+            "backLeft": {"x": e(-RP.module_xy, "m"), "y": e(RP.module_xy, "m")},
             "mass": e(60.0, "kg"), "inertia": e(6.0, "kg m ^ 2"), "gearing": e(6.75), "radius": e(0.0508, "m"),
             "vmax": e(MOTOR_FREE, "rad / s"), "tmax": e(MOTOR_TMAX, "N * m"), "cof": e(RP.mu_static),
             "bumper": {"front": e(0.425, "m"), "side": e(0.425, "m"), "back": e(0.425, "m")},

@@ -34,13 +34,14 @@ export interface MatchedData {
 export type CourseGroup = "plan" | "disturbed";
 
 /** The methods on the page, ours first. */
-export const SHOWN: readonly string[] = ["ours_opt", "ours", "choreo", "pathplanner", "pp_path2", "bline"];
+export const SHOWN: readonly string[] = ["ours_opt", "ours", "choreo_hold", "choreo", "pathplanner", "pp_path2", "bline"];
 export const OURS = new Set<string>(["ours_opt", "ours"]);
 
 export const METHOD_NAMES: Record<string, string> = {
   ours_opt: "Ours (optimised)",
   ours: "Ours (as drawn)",
   choreo: "Choreo",
+  choreo_hold: "Choreo + final hold",
   pathplanner: "PathPlanner",
   pp_path2: "PathPlanner path2 (beta)",
   bline: "BLine",
@@ -48,10 +49,11 @@ export const METHOD_NAMES: Record<string, string> = {
 };
 
 export const METHOD_NOTES: Record<string, string> = {
-  ours_opt: "Our planner with the editor's Optimise path, followed by our follower",
-  ours: "Our planner on the path exactly as drawn, followed by our follower",
-  choreo: "Choreo's trajectory, followed by ChoreoLib with its documented controller",
-  pathplanner: "PathPlanner 2027's trajectory and follower, tuned, holding the heading",
+  ours_opt: "Our planner with the editor's Optimise path, followed by our follower (velocities only, as our robot code sends)",
+  ours: "Our planner on the path exactly as drawn, followed by our follower (velocities only, as our robot code sends)",
+  choreo_hold: "Choreo's trajectory and ChoreoLib's documented controller with its wheel forces, then held on the end pose until it gets there",
+  choreo: "Choreo's trajectory, followed by ChoreoLib with its documented controller and its wheel forces, as CTRE's Choreo example sends them. It stops when the trajectory's time runs out",
+  pathplanner: "PathPlanner 2027's trajectory and follower, tuned, with its wheel forces as CTRE's template sends them, holding on the end pose",
   pp_path2: "PathPlanner's new path system (pre-release), tuned",
   bline: "BLine, tuned, with BLine-Web's corner speed caps",
 };
@@ -133,6 +135,8 @@ export interface Summary {
   readonly neverFinished: readonly string[];
   /** Mean over the courses of how far from the end pose the robot ended, cm. */
   readonly endErrorCm: number;
+  /** Sum over the courses of the mean time wheels spent slipping (wheel-seconds: two wheels for 1 s is 2). */
+  readonly slipSeconds: number;
 }
 
 function mean(xs: readonly number[]): number {
@@ -149,6 +153,7 @@ export function summaries(d: MatchedData, rule: string, pose: string, group: Cou
     let total = 0;
     const never: string[] = [];
     const err: number[] = [];
+    let slip = 0;
     for (const c of courses) {
       const s = stats(d, rule, pose, c, m);
       if (!s) {
@@ -160,6 +165,7 @@ export function summaries(d: MatchedData, rule: string, pose: string, group: Cou
       if (s.t_settle === null) never.push(c);
       total += s.t_settle ?? Number.NaN;
       if (s.err_end_cm !== null) err.push(s.err_end_cm);
+      slip += (s.wheel_slip_ms ?? Number.NaN) / 1000;
     }
     if (runs === 0) continue;
     out.push({
@@ -171,6 +177,7 @@ export function summaries(d: MatchedData, rule: string, pose: string, group: Cou
       totalTime: total,
       neverFinished: never,
       endErrorCm: mean(err),
+      slipSeconds: slip,
     });
   }
   return out;
