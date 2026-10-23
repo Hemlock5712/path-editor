@@ -528,9 +528,14 @@ been measured.
 - **Concave obstacles become their convex hulls,** which is conservative.
 - **Not done yet:** dynamic obstacles (the field is static; a moving goal is supported, a moving robot in the way
   isn't). The command wrapper and loading field.json are done: see "On-the-fly paths on the robot" below.
-- **The margin stays 0.05 m by default.** On the bench's four routes with wheel odometry, 0.10 m and 0.15 m
-  shut gaps and forced detours up to three times longer, and still touched once the odometry drifted (see
-  bench/RESULTS.md). Vision fixes the contacts; a wider berth doesn't.
+- **Two margins (2026-10-23).** The pathfinder's own margin stays 0.05 m (the editor's Route around and the TS
+  port use it). On-the-fly commands also get a second pathfinder at 0.15 m (`PlannerConfig.WIDE_MARGIN_METERS`,
+  `PathLibrary.widePathfinder()`, `OnTheFly.preferring`) and use its plan when its route is at most 1.15 times as
+  long; through a narrow gap, or where the wide route would go the long way round, the 0.05 m plan drives. On the
+  bench's six fields (240 starts and goals, wheel odometry) runs touching an obstacle went 8 → 3 with no route
+  lost, the wide route at most 1.12 times as long (95th percentile time 1.05 times), planning +0.2 ms median.
+  Earlier, 0.10 m and 0.15 m alone shut gaps and forced detours up to three times longer; the detour limit and
+  the fallback are what make the wider berth safe to use.
 
 ### On-the-fly paths on the robot
 
@@ -565,7 +570,12 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   robot's pose (not flipped on red), or empty to keep the last one. When the goal moves more than 2 cm or 2°, only
   the rest of the path is rebuilt, from the robot's progress to the goal, joining with matching position,
   tangent and curvature (`PathFollower.bindGoal`, 0.1-0.3 ms). In the last 0.3 m DriveToPose's law drives
-  straight to it. The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
+  straight to it. A rebuilt end, and a rejoin after a shove, are checked against field.json's obstacles
+  (`PathFollower.withObstacleCheck(pathfinder::pathClear)`, which `Pathfinding` sets on every follower it builds):
+  one that would hit something isn't used. On an on-the-fly path a goal that has moved more than 10 cm from where
+  the path was planned to is planned to again, round the obstacles (`OnTheFly.GOAL_REPLAN_METERS`, at most every
+  0.2 s). Before this, a goal that jumped behind an obstacle bent the path's end straight through it: on the
+  bench's six fields 35 of 72 moving-goal runs with wheel odometry touched something (bench-tuned settings); now 2 of 72 at the 0.05 m margin and none with the wider berth (library defaults). The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
   away once the robot is 1.5 m out. `PathLibrary` holds no drivetrain, so the factory lives on `Pathfinding`
   rather than as `paths.follow(...)`.
 

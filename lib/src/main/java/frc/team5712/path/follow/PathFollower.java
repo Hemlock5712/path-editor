@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.BiPredicate;
 import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 
@@ -154,7 +155,9 @@ public final class PathFollower {
   private double refY;
   private double refHeading;
   private int tailRebuilds;
+  private int blockedRebuilds;
   private double lastRebuildMicros = Double.NaN;
+  private BiPredicate<Path, FieldFrame> obstacleCheck; // null: no field to check against
   // The path followed when not rejoining: the base path, or it with its speeds re-planned from the measured
   // speed at start, or a rebuilt tail
   private Path track;
@@ -234,6 +237,17 @@ public final class PathFollower {
    */
   public PathFollower bindGoal(Supplier<Optional<Pose>> goal) {
     this.goalSupplier = goal;
+    return this;
+  }
+
+  /**
+   * Checks every piece the follower builds by itself (a rejoin after a shove, a moving goal's new tail) against
+   * the field's obstacles, e.g. {@code Pathfinder::pathClear}: the piece (blue frame) and the frame it is driven
+   * in. A piece that would hit something isn't used: a rejoin tries a further join or keeps to the path, and a
+   * tail keeps the old one, the DriveToPose finish still driving to the moved goal.
+   */
+  public PathFollower withObstacleCheck(BiPredicate<Path, FieldFrame> clear) {
+    this.obstacleCheck = clear;
     return this;
   }
 
@@ -318,6 +332,7 @@ public final class PathFollower {
     java.util.Arrays.fill(eventFired, false);
     head = null;
     rejoins = 0;
+    blockedRebuilds = 0;
     lastRejoinTime = Double.NEGATIVE_INFINITY;
     lastStartReplanMicros = Double.NaN;
     track = basePath;
@@ -387,7 +402,7 @@ public final class PathFollower {
     } catch (RuntimeException e) {
       return false; // can't be planned
     }
-    if (piece.geometry().hasCusps()) {
+    if (piece.geometry().hasCusps() || obstacleCheck != null && !obstacleCheck.test(piece, frame)) {
       return false;
     }
     headStartS = trackProgress();
@@ -521,7 +536,7 @@ public final class PathFollower {
       // and hold the point. Braking on the distance left, as a path does, would brake on a fraction of
       // a millimetre that the pose noise alone exceeds, and stall the turn.
       VelocityProfile profile = active.profile();
-      PathSample ahead = active.sample(profile.sAtTime(profile.timeAt(s) + cfg.latencySeconds()));
+      PathSample ahead = active.sample(profile.sAtTime(profile.timeAt(s) + readAheadSeconds()));
       double headingError = Angles.wrap(active.heading().sample(s).radians() - pose.headingRadians());
       wantOmega = scale * gripScale * ahead.metersPerSecond() * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
       wantOmega = Math.max(-cfg.maxOmegaRadPerSec(), Math.min(cfg.maxOmegaRadPerSec(), wantOmega));
@@ -533,7 +548,7 @@ public final class PathFollower {
       refHeading = active.heading().sample(s).radians();
     } else {
       VelocityProfile profile = active.profile();
-      double lead = cfg.latencySeconds();
+      double lead = readAheadSeconds();
       if (track.spec().startMetersPerSecond() > 0.0) {
         // A rolling start: the last path's command led into its own end, not into this path's speeding up,
         // so the lead builds up over ROLLING_LEAD_SECONDS instead of in one loop (a jump of a·τ that the
@@ -732,6 +747,14 @@ public final class PathFollower {
     double budget = slipBudget();
     limiter.setSpeedingUpBudget(budget);
     limiter.setBrakeBudget(Math.max(budget, cfg.slipBrakeFriction() * RobotConfig.GRAVITY));
+  }
+
+  /**
+   * How far ahead (plan time) the reference is read: the latency, but at least one loop. At rest the plan's
+   * speed where the robot stands is zero, so with no lead at all the robot would never start.
+   */
+  private double readAheadSeconds() {
+    return Math.max(cfg.latencySeconds(), NOMINAL_LOOP_SECONDS);
   }
 
   /** The acceleration the measured floor allows, μ_slip·g, m/s² (+∞ when no slip has lowered it). */
@@ -980,6 +1003,10 @@ public final class PathFollower {
     double sJoin = trackProgress();
     double oldRemaining = track.lengthMeters() - sJoin;
     Path tail = Path.build(tailSpec, cfg.robot(), VelocityProfile.DEFAULT_GRID_METERS, join.curvature());
+    if (obstacleCheck != null && !obstacleCheck.test(tail, frame)) {
+      blockedRebuilds++; // straight to the moved goal would hit something: keep the tail we have
+      return;
+    }
     // events still ahead keep their share of the distance left
     for (int i = 0; i < eventS.length; i++) {
       if (!eventFired[i]) {
@@ -1078,6 +1105,11 @@ public final class PathFollower {
 
   public int tailRebuildCount() {
     return tailRebuilds;
+  }
+
+  /** Moving-goal tails not used because they would hit an obstacle ({@link #withObstacleCheck}). */
+  public int blockedRebuildCount() {
+    return blockedRebuilds;
   }
 
   /** Pieces built this run to rejoin the path after the robot was knocked off it. */

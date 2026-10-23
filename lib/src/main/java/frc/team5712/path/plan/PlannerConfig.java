@@ -26,6 +26,13 @@ public record PlannerConfig(
     double maxMetersPerSecond,
     double maxMetersPerSecondSquared) {
 
+  /**
+   * The margin on-the-fly paths try first (m): odometry can drift more than {@link #DEFAULT}'s 5 cm, so where
+   * the field has room the robot keeps 15 cm off things; where it doesn't (a gap under 1.5 m for the 0.85 m
+   * robot) the 5 cm plan still gets through. See {@code OnTheFly#preferring}.
+   */
+  public static final double WIDE_MARGIN_METERS = 0.15;
+
   /** 0.85 m square bumpers, 5 cm margin, 30° arcs, 8 refits, 2 cm checks, 4 m/s and 6 m/s². */
   public static final PlannerConfig DEFAULT =
       new PlannerConfig(0.85, 0.85, 0.05, Math.toRadians(30), 8, 0.02, 4.0, 6.0);

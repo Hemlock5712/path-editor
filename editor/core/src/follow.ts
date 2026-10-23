@@ -521,7 +521,8 @@ export class PathFollower {
       this.refHeading = goal.headingRadians;
     } else if (this.pureRotation) {
       const profile = active.profile;
-      const ahead = active.sample(profile.sAtTime(profile.timeAt(this.s) + cfg.latencySeconds));
+      // at least one loop ahead, or a robot at rest reads 0 m/s and never starts (PathFollower.java readAheadSeconds)
+      const ahead = active.sample(profile.sAtTime(profile.timeAt(this.s) + Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS)));
       const headingError = wrap(active.heading.sample(this.s).radians - pose.headingRadians);
       wantOmega = scale * gripScale * ahead.metersPerSecond * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
       wantOmega = Math.max(-cfg.maxOmegaRadPerSec, Math.min(cfg.maxOmegaRadPerSec, wantOmega));
@@ -533,7 +534,7 @@ export class PathFollower {
       this.refHeading = active.heading.sample(this.s).radians;
     } else {
       const profile = active.profile;
-      let lead = cfg.latencySeconds;
+      let lead = Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS); // at least one loop (PathFollower.java readAheadSeconds)
       if (this.track.spec.startMetersPerSecond > 0.0) {
         // a rolling start: the lead builds up over ROLLING_LEAD_SECONDS (PathFollower.java)
         lead *= Math.min(1.0, (timeSeconds - this.startTime) / ROLLING_LEAD_SECONDS);

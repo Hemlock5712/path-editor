@@ -109,7 +109,8 @@ public final class PathfindCommand implements Command {
   public void run(Coroutine coroutine) {
     FieldFrame frame = frameSource == null ? Conversions.allianceFrame(ctx.redFrame) : frameSource.get();
     following = false;
-    run = new OnTheFly(ctx.library.pathfinder(), ctx.config, () -> goal.apply(frame)).replanAbove(replanAbove)
+    run = new OnTheFly(ctx.library.pathfinder(), ctx.config, () -> goal.apply(frame))
+        .preferring(ctx.library.widePathfinder()).replanAbove(replanAbove)
         .onPlan(r -> {
           telemetry.plan(r.lastPlan(), r.replans());
           if (r.follower() != null) {

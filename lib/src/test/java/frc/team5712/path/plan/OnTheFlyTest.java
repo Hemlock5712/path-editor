@@ -120,6 +120,54 @@ class OnTheFlyTest {
   }
 
   @Test
+  void theWideBerthIsUsedWhereThereIsRoomAndTheTightOneThroughAGap() {
+    // a wall across the middle of an empty field with a 1.4 m gap: the 0.85 m robot needs 1.30 m at the 5 cm
+    // margin, 1.50 m at the wide 15 cm one
+    double[][] lower = {{-0.15, -4.0}, {0.15, -4.0}, {0.15, -0.7}, {-0.15, -0.7}};
+    double[][] upper = {{-0.15, 0.7}, {0.15, 0.7}, {0.15, 4.0}, {-0.15, 4.0}};
+    FieldMap wall = new FieldMap(16.54, 8.07, List.of("lower", "upper"),
+        List.of(ConvexPolygon.of(lower), ConvexPolygon.of(upper)));
+    Pathfinder tight = new Pathfinder(wall, RobotConfig.DEFAULT, PlannerConfig.DEFAULT);
+    Pathfinder wide = new Pathfinder(wall, RobotConfig.DEFAULT, PlannerConfig.DEFAULT.withMargin(PlannerConfig.WIDE_MARGIN_METERS));
+    FieldSpeeds still = new FieldSpeeds(0, 0, 0);
+    OnTheFly through = new OnTheFly(tight, CONFIG, () -> new Pose(3.0, 0.0, 0.0)).preferring(wide);
+    assertTrue(through.start(0.0, new Pose(-3.0, 0.0, 0.0), still));
+    assertTrue(!through.lastPlanWide(), "the wide berth can't use the gap: the tight plan goes through it");
+    OnTheFly beside = new OnTheFly(tight, CONFIG, () -> new Pose(-1.5, 3.0, 0.0)).preferring(wide);
+    assertTrue(beside.start(0.0, new Pose(-3.0, -2.0, 0.0), still));
+    assertTrue(beside.lastPlanWide(), "on this side of the wall there is room for the wide berth");
+  }
+
+  @Test
+  void aGoalThatMovesBehindAnObstacleIsPlannedRound() {
+    // heading for a spot by the blue hub's left side, the goal jumps to its right side: bending the path's end
+    // straight over to it would drive through the hub, so it must plan again round it
+    Pose start = new Pose(-6.0, -1.5, 0.0);
+    Pose first = new Pose(-5.2, 0.0, 0.0);
+    Pose moved = new Pose(-2.1, 0.0, 0.0);
+    SimDrivetrain sim = new SimDrivetrain(start, new FieldSpeeds(0, 0, 0), 0.02, 0.04, 0.001);
+    double[] now = {0};
+    OnTheFly otf = new OnTheFly(PLANNER, CONFIG, () -> first)
+        .withMovingGoal(() -> java.util.Optional.of(now[0] >= 0.5 ? moved : first));
+    assertTrue(otf.start(0.0, start, new FieldSpeeds(0, 0, 0)));
+    double minClear = Double.POSITIVE_INFINITY;
+    double t = 0;
+    for (int k = 0; k < 1000 && !otf.isFinished(); k++) {
+      t = now[0] = k * LOOP;
+      sim.advanceTo(t);
+      Pose p = sim.pose();
+      minClear = Math.min(minClear, PLANNER.clearance(p.xMeters(), p.yMeters(), p.headingRadians()));
+      sim.command(otf.step(t, p, sim.velocity()));
+    }
+    sim.command(new FieldSpeeds(0, 0, 0));
+    sim.advanceTo(t + 0.5);
+    Pose end = sim.pose();
+    assertTrue(minClear > 0, "touched the hub: clearance " + minClear);
+    assertTrue(otf.isFinished() && otf.replans() >= 1, "replans " + otf.replans());
+    assertTrue(Math.hypot(end.xMeters() - moved.xMeters(), end.yMeters() - moved.yMeters()) < 0.03);
+  }
+
+  @Test
   void aHandOverArrivesAlongTheGivenDirection() {
     OnTheFly otf = new OnTheFly(PLANNER, CONFIG, () -> new Pose(1.0, 3.25, 0.0)).arriving(1.5, 0.0);
     assertTrue(otf.start(0.0, new Pose(-6.0, 2.0, 0.0), new FieldSpeeds(0, 0, 0)));

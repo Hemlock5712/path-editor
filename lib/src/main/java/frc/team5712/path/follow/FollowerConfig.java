@@ -9,8 +9,9 @@ import frc.team5712.path.core.RobotConfig;
  * optimum on its tuning seeds. The limiter's μ stays at 1.0; see lib/README.md.
  *
  * @param robot the robot model: the output limiter's motor curve and spin lever, and tail rebuilds
- * @param latencySeconds how far ahead (in plan time) the reference is read, and the brake's
- *     reaction-time margin (DriveToPose's REACTION_TIME)
+ * @param latencySeconds how far ahead (in plan time) the reference is read (never less than one 20 ms loop,
+ *     or a robot at rest would read 0 m/s and never start), and the brake's reaction-time margin
+ *     (DriveToPose's REACTION_TIME)
  * @param windowMeters half-width of the projection window around the last progress
  * @param reprojectMeters cross-track error above which a global projection is also tried (a shove)
  * @param crossTrackKp sideways m/s per metre off the path

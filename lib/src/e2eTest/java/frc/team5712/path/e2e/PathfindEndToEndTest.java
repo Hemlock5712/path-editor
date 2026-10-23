@@ -309,7 +309,10 @@ class PathfindEndToEndTest {
    * planner can prevent, so the suite pushes where the robot can take it.
    */
   static Push placeShove(Pose s, Pose g) {
-    var path = planner.plan(s, new FieldSpeeds(0, 0, 0), g).path();
+    // the plan the command will drive: the wide berth where it fits, as the commands choose it
+    OnTheFly otf = new OnTheFly(planner, config(), () -> g).preferring(library.widePathfinder());
+    otf.start(0.0, s, new FieldSpeeds(0, 0, 0));
+    var path = otf.lastPlan().path();
     for (double d = 0.25 * path.lengthMeters(); d < 0.6 * path.lengthMeters(); d += 0.05) {
       var p = path.sample(d);
       double nx = -p.tangentY();

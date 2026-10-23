@@ -89,7 +89,8 @@ public final class PathfindCommandV2 extends Command {
   @Override
   public void initialize() {
     FieldFrame frame = frameSource == null ? Conversions.allianceFrame(ctx.redFrame) : frameSource.get();
-    run = new OnTheFly(ctx.library.pathfinder(), ctx.config, () -> goal.apply(frame)).replanAbove(replanAbove)
+    run = new OnTheFly(ctx.library.pathfinder(), ctx.config, () -> goal.apply(frame))
+        .preferring(ctx.library.widePathfinder()).replanAbove(replanAbove)
         .onPlan(r -> {
           telemetry.plan(r.lastPlan(), r.replans());
           if (r.follower() != null) {

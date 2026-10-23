@@ -152,6 +152,11 @@ public final class Pathfinding {
     return thenFollow(drive, path.fileName());
   }
 
+  /** A rejoin after a shove, or a moving goal's new end, must miss field.json's obstacles too. */
+  private PathFollower checked(PathFollower follower) {
+    return follower.withObstacleCheck(library.pathfinder()::pathClear);
+  }
+
   /**
    * A library path on its own (no pathfinding first), its events bound through {@code library.bindEvent}:
    * {@code otf.follow(drive, Paths.TO_REEF)}. The follower is built here, in robot init.
@@ -162,7 +167,7 @@ public final class Pathfinding {
 
   public PathfindCommand thenFollow(Mechanism drive, String pathName) {
     Path path = library.get(pathName);
-    FollowPathCommand follow = new FollowPathCommand(pathName, drive, new PathFollower(path, config), pose,
+    FollowPathCommand follow = new FollowPathCommand(pathName, drive, checked(new PathFollower(path, config)), pose,
         fieldVelocity, fieldOutput, redFrame).withEvents(library);
     return v3(new PathfindCommand(this, drive, "Pathfind to " + pathName, f -> start(path, f), path, follow));
   }
@@ -173,7 +178,7 @@ public final class Pathfinding {
    * {@link FollowPathCommand#withMovingGoal} to let its end follow a goal seen on the field.
    */
   public FollowPathCommand follow(Mechanism drive, String pathName) {
-    FollowPathCommand c = new FollowPathCommand(pathName, drive, new PathFollower(library.get(pathName), config), pose,
+    FollowPathCommand c = new FollowPathCommand(pathName, drive, checked(new PathFollower(library.get(pathName), config)), pose,
         fieldVelocity, fieldOutput, redFrame).withEvents(library);
     if (clock != null) {
       c.withClock(clock);
@@ -204,7 +209,7 @@ public final class Pathfinding {
 
   /** {@link #follow} for Commands v2. */
   public FollowPathCommandV2 followV2(Subsystem drive, String pathName) {
-    FollowPathCommandV2 c = new FollowPathCommandV2(pathName, drive, new PathFollower(library.get(pathName), config), pose,
+    FollowPathCommandV2 c = new FollowPathCommandV2(pathName, drive, checked(new PathFollower(library.get(pathName), config)), pose,
         fieldVelocity, fieldOutput, redFrame).withEvents(library);
     if (clock != null) {
       c.withClock(clock);
@@ -228,7 +233,7 @@ public final class Pathfinding {
   public PathfindThenFollowV2 thenFollowV2(Subsystem drive, String pathName) {
     Path path = library.get(pathName);
     PathfindCommandV2 first = new PathfindCommandV2(this, drive, "Pathfind to " + pathName, f -> start(path, f), path);
-    FollowPathCommandV2 follow = new FollowPathCommandV2(pathName, drive, new PathFollower(path, config), pose,
+    FollowPathCommandV2 follow = new FollowPathCommandV2(pathName, drive, checked(new PathFollower(path, config)), pose,
         fieldVelocity, fieldOutput, redFrame).withEvents(library).continuingFrom(first::endCommand);
     first.handsOverTo(follow);
     v2(first);

@@ -1,10 +1,12 @@
 package frc.team5712.path.plan;
 
+import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.GeometrySample;
 import frc.team5712.path.core.HeadingProfile;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.PathGeometry;
+import frc.team5712.path.core.PathSample;
 import frc.team5712.path.core.PathSpec;
 import frc.team5712.path.core.Pose;
 import frc.team5712.path.core.RobotConfig;
@@ -168,6 +170,25 @@ public final class Pathfinder {
 
   /** A straight approach this long (plus the braking distance from the end speed) ends a route with a set direction. */
   public static final double APPROACH_METERS = 0.5;
+
+  /**
+   * The length of the shortest corner-to-corner route from start to goal (m), +∞ when there is none: the search
+   * alone, a tenth of a millisecond, without the smoothing and the profile {@link #plan} adds.
+   */
+  public double routeLengthMeters(Pose start, Pose goal) {
+    double[] s = snap(start.xMeters(), start.yMeters());
+    double[] g = snap(goal.xMeters(), goal.yMeters());
+    List<double[]> route = shortestRoute(s, g);
+    if (route == null) {
+      return Double.POSITIVE_INFINITY;
+    }
+    double len = Math.hypot(s[0] - start.xMeters(), s[1] - start.yMeters())
+        + Math.hypot(g[0] - goal.xMeters(), g[1] - goal.yMeters());
+    for (int i = 1; i < route.size(); i++) {
+      len += Math.hypot(route.get(i)[0] - route.get(i - 1)[0], route.get(i)[1] - route.get(i - 1)[1]);
+    }
+    return len;
+  }
 
   /** Plans from the robot's pose and field velocity to the goal pose (arriving at rest). */
   public PlanResult plan(Pose start, FieldSpeeds startVelocity, Pose goal) {
@@ -496,6 +517,32 @@ public final class Pathfinder {
       worst.add(badS);
     }
     return new Sweep(min, worst);
+  }
+
+  /**
+   * Whether the bumpers, swept along {@code path} (blue frame, turned to the real field by {@code frame}) with
+   * its heading, stay clear of every obstacle and wall: by the margin, or by what they have at the path's start
+   * when that is less (a robot shoved close to an obstacle can still drive away from it). For {@link
+   * frc.team5712.path.follow.PathFollower#withObstacleCheck}: {@code follower.withObstacleCheck(pathfinder::pathClear)}.
+   */
+  public boolean pathClear(Path path, FieldFrame frame) {
+    double len = path.lengthMeters();
+    int n = Math.max(2, (int) Math.ceil(len / config.checkStepMeters()) + 1);
+    double reach = config.halfDiagonalMeters();
+    double[] qx = new double[4];
+    double[] qy = new double[4];
+    double need = config.marginMeters();
+    for (int k = 0; k < n; k++) {
+      PathSample p = path.sample(len * k / (n - 1));
+      Pose real = frame.fromBlue(new Pose(p.xMeters(), p.yMeters(), p.headingRadians()));
+      double c = clearance(real.xMeters(), real.yMeters(), real.headingRadians(), reach, qx, qy);
+      if (k == 0) {
+        need = Math.min(need, c);
+      } else if (c < need - 1e-9) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Clearance of the bumper rectangle at (x, y, th) to every obstacle and the field walls. */

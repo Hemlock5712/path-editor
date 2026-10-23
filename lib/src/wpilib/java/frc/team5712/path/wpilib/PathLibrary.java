@@ -69,6 +69,7 @@ public final class PathLibrary {
   private final RobotConfig robot;
   private final double buildMillis;
   private Pathfinder pathfinder;
+  private Pathfinder widePathfinder;
   private boolean fieldFromFile;
   private Map<String, double[]> namedPoints = Map.of();
   /** The Java package the editor generates its names in ({@code settings.javaPackage}), or null. */
@@ -169,7 +170,8 @@ public final class PathLibrary {
 
   /**
    * Reads {@code file} (field.json) if it exists, else an empty 2026-size field, and builds the pathfinder
-   * for this robot with {@code planner}'s bumpers and margin. A bad file throws, naming it.
+   * for this robot with {@code planner}'s bumpers and margin, and a second one with {@link
+   * PlannerConfig#WIDE_MARGIN_METERS} that on-the-fly paths try first. A bad file throws, naming it.
    */
   public PathLibrary loadField(File file, PlannerConfig planner) {
     FieldMap field;
@@ -184,7 +186,9 @@ public final class PathLibrary {
       field = new FieldMap(DEFAULT_FIELD_LENGTH, DEFAULT_FIELD_WIDTH, List.of(), List.of());
     }
     pathfinder = new Pathfinder(field, robot, planner);
-    warmUpMillis = pathfinder.warmUp(WARM_UP_QUERIES);
+    widePathfinder = planner.marginMeters() < PlannerConfig.WIDE_MARGIN_METERS
+        ? new Pathfinder(field, robot, planner.withMargin(PlannerConfig.WIDE_MARGIN_METERS)) : null;
+    warmUpMillis = pathfinder.warmUp(WARM_UP_QUERIES) + (widePathfinder == null ? 0 : widePathfinder.warmUp(WARM_UP_QUERIES));
     return this;
   }
 
@@ -219,6 +223,12 @@ public final class PathLibrary {
       loadField(new File("-"), PlannerConfig.DEFAULT); // a library built from a robot alone: an empty field
     }
     return pathfinder;
+  }
+
+  /** The same field with the wider margin on-the-fly paths try first (null if the main one is already as wide). */
+  public Pathfinder widePathfinder() {
+    pathfinder();
+    return widePathfinder;
   }
 
   /** True when the obstacles came from a field.json (false: an empty field). */

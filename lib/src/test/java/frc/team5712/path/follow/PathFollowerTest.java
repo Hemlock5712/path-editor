@@ -92,6 +92,20 @@ class PathFollowerTest {
   }
 
   @Test
+  void noLatencyStillStartsAndFinishes() {
+    // latency 0 used to read the plan where the robot stands, 0 m/s at the start, so it never moved
+    FollowerConfig noLead = CFG.toBuilder().latencySeconds(0.0).build();
+    for (PathSpec spec : List.of(FixturePaths.straight(), FixturePaths.sCurve())) {
+      Path path = Path.build(spec, ROBOT);
+      Run r = run(path, new PathFollower(path, noLead), FieldFrame.BLUE, 20, NONE);
+      assertTrue(r.finished(), "did not finish");
+      Pose end = r.trace().get(r.trace().size() - 1);
+      PathSample goal = path.sample(path.lengthMeters());
+      assertTrue(Math.hypot(end.xMeters() - goal.xMeters(), end.yMeters() - goal.yMeters()) < CFG.positionToleranceMeters());
+    }
+  }
+
+  @Test
   void reportsHowItTracksThePlan() {
     Path path = Path.build(FixturePaths.sCurve(), ROBOT);
     PathFollower follower = new PathFollower(path, CFG);
