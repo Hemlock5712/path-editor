@@ -17,6 +17,7 @@ import frc.team5712.path.slip.SlipAwareOdometry;
 import frc.team5712.path.slip.SlipConfig;
 import frc.team5712.path.slip.SlipSignal;
 import frc.team5712.path.plan.FieldMap;
+import frc.team5712.path.plan.OnTheFly;
 import frc.team5712.path.plan.Pathfinder;
 import frc.team5712.path.plan.PlanResult;
 import frc.team5712.path.plan.PlannerConfig;
@@ -64,6 +65,9 @@ public final class BenchServer {
   };
   private Pathfinder pathfinder;
   private String pathfinderKey;
+  private Pathfinder widePathfinder; // the on-the-fly runs' 0.15 m pathfinder, tried first as on the robot
+  private OnTheFly otf; // an on-the-fly run (op "otf"); null for a plain path
+  private Optional<Pose> otfGoal = Optional.empty();
 
   public static void main(String[] args) throws IOException {
     BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -98,8 +102,23 @@ public final class BenchServer {
       throw new IllegalArgumentException("no op");
     }
     return switch (op.toString()) {
-      case "load" -> load(msg);
-      case "pathfind" -> pathfind(msg);
+      case "load" -> {
+        otf = null;
+        yield load(msg);
+      }
+      case "pathfind" -> {
+        otf = null;
+        yield pathfind(msg);
+      }
+      case "otf" -> otf(msg);
+      case "otfgoal" -> {
+        otfGoal = Optional.of(pose(msg.get("goal")));
+        yield "{\"ok\":true}";
+      }
+      case "replan" -> {
+        otf.requestReplan();
+        yield "{\"ok\":true}";
+      }
       case "reset" -> reset(msg);
       case "step" -> step(msg);
       case "goal" -> goal(msg);
@@ -194,6 +213,56 @@ public final class BenchServer {
     return line(r);
   }
 
+  /**
+   * An on-the-fly run as the robot's {@code Pathfinding} commands make one: {@link OnTheFly} plans from the start
+   * state with the 0.15 m pathfinder when its route isn't much longer, else the 0.05 m one, starts the follower,
+   * and re-plans after a shove or a moved goal ({@code otfgoal}). Then {@code step} drives it. Both pathfinders
+   * are built once per field, robot and limits and kept, as at boot.
+   */
+  private String otf(Map<String, Object> msg) {
+    Map<String, Object> fieldTree = PathFile.asMap(msg.get("field"), "field");
+    RobotConfig robot = msg.get("robot") == null
+        ? RobotConfig.DEFAULT
+        : RobotFile.fromJson(PathFile.asMap(msg.get("robot"), "robot"));
+    PlannerConfig pc = PlannerConfig.DEFAULT;
+    if (msg.get("maxSpeed") != null) {
+      pc = pc.withLimits(number(msg, "maxSpeed"), number(msg, "maxAccel"));
+    }
+    FollowerConfig.Builder b = FollowerConfig.builder(robot);
+    if (msg.get("options") != null) {
+      for (Map.Entry<String, Object> e : PathFile.asMap(msg.get("options"), "options").entrySet()) {
+        if (!(e.getValue() instanceof Number n) || !b.set(e.getKey(), n.doubleValue())) {
+          throw new IllegalArgumentException("bad option " + e.getKey());
+        }
+      }
+    }
+    String key = line(fieldTree) + "|" + robot + "|" + pc + "|otf";
+    Map<String, Object> r = new LinkedHashMap<>();
+    r.put("ok", Boolean.TRUE);
+    if (!key.equals(pathfinderKey)) {
+      pathfinder = new Pathfinder(FieldMap.fromJson(fieldTree), robot, pc);
+      widePathfinder = new Pathfinder(FieldMap.fromJson(fieldTree), robot,
+          pc.withMargin(PlannerConfig.WIDE_MARGIN_METERS));
+      pathfinderKey = key;
+      r.put("bootMs", (pathfinder.bootMicros() + widePathfinder.bootMicros()) / 1e3);
+    }
+    Pose g = pose(msg.get("goal"));
+    otf = new OnTheFly(pathfinder, b.build(), () -> g).preferring(widePathfinder);
+    otfGoal = Optional.empty();
+    if (Boolean.TRUE.equals(msg.get("movingGoal"))) {
+      otf.withMovingGoal(() -> otfGoal);
+    }
+    boolean ok = otf.start(number(msg, "t"), pose(msg.get("start")), speeds(msg.get("vel")));
+    r.put("planOk", ok);
+    PlanResult plan = otf.lastPlan();
+    if (ok) {
+      follower = otf.follower();
+      path = plan.path();
+    }
+    describe(plan, r);
+    return line(r);
+  }
+
   /** The plan's numbers as reply fields (also used by PlanCli). */
   static void describe(PlanResult plan, Map<String, Object> r) {
     if (plan.ok()) {
@@ -239,9 +308,23 @@ public final class BenchServer {
   private String step(Map<String, Object> msg) {
     need();
     long t0 = System.nanoTime();
-    FieldSpeeds cmd = follower.step(number(msg, "t"), pose(msg.get("pose")), speeds(msg.get("vel")));
-    double micros = (System.nanoTime() - t0) / 1e3;
     Map<String, Object> r = new LinkedHashMap<>();
+    FieldSpeeds cmd;
+    if (otf != null) {
+      cmd = otf.step(number(msg, "t"), pose(msg.get("pose")), speeds(msg.get("vel")));
+      r.put("replans", (double) otf.replans());
+      r.put("maxPlanMicros", otf.maxPlanMicros());
+      if (otf.follower() == null) { // a re-plan found no route
+        r.put("cmd", List.of(0.0, 0.0, 0.0));
+        r.put("done", Boolean.TRUE);
+        r.put("failure", String.valueOf(otf.failure()));
+        return line(r);
+      }
+      follower = otf.follower();
+    } else {
+      cmd = follower.step(number(msg, "t"), pose(msg.get("pose")), speeds(msg.get("vel")));
+    }
+    double micros = (System.nanoTime() - t0) / 1e3;
     r.put("cmd", List.of(cmd.vxMetersPerSecond(), cmd.vyMetersPerSecond(), cmd.omegaRadPerSec()));
     r.put("done", follower.isFinished());
     r.put("phase", follower.phase().name());

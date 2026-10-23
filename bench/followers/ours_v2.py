@@ -29,7 +29,8 @@ from common import BASE_R, RP, Limits
 from followers.base import Follower
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-JAR = os.path.join(ROOT, "lib", "build", "libs", "pathcore.jar")
+# PATHCORE_JAR runs the bench on another build, e.g. a saved copy while the library is being changed
+JAR = os.environ.get("PATHCORE_JAR") or os.path.join(ROOT, "lib", "build", "libs", "pathcore.jar")
 MAIN = "frc.team5712.path.tools.BenchServer"
 LOG_DIR = os.path.join(ROOT, "bench", "out")  # BenchServer stderr, one file per worker (gitignored)
 

@@ -513,7 +513,11 @@ def main():
     ap.add_argument("--methods", default=",".join(RUN_METHODS))
     ap.add_argument("--poses", default="truth")
     ap.add_argument("--courses", default="plan", help="plan (the planning courses), disturbed, or both")
+    ap.add_argument("--out", help="the results file (default out/matched.json), e.g. to compare two library versions")
     a = ap.parse_args()
+    if a.out:
+        global RESULTS
+        RESULTS = os.path.abspath(a.out)
     os.makedirs(OUT, exist_ok=True)
     if a.cmd == "make":
         make(a.cli)
