@@ -1,4 +1,4 @@
-# Path Editor 5712: desktop app
+# Myelin: desktop app
 
 The editor (`editor/app`) in its own window, built with Tauri 2. It is the same app as the website, plus
 two things a browser can't do well:

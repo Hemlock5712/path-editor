@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Path Editor 5712",
+  "productName": "Myelin",
   "version": "2.0.0",
   "identifier": "com.frc5712.patheditor",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Path Editor 5712",
+        "title": "Myelin",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
@@ -30,7 +30,7 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
-    "shortDescription": "Swerve path editor for FRC team 5712",
+    "shortDescription": "Myelin: swerve path editor for FRC team 5712",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" }

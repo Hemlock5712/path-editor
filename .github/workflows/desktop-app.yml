@@ -73,15 +73,15 @@ jobs:
           tauriScript: npm run tauri
           args: ${{ matrix.args }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Path Editor {0}', github.ref_name) || '' }}
-          releaseBody: "The path editor as a desktop app. Windows: the .msi or the -setup.exe. macOS: the .dmg. Linux: the .AppImage, .deb or .rpm."
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Myelin {0}', github.ref_name) || '' }}
+          releaseBody: "Myelin, the path editor, as a desktop app. Windows: the .msi or the -setup.exe. macOS: the .dmg. Linux: the .AppImage, .deb or .rpm."
           releaseDraft: true
 
       - name: Keep the installers (a hand-run build)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: path-editor-${{ matrix.name }}
+          name: myelin-${{ matrix.name }}
           path: |
             editor/desktop/src-tauri/target/**/release/bundle/msi/*.msi
             editor/desktop/src-tauri/target/**/release/bundle/nsis/*-setup.exe

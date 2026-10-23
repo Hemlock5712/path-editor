@@ -1,4 +1,4 @@
-# editor: the path editor
+# editor: the Myelin editor
 
 | Folder | What |
 | --- | --- |

@@ -1,6 +1,6 @@
-# Path Editor v2
+# Myelin
 
-A rewrite in progress of team 5712's path editor and follower. The old version is on `master`.
+Myelin is team 5712's path editor and follower (a rewrite in progress). The old version is on `master`.
 See [PLAN.md](PLAN.md) for the design and the order of work.
 
 | Folder | What's in it |

@@ -53,7 +53,7 @@ class NamesTest {
     deploy(dir, "frc.team5712.path.wpilib.names", "intakeDown");
     IllegalStateException e = assertThrows(IllegalStateException.class, () -> PathLibrary.loadAll(dir));
     assertTrue(e.getMessage().contains("Events.SHOOT (no path uses the event \"shoot\")"), e.getMessage());
-    assertTrue(e.getMessage().contains("Save the project in the path editor"), e.getMessage());
+    assertTrue(e.getMessage().contains("Save the project in Myelin"), e.getMessage());
     // the same check by hand, and no check when the project names a package with no generated class
     deploy(dir, "frc.robot.nothing.here", "intakeDown");
     PathLibrary lib = PathLibrary.loadAll(dir);

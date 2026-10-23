@@ -1,4 +1,4 @@
-# Path Editor v2: plan
+# Myelin: plan
 
 A full rewrite of the path follower, the path maths and the editor. `master` keeps the old code for reference.
 The goal is a follower that finishes more accurately and sooner than PathPlanner, Choreo, BLine and CTRE.

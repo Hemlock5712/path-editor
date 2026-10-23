@@ -15,14 +15,13 @@ import { SHORTCUTS } from "./shortcuts.ts";
 
 // ------------------------------------------------------------------------------ the app icon
 
-/** The app's mark: a path with its start pose, on the accent. */
+/** The Myelin mark: a path that ends in a spark, on Hemlock navy. */
 export function AppIcon({ size = 20 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="8" fill="#2e8cf0" />
-      <path d="M7 24 C13 24 12 9 25 9" stroke="#fff" strokeWidth="2.6" fill="none" strokeLinecap="round" />
-      <rect x="4" y="21" width="6" height="6" rx="1.5" fill="#fbbf24" />
-      <circle cx="25" cy="9" r="2.6" fill="#fff" />
+    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
+      <rect width="100" height="100" rx="22" fill="#14233E" />
+      <path d="M22 78 C46 78 34 44 52 44 C70 44 60 24 76 24" stroke="#F2F4F7" strokeWidth="14" fill="none" strokeLinecap="round" />
+      <path d="M80 8 Q82.34 18.66 93 21 Q82.34 23.34 80 34 Q77.66 23.34 67 21 Q77.66 18.66 80 8 Z" fill="#FFE15C" />
     </svg>
   );
 }

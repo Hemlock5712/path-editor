@@ -152,7 +152,7 @@ public final class PathLibrary {
     }
     if (!missing.isEmpty()) {
       throw new IllegalStateException(names.getName() + " doesn't match deploy/paths: " + String.join("; ", missing)
-          + ". Save the project in the path editor, then build and deploy again.");
+          + ". Save the project in Myelin, then build and deploy again.");
     }
     return this;
   }

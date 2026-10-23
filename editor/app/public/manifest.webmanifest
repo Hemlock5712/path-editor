@@ -1,7 +1,7 @@
 {
-  "name": "Path Editor 5712",
-  "short_name": "Path Editor",
-  "description": "Swerve path editor for team fifty seven twelve's path follower",
+  "name": "Myelin",
+  "short_name": "Myelin",
+  "description": "Myelin: the swerve path editor for team fifty seven twelve's path follower",
   "id": "/",
   "start_url": "/",
   "scope": "/",

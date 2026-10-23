@@ -1,7 +1,7 @@
 [package]
 name = "path-editor-5712"
 version = "2.0.0"
-description = "Path Editor 5712: the swerve path editor as a desktop app"
+description = "Myelin: the swerve path editor as a desktop app"
 authors = ["FRC team 5712"]
 edition = "2021"
 rust-version = "1.80"

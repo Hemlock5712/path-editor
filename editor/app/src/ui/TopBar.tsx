@@ -30,7 +30,7 @@ export function TopBar() {
     <header className="topbar">
       <span className="brand">
         <AppIcon />
-        Path Editor
+        Myelin
       </span>
       <span className="project-name" data-testid="project-name" data-tip={files ? `Robot project: ${files.label}` : "Not saved to a robot project yet"}>
         {files ? files.label : "unsaved project"}
