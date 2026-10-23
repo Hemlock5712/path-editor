@@ -57,6 +57,8 @@ def plant_params(cname, rp):
 
 def _give_robot(f, r):
     """Methods with a robot model plan with the course's robot; the rest have no such setting."""
+    from followers.ours_v2 import OursV2
+
     name = type(f).__name__
     if name == "PathPlanner":
         from followers.pathplanner import RobotConfig
@@ -70,7 +72,7 @@ def _give_robot(f, r):
         f.cfg = RobotConfig(mass=r["mass"], moi=r["inertia"], current_limit=r["stator_limit"],
                             wheel_cof=f.cfg.wheel_cof)
         f.gen = SetpointGenerator(f.cfg, f.gen.steer_rate, f.gen.constraints)
-    elif name == "OursV2":
+    elif isinstance(f, OursV2):  # and its subclasses (optimised, on Choreo's trajectory)
         f.robot_overrides = dict(f.robot_overrides, massKg=r["mass"], momentOfInertiaKgM2=r["inertia"],
                                  statorCurrentLimitAmps=r["stator_limit"])
 
