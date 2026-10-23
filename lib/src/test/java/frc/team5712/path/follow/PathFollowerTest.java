@@ -806,7 +806,7 @@ class PathFollowerTest {
     // asking for 2 m/s², says the floor is slick.
     FakeSlip slip = new FakeSlip();
     double[] lowest = {Double.POSITIVE_INFINITY};
-    double[] achieved = {8.5}; // on its own floor the robot still gets nearly what it asked for
+    double[] achieved = {9.0}; // on its own floor the robot gets what the plan asks for
     Hook slipping = (t, plant, ff) -> {
       slip.confidence = t > 0.1 && t < 0.4 ? 0.9 : 0.0;
       slip.achieved = achieved[0];
@@ -839,6 +839,118 @@ class PathFollowerTest {
     lowest[0] = Double.POSITIVE_INFINITY;
     run(hard, new PathFollower(hard, tipCfg).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
     assertTrue(lowest[0] < 1.0, "falling well short of the ask lowers the grip: " + lowest[0]);
+  }
+
+  /**
+   * A slip signal that reads the plant like the bench IMU: the chassis acceleration, one loop late and low-passed
+   * (30 ms), times the share the floor delivers, with seeded noise; the wheels-against-IMU gap is noisy too.
+   */
+  static final class LaggedSlip implements frc.team5712.path.slip.SlipSignal {
+    final java.util.Random noise = new java.util.Random(5712);
+    double confidence;
+    double share = 1.0; // the share of the chassis acceleration the floor delivers
+    double cap = Double.POSITIVE_INFINITY; // the most the floor gives, m/s²
+    double gapMean = 1.0;
+    private double achieved;
+    private double gap;
+    private FieldSpeeds last = new FieldSpeeds(0, 0, 0);
+
+    /** One loop: read the plant's velocity (the command it applied, a loop late). */
+    void update(KinematicPlant plant) {
+      FieldSpeeds v = plant.velocity();
+      double a = Math.hypot(v.vxMetersPerSecond() - last.vxMetersPerSecond(),
+          v.vyMetersPerSecond() - last.vyMetersPerSecond()) / DT;
+      last = v;
+      double felt = Math.min(cap, share * a) + 0.25 * noise.nextGaussian();
+      achieved += (Math.abs(felt) - achieved) * DT / (0.03 + DT);
+      gap = Math.max(0.0, gapMean + 0.3 * noise.nextGaussian());
+    }
+
+    @Override
+    public double confidence() {
+      return confidence;
+    }
+
+    @Override
+    public double achievedAccelMetersPerSecondSquared() {
+      return achieved;
+    }
+
+    @Override
+    public double imuGapMetersPerSecondSquared() {
+      return gap;
+    }
+  }
+
+  /** A launch at the robot's full traction, slipping from 0.06 s until it reaches top speed. */
+  private static double lowestGripOnALaunch(LaggedSlip slip, double slipUntil) {
+    Path launch = Path.build(FixturePaths.straight().withLimits(4.0, ROBOT.tractionMetersPerSecondSquared()), ROBOT);
+    double[] lowest = {Double.POSITIVE_INFINITY};
+    run(launch, new PathFollower(launch, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, (t, plant, ff) -> {
+      slip.update(plant);
+      slip.confidence = t > 0.06 && t < slipUntil ? 0.9 : 0.0;
+      lowest[0] = Math.min(lowest[0], ff.slipFrictionCoefficient());
+    });
+    return lowest[0];
+  }
+
+  @Test
+  void aModeratelySlickFloorIsCaughtWithoutAGap() {
+    // The launch asks for the robot's full traction; the floor gives 85 % of it with the wheels and the IMU
+    // agreeing (no slide). The loaded wheels can't be making up for the light ones: the floor is giving out.
+    LaggedSlip slip = new LaggedSlip();
+    slip.share = 0.85;
+    double lowest = lowestGripOnALaunch(slip, 0.45);
+    assertTrue(lowest < ROBOT.frictionCoefficient(), "85 % of the ask lowers the grip: " + lowest);
+    // what it measured is about what the floor gave, less the margin
+    double gave = 0.85 * ROBOT.tractionMetersPerSecondSquared() / RobotConfig.GRAVITY;
+    assertTrue(lowest > 0.7 * gave * (1 - CFG.slipMargin()), "not far below what the floor gave: " + lowest);
+    // ...and the same launch getting all it asks for is the tread's own slip
+    LaggedSlip good = new LaggedSlip();
+    assertEquals(Double.POSITIVE_INFINITY, lowestGripOnALaunch(good, 0.45), "a good floor's launch");
+  }
+
+  @Test
+  void aGripDropInsideARunningSpellIsCaught() {
+    // A hard launch (9 m/s², over the wheel-slip onset) slips the light wheels on a good floor, and the robot gets
+    // what it asks for; 0.25 s in, still slipping, the floor drops to 5 m/s². The spell never ends, so only what
+    // the robot gets now (not the best of the spell) can show it.
+    Path hard = Path.build(FixturePaths.straight().withLimits(4.0, 9.0), ROBOT);
+    LaggedSlip slip = new LaggedSlip();
+    double[] lowest = {Double.POSITIVE_INFINITY};
+    double[] loweredAt = {Double.NaN};
+    run(hard, new PathFollower(hard, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, (t, plant, ff) -> {
+      slip.cap = t > 0.25 ? 5.0 : Double.POSITIVE_INFINITY;
+      slip.update(plant);
+      slip.confidence = t > 0.06 && t < 0.6 ? 0.9 : 0.0;
+      double mu = ff.slipFrictionCoefficient();
+      if (Double.isFinite(mu) && Double.isNaN(loweredAt[0])) {
+        loweredAt[0] = t;
+      }
+      lowest[0] = Math.min(lowest[0], mu);
+    });
+    assertTrue(loweredAt[0] > 0.25, "not before the drop: " + loweredAt[0]);
+    assertTrue(loweredAt[0] < 0.45, "within 0.2 s of the drop: " + loweredAt[0]);
+    // to near what the floor gives, less the margin (once lowered, the profile slows and asks the floor for less, so
+    // the estimate is what the IMU had settled to by then)
+    double gives = 5.0 / RobotConfig.GRAVITY * (1 - CFG.slipMargin());
+    assertTrue(lowest[0] >= gives - 0.05 && lowest[0] < 1.4 * gives, "near what the floor gives: " + lowest[0]);
+  }
+
+  @Test
+  void slipStartingAtCruiseOnAGoodFloorKeepsTheGrip() {
+    // Cruising at 3 m/s the robot asks for (almost) nothing, and gets it; the detector flags a spell anyway (a
+    // knock, a seam). Nothing was asked of the floor, so it says nothing about the floor.
+    Path cruise = Path.build(PathSpec.of(List.of(Waypoint.at(-4.0, 0.0, 0.0), Waypoint.at(4.0, 0.0, 0.0)))
+        .withLimits(3.0, 6.0), ROBOT);
+    LaggedSlip slip = new LaggedSlip();
+    double[] lowest = {Double.POSITIVE_INFINITY};
+    run(cruise, new PathFollower(cruise, CFG).withSlipSignal(slip), FieldFrame.BLUE, 20, (t, plant, ff) -> {
+      slip.update(plant);
+      slip.confidence = t > 1.2 && t < 1.5 ? 0.9 : 0.0;
+      lowest[0] = Math.min(lowest[0], ff.slipFrictionCoefficient());
+    });
+    assertEquals(Double.POSITIVE_INFINITY, lowest[0], "slip at cruise on a good floor");
   }
 
   @Test

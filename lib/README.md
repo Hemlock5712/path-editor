@@ -308,22 +308,46 @@ Under `equalPush` the plan stays under the onset, so adaptive grip never acts on
 
 ### Adaptive grip and steps
 
-A hard step (a launch from rest, the first loop of braking) slips the wheels at once
-for a loop, and the slip detector holds the spell for about 0.25 s. The follower could take that as a slick floor
-(μ 0.42 at every launch with wheel force feedforward sent, 20 % slower). Now:
-- a spell that starts within 0.1 s of a step past `expectedSlipShare` of the wheel-slip onset is the step's own
-  for up to `BRIEF_SPELL_SECONDS` (0.3 s); a floor still slipping after that is the floor;
-- slip only counts as the tread's own while the robot achieves at least 80 % of the acceleration it was
-  commanded (the best the IMU saw in the spell, since it lags). On its own floor the loaded wheels make up for
-  the light ones; a floor giving out falls short, however hard the ask.
-- the slide check (the wheels well ahead of the IMU, `slideGapMetersPerSecondSquared`) only counts while the robot
-  is also getting under 95 % of its ask. Near top speed the light wheels spin up fast, so a launch's end read as a
-  slide (gap 3.51 against 3.5) while the robot was getting 97 % of its ask; on those runs the grip latched at μ 0.67
-  and the rest of the path was 0.4 s slower.
+Rewritten 2026-10-23 after a review found the old rules overfit to the tuning seeds. They compared the best
+acceleration of a whole spell with the most it ever asked for, so good floor early in a spell hid bad floor later.
+They read μ while the robot was still ramping up, and they exempted any hard ramp, not just a step. The floor is now
+judged on the recent past:
+- **A short window.** Over the last `GRIP_WINDOW_SECONDS` (0.06 s) the follower compares the mean commanded
+  acceleration (filtered and lagged like the robot's response, as a vector, and never above what the motors can
+  give at the wheels' speed) with the best the IMU saw at the same moments. The robot must achieve at least
+  `EXPECTED_ACHIEVED_SHARE` (0.9) of it for the slip to count as the tread's own; the loaded wheels make up for
+  the light ones on the robot's own floor. A floor giving out falls short, however hard the ask.
+- **Only while the ask holds.** The window counts only while the raw command is at least 0.9 times the filtered
+  one (`HOLD_SHARE`), so easing off at top speed isn't read as the floor giving out. Filtering the command as a
+  vector matters too: a scalar made every switch from speeding up to braking look like a shortfall.
+- **μ from the window.** The floor's μ is the best the IMU saw in the window (less the margin). For 0.1 s after the
+  first latch the lowest reading counts, while the filtered IMU settles after a drop.
+- **Steps.** A spell that starts within 0.1 s of a one-loop jump in the command (a launch, the first loop of
+  braking) is that step's transient for up to `BRIEF_SPELL_SECONDS` (0.3 s), not any steady ramp.
+- **Cruise.** A spell that never asked for more than 0.1 g (`CRUISE_SHARE`) doesn't lower the grip.
+- **Slides.** The wheels well ahead of the IMU (`slideGapMetersPerSecondSquared`) are a slide unless the robot is
+  getting at least 95 % of its ask.
 
-On the bench at the robot's limits (95 %, 4.5 m/s) this took the hairpin and long-and-fast outliers from 2.75 s to
-2.33 s; the clean courses lost no time. Odometry on the slippery-floor courses is noisy run to run (6 to 23 cm per
-seed), so judge it on the full 10-seed bench.
+Bench, ours optimised with the library defaults, 80 seeds (0-39 and 100-139), true end error with wheel odometry
+only:
+
+| Floor | Off | Old rules | New rules |
+| --- | --- | --- | --- |
+| μ 1.2 | 9.9 cm | 11.8 cm | 7.1 cm |
+| μ 1.0 | 24.3 cm | 9.6 cm | 6.9 cm |
+| μ 0.91 | 31.8 cm | 9.2 cm | 6.6 cm |
+| μ 0.75 | 36.8 cm | 8.4 cm | 6.2 cm |
+| Grip drops halfway | 11.1 cm | 10.4 cm | 10.5 cm |
+
+With slip-aware odometry every floor ends about 4 cm off under both rules. On the 10 clean courses the grip was
+lowered in 0 of 800 runs (the old rules: 9) and the clean courses lost no time. Counting every slip spell would
+give 4.2 cm on every floor, but costs 3.9 s over the 10 clean courses.
+
+Still open:
+- **The grip drop.** Both rules lower the grip about 1.15 s in, and the error builds while braking, where
+  `slipBrakeFriction` still allows 1.11 g.
+- **Planning a known slick floor below its own wheel-slip onset** gave about 5 cm at +0.3 s in a quick test. It
+  isn't in.
 
 Wheel force feedforward shared by each wheel's load was tried (2026-10-23) and taken out: on the bench it gave
 the same time, 13 % less wheel slip, worse odometry on slippery floors and more time past the tipping limit.

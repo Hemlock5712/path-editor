@@ -120,14 +120,22 @@ public final class PathFollower {
   private SlipSignal slipSignal;
   private double slipMu = Double.POSITIVE_INFINITY; // the floor's grip as measured; +∞ = no slip seen
   private boolean wasSlipping;
-  private double spellStartMu = Double.POSITIVE_INFINITY; // slipMu before the current slip spell
   private double spellStart; // when it began
-  private double commandedAccel; // filtered |commanded acceleration|, m/s²
-  private double stepPeak; // the hardest single loop's |commanded acceleration| in the last SPELL_ONSET_SECONDS, m/s²
-  private double stepPeakTime = Double.NEGATIVE_INFINITY;
-  private double spellMaxCommanded; // the most the current spell has asked for
-  private double spellMaxStep; // the biggest single loop's step during the current spell, m/s²
-  private double spellMaxAchieved; // the most the IMU has seen the robot achieve during the current spell, m/s²
+  private double commandedAccel; // |the commanded acceleration, filtered and lagged like the robot's response|, m/s²
+  private double filteredAx; // ...that filtered acceleration, blue frame, m/s²
+  private double filteredAy;
+  private double commandedAx; // the last loop's commanded acceleration (unfiltered), blue frame, m/s²
+  private double commandedAy;
+  private double stepTime = Double.NEGATIVE_INFINITY; // when the commanded acceleration last jumped hard in one loop
+  private boolean spellAfterStep; // the current spell began within SPELL_ONSET_SECONDS of such a jump
+  private double spellMaxCommanded; // the most the current spell has asked for, m/s²
+  private double latchTime; // when the current spell first lowered slipMu
+  // the recent loops: when, the commanded (filtered) and the achieved acceleration, m/s²
+  private final double[] gripTime = new double[GRIP_WINDOW_CAPACITY];
+  private final double[] gripAsked = new double[GRIP_WINDOW_CAPACITY];
+  private final double[] gripAchieved = new double[GRIP_WINDOW_CAPACITY];
+  private int gripHead;
+  private int gripCount;
   private boolean spellLatched; // it has lowered slipMu
 
   // Per-run state
@@ -321,11 +329,15 @@ public final class PathFollower {
     phase = Phase.TRACKING;
     slipMu = Double.POSITIVE_INFINITY;
     wasSlipping = false;
-    spellStartMu = Double.POSITIVE_INFINITY;
     spellLatched = false;
     commandedAccel = 0.0;
-    stepPeak = 0.0;
-    stepPeakTime = Double.NEGATIVE_INFINITY;
+    filteredAx = 0.0;
+    filteredAy = 0.0;
+    commandedAx = 0.0;
+    commandedAy = 0.0;
+    stepTime = Double.NEGATIVE_INFINITY;
+    spellAfterStep = false;
+    gripCount = 0;
     limiter.setSpeedingUpBudget(Double.POSITIVE_INFINITY);
     limiter.setBrakeBudget(Double.POSITIVE_INFINITY);
     System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
@@ -600,13 +612,22 @@ public final class PathFollower {
     double lastVx = limiter.vx();
     double lastVy = limiter.vy();
     limiter.limit(wantVx, wantVy, wantOmega, dt);
-    // the commanded acceleration as the robot will feel it: lagged by the response delay and filtered
-    double cmdAccel = Math.hypot(limiter.vx() - lastVx, limiter.vy() - lastVy) / dt;
-    if (cmdAccel >= stepPeak || timeSeconds - stepPeakTime > SPELL_ONSET_SECONDS) { // the detector lags a loop or two
-      stepPeak = cmdAccel;
-      stepPeakTime = timeSeconds;
+    // the commanded acceleration as the robot will feel it: lagged by the response delay and filtered, as a
+    // vector like the IMU's (through a reversal both pass near zero)
+    double ax = (limiter.vx() - lastVx) / dt;
+    double ay = (limiter.vy() - lastVy) / dt;
+    // a hard step: the command jumping in one loop (a launch from rest, the first loop of braking), not a steady
+    // ramp however hard
+    if (Math.hypot(ax - commandedAx, ay - commandedAy)
+        >= cfg.expectedSlipShare() * cfg.robot().wheelSlipOnsetMetersPerSecondSquared()) {
+      stepTime = timeSeconds;
     }
-    commandedAccel += (cmdAccel - commandedAccel) * Math.min(1.0, dt / (cfg.latencySeconds() + COMMAND_FILTER_SECONDS));
+    commandedAx = ax;
+    commandedAy = ay;
+    double k = Math.min(1.0, dt / (cfg.latencySeconds() + COMMAND_FILTER_SECONDS));
+    filteredAx += (ax - filteredAx) * k;
+    filteredAy += (ay - filteredAy) * k;
+    commandedAccel = Math.hypot(filteredAx, filteredAy);
     if (!Double.isNaN(ox) && overrideXMode == OverrideMode.BYPASS
         || !Double.isNaN(oy) && overrideYMode == OverrideMode.BYPASS
         || !Double.isNaN(oo) && overrideOmegaMode == OverrideMode.BYPASS) {
@@ -683,57 +704,83 @@ public final class PathFollower {
       return;
     }
     boolean slipping = slipSignal.confidence() >= cfg.slipConfidence();
+    recordGrip(timeSeconds, commandedAccel, slipSignal.achievedAccelMetersPerSecondSquared());
     double floorMu = Double.POSITIVE_INFINITY;
     boolean expected = false;
     if (slipping) {
       if (!wasSlipping) { // a new spell
-        spellStartMu = slipMu;
         spellStart = timeSeconds;
         spellLatched = false;
+        spellAfterStep = timeSeconds - stepTime <= SPELL_ONSET_SECONDS; // the detector lags a loop or two
         spellMaxCommanded = 0.0;
-        spellMaxStep = 0.0;
-        spellMaxAchieved = 0.0;
       }
+      // The floor is judged on the last GRIP_WINDOW_SECONDS: the commanded acceleration against what the IMU says
+      // the robot achieved at the same moments. Not the spell's best of each: a floor that gives out mid-spell
+      // would hide behind the good floor before it.
+      double askPeak = 0.0; // the ask's peak over ASK_PEAK_SECONDS: the detector flags slip after the ask that slipped
+      double ask = 0.0; // the mean ask over the window
+      double got = 0.0; // the best the IMU saw over the window (it lags the onset)
+      int n = 0;
+      for (int j = 0; j < gripCount; j++) {
+        int i = (gripHead - 1 - j + GRIP_WINDOW_CAPACITY) % GRIP_WINDOW_CAPACITY;
+        double age = timeSeconds - gripTime[i];
+        if (age > ASK_PEAK_SECONDS) {
+          break;
+        }
+        askPeak = Math.max(askPeak, gripAsked[i]);
+        if (age <= GRIP_WINDOW_SECONDS) {
+          ask += gripAsked[i];
+          got = Math.max(got, gripAchieved[i]);
+          n++;
+        }
+      }
+      ask /= n;
+      spellMaxCommanded = Math.max(spellMaxCommanded, askPeak);
       // Every wheel pushes about the same, so on the tread's own floor the wheels that weight transfer
       // unloads let go once the robot asks for μ·g / (1 + μ·h/x) (the wheel-slip onset): some wheels slip
       // while the rest grip. That slip is expected, not a slick floor, and changes nothing. A slick floor
       // shows either way: slip while asking for less than expectedSlipShare of that onset, or the wheels
       // together spinning up faster than the IMU says the chassis does (the gap at least
-      // slideGapMetersPerSecondSquared: the loaded wheels are sliding too). The commanded acceleration is
-      // filtered and lagged like the robot's response, and it lags the spell's start, so expected slip
-      // early in a spell also undoes what the spell's first samples latched.
-      floorMu = slipSignal.achievedAccelMetersPerSecondSquared() / RobotConfig.GRAVITY;
-      spellMaxCommanded = Math.max(spellMaxCommanded, commandedAccel);
-      spellMaxStep = Math.max(spellMaxStep, stepPeak);
+      // slideGapMetersPerSecondSquared: the loaded wheels are sliding too).
       double onset = cfg.robot().wheelSlipOnsetMetersPerSecondSquared();
-      expected = spellMaxCommanded >= cfg.expectedSlipShare() * onset;
+      boolean hardAsk = spellMaxCommanded >= cfg.expectedSlipShare() * onset;
       // A spell that starts just after a hard step (a launch, the first loop of braking) is the step's own
       // transient while it lasts no longer than BRIEF_SPELL_SECONDS: a step slips the wheels at once, and the
       // detector holds the spell a while after. A slick floor is still slipping after that.
-      boolean stepTransient = spellMaxStep >= cfg.expectedSlipShare() * cfg.robot().wheelSlipOnsetMetersPerSecondSquared()
-          && timeSeconds - spellStart <= BRIEF_SPELL_SECONDS;
+      boolean stepTransient = spellAfterStep && timeSeconds - spellStart <= BRIEF_SPELL_SECONDS;
+      // The ask is never more than the motors can give at the wheels' speed: near top speed a shortfall is theirs.
+      double wheel = measuredSpeed + Math.abs(measuredOmega) * cfg.robot().moduleRadiusMeters();
+      if (Double.isFinite(wheel)) {
+        boolean speedingUp = commandedAx * limiter.vx() + commandedAy * limiter.vy() > 0.0;
+        ask = Math.min(ask, speedingUp ? cfg.robot().driveAccelMetersPerSecondSquared(wheel)
+            : cfg.robot().brakeAccelMetersPerSecondSquared());
+      }
+      // It is judged only while the ask holds: once the command eases off (top speed, the end of a brake) the
+      // filtered ask lags it down, and a robot that has stopped accelerating would look short of it.
+      boolean holding = Math.hypot(commandedAx, commandedAy) >= HOLD_SHARE * ask;
       // ...and either way the robot still gets most of what it asks for: on its own floor the loaded wheels make
-      // up for the light ones. Getting under EXPECTED_ACHIEVED_SHARE of the (lagged) commanded acceleration is the
-      // floor giving out, however hard the ask.
-      double asked = spellMaxCommanded;
-      spellMaxAchieved = Math.max(spellMaxAchieved, slipSignal.achievedAccelMetersPerSecondSquared()); // the IMU lags
-      boolean delivering = spellMaxAchieved >= EXPECTED_ACHIEVED_SHARE * asked;
+      // up for the light ones. Getting under EXPECTED_ACHIEVED_SHARE of the ask is the floor giving out.
+      boolean delivering = !holding || got >= EXPECTED_ACHIEVED_SHARE * ask;
       // The wheels spinning up well ahead of the chassis (the IMU gap) is a slide, unless the chassis is getting
       // (nearly) all it asked for: then the loaded wheels grip and only the light ones spin (near top speed they
       // spin up fast)
-      boolean sliding = slipSignal.imuGapMetersPerSecondSquared() >= cfg.slideGapMetersPerSecondSquared()
-          && spellMaxAchieved < SLIDE_ACHIEVED_SHARE * asked;
-      expected = (expected || stepTransient) && delivering && !sliding;
-      if (expected && timeSeconds - spellStart <= BRIEF_SPELL_SECONDS) {
-        slipMu = spellStartMu;
-        spellLatched = false;
-      }
+      boolean sliding = holding && slipSignal.imuGapMetersPerSecondSquared() >= cfg.slideGapMetersPerSecondSquared()
+          && got < SLIDE_ACHIEVED_SHARE * ask;
+      // A spell that never asked anything of the floor (cruising: a knock, a seam) says nothing about it.
+      boolean cruising = spellMaxCommanded < CRUISE_SHARE * RobotConfig.GRAVITY;
+      expected = cruising || (hardAsk || stepTransient) && delivering && !sliding;
+      floorMu = got / RobotConfig.GRAVITY;
     }
     if (slipping && !expected) {
-      // what the floor is giving now, less the margin; during a spell the best of it counts, since a
-      // sliding tread still delivers kinetic friction and the filtered IMU lags the onset
+      // what the floor is giving, less the margin. For SPELL_ONSET_SECONDS after the spell first lowers it, the
+      // filtered IMU is still settling onto that (falling, after a drop), so the least counts; after that the
+      // best, since a sliding tread still delivers kinetic friction.
       double mu = Math.max(cfg.minSlipFriction(), floorMu * (1.0 - cfg.slipMargin()));
-      slipMu = spellLatched ? Math.max(slipMu, mu) : Math.min(slipMu, mu);
+      if (!spellLatched) {
+        latchTime = timeSeconds;
+      }
+      boolean settling = timeSeconds - latchTime <= SPELL_ONSET_SECONDS;
+      slipMu = spellLatched && !settling ? Math.max(slipMu, mu) : Math.min(slipMu, mu);
       slipMu = Math.min(slipMu, slipCeiling());
       spellLatched = true;
     } else if (!slipping && Double.isFinite(slipMu) && phase != Phase.TERMINAL) {
@@ -755,6 +802,14 @@ public final class PathFollower {
    */
   private double readAheadSeconds() {
     return Math.max(cfg.latencySeconds(), NOMINAL_LOOP_SECONDS);
+  }
+
+  private void recordGrip(double timeSeconds, double asked, double achieved) {
+    gripTime[gripHead] = timeSeconds;
+    gripAsked[gripHead] = asked;
+    gripAchieved[gripHead] = achieved;
+    gripHead = (gripHead + 1) % GRIP_WINDOW_CAPACITY;
+    gripCount = Math.min(gripCount + 1, GRIP_WINDOW_CAPACITY);
   }
 
   /** The acceleration the measured floor allows, μ_slip·g, m/s² (+∞ when no slip has lowered it). */
@@ -808,10 +863,20 @@ public final class PathFollower {
 
   /** How long a slip spell's start counts as its onset, while the filtered acceleration catches up. */
   private static final double SPELL_ONSET_SECONDS = 0.1;
-  /** A spell that ends within this, after a hard step, was the step's transient. */
+  /** A spell that starts within SPELL_ONSET_SECONDS of a hard step and ends within this was the step's transient. */
   private static final double BRIEF_SPELL_SECONDS = 0.3;
+  /** Adaptive grip judges the floor on this much of the recent past (about the IMU filter and a loop or two). */
+  private static final double GRIP_WINDOW_SECONDS = 0.06;
+  /** A spell's ask counts from this far back: the detector flags slip a little after the ask that caused it. */
+  private static final double ASK_PEAK_SECONDS = 0.15;
+  /** Room for ASK_PEAK_SECONDS of loops at up to 250 Hz. */
+  private static final int GRIP_WINDOW_CAPACITY = 64;
+  /** The ask holds while the command is at least this share of the filtered ask (not easing off). */
+  private static final double HOLD_SHARE = 0.9;
+  /** A spell that never asks for more than this share of g asks nothing of the floor. */
+  private static final double CRUISE_SHARE = 0.1;
   /** Slip the tread's own still delivers at least this share of the acceleration asked for. */
-  private static final double EXPECTED_ACHIEVED_SHARE = 0.8;
+  private static final double EXPECTED_ACHIEVED_SHARE = 0.9;
   /** With the wheels well ahead of the IMU, a robot still getting this share of its ask isn't sliding. */
   private static final double SLIDE_ACHIEVED_SHARE = 0.95;
 
