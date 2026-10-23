@@ -152,7 +152,7 @@ public final class Pathfinding {
     return thenFollow(drive, path.fileName());
   }
 
-  /** A rejoin after a shove, or a moving goal's new end, must miss field.json's obstacles too. */
+  /** A moving goal's new end must miss field.json's obstacles too. */
   private PathFollower checked(PathFollower follower) {
     return follower.withObstacleCheck(library.pathfinder()::pathClear);
   }

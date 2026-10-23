@@ -58,10 +58,6 @@ import frc.team5712.path.core.RobotConfig;
  *     about the floor. Slip while asking for less does
  * @param slideGapMetersPerSecondSquared ...and so does slip while the wheels' acceleration is this far from the
  *     IMU's: the wheels spinning up together while the chassis doesn't follow, so the loaded wheels slide too
- * @param rejoinAboveMeters knocked further than this off the path, build a piece from where the robot is, the
- *     way it is really going (from the pose's change: after a hit the wheels slide), back onto the path
- *     {@code REJOIN_METERS} ahead with matching position, tangent and curvature, or straight to the goal when
- *     that's near; at most once per {@code REJOIN_COOLDOWN_SECONDS} (+∞ = never)
  */
 public record FollowerConfig(
     RobotConfig robot,
@@ -93,15 +89,8 @@ public record FollowerConfig(
     double slipRecoveryPerSecond,
     double minSlipFriction,
     double slipBrakeFriction,
-    double rejoinAboveMeters,
     double expectedSlipShare,
     double slideGapMetersPerSecondSquared) {
-
-  /** How far ahead (along the path) a rejoining piece meets it. */
-  public static final double REJOIN_METERS = 1.0;
-
-  /** At most one rejoin per this long. */
-  public static final double REJOIN_COOLDOWN_SECONDS = 0.5;
 
   /** The defaults for a robot. */
   public static FollowerConfig defaults(RobotConfig robot) {
@@ -151,7 +140,6 @@ public record FollowerConfig(
     b.slipRecoveryPerSecond = slipRecoveryPerSecond;
     b.minSlipFriction = minSlipFriction;
     b.slipBrakeFriction = slipBrakeFriction;
-    b.rejoinAboveMeters = rejoinAboveMeters;
     b.expectedSlipShare = expectedSlipShare;
     b.slideGapMetersPerSecondSquared = slideGapMetersPerSecondSquared;
     return b;
@@ -188,7 +176,6 @@ public record FollowerConfig(
     private double slipRecoveryPerSecond = 0.065;
     private double minSlipFriction = 0.39;
     private double slipBrakeFriction = 1.11;
-    private double rejoinAboveMeters = 0.4;
     private double expectedSlipShare = 0.8;
     private double slideGapMetersPerSecondSquared = 3.5;
 
@@ -224,7 +211,6 @@ public record FollowerConfig(
     public Builder slipRecoveryPerSecond(double v) { slipRecoveryPerSecond = v; return this; }
     public Builder minSlipFriction(double v) { minSlipFriction = v; return this; }
     public Builder slipBrakeFriction(double v) { slipBrakeFriction = v; return this; }
-    public Builder rejoinAboveMeters(double v) { rejoinAboveMeters = v; return this; }
     public Builder expectedSlipShare(double v) { expectedSlipShare = v; return this; }
     public Builder slideGapMetersPerSecondSquared(double v) { slideGapMetersPerSecondSquared = v; return this; }
 
@@ -262,7 +248,6 @@ public record FollowerConfig(
         case "slipRecoveryPerSecond" -> slipRecoveryPerSecond = v;
         case "minSlipFriction" -> minSlipFriction = v;
         case "slipBrakeFriction" -> slipBrakeFriction = v;
-        case "rejoinAboveMeters" -> rejoinAboveMeters = v;
         case "expectedSlipShare" -> expectedSlipShare = v;
         case "slideGapMetersPerSecondSquared" -> slideGapMetersPerSecondSquared = v;
         default -> {
@@ -280,7 +265,7 @@ public record FollowerConfig(
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
           headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,
           goalMoveRadians, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
-          minSlipFriction, slipBrakeFriction, rejoinAboveMeters,
+          minSlipFriction, slipBrakeFriction,
           expectedSlipShare, slideGapMetersPerSecondSquared);
     }
   }

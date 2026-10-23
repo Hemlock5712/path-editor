@@ -135,13 +135,6 @@ public final class PathFollower {
   private double s;
   private double lastS; // progress at the previous step, for its rate
   private double lastTime;
-  // The pose at the previous step, and the velocity between the two: where the body is really going (the
-  // wheels' velocity says where they roll, and after a hit they slide)
-  private double prevX = Double.NaN;
-  private double prevY;
-  private double prevPoseTime;
-  private double poseVx;
-  private double poseVy;
   private double startTime;
   private double headingError = Double.NaN;
   private double measuredSpeed = Double.NaN;
@@ -155,16 +148,6 @@ public final class PathFollower {
   private int blockedRebuilds;
   private double lastRebuildMicros = Double.NaN;
   private BiPredicate<Path, FieldFrame> obstacleCheck; // null: no field to check against
-  // The path followed when not rejoining: the base path, or a rebuilt tail
-  private Path track;
-  // A piece from where the robot was knocked to back onto the track at headJoinS (null when on the track),
-  // replacing the stretch from headStartS (track metres)
-  private Path head;
-  private double headStartS;
-  private double headJoinS;
-  private int rejoins;
-  private double lastRejoinTime = Double.NEGATIVE_INFINITY;
-  private double lastRejoinMicros = Double.NaN;
 
   /** A follower for a path built in robot init. Cheap: nothing about the path is copied. */
   public PathFollower(Path path, FollowerConfig config) {
@@ -176,7 +159,6 @@ public final class PathFollower {
     PathSample end = path.sample(path.lengthMeters());
     this.baseGoal = new Pose(end.xMeters(), end.yMeters(), end.headingRadians());
     this.active = path;
-    this.track = path;
     this.goal = baseGoal;
     this.pureRotation = path.lengthMeters() <= 1.5 * Path.PURE_ROTATION_METERS;
     for (PathEvent e : path.spec().events()) {
@@ -236,10 +218,9 @@ public final class PathFollower {
   }
 
   /**
-   * Checks every piece the follower builds by itself (a rejoin after a shove, a moving goal's new tail) against
-   * the field's obstacles, e.g. {@code Pathfinder::pathClear}: the piece (blue frame) and the frame it is driven
-   * in. A piece that would hit something isn't used: a rejoin tries a further join or keeps to the path, and a
-   * tail keeps the old one, the DriveToPose finish still driving to the moved goal.
+   * Checks a moving goal's new tail against the field's obstacles, e.g. {@code Pathfinder::pathClear}: the tail
+   * (blue frame) and the frame it is driven in. A tail that would hit something isn't used: the old one is kept,
+   * the DriveToPose finish still driving to the moved goal.
    */
   public PathFollower withObstacleCheck(BiPredicate<Path, FieldFrame> clear) {
     this.obstacleCheck = clear;
@@ -276,7 +257,6 @@ public final class PathFollower {
     updateProgress(p);
     lastS = s;
     lastTime = timeSeconds;
-    prevX = Double.NaN;
     startTime = timeSeconds;
     headingError = Double.NaN;
     measuredSpeed = Double.NaN;
@@ -298,99 +278,7 @@ public final class PathFollower {
     limiter.setBrakeBudget(Double.POSITIVE_INFINITY);
     System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
     java.util.Arrays.fill(eventFired, false);
-    head = null;
-    rejoins = 0;
     blockedRebuilds = 0;
-    lastRejoinTime = Double.NEGATIVE_INFINITY;
-    track = basePath;
-  }
-
-  /** Below this speed the robot has no direction of travel worth keeping. */
-  private static final double MIN_MOVING_SPEED = 0.1;
-
-  /**
-   * Replaces the track up to {@code joinS} with a piece from the robot's pose, along its velocity and at its
-   * speed, that meets the track at {@code joinS} with matching position, tangent and curvature (and the
-   * planned speed there). A piece to a stopping end heads straight for the goal instead (its tangent there
-   * is the chord's, its curvature free): off the path that close to the end, the way the path arrives isn't
-   * worth a loop to match. Only a join ahead of the robot will do: in front of where it is going, with the
-   * track there leading on away from it (else the piece would loop back); and the piece mustn't double
-   * back. Returns whether it was built; afterwards progress is along the piece, and the follower moves back
-   * onto the track when the piece ends.
-   */
-  private boolean rejoin(Pose pose, double vx, double vy, double joinS) {
-    long t0 = System.nanoTime();
-    double length = track.lengthMeters();
-    joinS = Math.min(joinS, length);
-    PathSample j = track.sample(joinS);
-    double v = Math.hypot(vx, vy);
-    double dx = j.xMeters() - pose.xMeters();
-    double dy = j.yMeters() - pose.yMeters();
-    boolean toEnd = joinS >= length - 1e-9;
-    boolean straightIn = toEnd && !rollingEnd; // a rolling end keeps its exit direction
-    if (Math.hypot(dx, dy) < MIN_TAIL_METERS || (v > MIN_MOVING_SPEED && vx * dx + vy * dy <= 0.0)
-        || (!straightIn && j.tangentX() * dx + j.tangentY() * dy <= 0.0)) {
-      return false;
-    }
-    double chord = Angles.atan2(dy, dx);
-    PathSpec spec = track.spec();
-    double startTangent = v > MIN_MOVING_SPEED ? Angles.atan2(vy, vx) : chord;
-    double endTangent = straightIn ? chord : Angles.atan2(j.tangentY(), j.tangentX());
-    double endK = straightIn ? Double.NaN : j.curvature();
-    PathSpec pieceSpec = new PathSpec(
-        List.of(Waypoint.at(pose.xMeters(), pose.yMeters(), startTangent),
-            Waypoint.at(j.xMeters(), j.yMeters(), endTangent)),
-        List.of(RotationTarget.atMeters(0.0, pose.headingRadians()), RotationTarget.atWaypoint(1.0, j.headingRadians())),
-        List.of(),
-        List.of(),
-        spec.maxMetersPerSecond(),
-        spec.maxMetersPerSecondSquared(),
-        Math.min(v, spec.maxMetersPerSecond()),
-        toEnd ? spec.endMetersPerSecond() : j.metersPerSecond());
-    Path piece;
-    try {
-      piece = Path.build(pieceSpec, cfg.robot(), VelocityProfile.DEFAULT_GRID_METERS, Double.NaN, endK);
-    } catch (RuntimeException e) {
-      return false; // can't be planned
-    }
-    if (piece.geometry().hasCusps() || obstacleCheck != null && !obstacleCheck.test(piece, frame)) {
-      return false;
-    }
-    headStartS = trackProgress();
-    head = piece;
-    headJoinS = joinS;
-    active = piece;
-    s = 0.0;
-    rejoins++;
-    lastRejoinMicros = (System.nanoTime() - t0) / 1e3;
-    return true;
-  }
-
-  /** Metres left to the end of the path: on a rejoining piece, its rest plus the track after the join. */
-  private double remainingMeters(double sNow) {
-    if (head != null) {
-      return head.lengthMeters() - sNow + (track.lengthMeters() - headJoinS);
-    }
-    return active.lengthMeters() - sNow;
-  }
-
-  /** Progress in the track's metres (events are placed in them): on a rejoining piece, its share of the stretch it replaces. */
-  private double trackProgress() {
-    if (head != null) {
-      return headStartS + (headJoinS - headStartS) * Math.min(1.0, s / head.lengthMeters());
-    }
-    return s;
-  }
-
-  /** The robot has reached the end of the rejoining piece (or passed its end line, near it). */
-  private boolean headDone(Pose pose) {
-    double length = head.lengthMeters();
-    if (s >= length - 1e-3) {
-      return true;
-    }
-    PathSample end = head.sample(length);
-    double past = (pose.xMeters() - end.xMeters()) * end.tangentX() + (pose.yMeters() - end.yMeters()) * end.tangentY();
-    return past >= 0.0 && length - s <= cfg.windowMeters();
   }
 
   /** One loop: measured pose and field velocity in, field speeds out (both in the robot's frame). */
@@ -407,7 +295,6 @@ public final class PathFollower {
     lastTime = timeSeconds;
     Pose pose = frame.toBlue(measuredPose);
     FieldSpeeds vel = frame.toBlue(measuredVelocity);
-    updatePoseVelocity(timeSeconds, pose, vel);
     if (!(Double.isFinite(pose.xMeters()) && Double.isFinite(pose.yMeters())
         && Double.isFinite(pose.headingRadians()))) {
       limiter.limit(0.0, 0.0, 0.0, dt); // no pose: brake within the limits
@@ -424,32 +311,7 @@ public final class PathFollower {
     double brakeDecel = Math.min(brakeSetting, slipBudget);
     double gripScale = slipBudget < planned ? Math.sqrt(slipBudget / planned) : 1.0;
     updateProgress(pose);
-    if (head != null && headJoinS < track.lengthMeters() - 1e-9 && headDone(pose)) {
-      active = track; // the piece has met the track: on along it
-      head = null;
-      s = headJoinS;
-      updateProgress(pose);
-    }
-    // Knocked well off: a piece from where the robot is, the way it is really going, back onto the track
-    // a little ahead (or further, to the first join ahead of the robot; or to the goal, if that's near).
-    // Never past a cusp: the robot must still get to where the path reverses.
-    if (phase == Phase.TRACKING && !pureRotation && Math.abs(crossTrack) > cfg.rejoinAboveMeters()
-        && timeSeconds - lastRejoinTime >= FollowerConfig.REJOIN_COOLDOWN_SECONDS) {
-      lastRejoinTime = timeSeconds;
-      double from = trackProgress();
-      double cusp = track.geometry().nextCusp(from);
-      double length = track.lengthMeters();
-      double last = Double.isNaN(cusp) ? length : cusp - CUSP_EDGE_METERS;
-      double join = from;
-      do {
-        join += FollowerConfig.REJOIN_METERS;
-        if (join > length - cfg.terminalRadiusMeters()) {
-          join = length;
-        }
-        join = Math.min(join, last);
-      } while (!rejoin(pose, poseVx, poseVy, join) && join < last);
-    }
-    double remaining = remainingMeters(s);
+    double remaining = active.lengthMeters() - s;
     if (phase == Phase.TRACKING && !rollingEnd && remaining < cfg.terminalRadiusMeters()
         && Math.abs(Angles.wrap(goal.headingRadians() - active.heading().sample(s).radians())) <= cfg.terminalTurnRadians()
         && Double.isNaN(active.geometry().nextCusp(s))) { // not while the path still has to double back
@@ -497,7 +359,7 @@ public final class PathFollower {
     } else {
       VelocityProfile profile = active.profile();
       double lead = readAheadSeconds();
-      if (track.spec().startMetersPerSecond() > 0.0) {
+      if (active.spec().startMetersPerSecond() > 0.0) {
         // A rolling start: the last path's command led into its own end, not into this path's speeding up,
         // so the lead builds up over ROLLING_LEAD_SECONDS instead of in one loop (a jump of a·τ that the
         // limiter would take at full grip, slipping the wheels at the hand-over)
@@ -554,17 +416,15 @@ public final class PathFollower {
     // Events fire on the loop nearest to passing them: the progress made per loop says how far the
     // robot gets before the next one, and an event less than half of that ahead fires now. Firing on
     // the first loop past it would be late by up to a loop of travel (8 cm at 4 m/s and 50 Hz).
-    double progress = trackProgress();
+    double progress = s;
     double rate = Math.max(0.0, Math.min(MAX_PROGRESS_RATE, (progress - lastS) / dt));
     lastS = progress;
     double lead = 0.5 * rate * dt; // half the travel to the next loop
     fireEventsUpTo(progress + lead);
     if (phase == Phase.TERMINAL && arrived(pose)) {
-      fireEventsUpTo(track.lengthMeters()); // an event at the end fires when the robot gets there, not after it settles
+      fireEventsUpTo(active.lengthMeters()); // an event at the end fires when the robot gets there, not after it settles
     }
-    if (head == null || headJoinS >= track.lengthMeters() - 1e-9) { // not done while a piece is still to meet the track
-      checkFinished(timeSeconds, pose, vel, remaining, lead);
-    }
+    checkFinished(timeSeconds, pose, vel, remaining, lead);
     return output();
   }
 
@@ -751,27 +611,6 @@ public final class PathFollower {
     s = near.s();
   }
 
-  /**
-   * The velocity from the pose's change since the last step (the measured one on the first step, or when
-   * the pose jumps faster than the robot can go: a vision correction).
-   */
-  private void updatePoseVelocity(double t, Pose pose, FieldSpeeds vel) {
-    double dt = t - prevPoseTime;
-    poseVx = vel.vxMetersPerSecond();
-    poseVy = vel.vyMetersPerSecond();
-    if (!Double.isNaN(prevX) && dt > MIN_POSE_DT) {
-      double vx = (pose.xMeters() - prevX) / dt;
-      double vy = (pose.yMeters() - prevY) / dt;
-      if (Math.hypot(vx, vy) <= MAX_POSE_SPEED_RATIO * track.spec().maxMetersPerSecond()) {
-        poseVx = vx;
-        poseVy = vy;
-      }
-    }
-    prevX = pose.xMeters();
-    prevY = pose.yMeters();
-    prevPoseTime = t;
-  }
-
   /** The slip signal's own filter on the achieved acceleration, matched on the commanded one. */
   private static final double COMMAND_FILTER_SECONDS = 0.03;
 
@@ -793,12 +632,6 @@ public final class PathFollower {
   private static final double EXPECTED_ACHIEVED_SHARE = 0.9;
   /** With the wheels well ahead of the IMU, a robot still getting this share of its ask isn't sliding. */
   private static final double SLIDE_ACHIEVED_SHARE = 0.95;
-
-  /** Shorter steps than this don't give a velocity from the pose (the measured one is used). */
-  private static final double MIN_POSE_DT = 0.005;
-
-  /** A pose moving faster than this many times the path's top speed has jumped. */
-  private static final double MAX_POSE_SPEED_RATIO = 1.5;
 
   /** After a rolling start, the read-ahead grows to the full latency over this long. */
   static final double ROLLING_LEAD_SECONDS = 0.3;
@@ -978,8 +811,8 @@ public final class PathFollower {
         spec.maxMetersPerSecondSquared(),
         join.metersPerSecond(),
         spec.endMetersPerSecond());
-    double sJoin = trackProgress();
-    double oldRemaining = track.lengthMeters() - sJoin;
+    double sJoin = s;
+    double oldRemaining = active.lengthMeters() - sJoin;
     Path tail = Path.build(tailSpec, cfg.robot(), VelocityProfile.DEFAULT_GRID_METERS, join.curvature());
     if (obstacleCheck != null && !obstacleCheck.test(tail, frame)) {
       blockedRebuilds++; // straight to the moved goal would hit something: keep the tail we have
@@ -992,9 +825,7 @@ public final class PathFollower {
         eventS[i] = Math.max(0.0, share) * tail.lengthMeters();
       }
     }
-    track = tail;
     active = tail;
-    head = null;
     s = 0.0;
     lastS = 0.0;
     tailRebuilds++;
@@ -1006,14 +837,14 @@ public final class PathFollower {
     return phase;
   }
 
-  /** Progress along the path (the tail after a rebuild; on a rejoining piece, its share of the stretch it replaces), metres. */
+  /** Progress along the path (the tail after a rebuild), metres. */
   public double progressMeters() {
-    return trackProgress();
+    return s;
   }
 
   /** Metres left on the active path. */
   public double remainingMeters() {
-    return remainingMeters(s);
+    return active.lengthMeters() - s;
   }
 
   /** Signed distance from the path, metres, positive to the left of travel (0 in the terminal phase). */
@@ -1029,7 +860,7 @@ public final class PathFollower {
     if (phase == Phase.IDLE) {
       return Double.NaN;
     }
-    return trackProgress() - track.profile().sAtTime(Math.max(0.0, lastTime - startTime));
+    return s - active.profile().sAtTime(Math.max(0.0, lastTime - startTime));
   }
 
   /** The reference heading minus the measured one, radians (blue frame), at the last step. */
@@ -1088,16 +919,6 @@ public final class PathFollower {
   /** Moving-goal tails not used because they would hit an obstacle ({@link #withObstacleCheck}). */
   public int blockedRebuildCount() {
     return blockedRebuilds;
-  }
-
-  /** Pieces built this run to rejoin the path after the robot was knocked off it. */
-  public int rejoinCount() {
-    return rejoins;
-  }
-
-  /** How long the last rejoining piece took to build, microseconds (NaN if none yet). */
-  public double lastRejoinMicros() {
-    return lastRejoinMicros;
   }
 
   /** How long the last tail rebuild took, microseconds (NaN if none yet). */

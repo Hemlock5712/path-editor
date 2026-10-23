@@ -10,8 +10,6 @@ import { wrap } from "./angles.ts";
 import { flipPose, flipSpeeds, type FieldFrame, type FieldSpeeds, type Pose } from "./frame.ts";
 import { javaHypot } from "./jmath.ts";
 import { PURE_ROTATION_METERS, Path, eventMeters, type PathSample } from "./path.ts";
-import { DEFAULT_GRID_METERS } from "./profile.ts";
-import type { PathSpec } from "./spec.ts";
 import {
   GRAVITY,
   driveAccelMetersPerSecondSquared,
@@ -48,15 +46,7 @@ export interface FollowerConfig {
   readonly headingToleranceRadians: number;
   readonly settledMetersPerSecond: number;
   readonly debounceSeconds: number;
-  /** Knocked further than this off the path, build a piece back onto it (+∞ = never). */
-  readonly rejoinAboveMeters: number;
 }
-
-/** How far ahead (along the path) a rejoining piece meets it. */
-export const REJOIN_METERS = 1.0;
-
-/** At most one rejoin per this long. */
-export const REJOIN_COOLDOWN_SECONDS = 0.5;
 
 /** The spin acceleration cap in use: the set one, or the robot's, or 720°/s² (FollowerConfig.alphaCap). */
 export function alphaCap(cfg: FollowerConfig): number {
@@ -89,7 +79,6 @@ export function followerConfig(robot: RobotConfig, options: Partial<Omit<Followe
     headingToleranceRadians: 1.0 * DEG,
     settledMetersPerSecond: 0.05,
     debounceSeconds: 0.1,
-    rejoinAboveMeters: 0.4,
     ...options,
   };
 }
@@ -199,11 +188,7 @@ const NOMINAL_LOOP_SECONDS = 0.02;
 /** Progress reads no closer to a cusp than this (its tangent is undefined), and steps past it by as much. */
 const CUSP_EDGE_METERS = 1e-3;
 const MAX_PROGRESS_RATE = 8.0;
-const MIN_TAIL_METERS = 0.15;
 const ROLLING_LEAD_SECONDS = 0.3;
-const MIN_MOVING_SPEED = 0.1;
-const MIN_POSE_DT = 0.005;
-const MAX_POSE_SPEED_RATIO = 1.5;
 
 /**
  * The output limiter's budget, m/s²: the robot's traction limit without its 10 % margin (the plan keeps it, so
@@ -242,26 +227,11 @@ export class PathFollower {
   private refX = 0;
   private refY = 0;
   private refHeading = 0;
-  // The pose at the previous step, and the velocity between the two (PathFollower.java)
-  private prevX = Number.NaN;
-  private prevY = 0;
-  private prevPoseTime = 0;
-  private poseVx = 0;
-  private poseVy = 0;
-  // The path followed: the track (the path), or a piece
-  // from where the robot was knocked to back onto the track at headJoinS, replacing the stretch from headStartS
   private active: Path;
-  private track: Path;
-  private head: Path | null = null;
-  private headStartS = 0;
-  private headJoinS = 0;
-  private rejoins = 0;
-  private lastRejoinTime = Number.NEGATIVE_INFINITY;
 
   constructor(path: Path, config: FollowerConfig) {
     this.path = path;
     this.active = path;
-    this.track = path;
     this.cfg = config;
     this.limiter = new OutputLimiter(config.robot, limiterBudget(config), alphaCap(config));
     this.endSpeed = path.spec.endMetersPerSecond;
@@ -311,114 +281,10 @@ export class PathFollower {
     this.lastS = this.s;
     this.lastTime = timeSeconds;
     this.startTime = timeSeconds;
-    this.prevX = Number.NaN;
     this.settledSince = Number.NaN;
     this.phaseNow = "TRACKING";
     this.eventS = this.eventBaseS.slice();
     this.eventFired.fill(false);
-    this.head = null;
-    this.rejoins = 0;
-    this.lastRejoinTime = Number.NEGATIVE_INFINITY;
-    this.track = this.path;
-  }
-
-  /**
-   * Replaces the track up to joinS with a piece from the robot's pose back onto it, if the join is ahead
-   * of the robot; returns whether it was built (PathFollower.rejoin).
-   */
-  private rejoin(pose: Pose, vx: number, vy: number, joinS: number): boolean {
-    const track = this.track;
-    const length = track.lengthMeters;
-    joinS = Math.min(joinS, length);
-    const j = track.sample(joinS);
-    const v = javaHypot(vx, vy);
-    const dx = j.xMeters - pose.xMeters;
-    const dy = j.yMeters - pose.yMeters;
-    const toEnd = joinS >= length - 1e-9;
-    const straightIn = toEnd && !this.rollingEnd; // a rolling end keeps its exit direction
-    if (javaHypot(dx, dy) < MIN_TAIL_METERS || (v > MIN_MOVING_SPEED && vx * dx + vy * dy <= 0.0)
-      || (!straightIn && j.tangentX * dx + j.tangentY * dy <= 0.0)) {
-      return false;
-    }
-    const chord = Math.atan2(dy, dx);
-    const spec = track.spec;
-    const startTangent = v > MIN_MOVING_SPEED ? Math.atan2(vy, vx) : chord;
-    const endTangent = straightIn ? chord : Math.atan2(j.tangentY, j.tangentX);
-    const endK = straightIn ? Number.NaN : j.curvature;
-    const pieceSpec: PathSpec = {
-      waypoints: [
-        { xMeters: pose.xMeters, yMeters: pose.yMeters, tangentRadians: startTangent, tangentScale: 1.0, headingRadians: Number.NaN },
-        { xMeters: j.xMeters, yMeters: j.yMeters, tangentRadians: endTangent, tangentScale: 1.0, headingRadians: Number.NaN },
-      ],
-      rotationTargets: [
-        { waypoint: Number.NaN, meters: 0.0, headingRadians: pose.headingRadians },
-        { waypoint: 1.0, meters: Number.NaN, headingRadians: j.headingRadians },
-      ],
-      facePointZones: [],
-      constraintZones: [],
-      maxMetersPerSecond: spec.maxMetersPerSecond,
-      maxMetersPerSecondSquared: spec.maxMetersPerSecondSquared,
-      startMetersPerSecond: Math.min(v, spec.maxMetersPerSecond),
-      endMetersPerSecond: toEnd ? spec.endMetersPerSecond : j.metersPerSecond,
-      events: [],
-      headingMode: "hold",
-    };
-    let piece: Path;
-    try {
-      piece = Path.build(pieceSpec, this.cfg.robot, DEFAULT_GRID_METERS, Number.NaN, endK);
-    } catch {
-      return false; // can't be planned
-    }
-    if (piece.geometry.cusps.length > 0) return false;
-    this.headStartS = this.trackProgress();
-    this.head = piece;
-    this.headJoinS = joinS;
-    this.active = piece;
-    this.s = 0.0;
-    this.rejoins++;
-    return true;
-  }
-
-  /** Metres left to the end of the path: on a rejoining piece, its rest plus the track after the join. */
-  private remainingMeters(sNow: number): number {
-    if (this.head !== null) return this.head.lengthMeters - sNow + (this.track.lengthMeters - this.headJoinS);
-    return this.active.lengthMeters - sNow;
-  }
-
-  /** Progress in the track's metres (events are placed in them). */
-  private trackProgress(): number {
-    if (this.head !== null) {
-      return this.headStartS + (this.headJoinS - this.headStartS) * Math.min(1.0, this.s / this.head.lengthMeters);
-    }
-    return this.s;
-  }
-
-  /** The robot has reached the end of the rejoining piece (or passed its end line, near it). */
-  private headDone(pose: Pose): boolean {
-    const head = this.head!;
-    const length = head.lengthMeters;
-    if (this.s >= length - 1e-3) return true;
-    const end = head.sample(length);
-    const past = (pose.xMeters - end.xMeters) * end.tangentX + (pose.yMeters - end.yMeters) * end.tangentY;
-    return past >= 0.0 && length - this.s <= this.cfg.windowMeters;
-  }
-
-  /** The velocity from the pose's change since the last step (PathFollower.updatePoseVelocity). */
-  private updatePoseVelocity(t: number, pose: Pose, vel: FieldSpeeds): void {
-    const dt = t - this.prevPoseTime;
-    this.poseVx = vel.vxMetersPerSecond;
-    this.poseVy = vel.vyMetersPerSecond;
-    if (!Number.isNaN(this.prevX) && dt > MIN_POSE_DT) {
-      const vx = (pose.xMeters - this.prevX) / dt;
-      const vy = (pose.yMeters - this.prevY) / dt;
-      if (javaHypot(vx, vy) <= MAX_POSE_SPEED_RATIO * this.track.spec.maxMetersPerSecond) {
-        this.poseVx = vx;
-        this.poseVy = vy;
-      }
-    }
-    this.prevX = pose.xMeters;
-    this.prevY = pose.yMeters;
-    this.prevPoseTime = t;
   }
 
   step(timeSeconds: number, measuredPose: Pose, measuredVelocity: FieldSpeeds): FieldSpeeds {
@@ -435,7 +301,6 @@ export class PathFollower {
     this.lastTime = timeSeconds;
     const pose = flipPose(this.frame, measuredPose);
     const vel = flipSpeeds(this.frame, measuredVelocity);
-    this.updatePoseVelocity(timeSeconds, pose, vel);
     if (!(Number.isFinite(pose.xMeters) && Number.isFinite(pose.yMeters) && Number.isFinite(pose.headingRadians))) {
       this.limiter.limit(0.0, 0.0, 0.0, dt);
       return this.output();
@@ -445,31 +310,8 @@ export class PathFollower {
     const brakeDecel = Math.min(brakeSetting, Infinity * GRAVITY); // no slip: Java's slipMu is +∞
     const gripScale = 1.0;
     this.updateProgress(pose);
-    if (this.head !== null && this.headJoinS < this.track.lengthMeters - 1e-9 && this.headDone(pose)) {
-      this.active = this.track; // the piece has met the track: on along it
-      this.head = null;
-      this.s = this.headJoinS;
-      this.updateProgress(pose);
-    }
-    // Knocked well off: a piece from where the robot is, the way it is really going, back onto the track
-    // a little ahead (or further, to the first join ahead of the robot; or to the goal, if that's near).
-    // Never past a cusp: the robot must still get to where the path reverses.
-    if (this.phaseNow === "TRACKING" && !this.pureRotation && Math.abs(this.crossTrack) > cfg.rejoinAboveMeters
-      && timeSeconds - this.lastRejoinTime >= REJOIN_COOLDOWN_SECONDS) {
-      this.lastRejoinTime = timeSeconds;
-      const from = this.trackProgress();
-      const cusp = this.track.geometry.nextCusp(from);
-      const length = this.track.lengthMeters;
-      const last = Number.isNaN(cusp) ? length : cusp - CUSP_EDGE_METERS;
-      let join = from;
-      do {
-        join += REJOIN_METERS;
-        if (join > length - cfg.terminalRadiusMeters) join = length;
-        join = Math.min(join, last);
-      } while (!this.rejoin(pose, this.poseVx, this.poseVy, join) && join < last);
-    }
     const active = this.active;
-    const remaining = this.remainingMeters(this.s);
+    const remaining = active.lengthMeters - this.s;
     const goal = this.goal;
     if (this.phaseNow === "TRACKING" && !this.rollingEnd && remaining < cfg.terminalRadiusMeters
       && Math.abs(wrap(goal.headingRadians - active.heading.sample(this.s).radians)) <= cfg.terminalTurnRadians
@@ -513,7 +355,7 @@ export class PathFollower {
     } else {
       const profile = active.profile;
       let lead = Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS); // at least one loop (PathFollower.java readAheadSeconds)
-      if (this.track.spec.startMetersPerSecond > 0.0) {
+      if (active.spec.startMetersPerSecond > 0.0) {
         // a rolling start: the lead builds up over ROLLING_LEAD_SECONDS (PathFollower.java)
         lead *= Math.min(1.0, (timeSeconds - this.startTime) / ROLLING_LEAD_SECONDS);
       }
@@ -544,16 +386,13 @@ export class PathFollower {
 
     this.limiter.limit(wantVx, wantVy, wantOmega, dt);
 
-    const progress = this.trackProgress();
+    const progress = this.s;
     const rate = Math.max(0.0, Math.min(MAX_PROGRESS_RATE, (progress - this.lastS) / dt));
     this.lastS = progress;
     const lead = 0.5 * rate * dt; // half the travel to the next loop
     this.fireEventsUpTo(progress + lead);
-    if (this.phaseNow === "TERMINAL" && this.arrived(pose)) this.fireEventsUpTo(this.track.lengthMeters);
-    // not done while a piece is still to meet the track
-    if (this.head === null || this.headJoinS >= this.track.lengthMeters - 1e-9) {
-      this.checkFinished(timeSeconds, pose, vel, remaining, lead);
-    }
+    if (this.phaseNow === "TERMINAL" && this.arrived(pose)) this.fireEventsUpTo(active.lengthMeters);
+    this.checkFinished(timeSeconds, pose, vel, remaining, lead);
     return this.output();
   }
 
@@ -701,14 +540,9 @@ export class PathFollower {
     return this.phaseNow;
   }
 
-  /** Progress along the path (on a rejoining piece, its share of the stretch it replaces), metres. */
+  /** Progress along the path, metres. */
   get progressMeters(): number {
-    return this.trackProgress();
-  }
-
-  /** Pieces built this run to rejoin the path after the robot was knocked off it. */
-  get rejoinCount(): number {
-    return this.rejoins;
+    return this.s;
   }
 
   /** Signed distance from the path, metres (positive left; 0 in the terminal phase). */

@@ -131,12 +131,8 @@ Each loop, in the blue frame:
    end, not into this one speeding up, and taking the lead `a·τ` in one loop slipped all four wheels at the
    hand-over (bench three_piece_chain: wheel slip 600 → 330 ms, same time).
 4. **Across the path.** PD on the cross-track error (P 5/s, D 0), pushing along the normal at `s`.
-   Knocked more than 0.4 m off (`rejoinAboveMeters`), the follower builds a piece back onto the path:
-   from the robot's pose, along the way it is really going (from the pose's change; after a hit the
-   wheels slide, so their velocity misleads), at that speed, meeting the path 1 m ahead with matching
-   position, tangent and curvature. Near the end it goes straight for the goal instead. The join has to
-   be ahead of the robot, and at most one piece is tried each 0.5 s. Progress, events and the finish
-   carry on in the path's own metres.
+   After a shove that is all there is: the robot is steered back onto the path where it is. (On-the-fly
+   paths plan again instead, round the obstacles.)
 5. **Heading.** Feed-forward `v·dθ/ds` at `s⁺`, plus P 5/s on the planned heading at `s`.
 6. **Near the end** (0.3 m to go, and no more than `terminalTurnRadians`, 2°, left in the plan's
    turn), the reference becomes the goal pose and DriveToPose's law takes over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. The
@@ -401,8 +397,8 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 | Request | Reply |
 | --- | --- |
 | `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session) and `"startCurvature"` (fix the first waypoint's curvature, e.g. the last leg's `endCurvature`): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs", "endCurvature"}` |
-| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()`, plus optional `"handed": [vx, vy, omega]` (the last path's `endCommand`, for a rolling hand-over; default the measured velocity) | `{"ok", "startMicros"}` plus `"startReplanMicros"` when the start re-planned the speeds |
-| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild, and `"rejoins"` and `"rejoinMicros"` after a rejoin |
+| `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()`, plus optional `"handed": [vx, vy, omega]` (the last path's `endCommand`, for a rolling hand-over; default the measured velocity) | `{"ok", "startMicros"}` |
+| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
 | `{"op": "geometry", "step": 0.02}`: the built path, sampled | `{"x": [...], "y": [...]}` |
 | `{"op": "pathfind", "field": <field file tree>, "start": pose, "vel": vel, "goal": pose}` plus optional `"robot"`, `"options"`, `"margin"`, `"maxSpeed"`, `"maxAccel"`: plans with our pathfinder and loads the result like `load` | `{"ok", "lengthMeters", "totalTimeSeconds", "planMs", "searchMs", "smoothMs", "profileMs", "routeLengthMeters", "straightLineMeters", "startSnapMeters", "goalSnapMeters", "refits", "clear", "minClearanceMeters", "waypoints"}`, plus `"bootMs"` when the pathfinder was (re)built |
@@ -581,7 +577,7 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   robot's pose (not flipped on red), or empty to keep the last one. When the goal moves more than 2 cm or 2°, only
   the rest of the path is rebuilt, from the robot's progress to the goal, joining with matching position,
   tangent and curvature (`PathFollower.bindGoal`, 0.1-0.3 ms). In the last 0.3 m DriveToPose's law drives
-  straight to it. A rebuilt end, and a rejoin after a shove, are checked against field.json's obstacles
+  straight to it. A rebuilt end is checked against field.json's obstacles
   (`PathFollower.withObstacleCheck(pathfinder::pathClear)`, which `Pathfinding` sets on every follower it builds):
   one that would hit something isn't used. On an on-the-fly path a goal that has moved more than 10 cm from where
   the path was planned to is planned to again, round the obstacles (`OnTheFly.GOAL_REPLAN_METERS`, at most every

@@ -137,9 +137,9 @@ export class PathGeometry {
   }
 
   /** Builds the spline through these waypoints and its arc-length table. */
-  /** The geometry through these waypoints (the end curvatures fixed when given, as QuinticSpline.through). */
-  static build(waypoints: readonly Waypoint[], startCurvature = Number.NaN, endCurvature = Number.NaN): PathGeometry {
-    return PathGeometry.fromSpline(QuinticSpline.through(waypoints, startCurvature, endCurvature));
+  /** The geometry through these waypoints (the first curvature fixed when given, as QuinticSpline.through). */
+  static build(waypoints: readonly Waypoint[], startCurvature = Number.NaN): PathGeometry {
+    return PathGeometry.fromSpline(QuinticSpline.through(waypoints, startCurvature));
   }
 
   static fromSpline(spline: QuinticSpline): PathGeometry {

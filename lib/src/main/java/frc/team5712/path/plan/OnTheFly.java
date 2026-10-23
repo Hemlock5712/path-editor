@@ -23,7 +23,7 @@ import java.util.function.Supplier;
  *   <li>A moving goal ({@link #withMovingGoal}, e.g. a tag or a game piece): once it is more than {@link
  *       #GOAL_REPLAN_METERS} from the goal the path was planned to, it plans again, round the obstacles, to the
  *       latest value. Smaller moves rebuild the path's end in the follower, and that too is checked against the
- *       obstacles ({@link PathFollower#withObstacleCheck}), as is a rejoin after a shove.
+ *       obstacles ({@link PathFollower#withObstacleCheck}).
  * </ul>
  *
  * Everything is in the real field frame: the robot's pose, the obstacles in field.json, the goal. The

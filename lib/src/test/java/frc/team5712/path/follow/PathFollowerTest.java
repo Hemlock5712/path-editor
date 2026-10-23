@@ -148,66 +148,6 @@ class PathFollowerTest {
   }
 
   @Test
-  void knockedFarOffItBuildsAPieceBackOntoThePath() {
-    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
-    List<String> fired = new ArrayList<>();
-    PathFollower follower = new PathFollower(path, CFG).addEvent("half", path.lengthMeters() / 2, () -> {});
-    follower.onEvent(fired::add);
-    Run r = run(path, follower, FieldFrame.BLUE, 20,
-        (t, plant, f) -> {
-          if (Math.abs(t - 1.0) < 1e-9) {
-            plant.displace(0.0, 0.7); // 70 cm sideways in one loop
-          }
-        });
-    assertTrue(r.finished());
-    assertTrue(follower.rejoinCount() >= 1, "rejoined");
-    assertTrue(follower.lastRejoinMicros() > 0.0);
-    Pose end = r.trace().get(r.trace().size() - 1);
-    assertEquals(4.0, end.xMeters(), 0.02);
-    assertEquals(1.0, end.yMeters(), 0.02);
-    assertEquals(List.of("half"), fired, "the event fires once, on the way");
-
-    // switched off, the same knock is recovered by the cross-track law alone
-    PathFollower plain = new PathFollower(path, CFG.toBuilder().rejoinAboveMeters(Double.POSITIVE_INFINITY).build());
-    Run r2 = run(path, plain, FieldFrame.BLUE, 20,
-        (t, plant, f) -> {
-          if (Math.abs(t - 1.0) < 1e-9) {
-            plant.displace(0.0, 0.7);
-          }
-        });
-    assertTrue(r2.finished());
-    assertEquals(0, plain.rejoinCount());
-  }
-
-  @Test
-  void aRejoinNeverSkipsACusp() {
-    // out to x = 2, back and up: knocked sideways on the way out, the robot must still go out to the tip
-    PathSpec spec = PathSpec.of(List.of(Waypoint.at(0.0, 0.0, 0.0), Waypoint.at(2.0, 0.0, 0.0),
-            Waypoint.at(1.2, 0.05, Math.PI), Waypoint.at(0.0, 0.6)))
-        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, 0.0), RotationTarget.atWaypoint(3, 0.0)))
-        .withLimits(4.0, 6.0);
-    Path path = Path.build(spec, ROBOT);
-    PathSample tip = path.sample(path.cusps()[0]);
-    PathFollower follower = new PathFollower(path, CFG);
-    Run r = run(path, follower, FieldFrame.BLUE, 20,
-        (t, plant, f) -> {
-          if (Math.abs(t - 0.4) < 1e-9) {
-            plant.displace(0.0, -0.7);
-          }
-        });
-    assertTrue(r.finished());
-    assertTrue(follower.rejoinCount() >= 1, "rejoined");
-    double furthest = Double.NEGATIVE_INFINITY;
-    for (Pose q : r.trace()) {
-      furthest = Math.max(furthest, q.xMeters() - tip.xMeters());
-    }
-    assertTrue(furthest > -0.1, "got to the tip: " + furthest);
-    Pose end = r.trace().get(r.trace().size() - 1);
-    assertEquals(0.0, end.xMeters(), 0.02);
-    assertEquals(0.6, end.yMeters(), 0.02);
-  }
-
-  @Test
   void aBigShoveReprojectsGlobally() {
     Path path = Path.build(FixturePaths.hairpin(), ROBOT);
     // hairpin legs at y = -1 and y = +1: carried from the first leg to the second, the robot is ahead

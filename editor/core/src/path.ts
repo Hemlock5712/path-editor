@@ -91,11 +91,10 @@ export class Path {
     this.profile = profile;
   }
 
-  /** Builds the path; the curvature at the first and the last waypoint is fixed when given (NaN = free). */
-  static build(spec: PathSpec, robot: RobotConfig, gridMeters = DEFAULT_GRID_METERS, startCurvature = Number.NaN,
-    endCurvature = Number.NaN): Path {
+  /** Builds the path; the curvature at the first waypoint is fixed when given (NaN = free). */
+  static build(spec: PathSpec, robot: RobotConfig, gridMeters = DEFAULT_GRID_METERS, startCurvature = Number.NaN): Path {
     spec = pureRotation(withWaypointHeadings(spec));
-    const geometry = PathGeometry.build(spec.waypoints, startCurvature, endCurvature);
+    const geometry = PathGeometry.build(spec.waypoints, startCurvature);
     const heading = HeadingProfile.build(geometry, spec.rotationTargets, spec.facePointZones, spec.headingMode);
     const profile = VelocityProfile.build(geometry, heading, spec, robot, gridMeters);
     return new Path(spec, geometry, heading, profile);

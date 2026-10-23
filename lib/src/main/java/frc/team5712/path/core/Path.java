@@ -31,14 +31,8 @@ public final class Path {
    * existing path smoothly.
    */
   public static Path build(PathSpec spec, RobotConfig robot, double gridMeters, double startCurvature) {
-    return build(spec, robot, gridMeters, startCurvature, Double.NaN);
-  }
-
-  /** Builds with the curvature at the first and the last waypoint fixed (NaN = free). */
-  public static Path build(PathSpec spec, RobotConfig robot, double gridMeters, double startCurvature,
-      double endCurvature) {
     spec = pureRotation(withWaypointHeadings(spec));
-    PathGeometry geometry = PathGeometry.build(spec.waypoints(), startCurvature, endCurvature);
+    PathGeometry geometry = PathGeometry.build(spec.waypoints(), startCurvature);
     HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones(), spec.headingMode());
     VelocityProfile profile = VelocityProfile.build(geometry, heading, spec, robot, gridMeters);
     return new Path(spec, geometry, heading, profile);
@@ -51,7 +45,7 @@ public final class Path {
    * are tables along it ({@link HeadingProfile#tabulated}, {@link VelocityProfile#tabulated}), taken as
    * planned. Samples closer than a millimetre to the last one kept are dropped (a spin on the spot has
    * no length to put a heading table on). {@code maxMetersPerSecondSquared} is only for re-plans the
-   * follower makes from this path (a moving start, a rejoin); the planned profile is the trajectory's.
+   * follower makes from this path (a moving goal's new tail); the planned profile is the trajectory's.
    *
    * @param t sample times, s; x, y, heading in metres and radians; vx, vy field velocity, m/s
    */

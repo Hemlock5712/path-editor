@@ -335,10 +335,6 @@ public final class BenchServer {
       r.put("rebuilds", (double) follower.tailRebuildCount());
       r.put("rebuildMicros", follower.lastTailRebuildMicros());
     }
-    if (follower.rejoinCount() > 0) {
-      r.put("rejoins", (double) follower.rejoinCount());
-      r.put("rejoinMicros", follower.lastRejoinMicros());
-    }
     return line(r);
   }
 
