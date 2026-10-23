@@ -17,8 +17,8 @@ import org.wpilib.telemetry.TelemetryTable;
  * <ul>
  *   <li>{@code /Telemetry/Path/ToReef/}, each loop: Phase, Progress (m), Remaining (m), CrossTrack (m),
  *       AlongTrack (m, ahead of the plan's schedule), HeadingError (rad), Speed and PlannedSpeed (m/s),
- *       Omega and PlannedOmega (rad/s), Elapsed (s), Reference and Goal (Pose2d structs, field frame),
- *       TailRebuilds; EventsFired (this run, in order) as they fire;
+ *       Omega and PlannedOmega (rad/s), Elapsed (s), Reference and Goal (Pose2d structs, field frame);
+ *       EventsFired (this run, in order) as they fire;
  *   <li>{@code /Telemetry/Path/ToReef/}, once per start: Plan (the planned path every 5 cm and its end:
  *       s, x, y, heading, t, v per sample, flattened, in the field frame the robot runs it in),
  *       PlanEvents and PlanEventMeters (the path's events and where they are), and PlanSeconds;
@@ -120,6 +120,5 @@ public final class PathTelemetry {
     table.log("Elapsed", f.elapsedSeconds());
     table.log("Reference", Conversions.toPose2d(f.reference()), Pose2d.struct);
     table.log("Goal", Conversions.toPose2d(f.goal()), Pose2d.struct);
-    table.log("TailRebuilds", f.tailRebuildCount());
   }
 }

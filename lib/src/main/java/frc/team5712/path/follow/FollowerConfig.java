@@ -8,7 +8,7 @@ import frc.team5712.path.core.RobotConfig;
  * a 1 deg / 2 cm finish. The ease-in line is 12/s (DriveToPose's is 6/s): the bench sweep's interior
  * optimum on its tuning seeds. The limiter's μ stays at 1.0; see lib/README.md.
  *
- * @param robot the robot model: the output limiter's motor curve and spin lever, and tail rebuilds
+ * @param robot the robot model: the output limiter's motor curve, spin lever and traction limit
  * @param latencySeconds how far ahead (in plan time) the reference is read (never less than one 20 ms loop,
  *     or a robot at rest would read 0 m/s and never start), and the brake's reaction-time margin
  *     (DriveToPose's REACTION_TIME)
@@ -40,8 +40,6 @@ import frc.team5712.path.core.RobotConfig;
  * @param headingToleranceRadians finish: this well aligned
  * @param settledMetersPerSecond finish: slower than this (measured)
  * @param debounceSeconds finish: all three held this long
- * @param goalMoveMeters a bound goal that moves further than this rebuilds the tail
- * @param goalMoveRadians ... or turns further than this
  * @param adaptiveGrip when a {@link frc.team5712.path.slip.SlipSignal} is attached: on slip, lower
  *     the grip the limiter, the brake and the speed plan use to what the floor gave, then recover
  * @param slipConfidence the slip signal's confidence that counts as slipping
@@ -81,8 +79,6 @@ public record FollowerConfig(
     double headingToleranceRadians,
     double settledMetersPerSecond,
     double debounceSeconds,
-    double goalMoveMeters,
-    double goalMoveRadians,
     boolean adaptiveGrip,
     double slipConfidence,
     double slipMargin,
@@ -132,8 +128,6 @@ public record FollowerConfig(
     b.headingToleranceRadians = headingToleranceRadians;
     b.settledMetersPerSecond = settledMetersPerSecond;
     b.debounceSeconds = debounceSeconds;
-    b.goalMoveMeters = goalMoveMeters;
-    b.goalMoveRadians = goalMoveRadians;
     b.adaptiveGrip = adaptiveGrip;
     b.slipConfidence = slipConfidence;
     b.slipMargin = slipMargin;
@@ -168,8 +162,6 @@ public record FollowerConfig(
     private double headingToleranceRadians = Math.toRadians(1.0);
     private double settledMetersPerSecond = 0.05;
     private double debounceSeconds = 0.1;
-    private double goalMoveMeters = 0.02;
-    private double goalMoveRadians = Math.toRadians(2.0);
     private boolean adaptiveGrip = true;
     private double slipConfidence = 0.3;
     private double slipMargin = 0.1;
@@ -203,8 +195,6 @@ public record FollowerConfig(
     public Builder headingToleranceRadians(double v) { headingToleranceRadians = v; return this; }
     public Builder settledMetersPerSecond(double v) { settledMetersPerSecond = v; return this; }
     public Builder debounceSeconds(double v) { debounceSeconds = v; return this; }
-    public Builder goalMoveMeters(double v) { goalMoveMeters = v; return this; }
-    public Builder goalMoveRadians(double v) { goalMoveRadians = v; return this; }
     public Builder adaptiveGrip(boolean v) { adaptiveGrip = v; return this; }
     public Builder slipConfidence(double v) { slipConfidence = v; return this; }
     public Builder slipMargin(double v) { slipMargin = v; return this; }
@@ -240,8 +230,6 @@ public record FollowerConfig(
         case "headingToleranceRadians" -> headingToleranceRadians = v;
         case "settledMetersPerSecond" -> settledMetersPerSecond = v;
         case "debounceSeconds" -> debounceSeconds = v;
-        case "goalMoveMeters" -> goalMoveMeters = v;
-        case "goalMoveRadians" -> goalMoveRadians = v;
         case "adaptiveGrip" -> adaptiveGrip = v != 0.0;
         case "slipConfidence" -> slipConfidence = v;
         case "slipMargin" -> slipMargin = v;
@@ -263,8 +251,7 @@ public record FollowerConfig(
           easeInPerSecond,
           stopDeadbandMeters, maxOmegaRadPerSec, maxAlphaRadPerSecSquared, headingEaseInPerSecond,
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
-          headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,
-          goalMoveRadians, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
+          headingToleranceRadians, settledMetersPerSecond, debounceSeconds, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
           minSlipFriction, slipBrakeFriction,
           expectedSlipShare, slideGapMetersPerSecondSquared);
     }

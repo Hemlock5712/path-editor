@@ -155,14 +155,11 @@ Each loop, in the blue frame:
 
 The other pieces:
 
-- **Moving goal.** `bindGoal(Supplier<Optional<Pose>>)` binds the end of the path. When the goal
-  moves more than 2 cm or 2°, only the tail is rebuilt: one quintic piece from the robot's progress
-  to the goal. The piece's first curvature is fixed, so position, tangent and curvature all match at
-  the join. The heading blends from the planned heading there to the goal's, and the profile starts
-  at the planned speed. The approach direction turns with the goal (the old end tangent plus the
-  goal's turn). An empty value holds the last goal. In the terminal phase the DriveToPose law just
-  drives to the new goal. Latching estimates in the odometry frame is the supplier's job, as in
-  DriveToTag.
+- **Moving goal.** `bindGoal(Supplier<Optional<Pose>>)` binds the end of the path. The path itself
+  is never changed: the robot follows it as drawn, and its DriveToPose finish drives to the goal's
+  latest value. An empty value holds the last goal. On-the-fly paths also plan again, round the
+  obstacles, once the goal moves more than 10 cm (`OnTheFly`). Latching estimates in the odometry
+  frame is the supplier's job, as in DriveToTag.
 - **Events.** The path file's `events` are registered when the follower is made; code can add more
   with `addEvent(name, s, action)` and `addEventAtWaypoint`. They fire in order, each on the loop
   nearest to passing it (less than half a loop's progress ahead), so the error is at most half a loop
@@ -376,7 +373,7 @@ skips them with a warning if the repo is missing.
   end), and chain rolling ends with `continuingFrom(previous)`.
 - `Conversions` covers `Pose2d` and `ChassisVelocities`, and the alliance as a frame.
   `PathTelemetry` logs, under `/Telemetry/Path/<path>/` in NetworkTables, the phase, progress, the distance left,
-  cross-track, the reference and goal (Pose2d structs, field frame), tail rebuilds and the events fired. The
+  cross-track, the reference and goal (Pose2d structs, field frame) and the events fired. The
   shared `/Telemetry/PathFollower/` table says which path is running (`Active`), its `EventsFired` and the
   `LastEvent`. The editor's live view reads these.
 - `lib/gradlew -p lib nt4Server -Pnt4Port=5810 -Pnt4Seconds=60` runs `Nt4TelemetryServer` (in `src/e2eTest`). It is
@@ -398,7 +395,7 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 | --- | --- |
 | `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"keepSensing": true` (the next path of a chain: keep the run's sensing session) and `"startCurvature"` (fix the first waypoint's curvature, e.g. the last leg's `endCurvature`): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs", "endCurvature"}` |
 | `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()`, plus optional `"handed": [vx, vy, omega]` (the last path's `endCommand`, for a rolling hand-over; default the measured velocity) | `{"ok", "startMicros"}` |
-| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` plus `"rebuilds"` and `"rebuildMicros"` after a tail rebuild |
+| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
 | `{"op": "geometry", "step": 0.02}`: the built path, sampled | `{"x": [...], "y": [...]}` |
 | `{"op": "pathfind", "field": <field file tree>, "start": pose, "vel": vel, "goal": pose}` plus optional `"robot"`, `"options"`, `"margin"`, `"maxSpeed"`, `"maxAccel"`: plans with our pathfinder and loads the result like `load` | `{"ok", "lengthMeters", "totalTimeSeconds", "planMs", "searchMs", "smoothMs", "profileMs", "routeLengthMeters", "straightLineMeters", "startSnapMeters", "goalSnapMeters", "refits", "clear", "minClearanceMeters", "waypoints"}`, plus `"bootMs"` when the pathfinder was (re)built |
@@ -422,7 +419,6 @@ zone.
 | Windowed projection (±0.5 m) | 0.95-1.6 µs | |
 | `PathFollower.step()`, warm (16 m route, red) | 2.2 µs mean, 260 µs worst in 8,300 steps (GC/JIT) | |
 | `PathFollower.start()`: warm / first call in a fresh JVM | 12 µs / 1.4 ms (class loading, no path work) | |
-| Tail rebuild for a moved goal (8.8 m tail), warm | 186-265 µs mean, 109-116 µs best | |
 
 The cold number is mostly the JVM loading and linking classes, which every path after the first
 shares. See the notes below for what that means for the boot budget.
@@ -461,8 +457,6 @@ shares. See the notes below for what that means for the boot budget.
 - **Cross-track is PD with D = 0 by default.** The bench sweeps didn't need the D term.
 - **The limiter and the plan now share one traction limit** (see below). Before the μ 1.5 change
   the limiter's grip (1.0) sat above the plan's (0.7) so feedback had room.
-- **A rebuilt tail drops the zones in that stretch.** Its heading blends from the planned heading to
-  the goal's starting at zero spin rate, so ω can kink at the join if the old plan was mid-turn.
 - **Events were set in code only in phase 3.** Phase 5 added them to the path file (schema 2).
 - **Slip handling is not in PLAN.md.** The detector, adaptive grip and slip-aware odometry were
   added after the phase 3 bench showed the low-grip weakness with odometry.
@@ -574,15 +568,12 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   library path, an optimised one included, built with the same drivetrain, settings, clock and alliance. It plans
   nothing at go. `withMovingGoal(Supplier<Optional<Pose2d>>)` is on `FollowPathCommand` and `FollowPathCommandV2`
   themselves too, for commands built by hand. The supplier gives the goal in the real field frame, like the
-  robot's pose (not flipped on red), or empty to keep the last one. When the goal moves more than 2 cm or 2°, only
-  the rest of the path is rebuilt, from the robot's progress to the goal, joining with matching position,
-  tangent and curvature (`PathFollower.bindGoal`, 0.1-0.3 ms). In the last 0.3 m DriveToPose's law drives
-  straight to it. A rebuilt end is checked against field.json's obstacles
-  (`PathFollower.withObstacleCheck(pathfinder::pathClear)`, which `Pathfinding` sets on every follower it builds):
-  one that would hit something isn't used. On an on-the-fly path a goal that has moved more than 10 cm from where
-  the path was planned to is planned to again, round the obstacles (`OnTheFly.GOAL_REPLAN_METERS`, at most every
-  0.2 s). Before this, a goal that jumped behind an obstacle bent the path's end straight through it: on the
-  bench's six fields 35 of 72 moving-goal runs with wheel odometry touched something (bench-tuned settings); now 2 of 72 at the 0.05 m margin and none with the wider berth (library defaults). The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
+  robot's pose (not flipped on red), or empty to keep the last one. A library path is followed as drawn and, in
+  its last 0.3 m, DriveToPose's law drives straight to the latest goal (`PathFollower.bindGoal`). On an on-the-fly
+  path a goal that has moved more than 10 cm from where the path was planned to is planned to again, round the
+  obstacles (`OnTheFly.GOAL_REPLAN_METERS`, at most every 0.2 s): one mechanism, re-planning, for any move that
+  matters. On the bench's six fields every moving-goal run with a perfect pose finishes, none touching anything
+  (`bench/h2h.py`). The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
   away once the robot is 1.5 m out. `PathLibrary` holds no drivetrain, so the factory lives on `Pathfinding`
   rather than as `paths.follow(...)`.
 

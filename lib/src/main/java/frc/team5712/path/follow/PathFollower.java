@@ -6,19 +6,15 @@ import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.PathEvent;
 import frc.team5712.path.core.PathSample;
-import frc.team5712.path.core.PathSpec;
 import frc.team5712.path.core.Pose;
 import frc.team5712.path.core.Projection;
 import frc.team5712.path.core.RobotConfig;
-import frc.team5712.path.core.RotationTarget;
 import frc.team5712.path.core.VelocityProfile;
-import frc.team5712.path.core.Waypoint;
 import frc.team5712.path.slip.SlipSignal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.function.BiPredicate;
 import java.util.function.Supplier;
 
 /**
@@ -82,10 +78,7 @@ public final class PathFollower {
   /** Progress faster than this (m/s) is a jump (a shove, a re-projection), not motion. */
   private static final double MAX_PROGRESS_RATE = 8.0;
 
-  /** Paths shorter than this to the moved goal aren't rebuilt; the terminal law handles them. */
-  private static final double MIN_TAIL_METERS = 0.15;
-
-  private final Path basePath;
+  private final Path path;
   private final FollowerConfig cfg;
   private final OutputLimiter limiter;
   private final boolean rollingEnd;
@@ -94,10 +87,9 @@ public final class PathFollower {
   /** A turn on the spot (two waypoints at one place): progress comes from the heading, not position. */
   private final boolean pureRotation;
 
-  // Events: names, positions on the base path, positions on the active path, and state
+  // Events: names, positions along the path, and whether each has fired this run
   private final List<String> eventNames = new ArrayList<>();
   private final List<Runnable> eventActions = new ArrayList<>();
-  private double[] eventBaseS = new double[0];
   private double[] eventS = new double[0];
   private boolean[] eventFired = new boolean[0];
   private final List<Consumer<String>> eventListeners = new ArrayList<>();
@@ -129,7 +121,6 @@ public final class PathFollower {
 
   // Per-run state
   private FieldFrame frame = FieldFrame.BLUE;
-  private Path active;
   private Pose goal; // blue frame
   private Phase phase = Phase.IDLE;
   private double s;
@@ -144,21 +135,16 @@ public final class PathFollower {
   private double refX;
   private double refY;
   private double refHeading;
-  private int tailRebuilds;
-  private int blockedRebuilds;
-  private double lastRebuildMicros = Double.NaN;
-  private BiPredicate<Path, FieldFrame> obstacleCheck; // null: no field to check against
 
   /** A follower for a path built in robot init. Cheap: nothing about the path is copied. */
   public PathFollower(Path path, FollowerConfig config) {
-    this.basePath = path;
+    this.path = path;
     this.cfg = config;
     this.limiter = new OutputLimiter(config.robot(), limiterBudget(config), config.alphaCap());
     this.endSpeed = path.spec().endMetersPerSecond();
     this.rollingEnd = endSpeed > 0.0;
     PathSample end = path.sample(path.lengthMeters());
     this.baseGoal = new Pose(end.xMeters(), end.yMeters(), end.headingRadians());
-    this.active = path;
     this.goal = baseGoal;
     this.pureRotation = path.lengthMeters() <= 1.5 * Path.PURE_ROTATION_METERS;
     for (PathEvent e : path.spec().events()) {
@@ -177,8 +163,8 @@ public final class PathFollower {
     eventNames.add(name);
     eventActions.add(action);
     int n = eventNames.size();
-    double[] base = java.util.Arrays.copyOf(eventBaseS, n);
-    base[n - 1] = Math.max(0.0, Math.min(basePath.lengthMeters(), sMeters));
+    double[] base = java.util.Arrays.copyOf(eventS, n);
+    base[n - 1] = Math.max(0.0, Math.min(path.lengthMeters(), sMeters));
     // keep events sorted by position (stable), so they fire in order
     for (int i = n - 1; i > 0 && base[i - 1] > base[i]; i--) {
       double t = base[i - 1];
@@ -187,15 +173,14 @@ public final class PathFollower {
       eventNames.add(i - 1, eventNames.remove(i));
       eventActions.add(i - 1, eventActions.remove(i));
     }
-    eventBaseS = base;
-    eventS = base.clone();
+    eventS = base;
     eventFired = new boolean[n];
     return this;
   }
 
   /** The same, at a waypoint-relative position (1.5 = halfway along the arc from waypoint 1 to 2). */
   public PathFollower addEventAtWaypoint(String name, double waypoint, Runnable action) {
-    return addEvent(name, basePath.geometry().sAtWaypoint(waypoint), action);
+    return addEvent(name, path.geometry().sAtWaypoint(waypoint), action);
   }
 
   /**
@@ -208,22 +193,13 @@ public final class PathFollower {
   }
 
   /**
-   * Binds the end of the path to a moving goal (blue or red frame, whichever the robot's pose is in).
-   * When it moves more than the config's thresholds, the tail from the robot's progress to the goal
-   * is rebuilt. An empty value keeps the last goal.
+   * Binds the end of the path to a moving goal (blue or red frame, whichever the robot's pose is in): the
+   * DriveToPose finish drives to its latest value instead of the path's end. The path itself isn't changed;
+   * an on-the-fly path plans again when its goal moves far ({@code OnTheFly}). An empty value keeps the last
+   * goal.
    */
   public PathFollower bindGoal(Supplier<Optional<Pose>> goal) {
     this.goalSupplier = goal;
-    return this;
-  }
-
-  /**
-   * Checks a moving goal's new tail against the field's obstacles, e.g. {@code Pathfinder::pathClear}: the tail
-   * (blue frame) and the frame it is driven in. A tail that would hit something isn't used: the old one is kept,
-   * the DriveToPose finish still driving to the moved goal.
-   */
-  public PathFollower withObstacleCheck(BiPredicate<Path, FieldFrame> clear) {
-    this.obstacleCheck = clear;
     return this;
   }
 
@@ -248,7 +224,6 @@ public final class PathFollower {
       double timeSeconds, Pose measuredPose, FieldSpeeds measuredVelocity, FieldFrame frame,
       FieldSpeeds handedCommand) {
     this.frame = frame;
-    this.active = basePath;
     this.goal = baseGoal;
     FieldSpeeds cmd = frame.toBlue(handedCommand);
     limiter.reset(cmd.vxMetersPerSecond(), cmd.vyMetersPerSecond(), cmd.omegaRadPerSec());
@@ -276,9 +251,7 @@ public final class PathFollower {
     gripCount = 0;
     limiter.setSpeedingUpBudget(Double.POSITIVE_INFINITY);
     limiter.setBrakeBudget(Double.POSITIVE_INFINITY);
-    System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
     java.util.Arrays.fill(eventFired, false);
-    blockedRebuilds = 0;
   }
 
   /** One loop: measured pose and field velocity in, field speeds out (both in the robot's frame). */
@@ -303,7 +276,7 @@ public final class PathFollower {
 
     measuredSpeed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
     measuredOmega = vel.omegaRadPerSec();
-    pollGoal(pose);
+    pollGoal();
     updateGrip(timeSeconds, dt);
     double slipBudget = slipBudget();
     double planned = cfg.robot().tractionMetersPerSecondSquared();
@@ -311,10 +284,10 @@ public final class PathFollower {
     double brakeDecel = Math.min(brakeSetting, slipBudget);
     double gripScale = slipBudget < planned ? Math.sqrt(slipBudget / planned) : 1.0;
     updateProgress(pose);
-    double remaining = active.lengthMeters() - s;
+    double remaining = path.lengthMeters() - s;
     if (phase == Phase.TRACKING && !rollingEnd && remaining < cfg.terminalRadiusMeters()
-        && Math.abs(Angles.wrap(goal.headingRadians() - active.heading().sample(s).radians())) <= cfg.terminalTurnRadians()
-        && Double.isNaN(active.geometry().nextCusp(s))) { // not while the path still has to double back
+        && Math.abs(Angles.wrap(baseGoal.headingRadians() - path.heading().sample(s).radians())) <= cfg.terminalTurnRadians()
+        && Double.isNaN(path.geometry().nextCusp(s))) { // not while the path still has to double back
       phase = Phase.TERMINAL;
     }
 
@@ -329,7 +302,7 @@ public final class PathFollower {
       double ey = gy - pose.yMeters();
       double d = Math.sqrt(ex * ex + ey * ey);
       double speed = StoppingLaw.speed(d, limiter.speed(), brakeDecel,
-          cfg.latencySeconds(), active.spec().maxMetersPerSecond(), cfg.easeInPerSecond(),
+          cfg.latencySeconds(), path.spec().maxMetersPerSecond(), cfg.easeInPerSecond(),
           cfg.stopDeadbandMeters());
       wantVx = d > 1e-6 ? ex / d * speed : 0.0;
       wantVy = d > 1e-6 ? ey / d * speed : 0.0;
@@ -341,13 +314,13 @@ public final class PathFollower {
       refX = gx;
       refY = gy;
       refHeading = goal.headingRadians();
-    } else if (pureRotation && active == basePath) {
+    } else if (pureRotation) {
       // A turn on the spot: spin as the plan does (its speed along the 1 mm segment carries the spin),
       // and hold the point. Braking on the distance left, as a path does, would brake on a fraction of
       // a millimetre that the pose noise alone exceeds, and stall the turn.
-      VelocityProfile profile = active.profile();
-      PathSample ahead = active.sample(profile.sAtTime(profile.timeAt(s) + readAheadSeconds()));
-      double headingError = Angles.wrap(active.heading().sample(s).radians() - pose.headingRadians());
+      VelocityProfile profile = path.profile();
+      PathSample ahead = path.sample(profile.sAtTime(profile.timeAt(s) + readAheadSeconds()));
+      double headingError = Angles.wrap(path.heading().sample(s).radians() - pose.headingRadians());
       wantOmega = gripScale * ahead.metersPerSecond() * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
       wantOmega = Math.max(-cfg.maxOmegaRadPerSec(), Math.min(cfg.maxOmegaRadPerSec(), wantOmega));
       wantVx = cfg.crossTrackKp() * (goal.xMeters() - pose.xMeters());
@@ -355,24 +328,24 @@ public final class PathFollower {
       crossTrack = Math.hypot(goal.xMeters() - pose.xMeters(), goal.yMeters() - pose.yMeters());
       refX = goal.xMeters();
       refY = goal.yMeters();
-      refHeading = active.heading().sample(s).radians();
+      refHeading = path.heading().sample(s).radians();
     } else {
-      VelocityProfile profile = active.profile();
+      VelocityProfile profile = path.profile();
       double lead = readAheadSeconds();
-      if (active.spec().startMetersPerSecond() > 0.0) {
+      if (path.spec().startMetersPerSecond() > 0.0) {
         // A rolling start: the last path's command led into its own end, not into this path's speeding up,
         // so the lead builds up over ROLLING_LEAD_SECONDS instead of in one loop (a jump of a·τ that the
         // limiter would take at full grip, slipping the wheels at the hand-over)
         lead *= Math.min(1.0, (timeSeconds - startTime) / ROLLING_LEAD_SECONDS);
       }
       double sAhead = profile.sAtTime(profile.timeAt(s) + lead);
-      double cusp = active.geometry().nextCusp(s);
+      double cusp = path.geometry().nextCusp(s);
       if (sAhead > cusp - CUSP_EDGE_METERS) {
         // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
         sAhead = Math.max(s, cusp - CUSP_EDGE_METERS);
       }
-      PathSample here = active.sample(s);
-      PathSample ahead = active.sample(sAhead);
+      PathSample here = path.sample(s);
+      PathSample ahead = path.sample(sAhead);
       double brake = StoppingLaw.brake(remaining, limiter.speed(), brakeDecel, cfg.latencySeconds(), endSpeed);
       double speed = Math.min(gripScale * ahead.metersPerSecond(), brake);
       // Across: P and D along the normal at s (left of travel is positive)
@@ -422,7 +395,7 @@ public final class PathFollower {
     double lead = 0.5 * rate * dt; // half the travel to the next loop
     fireEventsUpTo(progress + lead);
     if (phase == Phase.TERMINAL && arrived(pose)) {
-      fireEventsUpTo(active.lengthMeters()); // an event at the end fires when the robot gets there, not after it settles
+      fireEventsUpTo(path.lengthMeters()); // an event at the end fires when the robot gets there, not after it settles
     }
     checkFinished(timeSeconds, pose, vel, remaining, lead);
     return output();
@@ -592,11 +565,11 @@ public final class PathFollower {
   }
 
   private void updateProgress(Pose pose) {
-    if (pureRotation && active == basePath) {
+    if (pureRotation) {
       s = turnProgress(pose.headingRadians());
       return;
     }
-    var geometry = active.geometry();
+    var geometry = path.geometry();
     if (geometry.hasCusps()) {
       updateProgressAroundCusps(pose, geometry);
       return;
@@ -670,8 +643,8 @@ public final class PathFollower {
    * events, the speed read-ahead and the hand-over to the terminal law on the turn's own schedule.
    */
   private double turnProgress(double heading) {
-    var profile = active.heading();
-    double length = active.lengthMeters();
+    var profile = path.heading();
+    double length = path.lengthMeters();
     int steps = 64;
     double prevS = s;
     double prevErr = Angles.wrap(profile.sample(s).radians() - heading);
@@ -708,7 +681,7 @@ public final class PathFollower {
   /** {@code lead}: half a loop's travel, so a rolling end hands over on the loop nearest its line, as events fire. */
   private void checkFinished(double t, Pose pose, FieldSpeeds vel, double remaining, double lead) {
     if (rollingEnd) {
-      PathSample end = active.sample(active.lengthMeters());
+      PathSample end = path.sample(path.lengthMeters());
       double past = (pose.xMeters() - end.xMeters()) * end.tangentX()
           + (pose.yMeters() - end.yMeters()) * end.tangentY();
       // at the end's line (nearest loop), once near the end (a path can start beyond that line, e.g. an
@@ -759,76 +732,11 @@ public final class PathFollower {
 
   // ------------------------------------------------------------------------------ moving goal
 
-  private void pollGoal(Pose pose) {
-    if (goalSupplier == null) {
-      return;
+  /** A bound goal's latest value; an empty one keeps the last. The DriveToPose finish drives to it. */
+  private void pollGoal() {
+    if (goalSupplier != null) {
+      goalSupplier.get().ifPresent(g -> goal = frame.toBlue(g));
     }
-    Optional<Pose> next = goalSupplier.get();
-    if (next.isEmpty()) {
-      return; // hold the last estimate
-    }
-    Pose g = frame.toBlue(next.get());
-    double moved = Math.hypot(g.xMeters() - goal.xMeters(), g.yMeters() - goal.yMeters());
-    double turned = Math.abs(Angles.wrap(g.headingRadians() - goal.headingRadians()));
-    if (moved < cfg.goalMoveMeters() && turned < cfg.goalMoveRadians()) {
-      return;
-    }
-    goal = g;
-    if (phase == Phase.TRACKING && Math.hypot(g.xMeters() - pose.xMeters(), g.yMeters() - pose.yMeters())
-        > cfg.terminalRadiusMeters() + MIN_TAIL_METERS) {
-      long t0 = System.nanoTime();
-      rebuildTail();
-      lastRebuildMicros = (System.nanoTime() - t0) / 1e3;
-    }
-    // in the terminal phase the DriveToPose law simply drives to the new goal
-  }
-
-  /**
-   * Replaces the rest of the path with a new piece from the current progress to the goal. The join
-   * matches position, tangent and curvature (the new spline's first curvature is fixed); the heading
-   * blends from the planned heading at the join to the goal's; the profile starts at the planned
-   * speed there. The approach direction turns with the goal: the old end tangent plus the goal's turn.
-   */
-  private void rebuildTail() {
-    PathSample join = active.sample(s);
-    PathSample oldEnd = basePath.sample(basePath.lengthMeters());
-    double tangent = Angles.wrap(Math.atan2(oldEnd.tangentY(), oldEnd.tangentX())
-        + (goal.headingRadians() - baseGoal.headingRadians()));
-    double cx = goal.xMeters() - join.xMeters();
-    double cy = goal.yMeters() - join.yMeters();
-    if (Math.cos(tangent) * cx + Math.sin(tangent) * cy <= 0.0) {
-      tangent = Math.atan2(cy, cx); // the goal is behind the approach direction: head straight in
-    }
-    PathSpec spec = active.spec();
-    PathSpec tailSpec = new PathSpec(
-        List.of(
-            Waypoint.at(join.xMeters(), join.yMeters(), Math.atan2(join.tangentY(), join.tangentX())),
-            Waypoint.at(goal.xMeters(), goal.yMeters(), tangent)),
-        List.of(RotationTarget.atMeters(0.0, join.headingRadians()), RotationTarget.atWaypoint(1.0, goal.headingRadians())),
-        List.of(),
-        List.of(),
-        spec.maxMetersPerSecond(),
-        spec.maxMetersPerSecondSquared(),
-        join.metersPerSecond(),
-        spec.endMetersPerSecond());
-    double sJoin = s;
-    double oldRemaining = active.lengthMeters() - sJoin;
-    Path tail = Path.build(tailSpec, cfg.robot(), VelocityProfile.DEFAULT_GRID_METERS, join.curvature());
-    if (obstacleCheck != null && !obstacleCheck.test(tail, frame)) {
-      blockedRebuilds++; // straight to the moved goal would hit something: keep the tail we have
-      return;
-    }
-    // events still ahead keep their share of the distance left
-    for (int i = 0; i < eventS.length; i++) {
-      if (!eventFired[i]) {
-        double share = oldRemaining > 1e-9 ? (eventS[i] - sJoin) / oldRemaining : 1.0;
-        eventS[i] = Math.max(0.0, share) * tail.lengthMeters();
-      }
-    }
-    active = tail;
-    s = 0.0;
-    lastS = 0.0;
-    tailRebuilds++;
   }
 
   // ------------------------------------------------------------------------------ telemetry
@@ -837,14 +745,14 @@ public final class PathFollower {
     return phase;
   }
 
-  /** Progress along the path (the tail after a rebuild), metres. */
+  /** Progress along the path, metres. */
   public double progressMeters() {
     return s;
   }
 
-  /** Metres left on the active path. */
+  /** Metres left on the path. */
   public double remainingMeters() {
-    return active.lengthMeters() - s;
+    return path.lengthMeters() - s;
   }
 
   /** Signed distance from the path, metres, positive to the left of travel (0 in the terminal phase). */
@@ -860,7 +768,7 @@ public final class PathFollower {
     if (phase == Phase.IDLE) {
       return Double.NaN;
     }
-    return s - active.profile().sAtTime(Math.max(0.0, lastTime - startTime));
+    return s - path.profile().sAtTime(Math.max(0.0, lastTime - startTime));
   }
 
   /** The reference heading minus the measured one, radians (blue frame), at the last step. */
@@ -870,7 +778,7 @@ public final class PathFollower {
 
   /** The plan's speed at the robot's progress, m/s. */
   public double plannedMetersPerSecond() {
-    return phase == Phase.IDLE ? Double.NaN : active.sample(s).metersPerSecond();
+    return phase == Phase.IDLE ? Double.NaN : path.sample(s).metersPerSecond();
   }
 
   /** The plan's turn rate at the robot's progress, rad/s (blue frame). */
@@ -878,7 +786,7 @@ public final class PathFollower {
     if (phase == Phase.IDLE) {
       return Double.NaN;
     }
-    PathSample here = active.sample(s);
+    PathSample here = path.sample(s);
     return here.metersPerSecond() * here.headingRadiansPerMeter();
   }
 
@@ -907,25 +815,6 @@ public final class PathFollower {
     return frame.fromBlue(goal);
   }
 
-  /** The path being followed now: the base path, or the tail after a moving goal rebuilt it. */
-  public Path activePath() {
-    return active;
-  }
-
-  public int tailRebuildCount() {
-    return tailRebuilds;
-  }
-
-  /** Moving-goal tails not used because they would hit an obstacle ({@link #withObstacleCheck}). */
-  public int blockedRebuildCount() {
-    return blockedRebuilds;
-  }
-
-  /** How long the last tail rebuild took, microseconds (NaN if none yet). */
-  public double lastTailRebuildMicros() {
-    return lastRebuildMicros;
-  }
-
   public FieldFrame frame() {
     return frame;
   }
@@ -940,9 +829,9 @@ public final class PathFollower {
     return rollingEnd;
   }
 
-  /** The path this follower was built for (before any tail rebuild). */
+  /** The path this follower follows. */
   public Path path() {
-    return basePath;
+    return path;
   }
 
   /** Every event's name (the file's and code's), in the order they fire. */
@@ -950,8 +839,8 @@ public final class PathFollower {
     return List.copyOf(eventNames);
   }
 
-  /** Each event's position on the base path, metres, in the order of {@link #eventNames}. */
+  /** Each event's position along the path, metres, in the order of {@link #eventNames}. */
   public double[] eventMeters() {
-    return eventBaseS.clone();
+    return eventS.clone();
   }
 }

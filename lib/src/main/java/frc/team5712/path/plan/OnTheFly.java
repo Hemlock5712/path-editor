@@ -20,10 +20,9 @@ import java.util.function.Supplier;
  *   <li>{@link #step}: one follower step. If the robot is knocked further than {@link #replanAboveMeters}
  *       off the path (a hard shove), or {@link #requestReplan} was called, it plans again from where it
  *       is, at the speed it is going, and carries on with the new path.
- *   <li>A moving goal ({@link #withMovingGoal}, e.g. a tag or a game piece): once it is more than {@link
- *       #GOAL_REPLAN_METERS} from the goal the path was planned to, it plans again, round the obstacles, to the
- *       latest value. Smaller moves rebuild the path's end in the follower, and that too is checked against the
- *       obstacles ({@link PathFollower#withObstacleCheck}).
+ *   <li>A moving goal ({@link #withMovingGoal}, e.g. a tag or a game piece): the follower's DriveToPose finish
+ *       always drives to its latest value, and once it is more than {@link #GOAL_REPLAN_METERS} from the goal
+ *       the path was planned to, it plans again, round the obstacles, to the latest value.
  * </ul>
  *
  * Everything is in the real field frame: the robot's pose, the obstacles in field.json, the goal. The
@@ -140,7 +139,7 @@ public final class OnTheFly {
       onPlan.accept(this);
       return false;
     }
-    follower = new PathFollower(r.path(), config).withObstacleCheck(pathfinder::pathClear);
+    follower = new PathFollower(r.path(), config);
     if (movingGoal != null) {
       follower.bindGoal(movingGoal);
     }
@@ -167,8 +166,8 @@ public final class OnTheFly {
     boolean knocked = follower.phase() == PathFollower.Phase.TRACKING
         && Math.abs(follower.crossTrackMeters()) > replanAboveMeters
         && t - lastPlanTime >= REPLAN_COOLDOWN_SECONDS;
-    // the follower polls the moving goal; once it has gone well away from where this path was planned to,
-    // the path's end can't just bend over to it (that could cut through an obstacle): plan again
+    // the follower polls the moving goal and finishes on it; once it has gone well away from where this path
+    // was planned to, plan again, round the obstacles
     boolean goalMoved = movingGoal != null && follower.phase() == PathFollower.Phase.TRACKING
         && Math.hypot(follower.goal().xMeters() - plannedGoal.xMeters(), follower.goal().yMeters() - plannedGoal.yMeters())
             > GOAL_REPLAN_METERS

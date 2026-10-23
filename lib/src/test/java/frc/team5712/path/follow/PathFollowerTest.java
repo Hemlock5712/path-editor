@@ -217,7 +217,7 @@ class PathFollowerTest {
     }
     assertEquals(geometries, PathGeometry.buildCount(), "no geometry built");
     assertEquals(profiles, VelocityProfile.buildCount(), "no profile built");
-    assertTrue(f.activePath() == path, "follows the very object built at init");
+    assertTrue(f.path() == path, "follows the very object built at init");
   }
 
   // ------------------------------------------------------------------------------ flip
@@ -428,74 +428,25 @@ class PathFollowerTest {
   // ------------------------------------------------------------------------------ moving goal
 
   @Test
-  void movingGoalRebuildsOnlyTheTailWithASmoothJoin() {
+  void aMovingGoalMovesTheFinish() {
     Path path = Path.build(FixturePaths.sCurve(), ROBOT);
     PathFollower f = new PathFollower(path, CFG);
     Pose[] goal = {null};
     f.bindGoal(() -> Optional.ofNullable(goal[0]));
-    double[] join = new double[5];
     Run r = run(path, f, FieldFrame.BLUE, 20, (t, plant, ff) -> {
       if (Math.abs(t - 1.0) < 1e-9) {
-        PathSample at = path.sample(ff.progressMeters());
-        join[0] = at.xMeters();
-        join[1] = at.yMeters();
-        join[2] = Math.atan2(at.tangentY(), at.tangentX());
-        join[3] = at.curvature();
         goal[0] = new Pose(4.3, 1.4, 0.3); // the target moved 50 cm and turned
       }
       if (Math.abs(t - 1.5) < 1e-9) {
         goal[0] = null; // lost sight of it: hold the last estimate
       }
     });
-    assertEquals(1, f.tailRebuildCount());
-    Path tail = f.activePath();
-    assertTrue(tail != path);
-    GeometrySample start = tail.geometry().sample(0);
-    assertEquals(join[0], start.xMeters(), 1e-9);
-    assertEquals(join[1], start.yMeters(), 1e-9);
-    assertEquals(0.0, Angles.wrap(join[2] - start.tangentRadians()), 1e-9);
-    assertEquals(join[3], start.curvature(), 1e-6);
+    assertTrue(f.path() == path, "the path itself is never rebuilt");
     assertTrue(r.finished());
     Pose end = r.trace().get(r.trace().size() - 1);
     assertEquals(4.3, end.xMeters(), 0.02);
     assertEquals(1.4, end.yMeters(), 0.02);
     assertEquals(0.3, end.headingRadians(), Math.toRadians(1));
-    System.out.printf("tail rebuild (cold in this JVM): %.0f us%n", f.lastTailRebuildMicros());
-  }
-
-  @Test
-  void tailRebuildIsUnderAMillisecondWarm() {
-    Path path = Path.build(FixturePaths.autoRoute().withEndSpeeds(0, 0), ROBOT);
-    PathFollower f = new PathFollower(path, CFG);
-    Pose[] goal = {null};
-    f.bindGoal(() -> Optional.ofNullable(goal[0]));
-    PathSample s0 = path.sample(0);
-    Pose p = new Pose(s0.xMeters(), s0.yMeters(), s0.headingRadians());
-    double best = Double.POSITIVE_INFINITY;
-    double total = 0;
-    int n = 0;
-    for (int rep = 0; rep < 400; rep++) {
-      f.start(0, p, new FieldSpeeds(0, 0, 0), FieldFrame.BLUE);
-      goal[0] = new Pose(-5.44 + 0.001 * (rep % 50), 3.0 + 0.05, Math.PI); // a move every start
-      f.step(DT, p, new FieldSpeeds(0, 0, 0));
-      if (rep >= 200) {
-        best = Math.min(best, f.lastTailRebuildMicros());
-        total += f.lastTailRebuildMicros();
-        n++;
-      }
-    }
-    System.out.printf("tail rebuild of a %.1f m tail, warm: mean %.0f us, best %.0f us%n",
-        f.activePath().lengthMeters(), total / n, best);
-    assertTrue(total / n < 1000.0, "mean tail rebuild " + total / n + " us");
-  }
-
-  @Test
-  void smallGoalJitterDoesNotRebuild() {
-    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
-    PathFollower f = new PathFollower(path, CFG);
-    f.bindGoal(() -> Optional.of(new Pose(4.0 + 0.005, 1.0, Math.PI / 2 + 0.01))); // 5 mm, 0.6 deg
-    run(path, f, FieldFrame.BLUE, 20, NONE);
-    assertEquals(0, f.tailRebuildCount());
   }
 
   // ------------------------------------------------------------------------------ overrides

@@ -1,6 +1,5 @@
 package frc.team5712.path.plan;
 
-import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.GeometrySample;
 import frc.team5712.path.core.HeadingProfile;
@@ -517,32 +516,6 @@ public final class Pathfinder {
       worst.add(badS);
     }
     return new Sweep(min, worst);
-  }
-
-  /**
-   * Whether the bumpers, swept along {@code path} (blue frame, turned to the real field by {@code frame}) with
-   * its heading, stay clear of every obstacle and wall: by the margin, or by what they have at the path's start
-   * when that is less (a robot shoved close to an obstacle can still drive away from it). For {@link
-   * frc.team5712.path.follow.PathFollower#withObstacleCheck}: {@code follower.withObstacleCheck(pathfinder::pathClear)}.
-   */
-  public boolean pathClear(Path path, FieldFrame frame) {
-    double len = path.lengthMeters();
-    int n = Math.max(2, (int) Math.ceil(len / config.checkStepMeters()) + 1);
-    double reach = config.halfDiagonalMeters();
-    double[] qx = new double[4];
-    double[] qy = new double[4];
-    double need = config.marginMeters();
-    for (int k = 0; k < n; k++) {
-      PathSample p = path.sample(len * k / (n - 1));
-      Pose real = frame.fromBlue(new Pose(p.xMeters(), p.yMeters(), p.headingRadians()));
-      double c = clearance(real.xMeters(), real.yMeters(), real.headingRadians(), reach, qx, qy);
-      if (k == 0) {
-        need = Math.min(need, c);
-      } else if (c < need - 1e-9) {
-        return false;
-      }
-    }
-    return true;
   }
 
   /** Clearance of the bumper rectangle at (x, y, th) to every obstacle and the field walls. */

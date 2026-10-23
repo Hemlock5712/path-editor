@@ -331,10 +331,6 @@ public final class BenchServer {
     if (Double.isFinite(follower.slipFrictionCoefficient())) {
       r.put("slipMu", follower.slipFrictionCoefficient());
     }
-    if (!Double.isNaN(follower.lastTailRebuildMicros())) {
-      r.put("rebuilds", (double) follower.tailRebuildCount());
-      r.put("rebuildMicros", follower.lastTailRebuildMicros());
-    }
     return line(r);
   }
 
