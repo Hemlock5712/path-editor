@@ -2,8 +2,8 @@
 // VelocityProfile.java; the model (grip with the worst wheel's spin push, motor curve, wheel-speed
 // cap, zone and spin caps) is documented there.
 
-import { toSample, type PathGeometry } from "./geometry.ts";
-import type { HeadingProfile } from "./heading.ts";
+import { toSample, type GeometrySample, type PathGeometry } from "./geometry.ts";
+import type { HeadingProfile, HeadingSample } from "./heading.ts";
 import {
   brakeAccelMetersPerSecondSquared,
   driveAccelMetersPerSecondSquared,
@@ -140,7 +140,8 @@ export class VelocityProfile {
           aCap = Math.min(aCap, zones[j]!.maxMetersPerSecondSquared);
         }
       }
-      vCap = Math.min(vCap, wheelCap / (1.0 + moduleRadius * hp));
+      const wheels = wheelSpeedFactor(g, h, moduleRadius);
+      vCap = Math.min(vCap, wheelCap / wheels);
       if (hp > 0.0) vCap = Math.min(vCap, spinCap / hp);
       if (hpp > 0.0) vCap = Math.min(vCap, Math.sqrt(spinAccelCap / hpp)); // steady speed: α = v²θ''
       const bend = kAbs + lever * hpp;
@@ -148,6 +149,7 @@ export class VelocityProfile {
       speedCap[i] = stop[i] ? 0.0 : vCap;
       budget.curvature[i] = kAbs;
       budget.spin[i] = hp;
+      budget.wheels[i] = wheels;
       budget.spinBend[i] = hpp;
       budget.cap[i] = aCap;
     }
@@ -302,15 +304,34 @@ function step(
 }
 
 /** The acceleration budget at each grid point. */
+const HALF_ROOT2 = Math.sqrt(0.5);
+
+/**
+ * The fastest wheel's speed over the robot's while turning at dθ/ds (lib's VelocityProfile.wheelSpeedFactor):
+ * v·√(1 + (R·θ')² + 2·R·θ'·sin(β − αᵢ)) for a square base, between 1 and 1 + R·|θ'|.
+ */
+export function wheelSpeedFactor(g: GeometrySample, h: HeadingSample, moduleRadius: number): number {
+  const rt = moduleRadius * h.radiansPerMeter;
+  if (rt === 0.0) return 1.0;
+  const c = Math.cos(h.radians);
+  const sn = Math.sin(h.radians);
+  const ux = g.tangentX * c + g.tangentY * sn; // travel in the robot's frame
+  const uy = -g.tangentX * sn + g.tangentY * c;
+  const a = HALF_ROOT2 * (-ux + uy);
+  const b = HALF_ROOT2 * (-ux - uy);
+  const most = Math.max(Math.max(rt * a, -rt * a), Math.max(rt * b, -rt * b));
+  return Math.sqrt(1.0 + rt * rt + 2.0 * most);
+}
+
 class Budget {
   readonly curvature: Float64Array;
   readonly spin: Float64Array;
+  readonly wheels: Float64Array; // wheelSpeedFactor: the fastest wheel over the robot's speed
   readonly spinBend: Float64Array;
   readonly cap: Float64Array;
   private readonly robot: RobotConfig;
   private readonly grip: number;
   private readonly lever: number;
-  private readonly moduleRadius: number;
   private readonly brake: number;
   private readonly spinAccelCap: number;
 
@@ -318,11 +339,11 @@ class Budget {
     this.robot = robot;
     this.grip = tractionMetersPerSecondSquared(robot);
     this.lever = spinLeverMeters(robot);
-    this.moduleRadius = robot.moduleRadiusMeters;
     this.brake = brakeAccelMetersPerSecondSquared(robot);
     this.spinAccelCap = robot.maxAngularRadPerSecSquared;
     this.curvature = new Float64Array(nodes);
     this.spin = new Float64Array(nodes);
+    this.wheels = new Float64Array(nodes);
     this.spinBend = new Float64Array(nodes);
     this.cap = new Float64Array(nodes);
   }
@@ -344,7 +365,7 @@ class Budget {
       a = room / (e * k + Math.sqrt(room + k * k * n * n));
     }
     const drive = speedingUp
-      ? driveAccelMetersPerSecondSquared(this.robot, v * (1.0 + this.moduleRadius * this.spin[i]!))
+      ? driveAccelMetersPerSecondSquared(this.robot, v * this.wheels[i]!)
       : this.brake;
     a = Math.min(a, (drive - spinPush) / (1.0 + k));
     if (this.spinAccelCap < Infinity) {

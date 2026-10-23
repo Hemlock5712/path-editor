@@ -130,7 +130,10 @@ class CuspTest {
       double y = tr.y.get(i);
       // how far past the tip along the approach direction
       furthest = Math.max(furthest, (x - tip.xMeters()) * approach.tangentX() + (y - tip.yMeters()) * approach.tangentY());
-      if (Math.hypot(x - tip.xMeters(), y - tip.yMeters()) < 0.03) {
+      // a speed differenced over a loop belongs to the middle of that loop's step
+      double midX = 0.5 * (x + tr.x.get(i - 1));
+      double midY = 0.5 * (y + tr.y.get(i - 1));
+      if (Math.hypot(midX - tip.xMeters(), midY - tip.yMeters()) < 0.03) {
         double v = Math.hypot(tr.x.get(i) - tr.x.get(i - 1), tr.y.get(i) - tr.y.get(i - 1)) / 0.02;
         fastestNearTip = Math.max(fastestNearTip, v);
       }

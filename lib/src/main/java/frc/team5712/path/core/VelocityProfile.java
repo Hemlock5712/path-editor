@@ -218,7 +218,8 @@ public final class VelocityProfile {
           aCap = Math.min(aCap, zones.get(j).maxMetersPerSecondSquared());
         }
       }
-      vCap = Math.min(vCap, wheelCap / (1.0 + moduleRadius * hp));
+      double wheels = wheelSpeedFactor(g, h, moduleRadius);
+      vCap = Math.min(vCap, wheelCap / wheels);
       if (hp > 0.0) {
         vCap = Math.min(vCap, spinCap / hp);
       }
@@ -232,6 +233,7 @@ public final class VelocityProfile {
       speedCap[i] = stop[i] ? 0.0 : vCap;
       budget.curvature[i] = kAbs;
       budget.spin[i] = hp;
+      budget.wheels[i] = wheels;
       budget.spinBend[i] = hpp;
       budget.cap[i] = aCap;
     }
@@ -315,16 +317,42 @@ public final class VelocityProfile {
     return below;
   }
 
+  /** Half of √2: a square base's modules sit at 45° + k·90° from the robot's x axis. */
+  private static final double HALF_ROOT2 = Math.sqrt(0.5);
+
+  /**
+   * The fastest wheel's speed over the robot's, driving along the path while turning at dθ/ds: each
+   * module's velocity is the robot's plus the spin's ω × r, so its speed is
+   * {@code v·√(1 + (R·θ')² + 2·R·θ'·sin(β − αᵢ))}, with β the direction of travel in the robot's frame and
+   * αᵢ the module's bearing (a square base). Between 1 and 1 + R·|θ'|: the spin adds fully to a wheel only
+   * when that wheel's spin direction lines up with the travel, and every quarter turn the wheels sit 45° off.
+   */
+  static double wheelSpeedFactor(GeometrySample g, HeadingSample h, double moduleRadius) {
+    double rt = moduleRadius * h.radiansPerMeter();
+    if (rt == 0.0) {
+      return 1.0;
+    }
+    double c = Angles.cos(h.radians());
+    double sn = Angles.sin(h.radians());
+    double ux = g.tangentX() * c + g.tangentY() * sn; // travel in the robot's frame
+    double uy = -g.tangentX() * sn + g.tangentY() * c;
+    // sin(β − αᵢ) = u · (−sin αᵢ, cos αᵢ), the module's spin direction, for αᵢ = 45°, 135°, 225°, 315°
+    double a = HALF_ROOT2 * (-ux + uy);
+    double b = HALF_ROOT2 * (-ux - uy);
+    double most = Math.max(Math.max(rt * a, -rt * a), Math.max(rt * b, -rt * b));
+    return Math.sqrt(1.0 + rt * rt + 2.0 * most);
+  }
+
   /** The acceleration budget at each grid point. */
   private static final class Budget {
     final double[] curvature;
     final double[] spin;
+    final double[] wheels; // wheelSpeedFactor: the fastest wheel over the robot's speed
     final double[] spinBend;
     final double[] cap;
     private final RobotConfig robot;
     private final double grip;
     private final double lever;
-    private final double moduleRadius;
     private final double brake;
     private final double spinAccelCap;
 
@@ -332,11 +360,11 @@ public final class VelocityProfile {
       this.robot = robot;
       this.grip = robot.tractionMetersPerSecondSquared();
       this.lever = robot.spinLeverMeters();
-      this.moduleRadius = robot.moduleRadiusMeters();
       this.brake = robot.brakeAccelMetersPerSecondSquared();
       this.spinAccelCap = robot.maxAngularRadPerSecSquared();
       curvature = new double[nodes];
       spin = new double[nodes];
+      wheels = new double[nodes];
       spinBend = new double[nodes];
       cap = new double[nodes];
     }
@@ -359,7 +387,7 @@ public final class VelocityProfile {
         a = room / (e * k + Math.sqrt(room + k * k * n * n));
       }
       double drive = speedingUp
-          ? robot.driveAccelMetersPerSecondSquared(v * (1.0 + moduleRadius * spin[i]))
+          ? robot.driveAccelMetersPerSecondSquared(v * wheels[i])
           : brake;
       a = Math.min(a, (drive - spinPush) / (1.0 + k));
       if (spinAccelCap < Double.POSITIVE_INFINITY) {

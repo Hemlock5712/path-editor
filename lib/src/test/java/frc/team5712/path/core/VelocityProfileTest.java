@@ -53,7 +53,8 @@ class VelocityProfileTest {
           worstUse = Math.max(worstUse, use / grip);
           assertTrue(use <= grip * (1 + 1e-9), e.getKey() + " point " + i + " uses " + use);
           if (a > 0) {
-            double wheel = v * (1 + ROBOT.moduleRadiusMeters() * n[i].spin());
+            double wheel = v * VelocityProfile.wheelSpeedFactor(path.geometry().sample(n[i].s()),
+                path.heading().sample(n[i].s()), ROBOT.moduleRadiusMeters());
             assertTrue(a + c * alpha <= ROBOT.driveAccelMetersPerSecondSquared(wheel) + 1e-9);
           }
           assertTrue(Math.abs(a) <= e.getValue().maxMetersPerSecondSquared() + 1e-9);
@@ -87,11 +88,28 @@ class VelocityProfileTest {
     for (PathSpec spec : FixturePaths.all().values()) {
       Path path = Path.build(spec, ROBOT);
       for (Node n : nodes(path)) {
-        double wheel = n.v() * (1 + ROBOT.moduleRadiusMeters() * n.spin());
+        double wheel = n.v() * VelocityProfile.wheelSpeedFactor(path.geometry().sample(n.s()),
+            path.heading().sample(n.s()), ROBOT.moduleRadiusMeters());
         assertTrue(wheel <= ROBOT.wheelSpeedCapMetersPerSecond() * (1 + 1e-12));
         assertTrue(n.v() <= spec.maxMetersPerSecond() + 1e-12);
       }
     }
+  }
+
+  @Test
+  void theFastestWheelIsWorkedOutFromTheHeading() {
+    double r = ROBOT.moduleRadiusMeters();
+    double spin = 1.0 / r; // R·dθ/ds = 1: the spin's ω × r is as fast as the travel
+    GeometrySample alongX = PathGeometry.build(java.util.List.of(Waypoint.at(0, 0), Waypoint.at(1, 0))).sample(0.5);
+    // no spin: every wheel at the robot's speed
+    assertEquals(1.0, VelocityProfile.wheelSpeedFactor(alongX, new HeadingSample(0.0, 0.0, 0.0), r), 1e-12);
+    // travelling along the robot's x: the front-left module (45°) spins at 135°, 45° off the travel, and so do
+    // the others; the fastest wheel is √(1 + 1 + 2·cos 45°) = 1.85, not the worst case 2
+    assertEquals(Math.sqrt(2 + Math.sqrt(2)), VelocityProfile.wheelSpeedFactor(alongX, new HeadingSample(0.0, spin, 0.0), r), 1e-12);
+    // turned 45°: a module's spin direction lines up with the travel, the worst case 1 + R·θ'
+    assertEquals(2.0, VelocityProfile.wheelSpeedFactor(alongX, new HeadingSample(Math.PI / 4, spin, 0.0), r), 1e-12);
+    // turning the other way gives the same speeds
+    assertEquals(2.0, VelocityProfile.wheelSpeedFactor(alongX, new HeadingSample(Math.PI / 4, -spin, 0.0), r), 1e-12);
   }
 
   @Test

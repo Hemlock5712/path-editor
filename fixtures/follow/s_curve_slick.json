@@ -38,7 +38,7 @@
     "drive": { "latencySeconds": 0.02, "lagSeconds": 0.04, "substepSeconds": 0.001, "gripMetersPerSecondSquared": 3.254758474576271 },
     "frame": "BLUE",
     "afterSeconds": 0.5,
-    "maxSeconds": 9.35135726676678
+    "maxSeconds": 9.350755117820675
   },
   "finishLoop": 401,
   "events": [],
