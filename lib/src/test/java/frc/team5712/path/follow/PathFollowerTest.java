@@ -792,9 +792,10 @@ class PathFollowerTest {
     // asking for 2 m/s², says the floor is slick.
     FakeSlip slip = new FakeSlip();
     double[] lowest = {Double.POSITIVE_INFINITY};
+    double[] achieved = {8.5}; // on its own floor the robot still gets nearly what it asked for
     Hook slipping = (t, plant, ff) -> {
       slip.confidence = t > 0.1 && t < 0.4 ? 0.9 : 0.0;
-      slip.achieved = 5.0;
+      slip.achieved = achieved[0];
       lowest[0] = Math.min(lowest[0], ff.slipFrictionCoefficient());
     };
     RobotConfig tipOrGrip = ROBOT; // a plan that reaches 9
@@ -811,6 +812,12 @@ class PathFollowerTest {
     lowest[0] = Double.POSITIVE_INFINITY;
     run(hard, new PathFollower(hard, tipCfg).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
     assertTrue(lowest[0] < 1.0, "a slide lowers the grip whatever the robot asked for: " + lowest[0]);
+    // the hard launch again, no slide, but the robot gets only 5 of the 9 it asked for: the floor is giving out
+    slip.gap = 0.0;
+    achieved[0] = 5.0;
+    lowest[0] = Double.POSITIVE_INFINITY;
+    run(hard, new PathFollower(hard, tipCfg).withSlipSignal(slip), FieldFrame.BLUE, 20, slipping);
+    assertTrue(lowest[0] < 1.0, "falling well short of the ask lowers the grip: " + lowest[0]);
   }
 
   @Test

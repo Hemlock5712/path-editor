@@ -302,6 +302,22 @@ Under `equalPush` the plan stays under the onset, so adaptive grip never acts on
   follower confidence 0.3, recovery 0.05 μ/s. The IMU-gap threshold and the spell limits are where
   the sweep scored best after widening the grid once.
 
+### Adaptive grip and steps
+
+A hard step (a launch from rest, the first loop of braking) slips the wheels at once
+for a loop, and the slip detector holds the spell for about 0.25 s. The follower could take that as a slick floor
+(μ 0.42 at every launch with wheel force feedforward sent, 20 % slower). Now:
+- a spell that starts within 0.1 s of a step past `expectedSlipShare` of the wheel-slip onset is the step's own
+  for up to `BRIEF_SPELL_SECONDS` (0.3 s); a floor still slipping after that is the floor;
+- slip only counts as the tread's own while the robot achieves at least 80 % of the acceleration it was
+  commanded (the best the IMU saw in the spell, since it lags). On its own floor the loaded wheels make up for
+  the light ones; a floor giving out falls short, however hard the ask.
+The slippery floor (odometry only, 3 seeds) went from 12.9 to 9.2 cm and the grip drop from 7.7 to 7.2 cm
+(2.36 to 2.17 s); clean courses are unchanged.
+
+Wheel force feedforward shared by each wheel's load was tried (2026-10-23) and taken out: on the bench it gave
+the same time, 13 % less wheel slip, worse odometry on slippery floors and more time past the tipping limit.
+
 ### WPILib adapters (`src/wpilib`)
 
 These are compiled against WPILib 2027.0.0-alpha-7 from the installer's offline maven repo

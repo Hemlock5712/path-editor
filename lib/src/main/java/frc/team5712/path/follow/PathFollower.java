@@ -122,7 +122,11 @@ public final class PathFollower {
   private double spellStartMu = Double.POSITIVE_INFINITY; // slipMu before the current slip spell
   private double spellStart; // when it began
   private double commandedAccel; // filtered |commanded acceleration|, m/s²
+  private double stepPeak; // the hardest single loop's |commanded acceleration| in the last SPELL_ONSET_SECONDS, m/s²
+  private double stepPeakTime = Double.NEGATIVE_INFINITY;
   private double spellMaxCommanded; // the most the current spell has asked for
+  private double spellMaxStep; // the biggest single loop's step during the current spell, m/s²
+  private double spellMaxAchieved; // the most the IMU has seen the robot achieve during the current spell, m/s²
   private boolean spellLatched; // it has lowered slipMu
 
   // Per-run state
@@ -306,6 +310,8 @@ public final class PathFollower {
     spellStartMu = Double.POSITIVE_INFINITY;
     spellLatched = false;
     commandedAccel = 0.0;
+    stepPeak = 0.0;
+    stepPeakTime = Double.NEGATIVE_INFINITY;
     limiter.setSpeedingUpBudget(Double.POSITIVE_INFINITY);
     limiter.setBrakeBudget(Double.POSITIVE_INFINITY);
     System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
@@ -581,6 +587,10 @@ public final class PathFollower {
     limiter.limit(wantVx, wantVy, wantOmega, dt);
     // the commanded acceleration as the robot will feel it: lagged by the response delay and filtered
     double cmdAccel = Math.hypot(limiter.vx() - lastVx, limiter.vy() - lastVy) / dt;
+    if (cmdAccel >= stepPeak || timeSeconds - stepPeakTime > SPELL_ONSET_SECONDS) { // the detector lags a loop or two
+      stepPeak = cmdAccel;
+      stepPeakTime = timeSeconds;
+    }
     commandedAccel += (cmdAccel - commandedAccel) * Math.min(1.0, dt / (cfg.latencySeconds() + COMMAND_FILTER_SECONDS));
     if (!Double.isNaN(ox) && overrideXMode == OverrideMode.BYPASS
         || !Double.isNaN(oy) && overrideYMode == OverrideMode.BYPASS
@@ -666,6 +676,8 @@ public final class PathFollower {
         spellStart = timeSeconds;
         spellLatched = false;
         spellMaxCommanded = 0.0;
+        spellMaxStep = 0.0;
+        spellMaxAchieved = 0.0;
       }
       // Every wheel pushes about the same, so on the tread's own floor the wheels that weight transfer
       // unloads let go once the robot asks for μ·g / (1 + μ·h/x) (the wheel-slip onset): some wheels slip
@@ -677,10 +689,23 @@ public final class PathFollower {
       // early in a spell also undoes what the spell's first samples latched.
       floorMu = slipSignal.achievedAccelMetersPerSecondSquared() / RobotConfig.GRAVITY;
       spellMaxCommanded = Math.max(spellMaxCommanded, commandedAccel);
+      spellMaxStep = Math.max(spellMaxStep, stepPeak);
       double onset = cfg.robot().wheelSlipOnsetMetersPerSecondSquared();
       boolean sliding = slipSignal.imuGapMetersPerSecondSquared() >= cfg.slideGapMetersPerSecondSquared();
       expected = spellMaxCommanded >= cfg.expectedSlipShare() * onset && !sliding;
-      if (expected && timeSeconds - spellStart <= SPELL_ONSET_SECONDS) {
+      // A spell that starts just after a hard step (a launch, the first loop of braking) is the step's own
+      // transient while it lasts no longer than BRIEF_SPELL_SECONDS: a step slips the wheels at once, and the
+      // detector holds the spell a while after. A slick floor is still slipping after that.
+      boolean stepTransient = spellMaxStep >= cfg.expectedSlipShare() * cfg.robot().wheelSlipOnsetMetersPerSecondSquared()
+          && timeSeconds - spellStart <= BRIEF_SPELL_SECONDS;
+      // ...and either way the robot still gets most of what it asks for: on its own floor the loaded wheels make
+      // up for the light ones. Getting under EXPECTED_ACHIEVED_SHARE of the (lagged) commanded acceleration is the
+      // floor giving out, however hard the ask.
+      double asked = spellMaxCommanded;
+      spellMaxAchieved = Math.max(spellMaxAchieved, slipSignal.achievedAccelMetersPerSecondSquared()); // the IMU lags
+      boolean delivering = spellMaxAchieved >= EXPECTED_ACHIEVED_SHARE * asked;
+      expected = (expected || stepTransient && !sliding) && delivering;
+      if (expected && timeSeconds - spellStart <= BRIEF_SPELL_SECONDS) {
         slipMu = spellStartMu;
         spellLatched = false;
       }
@@ -756,6 +781,10 @@ public final class PathFollower {
 
   /** How long a slip spell's start counts as its onset, while the filtered acceleration catches up. */
   private static final double SPELL_ONSET_SECONDS = 0.1;
+  /** A spell that ends within this, after a hard step, was the step's transient. */
+  private static final double BRIEF_SPELL_SECONDS = 0.3;
+  /** Slip the tread's own still delivers at least this share of the acceleration asked for. */
+  private static final double EXPECTED_ACHIEVED_SHARE = 0.8;
 
   /** Shorter steps than this don't give a velocity from the pose (the measured one is used). */
   private static final double MIN_POSE_DT = 0.005;
