@@ -52,11 +52,6 @@ import frc.team5712.path.core.RobotConfig;
  * @param slipBrakeFriction while slip has lowered the grip, the limiter still lets braking use at
  *     least this μ: the brake law plans with the lowered μ (braking early), and the limiter does not
  *     forbid the robot from braking harder if it must (1.11: 0.85 scaled the same way)
- * @param replanStartFromMeasuredVelocity at start, when a path planned from rest is started with the robot
- *     already moving (not backwards along the path), re-plan its speeds from the measured speed, as PathPlanner
- *     does. Only the speed profile is rebuilt (the curve stays as drawn): the one bit of path work at go, a few
- *     hundred microseconds at most. On by default (Joe's call); at rest, and on paths that plan their own start
- *     speed (rolling hand-overs, on-the-fly paths), it does nothing
  * @param expectedSlipShare adaptive grip ignores slip that the tread's own weight transfer explains: slip in a
  *     spell that has asked for at least this share of the wheel-slip onset {@code μ·g / (1 + μ·h/x)}. Every
  *     wheel pushes about the same, so above that the light wheels slip on a good floor too; it says nothing
@@ -98,7 +93,6 @@ public record FollowerConfig(
     double slipRecoveryPerSecond,
     double minSlipFriction,
     double slipBrakeFriction,
-    boolean replanStartFromMeasuredVelocity,
     double rejoinAboveMeters,
     double expectedSlipShare,
     double slideGapMetersPerSecondSquared) {
@@ -157,7 +151,6 @@ public record FollowerConfig(
     b.slipRecoveryPerSecond = slipRecoveryPerSecond;
     b.minSlipFriction = minSlipFriction;
     b.slipBrakeFriction = slipBrakeFriction;
-    b.replanStartFromMeasuredVelocity = replanStartFromMeasuredVelocity;
     b.rejoinAboveMeters = rejoinAboveMeters;
     b.expectedSlipShare = expectedSlipShare;
     b.slideGapMetersPerSecondSquared = slideGapMetersPerSecondSquared;
@@ -195,7 +188,6 @@ public record FollowerConfig(
     private double slipRecoveryPerSecond = 0.065;
     private double minSlipFriction = 0.39;
     private double slipBrakeFriction = 1.11;
-    private boolean replanStartFromMeasuredVelocity = true;
     private double rejoinAboveMeters = 0.4;
     private double expectedSlipShare = 0.8;
     private double slideGapMetersPerSecondSquared = 3.5;
@@ -232,7 +224,6 @@ public record FollowerConfig(
     public Builder slipRecoveryPerSecond(double v) { slipRecoveryPerSecond = v; return this; }
     public Builder minSlipFriction(double v) { minSlipFriction = v; return this; }
     public Builder slipBrakeFriction(double v) { slipBrakeFriction = v; return this; }
-    public Builder replanStartFromMeasuredVelocity(boolean v) { replanStartFromMeasuredVelocity = v; return this; }
     public Builder rejoinAboveMeters(double v) { rejoinAboveMeters = v; return this; }
     public Builder expectedSlipShare(double v) { expectedSlipShare = v; return this; }
     public Builder slideGapMetersPerSecondSquared(double v) { slideGapMetersPerSecondSquared = v; return this; }
@@ -271,7 +262,6 @@ public record FollowerConfig(
         case "slipRecoveryPerSecond" -> slipRecoveryPerSecond = v;
         case "minSlipFriction" -> minSlipFriction = v;
         case "slipBrakeFriction" -> slipBrakeFriction = v;
-        case "replanStartFromMeasuredVelocity" -> replanStartFromMeasuredVelocity = v != 0.0;
         case "rejoinAboveMeters" -> rejoinAboveMeters = v;
         case "expectedSlipShare" -> expectedSlipShare = v;
         case "slideGapMetersPerSecondSquared" -> slideGapMetersPerSecondSquared = v;
@@ -290,7 +280,7 @@ public record FollowerConfig(
           headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
           headingToleranceRadians, settledMetersPerSecond, debounceSeconds, goalMoveMeters,
           goalMoveRadians, adaptiveGrip, slipConfidence, slipMargin, slipRecoveryPerSecond,
-          minSlipFriction, slipBrakeFriction, replanStartFromMeasuredVelocity, rejoinAboveMeters,
+          minSlipFriction, slipBrakeFriction, rejoinAboveMeters,
           expectedSlipShare, slideGapMetersPerSecondSquared);
     }
   }

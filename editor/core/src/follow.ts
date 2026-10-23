@@ -48,8 +48,6 @@ export interface FollowerConfig {
   readonly headingToleranceRadians: number;
   readonly settledMetersPerSecond: number;
   readonly debounceSeconds: number;
-  /** At start, when already moving (not backwards along the path), re-plan the speeds from the measured speed. */
-  readonly replanStartFromMeasuredVelocity: boolean;
   /** Knocked further than this off the path, build a piece back onto it (+∞ = never). */
   readonly rejoinAboveMeters: number;
 }
@@ -91,7 +89,6 @@ export function followerConfig(robot: RobotConfig, options: Partial<Omit<Followe
     headingToleranceRadians: 1.0 * DEG,
     settledMetersPerSecond: 0.05,
     debounceSeconds: 0.1,
-    replanStartFromMeasuredVelocity: true,
     rejoinAboveMeters: 0.4,
     ...options,
   };
@@ -251,7 +248,7 @@ export class PathFollower {
   private prevPoseTime = 0;
   private poseVx = 0;
   private poseVy = 0;
-  // The path followed: the track (the path, or it re-planned from the measured speed at start), or a piece
+  // The path followed: the track (the path), or a piece
   // from where the robot was knocked to back onto the track at headJoinS, replacing the stretch from headStartS
   private active: Path;
   private track: Path;
@@ -323,17 +320,6 @@ export class PathFollower {
     this.rejoins = 0;
     this.lastRejoinTime = Number.NEGATIVE_INFINITY;
     this.track = this.path;
-    const v = flipSpeeds(frame, measuredVelocity);
-    const speed = javaHypot(v.vxMetersPerSecond, v.vyMetersPerSecond);
-    const first = this.path.sample(0.0);
-    if (this.cfg.replanStartFromMeasuredVelocity && !this.pureRotation && this.path.spec.startMetersPerSecond === 0.0
-      && speed > MIN_MOVING_SPEED
-      && v.vxMetersPerSecond * first.tangentX + v.vyMetersPerSecond * first.tangentY > 0.0) {
-      // a path planned from rest, started while moving: the speeds are re-planned from the measured speed
-      // (only the profile is rebuilt; a path that starts moving already plans its start speed)
-      this.track = this.path.withStartSpeed(speed, this.cfg.robot);
-      this.active = this.track;
-    }
   }
 
   /**

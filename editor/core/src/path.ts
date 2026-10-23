@@ -105,16 +105,6 @@ export class Path {
     return this.geometry.lengthMeters;
   }
 
-  /**
-   * The same path planned to start at startSpeed instead (the geometry and heading are reused; only the
-   * velocity profile is built again).
-   */
-  withStartSpeed(startSpeed: number, robot: RobotConfig): Path {
-    const s2: PathSpec = { ...this.spec, startMetersPerSecond: Math.min(startSpeed, this.spec.maxMetersPerSecond) };
-    return new Path(s2, this.geometry, this.heading,
-      VelocityProfile.build(this.geometry, this.heading, s2, robot, this.profile.gridMeters));
-  }
-
   /** Where the path reverses, metres along it (PathGeometry.cusps); the profile stops the robot at each. */
   get cusps(): readonly number[] {
     return this.geometry.cusps;

@@ -75,9 +75,9 @@ public final class FollowFixtureGen {
             0.5 * RobotConfig.DEFAULT.tractionMetersPerSecondSquared())));
     // a path that doubles back: the follower stops at the cusp and reverses
     m.put("joe_auto_cusp", new Case(FixturePaths.joeAutoCusp(), RobotConfig.DEFAULT, FieldFrame.BLUE, null));
-    // already moving at the start (a shove before the first loop), with the speeds re-planned from it
+    // already moving at the start (a shove before the first loop)
     m.put("s_curve_moving_start", new Case(FixturePaths.sCurve(), RobotConfig.DEFAULT, FieldFrame.BLUE,
-        new FollowerSim.Shove(0.0, 1.0, 1.5), FollowerSim.Drive.DEFAULT, Map.of("replanStartFromMeasuredVelocity", 1.0)));
+        new FollowerSim.Shove(0.0, 1.0, 1.5)));
     return m;
   }
 

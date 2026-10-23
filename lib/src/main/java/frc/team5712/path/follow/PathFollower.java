@@ -155,8 +155,7 @@ public final class PathFollower {
   private int blockedRebuilds;
   private double lastRebuildMicros = Double.NaN;
   private BiPredicate<Path, FieldFrame> obstacleCheck; // null: no field to check against
-  // The path followed when not rejoining: the base path, or it with its speeds re-planned from the measured
-  // speed at start, or a rebuilt tail
+  // The path followed when not rejoining: the base path, or a rebuilt tail
   private Path track;
   // A piece from where the robot was knocked to back onto the track at headJoinS (null when on the track),
   // replacing the stretch from headStartS (track metres)
@@ -166,7 +165,6 @@ public final class PathFollower {
   private int rejoins;
   private double lastRejoinTime = Double.NEGATIVE_INFINITY;
   private double lastRejoinMicros = Double.NaN;
-  private double lastStartReplanMicros = Double.NaN;
 
   /** A follower for a path built in robot init. Cheap: nothing about the path is copied. */
   public PathFollower(Path path, FollowerConfig config) {
@@ -304,24 +302,7 @@ public final class PathFollower {
     rejoins = 0;
     blockedRebuilds = 0;
     lastRejoinTime = Double.NEGATIVE_INFINITY;
-    lastStartReplanMicros = Double.NaN;
     track = basePath;
-    FieldSpeeds v = frame.toBlue(measuredVelocity);
-    double speed = Math.hypot(v.vxMetersPerSecond(), v.vyMetersPerSecond());
-    PathSample first = basePath.sample(0.0);
-    if (cfg.replanStartFromMeasuredVelocity() && !pureRotation && basePath.spec().startMetersPerSecond() == 0.0
-        && speed > MIN_MOVING_SPEED
-        && v.vxMetersPerSecond() * first.tangentX() + v.vyMetersPerSecond() * first.tangentY() > 0.0) {
-      // A path planned from rest, started while already moving (not backwards along the path): the speeds
-      // are re-planned from the measured speed, all of it, as PathPlanner does. Turning the velocity onto
-      // the path costs grip, not speed, and the limiter shares the grip between the two. Only the profile
-      // is rebuilt; the curve stays as drawn. A path that starts moving (a rolling hand-over, an on-the-fly
-      // path) already plans its start speed, so it is left alone.
-      long t0 = System.nanoTime();
-      track = basePath.withStartSpeed(speed, cfg.robot());
-      lastStartReplanMicros = (System.nanoTime() - t0) / 1e3;
-      active = track;
-    }
   }
 
   /** Below this speed the robot has no direction of travel worth keeping. */
@@ -1117,14 +1098,6 @@ public final class PathFollower {
   /** How long the last rejoining piece took to build, microseconds (NaN if none yet). */
   public double lastRejoinMicros() {
     return lastRejoinMicros;
-  }
-
-  /**
-   * How long start() took to re-plan the speeds from the measured speed, microseconds (NaN if it didn't:
-   * {@link FollowerConfig#replanStartFromMeasuredVelocity} off, or the robot wasn't moving).
-   */
-  public double lastStartReplanMicros() {
-    return lastStartReplanMicros;
   }
 
   /** How long the last tail rebuild took, microseconds (NaN if none yet). */

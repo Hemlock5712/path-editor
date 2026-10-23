@@ -114,15 +114,7 @@ through `StrictMath` in Java and `Math` in V8, both fdlibm.
 `PathFollower` (`frc.team5712.path.follow`) is one controller from path to pose. Build the path in
 robot init, make the follower there too, then `start()` when the path begins, `step()` each loop and
 stop when `isFinished()`. `start()` does no path work: no building, no flipping, no copying (a test
-counts geometry and profile builds across `start()` and a second of steps, on both alliances). The
-one exception is `replanStartFromMeasuredVelocity`, on by default. A path planned from rest, started with
-the robot already moving (not backwards along the path), gets its speeds re-planned from the measured
-speed, as PathPlanner does. Only the profile is rebuilt, never the curve: 0.2-0.3 ms warm for the 16 m
-route on this PC, less on shorter paths. At rest it does nothing. It also does nothing on paths that plan
-their own start speed (rolling hand-overs, on-the-fly paths). Under equal push on the bench it changed only
-the moving start: 2.10 → 2.02 s with a perfect pose, and 3.6 → 3.3 cm end error with odometry, but wheel
-slip goes from 1.52 to 2.13 s. three_piece_chain and the courses that start at rest give the same runs to
-the bit.
+counts geometry and profile builds across `start()` and a second of steps, on both alliances).
 
 Each loop, in the blue frame:
 
@@ -435,7 +427,6 @@ zone.
 | `PathFollower.step()`, warm (16 m route, red) | 2.2 µs mean, 260 µs worst in 8,300 steps (GC/JIT) | |
 | `PathFollower.start()`: warm / first call in a fresh JVM | 12 µs / 1.4 ms (class loading, no path work) | |
 | Tail rebuild for a moved goal (8.8 m tail), warm | 186-265 µs mean, 109-116 µs best | |
-| `start()` re-planning the speeds from 2 m/s (16.4 m route, `replanStartFromMeasuredVelocity`), warm | 296 µs mean, 203 µs best | |
 
 The cold number is mostly the JVM loading and linking classes, which every path after the first
 shares. See the notes below for what that means for the boot budget.

@@ -194,15 +194,6 @@ public final class Path {
     return geometry.lengthMeters();
   }
 
-  /**
-   * The same path planned to start at {@code startSpeed} instead (the geometry and heading are reused; only the
-   * velocity profile is built again).
-   */
-  public Path withStartSpeed(double startSpeed, RobotConfig robot) {
-    PathSpec s2 = spec.withEndSpeeds(Math.min(startSpeed, spec.maxMetersPerSecond()), spec.endMetersPerSecond());
-    return new Path(s2, geometry, heading, VelocityProfile.build(geometry, heading, s2, robot, profile.gridMeters()));
-  }
-
   /** Where the path reverses, metres along it ({@link PathGeometry#cusps}); the profile stops the robot at each. */
   public double[] cusps() {
     return geometry.cusps();

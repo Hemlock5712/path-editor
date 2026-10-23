@@ -299,9 +299,6 @@ public final class BenchServer {
     Map<String, Object> r = new LinkedHashMap<>();
     r.put("ok", Boolean.TRUE);
     r.put("startMicros", (System.nanoTime() - t0) / 1e3);
-    if (!Double.isNaN(follower.lastStartReplanMicros())) {
-      r.put("startReplanMicros", follower.lastStartReplanMicros());
-    }
     return line(r);
   }
 
