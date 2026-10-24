@@ -129,11 +129,11 @@ Each loop, in the blue frame:
    hand-over), the read-ahead grows from 0 to `τ` over the first 0.3 s. The last path's command led into its own
    end, not into this one speeding up, and taking the lead `a·τ` in one loop slipped all four wheels at the
    hand-over (bench three_piece_chain: wheel slip 600 → 330 ms, same time).
-4. **Across the path.** PD on the cross-track error (P 5/s, D 0), pushing along the normal at `s`.
+4. **Across the path.** P on the cross-track error (5/s), pushing along the normal at `s`.
    After a shove that is all there is: the robot is steered back onto the path where it is. (On-the-fly
    paths plan again instead, round the obstacles.)
 5. **Heading.** Feed-forward `v·dθ/ds` at `s⁺`, plus P 5/s on the planned heading at `s`.
-6. **Near the end** (0.3 m to go, and no more than `terminalTurnRadians`, 2°, left in the plan's
+6. **Near the end** (0.3 m to go, and no more than `TERMINAL_TURN_RADIANS`, 2°, left in the plan's
    turn), the reference becomes the goal pose and DriveToPose's law takes over: `min(v_max, sqrt(2a(d − vτ)), k·d)` straight at the goal, and the same law for heading. The
    ease-in line `k` is 12/s, against DriveToPose's 6/s. The bench sweep picked that value on its
    tuning seeds, and it sits inside the swept range. Both
@@ -144,8 +144,7 @@ Each loop, in the blue frame:
    the motors' push at the fastest wheel's speed when speeding up. Then `|a| + c·|α| ≤ A`
    (c = I/(m·r), the profile's model), scaling translation and spin together. Here `A` is the plan's
    traction limit without its 10 % margin, `A / 0.9`: 7.2 m/s² for the defaults, the onset where the light
-   wheels let go. The plan keeps the margin and feedback has the rest
-   (`limiterFrictionCoefficient` NaN, the default; a number sets μ·g instead). With the limiter at the
+   wheels let go. The plan keeps the margin and feedback has the rest. With the limiter at the
    plan's own limit, the fixture auto route strayed 9.3 cm where the plan used all of it. At `A / 0.9` it
    strays 2.4 cm. The old split had the same shape: the plan used μ 0.7 and the limiter 1.0, on a 1.15 floor.
 8. **Finished.** Within 2 cm and 1°, measured slower than 5 cm/s, held 0.1 s. A rolling end (end
@@ -174,9 +173,12 @@ The other pieces:
   as the plan does and holds the point.
 - **Robustness.** A NaN pose brakes within the limits instead of throwing.
 
-All gains are in `FollowerConfig` (defaults from DriveToPose and the hybrid prototype).
-`FollowerConfig.Builder.set(name, value)` sets a field by its name, which is how the bench passes
-options.
+`FollowerConfig` holds the eight settings a team may change: `latencySeconds` (measure it), `crossTrackKp`,
+`headingKp`, `brakeMetersPerSecondSquared` (NaN: the traction limit), `easeInPerSecond`,
+`headingEaseInPerSecond`, `positionToleranceMeters` and `headingToleranceRadians`. The spin limits are the robot
+file's. Every other number is a named constant in `PathFollower` (the 0.5 m search window, the 0.3 m and 2°
+finish hand-over, the 3 mm and 0.3° deadbands, settled under 5 cm/s for 0.1 s).
+`FollowerConfig.Builder.set(name, value)` sets a setting by its name, which is how the bench passes options.
 
 ### Traction: μ 1.5 and tipping
 
@@ -529,9 +531,9 @@ halfway through. The results table is `e2e/RESULTS.md`, and the pass marks are i
 | Found | Fix |
 | --- | --- |
 | Events fired on the first loop after the robot passed them: up to 8 cm late at 4 m/s | They fire on the loop nearest to passing (`PathFollower`) |
-| A path shorter than the 0.3 m terminal radius (a 0.2 m hop with an 80° turn) ignored its plan: 1.0 m/s against 0.29 planned, with events 0.48 s off | The DriveToPose hand-over also waits until the plan has no more than `terminalTurnRadians` (2°) left to turn. At 10° the robot was still spinning too fast to stop and overshot by 7° |
+| A path shorter than the 0.3 m terminal radius (a 0.2 m hop with an 80° turn) ignored its plan: 1.0 m/s against 0.29 planned, with events 0.48 s off | The DriveToPose hand-over also waits until the plan has no more than `TERMINAL_TURN_RADIANS` (2°) left to turn. At 10° the robot was still spinning too fast to stop and overshot by 7° |
 | A rolling end handed over on the first loop past its end line, so the next path started up to a loop late and its start events fired up to 8 cm past their point (RollA → RollB, 3.0 cm against 3 cm allowed) | It hands over on the loop nearest the line, as events fire (`PathFollower.checkFinished`); the chain also arrives 0.06 s sooner |
-| The plan turned at the robot file's spin acceleration cap while the follower had its own fixed 720°/s², so at AccelerationLimiter's 12 rad/s² the plan left the follower almost no room (Zones settled in 0.54 s against 0.5) | The plan turns at `tractionShare` of the cap (`plannedSpinAccelRadPerSecSquared`) and the follower is held to the cap itself (`maxAlphaRadPerSecSquared` NaN, the default), as for traction. Zones settles in 0.36 to 0.42 s |
+| The plan turned at the robot file's spin acceleration cap while the follower had its own fixed 720°/s², so at AccelerationLimiter's 12 rad/s² the plan left the follower almost no room (Zones settled in 0.54 s against 0.5) | The plan turns at `tractionShare` of the cap (`plannedSpinAccelRadPerSecSquared`) and the follower is held to the cap itself (`FollowerConfig.maxAlphaRadPerSecSquared()`), as for traction. Zones settles in 0.36 to 0.42 s |
 | The end-of-path brake law used a fixed 6 m/s², so on paths planned harder the robot braked early and arrived about 0.2 s late | `brakeMetersPerSecondSquared` defaults to the robot's traction limit |
 | A turn on the spot fired every event at once and stalled mid-turn: progress came from projecting onto a 1 mm segment, and the distance brake capped the spin | Progress comes from the heading; the follower spins on the plan and holds the point |
 | The first step after `start()` comes at the same timestamp, so dt clamped to 1 ms and the limiter allowed a millisecond's acceleration: every path started a loop late | That step plans for a nominal loop |

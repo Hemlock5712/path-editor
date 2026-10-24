@@ -3,79 +3,59 @@ package frc.team5712.path.follow;
 import frc.team5712.path.core.RobotConfig;
 
 /**
- * Gains and limits for {@link PathFollower}. Defaults follow DriveToPose and the hybrid prototype in
- * the bench: 50 ms latency allowance, P 5 across the path and on heading, a 6 m/s² stopping law, and
- * a 1 deg / 2 cm finish. The ease-in line is 12/s (DriveToPose's is 6/s): the bench sweep's interior
- * optimum on its tuning seeds. The limiter's μ stays at 1.0; see lib/README.md.
+ * The settings a team may change for {@link PathFollower}; everything else is a named constant in the
+ * follower. The defaults come from DriveToPose and the bench: read the plan 50 ms ahead, P 5 across the path
+ * and on heading, brake at the robot's traction limit, and finish within 2 cm and 1°.
  *
- * @param robot the robot model: the output limiter's motor curve, spin lever and traction limit
- * @param latencySeconds how far ahead (in plan time) the reference is read (never less than one 20 ms loop,
- *     or a robot at rest would read 0 m/s and never start), and the brake's reaction-time margin
- *     (DriveToPose's REACTION_TIME)
- * @param windowMeters half-width of the projection window around the last progress
- * @param reprojectMeters cross-track error above which a global projection is also tried (a shove)
+ * <p>The spin limits are the robot's: {@link RobotConfig#maxAngularRadPerSec} and {@link
+ * RobotConfig#maxAngularRadPerSecSquared} (AccelerationLimiter's ANGULAR_ACCEL), or 540°/s and 720°/s² when
+ * the robot file leaves them out.
+ *
+ * @param robot the robot model: the limiter's motor curve, spin lever, traction limit and spin limits
+ * @param latencySeconds how late the drivetrain answers a command (measure it on the robot). The plan is read
+ *     this far ahead, in plan time (never less than one 20 ms loop, or a robot at rest would read 0 m/s and
+ *     never start), and the stopping law leaves this much reaction time (DriveToPose's REACTION_TIME)
  * @param crossTrackKp sideways m/s per metre off the path
- * @param crossTrackKd sideways m/s per m/s of sideways drift
  * @param headingKp rad/s per radian of heading error
- * @param terminalRadiusMeters distance to go at which the DriveToPose law takes over
- * @param terminalTurnRadians ... once the plan also has no more than this left to turn. A short hop
- *     with a big turn (or a turn in place) is then followed along its plan, with translation and
- *     spin sharing the grip as planned, and handed over only for its last degrees, where the plan
- *     has slowed its spin; handed over at 10° the robot was still spinning too fast to stop in the
- *     heading left and overshot by 7° (the end-to-end suite's short hop)
  * @param brakeMetersPerSecondSquared the stopping law's deceleration, sqrt(2·a·d); NaN (the default) = the robot's
- *     traction limit, so the robot brakes as hard as the plan does (a fixed 6 made it brake early and arrive late)
- * @param easeInPerSecond DriveToPose's ease-in line, m/s per metre left
- * @param stopDeadbandMeters ask for zero speed inside this
- * @param maxOmegaRadPerSec spin cap
- * @param maxAlphaRadPerSecSquared spin acceleration cap, also the heading stopping law's; NaN (the default) = the
- *     robot's maxAngularRadPerSecSquared (ANGULAR_ACCEL), or 720°/s² when the robot has none ({@link #alphaCap})
- * @param headingEaseInPerSecond the heading ease-in line, rad/s per radian left
- * @param headingDeadbandRadians ask for zero spin inside this
- * @param limiterFrictionCoefficient the output limiter's budget as a μ (μ·g shared by translation and
- *     spin); NaN, the default, = the robot's traction limit without its 10 % margin ({@link
- *     frc.team5712.path.core.RobotConfig#tractionMetersPerSecondSquared} / 0.9): the plan keeps the margin, so
- *     feedback has that room
- * @param positionToleranceMeters finish: this close
- * @param headingToleranceRadians finish: this well aligned
- * @param settledMetersPerSecond finish: slower than this (measured)
- * @param debounceSeconds finish: all three held this long
+ *     traction limit, so the robot brakes as hard as the plan does (a fixed 6 made it brake early and arrive late
+ *     on paths planned harder than that; lower it if the robot overshoots)
+ * @param easeInPerSecond DriveToPose's ease-in line at the finish, m/s per metre left
+ * @param headingEaseInPerSecond the same for heading, rad/s per radian left
+ * @param positionToleranceMeters finished: this close to the goal ...
+ * @param headingToleranceRadians ... and this well turned, and stopped
  */
 public record FollowerConfig(
     RobotConfig robot,
     double latencySeconds,
-    double windowMeters,
-    double reprojectMeters,
     double crossTrackKp,
-    double crossTrackKd,
     double headingKp,
-    double terminalRadiusMeters,
-    double terminalTurnRadians,
     double brakeMetersPerSecondSquared,
     double easeInPerSecond,
-    double stopDeadbandMeters,
-    double maxOmegaRadPerSec,
-    double maxAlphaRadPerSecSquared,
     double headingEaseInPerSecond,
-    double headingDeadbandRadians,
-    double limiterFrictionCoefficient,
     double positionToleranceMeters,
-    double headingToleranceRadians,
-    double settledMetersPerSecond,
-    double debounceSeconds) {
+    double headingToleranceRadians) {
 
   /** The defaults for a robot. */
   public static FollowerConfig defaults(RobotConfig robot) {
     return builder(robot).build();
   }
 
-  /** The spin acceleration cap in use: the set one, or the robot's, or 720°/s² (rad/s²). */
-  public double alphaCap() {
-    if (!Double.isNaN(maxAlphaRadPerSecSquared)) {
-      return maxAlphaRadPerSecSquared;
-    }
-    double robotCap = robot.maxAngularRadPerSecSquared();
-    return Double.isFinite(robotCap) ? robotCap : Math.toRadians(720.0);
+  /** The spin cap: the robot's, or 540°/s (rad/s). */
+  public double maxOmegaRadPerSec() {
+    double cap = robot.maxAngularRadPerSec();
+    return Double.isFinite(cap) ? cap : Math.toRadians(540.0);
+  }
+
+  /** The spin acceleration cap, for the limiter and the heading's stopping law: the robot's, or 720°/s² (rad/s²). */
+  public double maxAlphaRadPerSecSquared() {
+    double cap = robot.maxAngularRadPerSecSquared();
+    return Double.isFinite(cap) ? cap : Math.toRadians(720.0);
+  }
+
+  /** The stopping law's deceleration in use: the set one, or the robot's traction limit (m/s²). */
+  public double brakeDecel() {
+    return Double.isNaN(brakeMetersPerSecondSquared) ? robot.tractionMetersPerSecondSquared() : brakeMetersPerSecondSquared;
   }
 
   public static Builder builder(RobotConfig robot) {
@@ -85,25 +65,13 @@ public record FollowerConfig(
   public Builder toBuilder() {
     Builder b = new Builder(robot);
     b.latencySeconds = latencySeconds;
-    b.windowMeters = windowMeters;
-    b.reprojectMeters = reprojectMeters;
     b.crossTrackKp = crossTrackKp;
-    b.crossTrackKd = crossTrackKd;
     b.headingKp = headingKp;
-    b.terminalRadiusMeters = terminalRadiusMeters;
-    b.terminalTurnRadians = terminalTurnRadians;
     b.brakeMetersPerSecondSquared = brakeMetersPerSecondSquared;
     b.easeInPerSecond = easeInPerSecond;
-    b.stopDeadbandMeters = stopDeadbandMeters;
-    b.maxOmegaRadPerSec = maxOmegaRadPerSec;
-    b.maxAlphaRadPerSecSquared = maxAlphaRadPerSecSquared;
     b.headingEaseInPerSecond = headingEaseInPerSecond;
-    b.headingDeadbandRadians = headingDeadbandRadians;
-    b.limiterFrictionCoefficient = limiterFrictionCoefficient;
     b.positionToleranceMeters = positionToleranceMeters;
     b.headingToleranceRadians = headingToleranceRadians;
-    b.settledMetersPerSecond = settledMetersPerSecond;
-    b.debounceSeconds = debounceSeconds;
     return b;
   }
 
@@ -111,50 +79,26 @@ public record FollowerConfig(
   public static final class Builder {
     private final RobotConfig robot;
     private double latencySeconds = 0.05;
-    private double windowMeters = 0.5;
-    private double reprojectMeters = 0.5;
     private double crossTrackKp = 5.0;
-    private double crossTrackKd = 0.0;
     private double headingKp = 5.0;
-    private double terminalRadiusMeters = 0.3;
-    private double terminalTurnRadians = Math.toRadians(2.0);
     private double brakeMetersPerSecondSquared = Double.NaN;
     private double easeInPerSecond = 12.0; // DriveToPose ships 6; the bench sweep's pick (tuning seeds)
-    private double stopDeadbandMeters = 0.003;
-    private double maxOmegaRadPerSec = Math.toRadians(540.0);
-    private double maxAlphaRadPerSecSquared = Double.NaN;
     private double headingEaseInPerSecond = 5.0;
-    private double headingDeadbandRadians = Math.toRadians(0.3);
-    private double limiterFrictionCoefficient = Double.NaN;
     private double positionToleranceMeters = 0.02;
     private double headingToleranceRadians = Math.toRadians(1.0);
-    private double settledMetersPerSecond = 0.05;
-    private double debounceSeconds = 0.1;
 
     private Builder(RobotConfig robot) {
       this.robot = robot;
     }
 
     public Builder latencySeconds(double v) { latencySeconds = v; return this; }
-    public Builder windowMeters(double v) { windowMeters = v; return this; }
-    public Builder reprojectMeters(double v) { reprojectMeters = v; return this; }
     public Builder crossTrackKp(double v) { crossTrackKp = v; return this; }
-    public Builder crossTrackKd(double v) { crossTrackKd = v; return this; }
     public Builder headingKp(double v) { headingKp = v; return this; }
-    public Builder terminalRadiusMeters(double v) { terminalRadiusMeters = v; return this; }
-    public Builder terminalTurnRadians(double v) { terminalTurnRadians = v; return this; }
     public Builder brakeMetersPerSecondSquared(double v) { brakeMetersPerSecondSquared = v; return this; }
     public Builder easeInPerSecond(double v) { easeInPerSecond = v; return this; }
-    public Builder stopDeadbandMeters(double v) { stopDeadbandMeters = v; return this; }
-    public Builder maxOmegaRadPerSec(double v) { maxOmegaRadPerSec = v; return this; }
-    public Builder maxAlphaRadPerSecSquared(double v) { maxAlphaRadPerSecSquared = v; return this; }
     public Builder headingEaseInPerSecond(double v) { headingEaseInPerSecond = v; return this; }
-    public Builder headingDeadbandRadians(double v) { headingDeadbandRadians = v; return this; }
-    public Builder limiterFrictionCoefficient(double v) { limiterFrictionCoefficient = v; return this; }
     public Builder positionToleranceMeters(double v) { positionToleranceMeters = v; return this; }
     public Builder headingToleranceRadians(double v) { headingToleranceRadians = v; return this; }
-    public Builder settledMetersPerSecond(double v) { settledMetersPerSecond = v; return this; }
-    public Builder debounceSeconds(double v) { debounceSeconds = v; return this; }
 
     /**
      * Sets a field by its name (the record component's name), for option maps such as the bench's.
@@ -163,25 +107,13 @@ public record FollowerConfig(
     public boolean set(String name, double v) {
       switch (name) {
         case "latencySeconds" -> latencySeconds = v;
-        case "windowMeters" -> windowMeters = v;
-        case "reprojectMeters" -> reprojectMeters = v;
         case "crossTrackKp" -> crossTrackKp = v;
-        case "crossTrackKd" -> crossTrackKd = v;
         case "headingKp" -> headingKp = v;
-        case "terminalRadiusMeters" -> terminalRadiusMeters = v;
-        case "terminalTurnRadians" -> terminalTurnRadians = v;
         case "brakeMetersPerSecondSquared" -> brakeMetersPerSecondSquared = v;
         case "easeInPerSecond" -> easeInPerSecond = v;
-        case "stopDeadbandMeters" -> stopDeadbandMeters = v;
-        case "maxOmegaRadPerSec" -> maxOmegaRadPerSec = v;
-        case "maxAlphaRadPerSecSquared" -> maxAlphaRadPerSecSquared = v;
         case "headingEaseInPerSecond" -> headingEaseInPerSecond = v;
-        case "headingDeadbandRadians" -> headingDeadbandRadians = v;
-        case "limiterFrictionCoefficient" -> limiterFrictionCoefficient = v;
         case "positionToleranceMeters" -> positionToleranceMeters = v;
         case "headingToleranceRadians" -> headingToleranceRadians = v;
-        case "settledMetersPerSecond" -> settledMetersPerSecond = v;
-        case "debounceSeconds" -> debounceSeconds = v;
         default -> {
           return false;
         }
@@ -190,12 +122,8 @@ public record FollowerConfig(
     }
 
     public FollowerConfig build() {
-      return new FollowerConfig(robot, latencySeconds, windowMeters, reprojectMeters, crossTrackKp,
-          crossTrackKd, headingKp, terminalRadiusMeters, terminalTurnRadians, brakeMetersPerSecondSquared,
-          easeInPerSecond,
-          stopDeadbandMeters, maxOmegaRadPerSec, maxAlphaRadPerSecSquared, headingEaseInPerSecond,
-          headingDeadbandRadians, limiterFrictionCoefficient, positionToleranceMeters,
-          headingToleranceRadians, settledMetersPerSecond, debounceSeconds);
+      return new FollowerConfig(robot, latencySeconds, crossTrackKp, headingKp, brakeMetersPerSecondSquared,
+          easeInPerSecond, headingEaseInPerSecond, positionToleranceMeters, headingToleranceRadians);
     }
   }
 }

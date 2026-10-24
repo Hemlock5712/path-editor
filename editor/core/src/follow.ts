@@ -9,7 +9,6 @@ import { flipPose, flipSpeeds, type FieldFrame, type FieldSpeeds, type Pose } fr
 import { javaHypot } from "./jmath.ts";
 import { PURE_ROTATION_METERS, Path, eventMeters, type PathSample } from "./path.ts";
 import {
-  GRAVITY,
   driveAccelMetersPerSecondSquared,
   spinLeverMeters,
   tractionMetersPerSecondSquared,
@@ -20,37 +19,18 @@ const DEG = Math.PI / 180.0;
 
 // ------------------------------------------------------------------------------ settings
 
-/** Gains and limits (FollowerConfig in Java; the same names and defaults, less the slip settings). */
+/** The settings a team may change (FollowerConfig in Java: the same names and defaults). */
 export interface FollowerConfig {
   readonly robot: RobotConfig;
   readonly latencySeconds: number;
-  readonly windowMeters: number;
-  readonly reprojectMeters: number;
   readonly crossTrackKp: number;
-  readonly crossTrackKd: number;
   readonly headingKp: number;
-  readonly terminalRadiusMeters: number;
-  readonly terminalTurnRadians: number;
+  /** NaN = the robot's traction limit. */
   readonly brakeMetersPerSecondSquared: number;
   readonly easeInPerSecond: number;
-  readonly stopDeadbandMeters: number;
-  readonly maxOmegaRadPerSec: number;
-  readonly maxAlphaRadPerSecSquared: number;
   readonly headingEaseInPerSecond: number;
-  readonly headingDeadbandRadians: number;
-  /** The limiter's budget as a μ; NaN = the robot's traction limit. */
-  readonly limiterFrictionCoefficient: number;
   readonly positionToleranceMeters: number;
   readonly headingToleranceRadians: number;
-  readonly settledMetersPerSecond: number;
-  readonly debounceSeconds: number;
-}
-
-/** The spin acceleration cap in use: the set one, or the robot's, or 720°/s² (FollowerConfig.alphaCap). */
-export function alphaCap(cfg: FollowerConfig): number {
-  if (!Number.isNaN(cfg.maxAlphaRadPerSecSquared)) return cfg.maxAlphaRadPerSecSquared;
-  const robotCap = cfg.robot.maxAngularRadPerSecSquared;
-  return Number.isFinite(robotCap) ? robotCap : 720.0 * DEG;
 }
 
 /** The defaults for a robot, with any fields overridden by name (as FollowerConfig.Builder.set). */
@@ -58,27 +38,32 @@ export function followerConfig(robot: RobotConfig, options: Partial<Omit<Followe
   return {
     robot,
     latencySeconds: 0.05,
-    windowMeters: 0.5,
-    reprojectMeters: 0.5,
     crossTrackKp: 5.0,
-    crossTrackKd: 0.0,
     headingKp: 5.0,
-    terminalRadiusMeters: 0.3,
-    terminalTurnRadians: 2.0 * DEG,
     brakeMetersPerSecondSquared: Number.NaN,
     easeInPerSecond: 12.0,
-    stopDeadbandMeters: 0.003,
-    maxOmegaRadPerSec: 540.0 * DEG,
-    maxAlphaRadPerSecSquared: Number.NaN,
     headingEaseInPerSecond: 5.0,
-    headingDeadbandRadians: 0.3 * DEG,
-    limiterFrictionCoefficient: Number.NaN,
     positionToleranceMeters: 0.02,
     headingToleranceRadians: 1.0 * DEG,
-    settledMetersPerSecond: 0.05,
-    debounceSeconds: 0.1,
     ...options,
   };
+}
+
+/** The spin cap: the robot's, or 540°/s (FollowerConfig.maxOmegaRadPerSec). */
+export function maxOmega(cfg: FollowerConfig): number {
+  const cap = cfg.robot.maxAngularRadPerSec;
+  return Number.isFinite(cap) ? cap : 540.0 * DEG;
+}
+
+/** The spin acceleration cap: the robot's, or 720°/s² (FollowerConfig.maxAlphaRadPerSecSquared). */
+export function maxAlpha(cfg: FollowerConfig): number {
+  const cap = cfg.robot.maxAngularRadPerSecSquared;
+  return Number.isFinite(cap) ? cap : 720.0 * DEG;
+}
+
+/** The stopping law's deceleration: the set one, or the robot's traction limit (FollowerConfig.brakeDecel). */
+export function brakeDecel(cfg: FollowerConfig): number {
+  return Number.isNaN(cfg.brakeMetersPerSecondSquared) ? tractionMetersPerSecondSquared(cfg.robot) : cfg.brakeMetersPerSecondSquared;
 }
 
 // ------------------------------------------------------------------------------ the laws
@@ -182,6 +167,14 @@ export type Phase = "IDLE" | "TRACKING" | "TERMINAL" | "FINISHED" | "CANCELLED";
 export const PHASES: readonly Phase[] = ["IDLE", "TRACKING", "TERMINAL", "FINISHED", "CANCELLED"];
 
 const NOMINAL_LOOP_SECONDS = 0.02;
+/** The follower's fixed numbers (PathFollower.java): see there. */
+const WINDOW_METERS = 0.5;
+const TERMINAL_RADIUS_METERS = 0.3;
+const TERMINAL_TURN_RADIANS = 2.0 * DEG;
+const STOP_DEADBAND_METERS = 0.003;
+const HEADING_DEADBAND_RADIANS = 0.3 * DEG;
+const SETTLED_METERS_PER_SECOND = 0.05;
+const DEBOUNCE_SECONDS = 0.1;
 /** Progress reads no closer to a cusp than this (its tangent is undefined), and steps past it by as much. */
 const CUSP_EDGE_METERS = 1e-3;
 const MAX_PROGRESS_RATE = 8.0;
@@ -189,11 +182,10 @@ const ROLLING_LEAD_SECONDS = 0.3;
 
 /**
  * The output limiter's budget, m/s²: the robot's traction limit without its 10 % margin (the plan keeps it, so
- * feedback has that room), or the configured μ·g (PathFollower.limiterBudget).
+ * feedback has that room) (PathFollower.limiterBudget).
  */
 export function limiterBudget(cfg: FollowerConfig): number {
-  return Number.isNaN(cfg.limiterFrictionCoefficient) ? tractionMetersPerSecondSquared(cfg.robot) / cfg.robot.tractionShare
-    : cfg.limiterFrictionCoefficient * GRAVITY;
+  return tractionMetersPerSecondSquared(cfg.robot) / cfg.robot.tractionShare;
 }
 
 /** One controller from path to pose (PathFollower.java; see there for the design). */
@@ -230,7 +222,7 @@ export class PathFollower {
     this.path = path;
     this.active = path;
     this.cfg = config;
-    this.limiter = new OutputLimiter(config.robot, limiterBudget(config), alphaCap(config));
+    this.limiter = new OutputLimiter(config.robot, limiterBudget(config), maxAlpha(config));
     this.endSpeed = path.spec.endMetersPerSecond;
     this.rollingEnd = this.endSpeed > 0.0;
     const end = path.sample(path.lengthMeters);
@@ -303,14 +295,13 @@ export class PathFollower {
       return this.output();
     }
 
-    const brakeDecel = Number.isNaN(cfg.brakeMetersPerSecondSquared)
-      ? tractionMetersPerSecondSquared(cfg.robot) : cfg.brakeMetersPerSecondSquared;
+    const decel = brakeDecel(cfg);
     this.updateProgress(pose);
     const active = this.active;
     const remaining = active.lengthMeters - this.s;
     const goal = this.goal;
-    if (this.phaseNow === "TRACKING" && !this.rollingEnd && remaining < cfg.terminalRadiusMeters
-      && Math.abs(wrap(goal.headingRadians - active.heading.sample(this.s).radians)) <= cfg.terminalTurnRadians
+    if (this.phaseNow === "TRACKING" && !this.rollingEnd && remaining < TERMINAL_RADIUS_METERS
+      && Math.abs(wrap(goal.headingRadians - active.heading.sample(this.s).radians)) <= TERMINAL_TURN_RADIANS
       && Number.isNaN(active.geometry.nextCusp(this.s))) { // not while the path still has to double back
       this.phaseNow = "TERMINAL";
     }
@@ -324,13 +315,13 @@ export class PathFollower {
       const ex = gx - pose.xMeters;
       const ey = gy - pose.yMeters;
       const d = Math.sqrt(ex * ex + ey * ey);
-      const speed = StoppingLaw.speed(d, this.limiter.speed(), brakeDecel, cfg.latencySeconds,
-        active.spec.maxMetersPerSecond, cfg.easeInPerSecond, cfg.stopDeadbandMeters);
+      const speed = StoppingLaw.speed(d, this.limiter.speed(), decel, cfg.latencySeconds,
+        active.spec.maxMetersPerSecond, cfg.easeInPerSecond, STOP_DEADBAND_METERS);
       wantVx = d > 1e-6 ? (ex / d) * speed : 0.0;
       wantVy = d > 1e-6 ? (ey / d) * speed : 0.0;
       const headingError = wrap(goal.headingRadians - pose.headingRadians);
-      wantOmega = StoppingLaw.spin(headingError, this.limiter.omega, alphaCap(cfg),
-        cfg.latencySeconds, cfg.maxOmegaRadPerSec, cfg.headingEaseInPerSecond, cfg.headingDeadbandRadians);
+      wantOmega = StoppingLaw.spin(headingError, this.limiter.omega, maxAlpha(cfg),
+        cfg.latencySeconds, maxOmega(cfg), cfg.headingEaseInPerSecond, HEADING_DEADBAND_RADIANS);
       this.crossTrack = 0.0;
       this.refX = gx;
       this.refY = gy;
@@ -341,7 +332,7 @@ export class PathFollower {
       const ahead = active.sample(profile.sAtTime(profile.timeAt(this.s) + Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS)));
       const headingError = wrap(active.heading.sample(this.s).radians - pose.headingRadians);
       wantOmega = ahead.metersPerSecond * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
-      wantOmega = Math.max(-cfg.maxOmegaRadPerSec, Math.min(cfg.maxOmegaRadPerSec, wantOmega));
+      wantOmega = Math.max(-maxOmega(cfg), Math.min(maxOmega(cfg), wantOmega));
       wantVx = cfg.crossTrackKp * (goal.xMeters - pose.xMeters);
       wantVy = cfg.crossTrackKp * (goal.yMeters - pose.yMeters);
       this.crossTrack = javaHypot(goal.xMeters - pose.xMeters, goal.yMeters - pose.yMeters);
@@ -363,18 +354,17 @@ export class PathFollower {
       }
       const here: PathSample = active.sample(this.s);
       const ahead: PathSample = active.sample(sAhead);
-      const brake = StoppingLaw.brake(remaining, this.limiter.speed(), brakeDecel, cfg.latencySeconds, this.endSpeed);
+      const brake = StoppingLaw.brake(remaining, this.limiter.speed(), decel, cfg.latencySeconds, this.endSpeed);
       const speed = Math.min(ahead.metersPerSecond, brake);
       const nx = -here.tangentY;
       const ny = here.tangentX;
       this.crossTrack = (pose.xMeters - here.xMeters) * nx + (pose.yMeters - here.yMeters) * ny;
-      const drift = vel.vxMetersPerSecond * nx + vel.vyMetersPerSecond * ny;
-      const sideways = -cfg.crossTrackKp * this.crossTrack - cfg.crossTrackKd * drift;
+      const sideways = -cfg.crossTrackKp * this.crossTrack;
       wantVx = speed * ahead.tangentX + sideways * nx;
       wantVy = speed * ahead.tangentY + sideways * ny;
       const headingError = wrap(here.headingRadians - pose.headingRadians);
       wantOmega = speed * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
-      wantOmega = Math.max(-cfg.maxOmegaRadPerSec, Math.min(cfg.maxOmegaRadPerSec, wantOmega));
+      wantOmega = Math.max(-maxOmega(cfg), Math.min(maxOmega(cfg), wantOmega));
       this.refX = here.xMeters;
       this.refY = here.yMeters;
       this.refHeading = here.headingRadians;
@@ -429,8 +419,8 @@ export class PathFollower {
       this.updateProgressAroundCusps(pose);
       return;
     }
-    let near = geometry.project(pose.xMeters, pose.yMeters, this.s, this.cfg.windowMeters);
-    if (near.distanceMeters > this.cfg.reprojectMeters) {
+    let near = geometry.project(pose.xMeters, pose.yMeters, this.s, WINDOW_METERS);
+    if (near.distanceMeters > WINDOW_METERS) {
       const all = geometry.projectGlobal(pose.xMeters, pose.yMeters);
       if (all.distanceMeters < near.distanceMeters - 0.05) near = all;
     }
@@ -445,8 +435,8 @@ export class PathFollower {
     const lo = Number.isNaN(prev) ? 0.0 : prev + CUSP_EDGE_METERS;
     const hi = Number.isNaN(next) ? geometry.lengthMeters : next - CUSP_EDGE_METERS;
     let near = geometry.projectWithin(pose.xMeters, pose.yMeters,
-      Math.max(lo, this.s - this.cfg.windowMeters), Math.min(hi, this.s + this.cfg.windowMeters));
-    if (near.distanceMeters > this.cfg.reprojectMeters) {
+      Math.max(lo, this.s - WINDOW_METERS), Math.min(hi, this.s + WINDOW_METERS));
+    if (near.distanceMeters > WINDOW_METERS) {
       const all = geometry.projectGlobalWithin(pose.xMeters, pose.yMeters, lo, hi);
       if (all.distanceMeters < near.distanceMeters - 0.05) near = all;
     }
@@ -498,7 +488,7 @@ export class PathFollower {
       const end = this.active.sample(this.active.lengthMeters);
       const past = (pose.xMeters - end.xMeters) * end.tangentX + (pose.yMeters - end.yMeters) * end.tangentY;
       // at the end's line (nearest loop), once near the end (a path can start beyond that line, e.g. an on-the-fly one)
-      if (remaining <= 1e-6 || (past + lead >= 0.0 && remaining <= this.cfg.windowMeters)) this.finish();
+      if (remaining <= 1e-6 || (past + lead >= 0.0 && remaining <= WINDOW_METERS)) this.finish();
       return;
     }
     if (this.phaseNow !== "TERMINAL") return;
@@ -506,13 +496,13 @@ export class PathFollower {
     const d = javaHypot(this.refX - pose.xMeters, this.refY - pose.yMeters);
     const yaw = Math.abs(wrap(this.goal.headingRadians - pose.headingRadians));
     const speed = javaHypot(vel.vxMetersPerSecond, vel.vyMetersPerSecond);
-    const ok = d < cfg.positionToleranceMeters && yaw < cfg.headingToleranceRadians && speed < cfg.settledMetersPerSecond;
+    const ok = d < cfg.positionToleranceMeters && yaw < cfg.headingToleranceRadians && speed < SETTLED_METERS_PER_SECOND;
     if (!ok) {
       this.settledSince = Number.NaN;
     } else if (Number.isNaN(this.settledSince)) {
       this.settledSince = t;
     }
-    if (ok && t - this.settledSince >= cfg.debounceSeconds - 1e-9) this.finish();
+    if (ok && t - this.settledSince >= DEBOUNCE_SECONDS - 1e-9) this.finish();
   }
 
   private finish(): void {

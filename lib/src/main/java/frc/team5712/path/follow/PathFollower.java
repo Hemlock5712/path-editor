@@ -28,18 +28,18 @@ import java.util.function.Supplier;
  * <ol>
  *   <li><b>Frame.</b> The measured pose and velocity go into the blue frame ({@link FieldFrame}); the
  *       output comes back. The path is never rebuilt or copied for red.
- *   <li><b>Progress</b> {@code s}: the closest point within ±{@code windowMeters} of the last one. If
- *       that point is more than {@code reprojectMeters} away (a shove), the whole path is searched
- *       too and the nearer answer wins.
+ *   <li><b>Progress</b> {@code s}: the closest point within ±{@code WINDOW_METERS} of the last one. If
+ *       that point is further away than that (a shove), the whole path is searched too and the nearer
+ *       answer wins.
  *   <li><b>Along the path:</b> the plan is read where it will be one latency later, at
  *       {@code s⁺ = s(t(s) + τ)}, which also gets the robot off a standing start. The speed is
  *       {@code min(profile(s⁺), sqrt(v_end² + 2·a·(d − v·τ)))}: DriveToPose's brake on the distance
  *       left {@code d}. It points along the tangent at {@code s⁺}, which turns the command into a
  *       curve early by {@code v²κτ}: the curvature feed-forward.
- *   <li><b>Across the path:</b> PD on the cross-track error, pushing along the normal.
+ *   <li><b>Across the path:</b> P on the cross-track error, pushing along the normal.
  *   <li><b>Heading:</b> {@code v·dθ/ds} at {@code s⁺} as feed-forward, plus P on the planned heading
  *       at {@code s}.
- *   <li><b>Near the end</b> (less than {@code terminalRadiusMeters} to go), the reference becomes the
+ *   <li><b>Near the end</b> (less than {@code TERMINAL_RADIUS_METERS} to go), the reference becomes the
  *       goal pose and DriveToPose's law drives straight to it. Both laws brake on the same distance
  *       with the same deceleration, so the hand-over has no seam.
  *   <li><b>Limiter:</b> every output goes through one {@link OutputLimiter} that shares the grip
@@ -66,6 +66,22 @@ public final class PathFollower {
 
   /** The robot loop period assumed for a step that comes at the same time as the one before (or start()). */
   private static final double NOMINAL_LOOP_SECONDS = 0.02;
+
+  /** Progress is searched for within this of the last; further off than this (a shove), on the whole path too. */
+  static final double WINDOW_METERS = 0.5;
+
+  /** The DriveToPose finish takes over this far from the end ... */
+  static final double TERMINAL_RADIUS_METERS = 0.3;
+  /** ... once the plan has no more than this left to turn (a short hop with a big turn follows its plan longer). */
+  static final double TERMINAL_TURN_RADIANS = Math.toRadians(2.0);
+
+  /** The finish asks for no speed this close to the goal, and no spin this close to its heading. */
+  static final double STOP_DEADBAND_METERS = 0.003;
+  static final double HEADING_DEADBAND_RADIANS = Math.toRadians(0.3);
+
+  /** Finished: within the tolerances, measured slower than this, for this long. */
+  static final double SETTLED_METERS_PER_SECOND = 0.05;
+  static final double DEBOUNCE_SECONDS = 0.1;
 
   /** Progress faster than this (m/s) is a jump (a shove, a re-projection), not motion. */
   private static final double MAX_PROGRESS_RATE = 8.0;
@@ -113,7 +129,7 @@ public final class PathFollower {
     this.path = path;
     this.active = path;
     this.cfg = config;
-    this.limiter = new OutputLimiter(config.robot(), limiterBudget(config), config.alphaCap());
+    this.limiter = new OutputLimiter(config.robot(), limiterBudget(config), config.maxAlphaRadPerSecSquared());
     this.endSpeed = path.spec().endMetersPerSecond();
     this.rollingEnd = endSpeed > 0.0;
     PathSample end = path.sample(path.lengthMeters());
@@ -234,12 +250,11 @@ public final class PathFollower {
     measuredSpeed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
     measuredOmega = vel.omegaRadPerSec();
     pollGoal(pose);
-    double brakeDecel = Double.isNaN(cfg.brakeMetersPerSecondSquared())
-        ? cfg.robot().tractionMetersPerSecondSquared() : cfg.brakeMetersPerSecondSquared();
+    double brakeDecel = cfg.brakeDecel();
     updateProgress(pose);
     double remaining = active.lengthMeters() - s;
-    if (phase == Phase.TRACKING && !rollingEnd && remaining < cfg.terminalRadiusMeters()
-        && Math.abs(Angles.wrap(active.sample(active.lengthMeters()).headingRadians() - active.heading().sample(s).radians())) <= cfg.terminalTurnRadians()
+    if (phase == Phase.TRACKING && !rollingEnd && remaining < TERMINAL_RADIUS_METERS
+        && Math.abs(Angles.wrap(active.sample(active.lengthMeters()).headingRadians() - active.heading().sample(s).radians())) <= TERMINAL_TURN_RADIANS
         && Double.isNaN(active.geometry().nextCusp(s))) { // not while the path still has to double back
       phase = Phase.TERMINAL;
     }
@@ -256,13 +271,13 @@ public final class PathFollower {
       double d = Math.sqrt(ex * ex + ey * ey);
       double speed = StoppingLaw.speed(d, limiter.speed(), brakeDecel,
           cfg.latencySeconds(), active.spec().maxMetersPerSecond(), cfg.easeInPerSecond(),
-          cfg.stopDeadbandMeters());
+          STOP_DEADBAND_METERS);
       wantVx = d > 1e-6 ? ex / d * speed : 0.0;
       wantVy = d > 1e-6 ? ey / d * speed : 0.0;
       double headingError = Angles.wrap(goal.headingRadians() - pose.headingRadians());
-      wantOmega = StoppingLaw.spin(headingError, limiter.omega(), cfg.alphaCap(),
+      wantOmega = StoppingLaw.spin(headingError, limiter.omega(), cfg.maxAlphaRadPerSecSquared(),
           cfg.latencySeconds(), cfg.maxOmegaRadPerSec(), cfg.headingEaseInPerSecond(),
-          cfg.headingDeadbandRadians());
+          HEADING_DEADBAND_RADIANS);
       crossTrack = 0.0;
       refX = gx;
       refY = gy;
@@ -301,12 +316,11 @@ public final class PathFollower {
       PathSample ahead = active.sample(sAhead);
       double brake = StoppingLaw.brake(remaining, limiter.speed(), brakeDecel, cfg.latencySeconds(), endSpeed);
       double speed = Math.min(ahead.metersPerSecond(), brake);
-      // Across: P and D along the normal at s (left of travel is positive)
+      // Across: P along the normal at s (left of travel is positive)
       double nx = -here.tangentY();
       double ny = here.tangentX();
       crossTrack = (pose.xMeters() - here.xMeters()) * nx + (pose.yMeters() - here.yMeters()) * ny;
-      double drift = vel.vxMetersPerSecond() * nx + vel.vyMetersPerSecond() * ny;
-      double sideways = -cfg.crossTrackKp() * crossTrack - cfg.crossTrackKd() * drift;
+      double sideways = -cfg.crossTrackKp() * crossTrack;
       wantVx = speed * ahead.tangentX() + sideways * nx;
       wantVy = speed * ahead.tangentY() + sideways * ny;
       double headingError = Angles.wrap(here.headingRadians() - pose.headingRadians());
@@ -366,12 +380,10 @@ public final class PathFollower {
 
   /**
    * The output limiter's budget, m/s²: the robot's traction limit without its 10 % margin (the plan keeps
-   * the margin, so feedback has that room), or the configured μ·g.
+   * the margin, so feedback has that room).
    */
   static double limiterBudget(FollowerConfig cfg) {
-    return Double.isNaN(cfg.limiterFrictionCoefficient())
-        ? cfg.robot().tractionMetersPerSecondSquared() / cfg.robot().tractionShare()
-        : cfg.limiterFrictionCoefficient() * RobotConfig.GRAVITY;
+    return cfg.robot().tractionMetersPerSecondSquared() / cfg.robot().tractionShare();
   }
 
   /**
@@ -392,8 +404,8 @@ public final class PathFollower {
       updateProgressAroundCusps(pose, geometry);
       return;
     }
-    Projection near = geometry.project(pose.xMeters(), pose.yMeters(), s, cfg.windowMeters());
-    if (near.distanceMeters() > cfg.reprojectMeters()) {
+    Projection near = geometry.project(pose.xMeters(), pose.yMeters(), s, WINDOW_METERS);
+    if (near.distanceMeters() > WINDOW_METERS) {
       Projection all = geometry.projectGlobal(pose.xMeters(), pose.yMeters());
       if (all.distanceMeters() < near.distanceMeters() - 0.05) {
         near = all;
@@ -420,8 +432,8 @@ public final class PathFollower {
     double lo = Double.isNaN(prev) ? 0.0 : prev + CUSP_EDGE_METERS;
     double hi = Double.isNaN(next) ? geometry.lengthMeters() : next - CUSP_EDGE_METERS;
     Projection near = geometry.projectWithin(pose.xMeters(), pose.yMeters(),
-        Math.max(lo, s - cfg.windowMeters()), Math.min(hi, s + cfg.windowMeters()));
-    if (near.distanceMeters() > cfg.reprojectMeters()) {
+        Math.max(lo, s - WINDOW_METERS), Math.min(hi, s + WINDOW_METERS));
+    if (near.distanceMeters() > WINDOW_METERS) {
       Projection all = geometry.projectGlobalWithin(pose.xMeters(), pose.yMeters(), lo, hi);
       if (all.distanceMeters() < near.distanceMeters() - 0.05) {
         near = all;
@@ -483,7 +495,7 @@ public final class PathFollower {
       // at the end's line (nearest loop), once near the end (a path can start beyond that line, e.g. an
       // on-the-fly one). Waiting for the first loop past it started the next path up to a loop late, so its
       // start events fired up to a loop of travel past their point (8 cm at 4 m/s)
-      if (remaining <= 1e-6 || (past + lead >= 0.0 && remaining <= cfg.windowMeters())) {
+      if (remaining <= 1e-6 || (past + lead >= 0.0 && remaining <= WINDOW_METERS)) {
         finish();
       }
       return;
@@ -495,13 +507,13 @@ public final class PathFollower {
     double yaw = Math.abs(Angles.wrap(goal.headingRadians() - pose.headingRadians()));
     double speed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
     boolean ok = d < cfg.positionToleranceMeters() && yaw < cfg.headingToleranceRadians()
-        && speed < cfg.settledMetersPerSecond();
+        && speed < SETTLED_METERS_PER_SECOND;
     if (!ok) {
       settledSince = Double.NaN;
     } else if (Double.isNaN(settledSince)) {
       settledSince = t;
     }
-    if (ok && t - settledSince >= cfg.debounceSeconds() - 1e-9) {
+    if (ok && t - settledSince >= DEBOUNCE_SECONDS - 1e-9) {
       finish();
     }
   }
@@ -551,7 +563,7 @@ public final class PathFollower {
     }
     goal = g;
     if (phase == Phase.TRACKING && Math.hypot(g.xMeters() - pose.xMeters(), g.yMeters() - pose.yMeters())
-        > cfg.terminalRadiusMeters() + MIN_TAIL_METERS) {
+        > TERMINAL_RADIUS_METERS + MIN_TAIL_METERS) {
       rebuildTail();
     }
     // in the terminal phase the DriveToPose law simply drives to the new goal
