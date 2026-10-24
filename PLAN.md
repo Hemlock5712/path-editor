@@ -1,5 +1,11 @@
 # Myelin: plan
 
+**Simplified 2026-10-23.** The library was cut back to what Swerve School lesson 4 teaches; lib/README.md's "How it
+works" is the current design. Removed after being built: adaptive grip and the slip package (slip detection,
+slip-aware odometry), the raw and path-frame overrides, re-planning the start from the measured speed, rejoin pieces
+after a shove, Choreo trajectory import, and 24 follower settings (now constants). The bench kept only what the Bench
+page shows and the on-the-fly head-to-head (bench/RESULTS.md).
+
 A full rewrite of the path follower, the path maths and the editor. `master` keeps the old code for reference.
 The goal is a follower that finishes more accurately and sooner than PathPlanner, Choreo, BLine and CTRE.
 It should hand off from a path to aligning on a target with no seam, build paths around obstacles during a
@@ -107,17 +113,8 @@ There are three layers, from the most to the least preferred.
    - For intakes, give the end a minimum speed, so the robot drives through the piece instead of stopping on it.
    - Estimates are latched in the odometry frame, as DriveToTag does, so vision pose jumps don't move the goal.
      The last estimate is held once the piece leaves the camera's view up close.
-2. **Path-frame translation overrides.**
-   - `lateralOffset(DoubleSupplier metres)` shifts the reference sideways from the path. The follower tracks
-     path + offset and the profile still applies.
-   - `alongTrackScale(DoubleSupplier 0..1)` slows the robot along the path.
-   - These give vision or the driver a nudge in directions that mean something on a curve.
-3. **Field-axis overrides as an escape hatch.**
-   - `overrideX`, `overrideY` and `overrideOmega` set velocities. Each can either respect the grip budget or
-     bypass it, like the old `overrideXSpeed` / `...WithLimits` and BLine's `overrideRotation`.
-   - Raw X/Y is a poor way to align while following a curve: on a bend "x" isn't sideways, the path's
-     cross-track feedback fights the override, and the profile doesn't know about it. So it isn't the
-     recommended route.
+2. **Path-frame offsets** (`lateralOffset`, `alongTrackScale`) and 3. **field-axis overrides** (`overrideX/Y/Omega`)
+   were built, then removed on 2026-10-23: nothing used them, and a moving goal is the way to steer a path's end.
 
 ### Pathfinding during a match
 - Static obstacles come from a field file as polygons, grown by the robot's half-diagonal plus a margin.
@@ -151,8 +148,7 @@ There are three layers, from the most to the least preferred.
 
 ## The bench (`bench/`)
 - **Plant:** `alignsim` (copied from Precision-Videos `record/v2-race/sim`), with 500 Hz stick-slip tyres, the
-  Kraken FOC curve, steering lag, and odometry that over-reads when wheels slip. For game pieces it uses
-  `studies/pieces/piece_world.py`.
+  Kraken FOC curve, steering lag, and odometry that over-reads when wheels slip.
 - **Fairness:** every method gets the same maximum speed, acceleration and rotation limits, and every method is
   also run at its best tuned gains.
 - **Courses:** straight, S-curve, hairpin, slalom through gates, a long auto-style route with rotation targets, a
@@ -174,8 +170,8 @@ There are three layers, from the most to the least preferred.
     accuracy, importing Choreo paths becomes a supported option for offline autos. Paths built during a match
     always use our own planner, because Choreo's solver can take seconds and doesn't always converge.
   - CTRE LinearPath (point-to-point courses only)
-- `reference/race_drive_to_pose.py` is the earlier point-to-point race. It's kept for its BLine, PathPlanner and
-  CTRE ports and as a sanity check.
+- `reference/race_drive_to_pose_results.md` is the earlier point-to-point race's result (its script was retired
+  2026-10-23).
 
 ## Phases
 1. **Bench:** courses, metrics, the competitors' followers, baseline numbers.

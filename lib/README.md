@@ -1,5 +1,79 @@
 # lib: the path maths and the follower
 
+## How it works
+
+Three steps, in the order of the code: plan a path, follow it, and plan one on the field when there is no
+drawn path. Every number below is a library default.
+
+### 1. Plan (`frc.team5712.path.core`, at boot)
+
+`Path.build(spec, robot)` turns the editor's file into a plan, once, in robot init.
+
+1. **The curve.** `QuinticSpline` puts one quintic piece between each pair of waypoints. The pieces meet
+   with the same position, direction and curvature, so the robot never has to jerk its wheels at a waypoint.
+   `PathGeometry` measures it, so everything afterwards works in metres along the path, `s`.
+2. **The heading.** `HeadingProfile` gives the robot's heading at every `s`: hold, or turn to each rotation
+   target along the way.
+3. **The speed.** `VelocityProfile` finds the fastest speed at every `s` that breaks no limit, with one pass
+   forward (how fast can it get here?) and one backward (can it still slow down in time?). The main limit is
+   traction, the same rule as Precision-Drive's AccelerationLimiter: `A = 0.9 · min(μg, g·x/h)`, grip or
+   tipping, whichever comes first. Speeding up, braking, cornering (`v²κ`) and spinning all share it. The
+   motors' torque curve and the wheels' top speed cap it too.
+
+The optimiser in the editor only changes the waypoints' tangents; the planner is the same.
+
+### 2. Follow (`frc.team5712.path.follow.PathFollower`, every loop)
+
+`start()` does no path work. Each `step()`, in the blue frame (red is a flip of the pose in and the speeds
+out; the path is never rebuilt):
+
+1. **Where am I on the path?** `s` is the closest point within 0.5 m of the last one (the whole path after a
+   shove).
+2. **Pick a law.** Near a stopping end (0.3 m, with 2° or less left to turn) it is `driveToGoal`; a turn on
+   the spot is `turnOnTheSpot`; otherwise `followPath`:
+   - **Along:** read the plan a little ahead, `latencySeconds` (0.05 s, at least one loop) in plan time, so a
+     robot that lags is asked for what it needs next. Brake with DriveToPose's law on the distance left:
+     `min(plan speed ahead, sqrt(v_end² + 2a(d − vτ)))`. Point the speed along the path's direction ahead,
+     which turns the robot into a curve early, as it must.
+   - **Across:** P on the distance off the path (5 m/s per metre).
+   - **Heading:** the plan's turn rate ahead, plus P on the planned heading (5 rad/s per radian).
+   - **Finish (`driveToGoal`):** DriveToPose's stopping law straight at the goal, and the same law for the
+     heading: `min(top speed, sqrt(2a(d − vτ)), k·d)`.
+3. **One limiter** (`OutputLimiter`): spin acceleration capped, the motors' push capped, then translation
+   and spin together held to the traction limit (`A / 0.9`, so feedback has the plan's margin to use).
+4. **Events** fire on the loop nearest to passing them; the rest fire at a normal finish.
+5. **Finished** within 2 cm and 1°, slower than 5 cm/s, for 0.1 s. A path that ends moving (a rolling end)
+   finishes as it passes its end and hands its speed to the next path.
+
+A **moving goal** (`bindGoal`, e.g. a tag or a game piece seen by vision) re-plans the rest of the path when
+the goal moves more than 2 cm: one quintic from where the robot is on the path to the goal, ending at the
+path's end speed, so an intake path still drives through its piece.
+
+**Settings** (`FollowerConfig`): `latencySeconds` (measure it on the robot), `crossTrackKp`, `headingKp`,
+`brakeMetersPerSecondSquared` (the traction limit unless set), `easeInPerSecond`, `headingEaseInPerSecond`,
+`positionToleranceMeters` and `headingToleranceRadians`. Everything else is a named constant in `PathFollower`.
+
+### 3. On the fly (`frc.team5712.path.plan`, at go)
+
+`OnTheFly` plans a path from wherever the robot is, then follows it with the same `PathFollower`.
+
+1. **Grow the obstacles** (`Pathfinder`, at boot). Each obstacle in field.json grows by the bumpers'
+   half-diagonal plus a margin, so the robot's centre only has to stay out of the grown shapes, whatever
+   its heading. The walls move in the same way.
+2. **Shortest route.** The grown corners that can see each other are joined (the visibility graph, at boot);
+   at go, the start and goal join it and A* finds the shortest route round the shapes.
+3. **Smooth it into a normal path.** The route's corners become spline waypoints. The bumper rectangle is
+   swept along the result every 2 cm; wherever it comes too close, the route point there becomes a waypoint
+   and the spline is fitted again. Then the usual speed plan, at 4 m/s and 6 m/s².
+4. **Two margins.** It plans with a 0.15 m berth first and keeps that route if it is at most 1.15 times as long
+   as the 0.05 m one; through a narrow gap the 0.05 m route drives.
+5. **Re-plan, don't patch.** Knocked more than 0.2 m off the path, or with a moving goal more than 10 cm from
+   where it planned to, it plans again from where the robot is, at the speed it is going.
+
+The rest of this file is the detail and the measurements behind each piece.
+
+## Packages
+
 | Package | What | Depends on |
 | --- | --- | --- |
 | `frc.team5712.path.core` (phase 2) | geometry, heading and velocity profiles, frame flips, path files | nothing |
@@ -51,11 +125,12 @@ paths with odd tangents (limit 0.5 mm). Queries by s return the exact spline poi
 signed κ and dκ/ds at that `u`. Projection: a coarse scan of the window (5 cm; 10 cm for the global
 search) then safeguarded Newton on `(p − q)·T = 0`, clamped to the window.
 
-**Heading (`HeadingProfile`).** θ(s), dθ/ds and d²θ/ds². No targets: face the direction of travel.
-Targets (waypoint-relative, as a fraction of the arc between waypoints, or in metres) are joined by
-the minimum-jerk blend `10τ³ − 15τ⁴ + 6τ⁵` the short way round, holding the first and last.
-Face-point zones pull the heading towards a field point, easing in and out over `blendMeters`
-inside the zone.
+**Heading (`HeadingProfile`).** θ(s), dθ/ds and d²θ/ds². No targets: hold the starting direction (the default)
+or face the direction of travel. Targets (waypoint-relative, as a fraction of the arc between waypoints, or in
+metres) are joined by a quintic the short way round, holding the first and last. The spin stops at the first and
+last target and where the turn reverses; elsewhere the robot passes a target still turning, at the harmonic mean
+of the two stretches' rates, which never overshoots. Face-point zones pull the heading towards a field point,
+easing in and out over `blendMeters` inside the zone.
 
 **Velocity (`VelocityProfile`).** Forward and backward passes, O(N), on a 3 cm grid (547 points on the
 16 m example), constant acceleration per cell so v(s), t(s) and s(t) are exact between grid points.
@@ -318,7 +393,7 @@ shares. See the notes below for what that means for the boot budget.
 - **The v²κ feed-forward is the look-ahead tangent.** The drivetrain takes velocity commands, so the
   curvature term is applied by pointing the speed along the tangent one latency ahead. That adds
   `v²κτ` sideways, rather than a separate acceleration feed-forward.
-- **Cross-track is PD with D = 0 by default.** The bench sweeps didn't need the D term.
+- **Cross-track is P only.** PLAN.md had PD; the bench sweeps never needed the D term, so it went (2026-10-23).
 - **The limiter and the plan now share one traction limit** (see below). Before the μ 1.5 change
   the limiter's grip (1.0) sat above the plan's (0.7) so feedback had room.
 - **Events were set in code only in phase 3.** Phase 5 added them to the path file (schema 2).
