@@ -444,9 +444,7 @@ class OursPathfind(Follower):
         self.mu = mu
         self.margin = margin  # bumper margin the planner grows obstacles by and checks the sweep against
         self.lim = limits
-        self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
-                        "brakeMetersPerSecondSquared": limits.max_accel}
-        self.options.update(follower_options)
+        self.options = dict(follower_options)  # the library's defaults unless a caller sets something
 
     def reset(self, native, start):
         from followers.ours_v2 import call_fresh, robot_json, server

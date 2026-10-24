@@ -9,7 +9,8 @@ The neutral course becomes our path file:
   of travel (the same end rule as the neutral Catmull-Rom curve), interior tangents are automatic;
 - every heading in the course (waypoint headings and fractional heading targets) becomes a rotation target
   at the same waypoint-relative position; between targets the heading follows the minimum-jerk blend;
-- the shared limits: 4 m/s and 6 m/s^2 for the path, 540 deg/s and 720 deg/s^2 for the follower;
+- the shared limits: the course's speed and acceleration caps for the path; the follower runs the library's
+  defaults (FollowerConfig.defaults), nothing set unless a caller passes options;
 - the robot file is the bench plant's numbers (mass, inertia, module radius, gearing, Kraken curve, stator limit),
   with the grip mu as an option (OURS_MU: the tread's 1.5).
 
@@ -39,10 +40,6 @@ _server = None
 # The robot file's frictionCoefficient: the tread's mu. The library plans and limits at 0.9 x min(mu g, g tip / h)
 # (lib/README.md, Traction); before that change it planned at this mu directly (shipped 0.7).
 OURS_MU = 1.5
-# The stopping law's deceleration: the shared limit, but never above the library's default (6 m/s^2, the team's
-# DriveToPose DECEL; braking harder costs tag accuracy, MU15.md). Raising a course's acceleration cap (the
-# full-traction block) leaves it at 6.
-BRAKE = 6.0
 
 
 class _Server:
@@ -159,9 +156,7 @@ class OursV2(Follower):
         if robot:  # robot file fields beyond the plant's (e.g. the traction rule)
             self.robot_overrides = dict(robot)
         self.lim = limits
-        self.options = {"maxOmegaRadPerSec": limits.max_omega, "maxAlphaRadPerSecSquared": limits.max_alpha,
-                        "brakeMetersPerSecondSquared": min(limits.max_accel, BRAKE)}
-        self.options.update(follower_options)
+        self.options = dict(follower_options)
 
     @staticmethod
     def adapt(course):
