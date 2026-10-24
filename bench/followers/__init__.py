@@ -6,7 +6,6 @@ import importlib
 from courses import BLINE_DEFAULT_RADIUS, BLINE_RADIUS
 
 METHODS = {
-    "old_followpath": ("followers.old_followpath", "OldFollowPath", {}),
     "bline_readme": ("followers.bline", "BLine", {"radius": BLINE_RADIUS}),
     "bline_readme_r45": ("followers.bline", "BLine", {"radius": BLINE_DEFAULT_RADIUS}),
     "bline_curve": ("followers.bline", "BLine", {"curve": True}),
@@ -21,7 +20,6 @@ METHODS = {
 }
 
 LABELS = {
-    "old_followpath": "Old path-editor FollowPath",
     "bline_readme": "BLine (README gains, r 0.30)",
     "bline_readme_r45": "BLine (README gains, r 0.45 default)",
     "bline_curve": "BLine (README gains, curve targets, r 0.45)",

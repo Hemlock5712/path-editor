@@ -1,6 +1,6 @@
 """One bench run: a follower drives the alignsim plant along a course; metrics against the TRUE pose.
 
-Loop timing is the same as bench/reference/race_drive_to_pose.py `run_one`:
+Loop timing (the same as the first drive-to-pose race, bench/reference/race_drive_to_pose_results.md):
 - physics at 500 Hz;
 - an odometry thread at 250 Hz that applies the newest request (field speeds -> robot speeds with
   the odometry heading at apply time, like CTRE's ApplyFieldSpeeds) and updates wheel odometry;

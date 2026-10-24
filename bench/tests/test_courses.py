@@ -6,8 +6,7 @@ import numpy as np
 import pytest
 
 from common import wrap
-from courses import COURSES, NeutralPath, hermite, to_bezier, to_bline, to_bline_curve, to_catmull, to_goal_chain
-from followers.old_followpath import SplinePath
+from courses import COURSES, NeutralPath, hermite, to_bezier, to_bline, to_bline_curve, to_goal_chain
 from followers.pathplanner import PathPlannerPath, cubic_lerp
 
 NAMES = list(COURSES)
@@ -24,16 +23,6 @@ def test_neutral_path_ends(name):
     assert close(p.points[0], c.start_pose) and close(p.points[-1], c.end_pose)
     assert p.heading_at_pos(0.0) == pytest.approx(c.start_pose[2])
     assert abs(wrap(p.heading_at_pos(len(c.waypoints) - 1.0) - c.end_pose[2])) < 1e-12
-
-
-@pytest.mark.parametrize("name", NAMES)
-def test_old_spline_ends(name):
-    c = COURSES[name]
-    s = SplinePath(to_catmull(c)["points"])
-    assert close(s.point(0.0), c.start_pose) and close(s.point(s.total), c.end_pose)
-    if any(w.tangent_deg is not None for w in c.waypoints):
-        return  # set directions of travel: the old editor has no such setting, so its curve differs
-    assert s.total == pytest.approx(NeutralPath(c).length, abs=2e-3)
 
 
 @pytest.mark.parametrize("name", NAMES)

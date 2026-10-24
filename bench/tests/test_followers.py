@@ -7,7 +7,6 @@ import pytest
 from sim import run_one
 
 CONVERGING = {  # method key, options -> final true error bound (cm)
-    ("old_followpath", None): 5.0,  # ends inside its 5 cm completion tolerance, then idles
     ("pathplanner", None): 5.0,  # time-sampled, stops when the trajectory time runs out
     ("pathplanner_hold", None): 2.0,
     ("drive_to_pose_chain", None): 2.0,

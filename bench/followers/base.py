@@ -46,7 +46,7 @@ class Follower:
 
 class AccelerationLimiter:
     """Port of AccelerationLimiter.limit() (bench/reference/AccelerationLimiter.java, as ported in
-    race_drive_to_pose.py). Gear ratio and wheel radius come from the sim's RobotParams."""
+    the first drive-to-pose race). Gear ratio and wheel radius come from the sim's RobotParams."""
 
     MU, G, MASS = 1.0, 9.81, 60.0
     TRACTION = MU * G

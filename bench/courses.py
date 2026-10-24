@@ -196,11 +196,6 @@ def polyline_distance(poly, xy):
 # ============================================================================================ adapters
 
 
-def to_catmull(course: Course):
-    """Old path-editor: control points + heading waypoints (fractional control-point index, rad)."""
-    return {"points": [(w.x, w.y) for w in course.waypoints], "headings": course.headings()}
-
-
 def to_bezier(course: Course):
     """PathPlanner Waypoints (prevControl, anchor, nextControl) that reproduce the Catmull-Rom cubics, plus
     rotation targets at waypoint-relative positions and the goal end rotation."""
