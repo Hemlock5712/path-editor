@@ -14,6 +14,7 @@ import frc.team5712.path.core.RotationTarget;
 import frc.team5712.path.core.VelocityProfile;
 import frc.team5712.path.core.Waypoint;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -152,7 +153,7 @@ public final class PathFollower {
     eventNames.add(name);
     eventActions.add(action);
     int n = eventNames.size();
-    double[] base = java.util.Arrays.copyOf(eventBaseS, n);
+    double[] base = Arrays.copyOf(eventBaseS, n);
     base[n - 1] = Math.max(0.0, Math.min(path.lengthMeters(), sMeters));
     // keep events sorted by position (stable), so they fire in order
     for (int i = n - 1; i > 0 && base[i - 1] > base[i]; i--) {
@@ -224,7 +225,7 @@ public final class PathFollower {
     settledSince = Double.NaN;
     phase = Phase.TRACKING;
     System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
-    java.util.Arrays.fill(eventFired, false);
+    Arrays.fill(eventFired, false);
   }
 
   /** One loop: measured pose and field velocity in, field speeds out (both in the robot's frame). */
@@ -250,90 +251,22 @@ public final class PathFollower {
     measuredSpeed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
     measuredOmega = vel.omegaRadPerSec();
     pollGoal(pose);
-    double brakeDecel = cfg.brakeDecel();
     updateProgress(pose);
     double remaining = active.lengthMeters() - s;
-    if (phase == Phase.TRACKING && !rollingEnd && remaining < TERMINAL_RADIUS_METERS
-        && Math.abs(Angles.wrap(active.sample(active.lengthMeters()).headingRadians() - active.heading().sample(s).radians())) <= TERMINAL_TURN_RADIANS
-        && Double.isNaN(active.geometry().nextCusp(s))) { // not while the path still has to double back
+    if (phase == Phase.TRACKING && readyToFinish(remaining)) {
       phase = Phase.TERMINAL;
     }
-
-    double wantVx;
-    double wantVy;
-    double wantOmega;
+    FieldSpeeds want;
     if (phase == Phase.TERMINAL) {
-      // DriveToPose on the goal
-      double gx = goal.xMeters();
-      double gy = goal.yMeters();
-      double ex = gx - pose.xMeters();
-      double ey = gy - pose.yMeters();
-      double d = Math.sqrt(ex * ex + ey * ey);
-      double speed = StoppingLaw.speed(d, limiter.speed(), brakeDecel,
-          cfg.latencySeconds(), active.spec().maxMetersPerSecond(), cfg.easeInPerSecond(),
-          STOP_DEADBAND_METERS);
-      wantVx = d > 1e-6 ? ex / d * speed : 0.0;
-      wantVy = d > 1e-6 ? ey / d * speed : 0.0;
-      double headingError = Angles.wrap(goal.headingRadians() - pose.headingRadians());
-      wantOmega = StoppingLaw.spin(headingError, limiter.omega(), cfg.maxAlphaRadPerSecSquared(),
-          cfg.latencySeconds(), cfg.maxOmegaRadPerSec(), cfg.headingEaseInPerSecond(),
-          HEADING_DEADBAND_RADIANS);
-      crossTrack = 0.0;
-      refX = gx;
-      refY = gy;
-      refHeading = goal.headingRadians();
+      want = driveToGoal(pose);
     } else if (pureRotation && active == path) {
-      // A turn on the spot: spin as the plan does (its speed along the 1 mm segment carries the spin),
-      // and hold the point. Braking on the distance left, as a path does, would brake on a fraction of
-      // a millimetre that the pose noise alone exceeds, and stall the turn.
-      VelocityProfile profile = active.profile();
-      PathSample ahead = active.sample(profile.sAtTime(profile.timeAt(s) + readAheadSeconds()));
-      double headingError = Angles.wrap(active.heading().sample(s).radians() - pose.headingRadians());
-      wantOmega = ahead.metersPerSecond() * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
-      wantOmega = Math.max(-cfg.maxOmegaRadPerSec(), Math.min(cfg.maxOmegaRadPerSec(), wantOmega));
-      wantVx = cfg.crossTrackKp() * (goal.xMeters() - pose.xMeters());
-      wantVy = cfg.crossTrackKp() * (goal.yMeters() - pose.yMeters());
-      crossTrack = Math.hypot(goal.xMeters() - pose.xMeters(), goal.yMeters() - pose.yMeters());
-      refX = goal.xMeters();
-      refY = goal.yMeters();
-      refHeading = active.heading().sample(s).radians();
+      want = turnOnTheSpot(pose);
     } else {
-      VelocityProfile profile = active.profile();
-      double lead = readAheadSeconds();
-      if (active.spec().startMetersPerSecond() > 0.0) {
-        // A rolling start: the last path's command led into its own end, not into this path's speeding up,
-        // so the lead builds up over ROLLING_LEAD_SECONDS instead of in one loop (a jump of a·τ that the
-        // limiter would take at full grip, slipping the wheels at the hand-over)
-        lead *= Math.min(1.0, (timeSeconds - startTime) / ROLLING_LEAD_SECONDS);
-      }
-      double sAhead = profile.sAtTime(profile.timeAt(s) + lead);
-      double cusp = active.geometry().nextCusp(s);
-      if (sAhead > cusp - CUSP_EDGE_METERS) {
-        // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
-        sAhead = Math.max(s, cusp - CUSP_EDGE_METERS);
-      }
-      PathSample here = active.sample(s);
-      PathSample ahead = active.sample(sAhead);
-      double brake = StoppingLaw.brake(remaining, limiter.speed(), brakeDecel, cfg.latencySeconds(), endSpeed);
-      double speed = Math.min(ahead.metersPerSecond(), brake);
-      // Across: P along the normal at s (left of travel is positive)
-      double nx = -here.tangentY();
-      double ny = here.tangentX();
-      crossTrack = (pose.xMeters() - here.xMeters()) * nx + (pose.yMeters() - here.yMeters()) * ny;
-      double sideways = -cfg.crossTrackKp() * crossTrack;
-      wantVx = speed * ahead.tangentX() + sideways * nx;
-      wantVy = speed * ahead.tangentY() + sideways * ny;
-      double headingError = Angles.wrap(here.headingRadians() - pose.headingRadians());
-      wantOmega = speed * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
-      wantOmega = Math.max(-cfg.maxOmegaRadPerSec(), Math.min(cfg.maxOmegaRadPerSec(), wantOmega));
-      refX = here.xMeters();
-      refY = here.yMeters();
-      refHeading = here.headingRadians();
+      want = followPath(pose, remaining, timeSeconds);
     }
-
     headingError = Angles.wrap(refHeading - pose.headingRadians());
 
-    limiter.limit(wantVx, wantVy, wantOmega, dt);
+    limiter.limit(want.vxMetersPerSecond(), want.vyMetersPerSecond(), want.omegaRadPerSec(), dt);
 
     // Events fire on the loop nearest to passing them: the progress made per loop says how far the
     // robot gets before the next one, and an event less than half of that ahead fires now. Firing on
@@ -374,6 +307,96 @@ public final class PathFollower {
 
   private FieldSpeeds output() {
     return frame.fromBlue(new FieldSpeeds(limiter.vx(), limiter.vy(), limiter.omega()));
+  }
+
+  // ------------------------------------------------------------------------------ the three laws
+
+  /**
+   * The DriveToPose finish takes over once the robot is within {@link #TERMINAL_RADIUS_METERS} of a stopping end
+   * and the plan has no more than {@link #TERMINAL_TURN_RADIANS} left to turn, and not while the path still has
+   * to double back.
+   */
+  private boolean readyToFinish(double remaining) {
+    double turnLeft = active.sample(active.lengthMeters()).headingRadians() - active.heading().sample(s).radians();
+    return !rollingEnd && remaining < TERMINAL_RADIUS_METERS && Math.abs(Angles.wrap(turnLeft)) <= TERMINAL_TURN_RADIANS
+        && Double.isNaN(active.geometry().nextCusp(s));
+  }
+
+  /**
+   * Along the path: the plan read one latency ahead (s⁺), braked by DriveToPose's law on the distance left,
+   * pointed along the tangent at s⁺ (which turns early by v²κτ: the curvature feed-forward); P across the
+   * path; the planned turn rate at s⁺ plus P on the planned heading at s.
+   */
+  private FieldSpeeds followPath(Pose pose, double remaining, double timeSeconds) {
+    VelocityProfile profile = active.profile();
+    double lead = readAheadSeconds();
+    if (active.spec().startMetersPerSecond() > 0.0) {
+      // A rolling start: the last path's command led into its own end, not into this path's speeding up,
+      // so the lead builds up over ROLLING_LEAD_SECONDS instead of in one loop (a jump of a·τ that the
+      // limiter would take at full grip, slipping the wheels at the hand-over)
+      lead *= Math.min(1.0, (timeSeconds - startTime) / ROLLING_LEAD_SECONDS);
+    }
+    double sAhead = profile.sAtTime(profile.timeAt(s) + lead);
+    double cusp = active.geometry().nextCusp(s);
+    if (sAhead > cusp - CUSP_EDGE_METERS) {
+      // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
+      sAhead = Math.max(s, cusp - CUSP_EDGE_METERS);
+    }
+    PathSample here = active.sample(s);
+    PathSample ahead = active.sample(sAhead);
+    double brake = StoppingLaw.brake(remaining, limiter.speed(), cfg.brakeDecel(), cfg.latencySeconds(), endSpeed);
+    double speed = Math.min(ahead.metersPerSecond(), brake);
+    // Across: P along the normal at s (left of travel is positive)
+    double nx = -here.tangentY();
+    double ny = here.tangentX();
+    crossTrack = (pose.xMeters() - here.xMeters()) * nx + (pose.yMeters() - here.yMeters()) * ny;
+    double sideways = -cfg.crossTrackKp() * crossTrack;
+    double headingError = Angles.wrap(here.headingRadians() - pose.headingRadians());
+    double omega = speed * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
+    refX = here.xMeters();
+    refY = here.yMeters();
+    refHeading = here.headingRadians();
+    return new FieldSpeeds(speed * ahead.tangentX() + sideways * nx, speed * ahead.tangentY() + sideways * ny,
+        clampSpin(omega));
+  }
+
+  /**
+   * A turn on the spot: spin as the plan does (its speed along the 1 mm segment carries the spin), and hold the
+   * point. Braking on the distance left, as a path does, would brake on a fraction of a millimetre that the
+   * pose noise alone exceeds, and stall the turn.
+   */
+  private FieldSpeeds turnOnTheSpot(Pose pose) {
+    VelocityProfile profile = active.profile();
+    PathSample ahead = active.sample(profile.sAtTime(profile.timeAt(s) + readAheadSeconds()));
+    double headingError = Angles.wrap(active.heading().sample(s).radians() - pose.headingRadians());
+    double omega = ahead.metersPerSecond() * ahead.headingRadiansPerMeter() + cfg.headingKp() * headingError;
+    crossTrack = Math.hypot(goal.xMeters() - pose.xMeters(), goal.yMeters() - pose.yMeters());
+    refX = goal.xMeters();
+    refY = goal.yMeters();
+    refHeading = active.heading().sample(s).radians();
+    return new FieldSpeeds(cfg.crossTrackKp() * (goal.xMeters() - pose.xMeters()),
+        cfg.crossTrackKp() * (goal.yMeters() - pose.yMeters()), clampSpin(omega));
+  }
+
+  /** The finish: DriveToPose's stopping law straight at the goal, and the same law for heading. */
+  private FieldSpeeds driveToGoal(Pose pose) {
+    double ex = goal.xMeters() - pose.xMeters();
+    double ey = goal.yMeters() - pose.yMeters();
+    double d = Math.sqrt(ex * ex + ey * ey);
+    double speed = StoppingLaw.speed(d, limiter.speed(), cfg.brakeDecel(), cfg.latencySeconds(),
+        active.spec().maxMetersPerSecond(), cfg.easeInPerSecond(), STOP_DEADBAND_METERS);
+    double headingError = Angles.wrap(goal.headingRadians() - pose.headingRadians());
+    double omega = StoppingLaw.spin(headingError, limiter.omega(), cfg.maxAlphaRadPerSecSquared(),
+        cfg.latencySeconds(), cfg.maxOmegaRadPerSec(), cfg.headingEaseInPerSecond(), HEADING_DEADBAND_RADIANS);
+    crossTrack = 0.0;
+    refX = goal.xMeters();
+    refY = goal.yMeters();
+    refHeading = goal.headingRadians();
+    return new FieldSpeeds(d > 1e-6 ? ex / d * speed : 0.0, d > 1e-6 ? ey / d * speed : 0.0, omega);
+  }
+
+  private double clampSpin(double omega) {
+    return Math.max(-cfg.maxOmegaRadPerSec(), Math.min(cfg.maxOmegaRadPerSec(), omega));
   }
 
   // ------------------------------------------------------------------------------ pieces

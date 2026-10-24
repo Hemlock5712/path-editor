@@ -283,7 +283,6 @@ export class PathFollower {
         ? this.output()
         : { vxMetersPerSecond: 0.0, vyMetersPerSecond: 0.0, omegaRadPerSec: 0.0 };
     }
-    const cfg = this.cfg;
     const dt = timeSeconds > this.lastTime
       ? Math.max(0.001, Math.min(0.1, timeSeconds - this.lastTime))
       : NOMINAL_LOOP_SECONDS;
@@ -295,82 +294,20 @@ export class PathFollower {
       return this.output();
     }
 
-    const decel = brakeDecel(cfg);
     this.updateProgress(pose);
     const active = this.active;
     const remaining = active.lengthMeters - this.s;
-    const goal = this.goal;
-    if (this.phaseNow === "TRACKING" && !this.rollingEnd && remaining < TERMINAL_RADIUS_METERS
-      && Math.abs(wrap(goal.headingRadians - active.heading.sample(this.s).radians)) <= TERMINAL_TURN_RADIANS
-      && Number.isNaN(active.geometry.nextCusp(this.s))) { // not while the path still has to double back
-      this.phaseNow = "TERMINAL";
-    }
-
-    let wantVx: number;
-    let wantVy: number;
-    let wantOmega: number;
+    if (this.phaseNow === "TRACKING" && this.readyToFinish(remaining)) this.phaseNow = "TERMINAL";
+    let want: FieldSpeeds;
     if (this.phaseNow === "TERMINAL") {
-      const gx = goal.xMeters;
-      const gy = goal.yMeters;
-      const ex = gx - pose.xMeters;
-      const ey = gy - pose.yMeters;
-      const d = Math.sqrt(ex * ex + ey * ey);
-      const speed = StoppingLaw.speed(d, this.limiter.speed(), decel, cfg.latencySeconds,
-        active.spec.maxMetersPerSecond, cfg.easeInPerSecond, STOP_DEADBAND_METERS);
-      wantVx = d > 1e-6 ? (ex / d) * speed : 0.0;
-      wantVy = d > 1e-6 ? (ey / d) * speed : 0.0;
-      const headingError = wrap(goal.headingRadians - pose.headingRadians);
-      wantOmega = StoppingLaw.spin(headingError, this.limiter.omega, maxAlpha(cfg),
-        cfg.latencySeconds, maxOmega(cfg), cfg.headingEaseInPerSecond, HEADING_DEADBAND_RADIANS);
-      this.crossTrack = 0.0;
-      this.refX = gx;
-      this.refY = gy;
-      this.refHeading = goal.headingRadians;
+      want = this.driveToGoal(pose);
     } else if (this.pureRotation) {
-      const profile = active.profile;
-      // at least one loop ahead, or a robot at rest reads 0 m/s and never starts (PathFollower.java readAheadSeconds)
-      const ahead = active.sample(profile.sAtTime(profile.timeAt(this.s) + Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS)));
-      const headingError = wrap(active.heading.sample(this.s).radians - pose.headingRadians);
-      wantOmega = ahead.metersPerSecond * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
-      wantOmega = Math.max(-maxOmega(cfg), Math.min(maxOmega(cfg), wantOmega));
-      wantVx = cfg.crossTrackKp * (goal.xMeters - pose.xMeters);
-      wantVy = cfg.crossTrackKp * (goal.yMeters - pose.yMeters);
-      this.crossTrack = javaHypot(goal.xMeters - pose.xMeters, goal.yMeters - pose.yMeters);
-      this.refX = goal.xMeters;
-      this.refY = goal.yMeters;
-      this.refHeading = active.heading.sample(this.s).radians;
+      want = this.turnOnTheSpot(pose);
     } else {
-      const profile = active.profile;
-      let lead = Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS); // at least one loop (PathFollower.java readAheadSeconds)
-      if (active.spec.startMetersPerSecond > 0.0) {
-        // a rolling start: the lead builds up over ROLLING_LEAD_SECONDS (PathFollower.java)
-        lead *= Math.min(1.0, (timeSeconds - this.startTime) / ROLLING_LEAD_SECONDS);
-      }
-      let sAhead = profile.sAtTime(profile.timeAt(this.s) + lead);
-      const cusp = active.geometry.nextCusp(this.s);
-      if (sAhead > cusp - CUSP_EDGE_METERS) {
-        // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
-        sAhead = Math.max(this.s, cusp - CUSP_EDGE_METERS);
-      }
-      const here: PathSample = active.sample(this.s);
-      const ahead: PathSample = active.sample(sAhead);
-      const brake = StoppingLaw.brake(remaining, this.limiter.speed(), decel, cfg.latencySeconds, this.endSpeed);
-      const speed = Math.min(ahead.metersPerSecond, brake);
-      const nx = -here.tangentY;
-      const ny = here.tangentX;
-      this.crossTrack = (pose.xMeters - here.xMeters) * nx + (pose.yMeters - here.yMeters) * ny;
-      const sideways = -cfg.crossTrackKp * this.crossTrack;
-      wantVx = speed * ahead.tangentX + sideways * nx;
-      wantVy = speed * ahead.tangentY + sideways * ny;
-      const headingError = wrap(here.headingRadians - pose.headingRadians);
-      wantOmega = speed * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
-      wantOmega = Math.max(-maxOmega(cfg), Math.min(maxOmega(cfg), wantOmega));
-      this.refX = here.xMeters;
-      this.refY = here.yMeters;
-      this.refHeading = here.headingRadians;
+      want = this.followPath(pose, remaining, timeSeconds);
     }
 
-    this.limiter.limit(wantVx, wantVy, wantOmega, dt);
+    this.limiter.limit(want.vxMetersPerSecond, want.vyMetersPerSecond, want.omegaRadPerSec, dt);
 
     const progress = this.s;
     const rate = Math.max(0.0, Math.min(MAX_PROGRESS_RATE, (progress - this.lastS) / dt));
@@ -380,6 +317,98 @@ export class PathFollower {
     if (this.phaseNow === "TERMINAL" && this.arrived(pose)) this.fireEventsUpTo(active.lengthMeters);
     this.checkFinished(timeSeconds, pose, vel, remaining, lead);
     return this.output();
+  }
+
+  /** The DriveToPose finish takes over near a stopping end once the plan has turned (PathFollower.readyToFinish). */
+  private readyToFinish(remaining: number): boolean {
+    const active = this.active;
+    const turnLeft = active.sample(active.lengthMeters).headingRadians - active.heading.sample(this.s).radians;
+    return !this.rollingEnd && remaining < TERMINAL_RADIUS_METERS && Math.abs(wrap(turnLeft)) <= TERMINAL_TURN_RADIANS
+      && Number.isNaN(active.geometry.nextCusp(this.s));
+  }
+
+  /** Along the path (PathFollower.followPath). */
+  private followPath(pose: Pose, remaining: number, timeSeconds: number): FieldSpeeds {
+    const cfg = this.cfg;
+    const active = this.active;
+    const profile = active.profile;
+    let lead = Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS); // at least one loop (PathFollower.java readAheadSeconds)
+    if (active.spec.startMetersPerSecond > 0.0) {
+      // a rolling start: the lead builds up over ROLLING_LEAD_SECONDS (PathFollower.java)
+      lead *= Math.min(1.0, (timeSeconds - this.startTime) / ROLLING_LEAD_SECONDS);
+    }
+    let sAhead = profile.sAtTime(profile.timeAt(this.s) + lead);
+    const cusp = active.geometry.nextCusp(this.s);
+    if (sAhead > cusp - CUSP_EDGE_METERS) {
+      // the plan stops at a cusp and comes back: read ahead no further than the stop, on this side of it
+      sAhead = Math.max(this.s, cusp - CUSP_EDGE_METERS);
+    }
+    const here: PathSample = active.sample(this.s);
+    const ahead: PathSample = active.sample(sAhead);
+    const brake = StoppingLaw.brake(remaining, this.limiter.speed(), brakeDecel(cfg), cfg.latencySeconds, this.endSpeed);
+    const speed = Math.min(ahead.metersPerSecond, brake);
+    const nx = -here.tangentY;
+    const ny = here.tangentX;
+    this.crossTrack = (pose.xMeters - here.xMeters) * nx + (pose.yMeters - here.yMeters) * ny;
+    const sideways = -cfg.crossTrackKp * this.crossTrack;
+    const headingError = wrap(here.headingRadians - pose.headingRadians);
+    const omega = speed * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
+    this.refX = here.xMeters;
+    this.refY = here.yMeters;
+    this.refHeading = here.headingRadians;
+    return {
+      vxMetersPerSecond: speed * ahead.tangentX + sideways * nx,
+      vyMetersPerSecond: speed * ahead.tangentY + sideways * ny,
+      omegaRadPerSec: this.clampSpin(omega),
+    };
+  }
+
+  /** A turn on the spot (PathFollower.turnOnTheSpot). */
+  private turnOnTheSpot(pose: Pose): FieldSpeeds {
+    const cfg = this.cfg;
+    const active = this.active;
+    const goal = this.goal;
+    const profile = active.profile;
+    // at least one loop ahead, or a robot at rest reads 0 m/s and never starts (PathFollower.java readAheadSeconds)
+    const ahead = active.sample(profile.sAtTime(profile.timeAt(this.s) + Math.max(cfg.latencySeconds, NOMINAL_LOOP_SECONDS)));
+    const headingError = wrap(active.heading.sample(this.s).radians - pose.headingRadians);
+    const omega = ahead.metersPerSecond * ahead.headingRadiansPerMeter + cfg.headingKp * headingError;
+    this.crossTrack = javaHypot(goal.xMeters - pose.xMeters, goal.yMeters - pose.yMeters);
+    this.refX = goal.xMeters;
+    this.refY = goal.yMeters;
+    this.refHeading = active.heading.sample(this.s).radians;
+    return {
+      vxMetersPerSecond: cfg.crossTrackKp * (goal.xMeters - pose.xMeters),
+      vyMetersPerSecond: cfg.crossTrackKp * (goal.yMeters - pose.yMeters),
+      omegaRadPerSec: this.clampSpin(omega),
+    };
+  }
+
+  /** The finish: DriveToPose's stopping law at the goal (PathFollower.driveToGoal). */
+  private driveToGoal(pose: Pose): FieldSpeeds {
+    const cfg = this.cfg;
+    const goal = this.goal;
+    const ex = goal.xMeters - pose.xMeters;
+    const ey = goal.yMeters - pose.yMeters;
+    const d = Math.sqrt(ex * ex + ey * ey);
+    const speed = StoppingLaw.speed(d, this.limiter.speed(), brakeDecel(cfg), cfg.latencySeconds,
+      this.active.spec.maxMetersPerSecond, cfg.easeInPerSecond, STOP_DEADBAND_METERS);
+    const headingError = wrap(goal.headingRadians - pose.headingRadians);
+    const omega = StoppingLaw.spin(headingError, this.limiter.omega, maxAlpha(cfg),
+      cfg.latencySeconds, maxOmega(cfg), cfg.headingEaseInPerSecond, HEADING_DEADBAND_RADIANS);
+    this.crossTrack = 0.0;
+    this.refX = goal.xMeters;
+    this.refY = goal.yMeters;
+    this.refHeading = goal.headingRadians;
+    return {
+      vxMetersPerSecond: d > 1e-6 ? (ex / d) * speed : 0.0,
+      vyMetersPerSecond: d > 1e-6 ? (ey / d) * speed : 0.0,
+      omegaRadPerSec: omega,
+    };
+  }
+
+  private clampSpin(omega: number): number {
+    return Math.max(-maxOmega(this.cfg), Math.min(maxOmega(this.cfg), omega));
   }
 
   private arrived(pose: Pose): boolean {
