@@ -62,7 +62,7 @@ class Course:
     grip: tuple | None = None  # (mu static, mu kinetic); None = the plant default
     grip_drop: tuple | None = None  # (path fraction, mu static, mu kinetic): the floor changes mid-run
     description: str = ""
-    # one leg of a chain of paths (ppcompare.py): the speed the plan starts at and hands over at, m/s
+    # one leg of a chain of paths: the speed the plan starts at and hands over at, m/s
     plan_start_speed: float = 0.0
     end_speed: float = 0.0
 
@@ -473,9 +473,3 @@ from courses_extra import EXTRA_COURSES  # noqa: E402
 COURSES.update(EXTRA_COURSES)
 CHOREO_TRAJ.update({c: "extra/" + c for c in EXTRA_COURSES if c != "heavy_robot"})
 CHOREO_TRAJ["heavy_robot"] = "heavy/heavy_robot"
-
-# the full-traction block's copies of the original nine (run.py runs ours on them, apart from the main grid)
-from courses_extra import FULL_TRACTION  # noqa: E402
-
-COURSES.update(FULL_TRACTION)
-MAIN_COURSES = [c for c in COURSES if c not in FULL_TRACTION]

@@ -219,12 +219,12 @@ def plans():
 
 # ============================================================================================ optimise
 OPT_FILE = os.path.join(OUT, "matched_opt.json")
-OPT_BUDGET_MS = 3000  # the optimiser's default budget (1500 plans), as in ppcompare
+OPT_BUDGET_MS = 3000  # the optimiser's default budget (1500 plans)
 
 
 def _optimise_job(n):
     """tools/optimise.mjs on the course as ours draws it, curves only (waypoints stay, like Choreo's), waypoints
-    with a course heading pinned (ppcompare.optimise_ours), on a large empty field."""
+    with a course heading pinned, on a large empty field."""
     import subprocess
     import tempfile
 
@@ -299,7 +299,7 @@ RUN_METHODS = {"choreo": ("choreo", "choreo"), "choreo_hold": ("choreo", "choreo
                "choreo_hybrid": ("choreo_hybrid", False), "ours": ("ours_v2", True),
                "ours_opt": ("ours_opt", True),
                "pathplanner": ("pathplanner", "pp"), "pp_path2": ("pp_path2", "pp2"), "bline": ("bline_readme", "bline")}
-# The rivals keep the gains the main sweep tuned (run.py, out/results.json "tuned"), and plan to the shared limit:
+# The rivals keep the gains tuned for them (below), and plan to the shared limit:
 # PathPlanner and path2 get wheel COF = traction / 9.8 (their friction model's g) in place of the tuned COF, path2's
 # acceleration cap is the traction limit; BLine's acceleration cap is the course's (the traction limit), applied
 # to the whole command vector like Choreo's.

@@ -64,7 +64,7 @@ def _wall_hug():
 
 
 # ---------------------------------------------------------------------------------------------- three pieces
-# core-builder's neutral_three_piece (bench/ppcompare.py on v2-ppcompare, 8c5b6fc..d5c9273): the 2026 field,
+# core-builder's neutral_three_piece: the 2026 field,
 # centre origin, blue alliance; scoring poses face the hub's centre
 HUB = (-3.645, 0.0)
 SHOT_C = (-5.70, 2.20)
@@ -91,26 +91,6 @@ def _joined(legs):
         wps += list(leg.waypoints[1:])
     return tuple(wps)
 
-
-# The full-traction block (run.py): ours on the original nine courses with the path's acceleration cap raised to
-# 11.2 m/s^2 (0.9 x min(mu g, tip) for the team's modules), so its own traction rule decides, the speed cap
-# unchanged; every other method stays at the shared limits (the main grid's rows).
-FULL_TRACTION_ACCEL = 11.2
-
-
-def _full_traction():
-    from dataclasses import replace
-
-    from courses import COURSES
-
-    out = {}
-    for n, c in list(COURSES.items())[:9]:
-        out["ft_" + n] = replace(c, name="ft_" + n, limits=replace(c.limits, max_accel=FULL_TRACTION_ACCEL),
-                                 description=c.description + f"; shared acceleration {FULL_TRACTION_ACCEL:g} m/s^2")
-    return out
-
-
-FULL_TRACTION = _full_traction()
 
 EXTRA_COURSES = {
     "spin_while_driving": Course(
