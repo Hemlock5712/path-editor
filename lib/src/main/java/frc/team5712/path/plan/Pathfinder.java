@@ -203,36 +203,70 @@ public final class Pathfinder {
    */
   public PlanResult plan(Pose start, FieldSpeeds startVelocity, Pose goal, double endSpeed, double endTangent) {
     long t0 = System.nanoTime();
+    // 1. Snap: a start or goal inside a grown obstacle (or too near a wall) moves out to the nearest free point
     double[] s = snap(start.xMeters(), start.yMeters());
     double[] g = snap(goal.xMeters(), goal.yMeters());
     double startSnap = Math.hypot(s[0] - start.xMeters(), s[1] - start.yMeters());
     double goalSnap = Math.hypot(g[0] - goal.xMeters(), g[1] - goal.yMeters());
     double arrive = Math.min(Math.max(0.0, endSpeed), config.maxMetersPerSecond());
-    List<double[]> route = null;
-    boolean approach = false;
-    if (Double.isFinite(endTangent) && goalSnap <= 1e-9) {
-      double len = APPROACH_METERS + arrive * arrive / (2 * config.maxMetersPerSecondSquared());
-      double[] a = {g[0] - len * StrictMath.cos(endTangent), g[1] - len * StrictMath.sin(endTangent)};
-      if (Math.hypot(g[0] - s[0], g[1] - s[1]) > 2 * len && isFree(a[0], a[1]) && visible(a[0], a[1], g[0], g[1])) {
-        List<double[]> head = shortestRoute(s, a);
-        if (head != null) {
-          route = new ArrayList<>(head);
-          route.add(g);
-          approach = true;
-        }
-      }
-    }
-    if (route == null) {
-      route = shortestRoute(s, g);
-    }
-    double endDirection = approach ? endTangent : Double.NaN;
+
+    // 2. Route: the shortest way round the grown obstacles, corner to corner (A* on the visibility graph)
+    Route route = route(s, g, arrive, endTangent, goalSnap);
     long t1 = System.nanoTime();
     double straight = Math.hypot(goal.xMeters() - start.xMeters(), goal.yMeters() - start.yMeters());
     if (route == null) {
       return PlanResult.failed("no route between the start and the goal", startSnap, goalSnap, straight,
           (t1 - t0) / 1e3);
     }
-    // the path starts where the robot is and ends where the goal is, through the snapped points if any
+
+    // 3. Waypoints: the route's corners, from where the robot really is to where the goal really is
+    List<double[]> pts = waypoints(start, goal, route.points(), startSnap, goalSnap);
+    double routeLength = polylineLength(pts);
+
+    // 4. Smooth: a spline through the waypoints, the bumpers swept along it, more waypoints where it comes too close
+    double v = Math.hypot(startVelocity.vxMetersPerSecond(), startVelocity.vyMetersPerSecond());
+    boolean moving = v > 0.1;
+    double startTangent = moving ? StrictMath.atan2(startVelocity.vyMetersPerSecond(), startVelocity.vxMetersPerSecond())
+        : Double.NaN;
+    double startSpeed = moving ? Math.min(v, config.maxMetersPerSecond()) : 0.0;
+    Smoothed smoothed = smooth(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians(),
+        route.endDirection(), arrive, startSnap, goalSnap);
+    long t2 = System.nanoTime();
+
+    // 5. Profile: the same speed plan as a drawn path
+    Path path = Path.build(smoothed.spec(), robot);
+    long t3 = System.nanoTime();
+    return new PlanResult(path, List.copyOf(pts), routeLength, straight, startSnap, goalSnap, smoothed.refits(),
+        smoothed.sweep().violations.isEmpty(), smoothed.sweep().minClearance, (t1 - t0) / 1e3, (t2 - t1) / 1e3,
+        (t3 - t2) / 1e3, (t3 - t0) / 1e3, null);
+  }
+
+  /** A route's corners, and the direction it must arrive in (NaN = whatever the route gives). */
+  private record Route(List<double[]> points, double endDirection) {}
+
+  /**
+   * Step 2: the shortest route from s to g, or null if there is none. With an end direction (a hand-over to a path),
+   * the route ends with a straight approach along it when that stretch is free and the goal is far enough away.
+   */
+  private Route route(double[] s, double[] g, double arrive, double endTangent, double goalSnap) {
+    if (Double.isFinite(endTangent) && goalSnap <= 1e-9) {
+      double len = APPROACH_METERS + arrive * arrive / (2 * config.maxMetersPerSecondSquared());
+      double[] a = {g[0] - len * StrictMath.cos(endTangent), g[1] - len * StrictMath.sin(endTangent)};
+      if (Math.hypot(g[0] - s[0], g[1] - s[1]) > 2 * len && isFree(a[0], a[1]) && visible(a[0], a[1], g[0], g[1])) {
+        List<double[]> head = shortestRoute(s, a);
+        if (head != null) {
+          List<double[]> points = new ArrayList<>(head);
+          points.add(g);
+          return new Route(points, endTangent);
+        }
+      }
+    }
+    List<double[]> points = shortestRoute(s, g);
+    return points == null ? null : new Route(points, Double.NaN);
+  }
+
+  /** Step 3: the path starts where the robot is and ends where the goal is, through the snapped points if any. */
+  private static List<double[]> waypoints(Pose start, Pose goal, List<double[]> route, double startSnap, double goalSnap) {
     List<double[]> pts = new ArrayList<>();
     if (startSnap > 1e-9) {
       pts.add(new double[] {start.xMeters(), start.yMeters()});
@@ -241,65 +275,72 @@ public final class Pathfinder {
     if (goalSnap > 1e-9) {
       pts.add(new double[] {goal.xMeters(), goal.yMeters()});
     }
-    pts = dedupe(pts);
-    double routeLength = 0;
+    return dedupe(pts);
+  }
+
+  private static double polylineLength(List<double[]> pts) {
+    double length = 0;
     for (int i = 1; i < pts.size(); i++) {
-      routeLength += Math.hypot(pts.get(i)[0] - pts.get(i - 1)[0], pts.get(i)[1] - pts.get(i - 1)[1]);
+      length += Math.hypot(pts.get(i)[0] - pts.get(i - 1)[0], pts.get(i)[1] - pts.get(i - 1)[1]);
     }
+    return length;
+  }
 
-    double v = Math.hypot(startVelocity.vxMetersPerSecond(), startVelocity.vyMetersPerSecond());
-    boolean moving = v > 0.1;
-    double startTangent = moving ? StrictMath.atan2(startVelocity.vyMetersPerSecond(), startVelocity.vxMetersPerSecond())
-        : Double.NaN;
-    double startSpeed = moving ? Math.min(v, config.maxMetersPerSecond()) : 0.0;
+  /** The smoothed path's spec, its last sweep and how many refits it took. */
+  private record Smoothed(PathSpec spec, Sweep sweep, int refits) {}
 
-    // fit, sweep the bumpers, add route points where the margin is broken, refit
+  /**
+   * Step 4: fit the spline through {@code pts}, sweep the bumpers along it, and where it comes closer than the margin
+   * add a waypoint and fit again, up to {@code maxRefits} times. Adds the waypoints to {@code pts}. The snapped ends
+   * (already inside the margin) aren't checked.
+   */
+  private Smoothed smooth(List<double[]> pts, double startTangent, double startSpeed, double startHeading,
+      double goalHeading, double endDirection, double arrive, double startSnap, double goalSnap) {
     int refits = 0;
-    Sweep sweep;
-    PathSpec spec;
     while (true) {
-      spec = Path.pureRotation(spec(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians(),
-          endDirection, arrive));
+      PathSpec spec = Path.pureRotation(spec(pts, startTangent, startSpeed, startHeading, goalHeading, endDirection,
+          arrive));
       PathGeometry geometry = PathGeometry.build(spec.waypoints());
       HeadingProfile heading = HeadingProfile.build(geometry, spec.rotationTargets(), spec.facePointZones());
       double skipStart = startSnap > 1e-9 ? geometry.waypointS(1) : 0.0;
       double skipEnd = goalSnap > 1e-9 ? geometry.waypointS(pts.size() - 2) : geometry.lengthMeters();
-      sweep = sweep(geometry, heading, skipStart, skipEnd);
+      Sweep sweep = sweep(geometry, heading, skipStart, skipEnd);
       if (sweep.violations.isEmpty() || refits >= config.maxRefits()) {
-        break;
+        return new Smoothed(spec, sweep, refits);
       }
       refits++;
-      // one new waypoint per broken stretch, on the route segment under its worst point
-      List<double[]> inserts = new ArrayList<>();
-      for (double sv : sweep.violations) {
-        int seg = segmentAt(geometry, sv, pts.size());
-        double[] a = pts.get(seg);
-        double[] b = pts.get(seg + 1);
-        double[] p = xy(geometry, sv);
-        double ex = b[0] - a[0];
-        double ey = b[1] - a[1];
-        double len = Math.hypot(ex, ey);
-        double t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / (len * len);
-        double minT = Math.min(0.5, 0.05 / len); // stay at least 5 cm from both ends
-        t = Math.max(minT, Math.min(1 - minT, t));
-        inserts.add(new double[] {seg, a[0] + t * ex, a[1] + t * ey});
-      }
-      inserts.sort((x, y) -> Double.compare(y[0], x[0])); // back to front keeps indices valid
-      int lastSeg = -1;
-      for (double[] ins : inserts) {
-        if ((int) ins[0] == lastSeg) {
-          continue; // one per segment per round
-        }
-        lastSeg = (int) ins[0];
-        pts.add(lastSeg + 1, new double[] {ins[1], ins[2]});
-      }
+      addWaypointsUnder(sweep.violations, geometry, pts);
     }
-    long t2 = System.nanoTime();
-    Path path = Path.build(spec, robot);
-    long t3 = System.nanoTime();
-    return new PlanResult(path, List.copyOf(pts), routeLength, straight, startSnap, goalSnap, refits,
-        sweep.violations.isEmpty(), sweep.minClearance, (t1 - t0) / 1e3, (t2 - t1) / 1e3, (t3 - t2) / 1e3,
-        (t3 - t0) / 1e3, null);
+  }
+
+  /**
+   * One new waypoint per stretch that came too close, on the route segment under its worst point (at least 5 cm from
+   * the segment's ends, one per segment per round).
+   */
+  private static void addWaypointsUnder(List<Double> violations, PathGeometry geometry, List<double[]> pts) {
+    List<double[]> inserts = new ArrayList<>();
+    for (double sv : violations) {
+      int seg = segmentAt(geometry, sv, pts.size());
+      double[] a = pts.get(seg);
+      double[] b = pts.get(seg + 1);
+      double[] p = xy(geometry, sv);
+      double ex = b[0] - a[0];
+      double ey = b[1] - a[1];
+      double len = Math.hypot(ex, ey);
+      double t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / (len * len);
+      double minT = Math.min(0.5, 0.05 / len);
+      t = Math.max(minT, Math.min(1 - minT, t));
+      inserts.add(new double[] {seg, a[0] + t * ex, a[1] + t * ey});
+    }
+    inserts.sort((x, y) -> Double.compare(y[0], x[0])); // back to front keeps indices valid
+    int lastSeg = -1;
+    for (double[] ins : inserts) {
+      if ((int) ins[0] == lastSeg) {
+        continue;
+      }
+      lastSeg = (int) ins[0];
+      pts.add(lastSeg + 1, new double[] {ins[1], ins[2]});
+    }
   }
 
   private static double[] xy(PathGeometry geometry, double s) {

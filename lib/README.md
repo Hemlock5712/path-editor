@@ -70,6 +70,20 @@ path's end speed, so an intake path still drives through its piece.
 5. **Re-plan, don't patch.** Knocked more than 0.2 m off the path, or with a moving goal more than 10 cm from
    where it planned to, it plans again from where the robot is, at the speed it is going.
 
+### Reading the code
+
+About 1,500 lines of code carry the ideas. Read them in this order:
+
+1. `follow/PathFollower.java`: `step()` and its three laws, `followPath`, `turnOnTheSpot` and `driveToGoal`.
+2. `follow/StoppingLaw.java` (DriveToPose's law, 28 lines) and `follow/OutputLimiter.java` (the one limiter).
+3. `core/VelocityProfile.java`, for the two passes.
+4. `plan/OnTheFly.java` (plan, follow, re-plan) and `plan/Pathfinder.java`. `plan()` is its five steps: snap,
+   route, waypoints, smooth, profile.
+
+The curve maths (`QuinticSpline`, `PathGeometry`, `HeadingProfile`) can be treated as a black box: a distance
+along the path goes in, a point, a direction, a curvature and a heading come out. Each file starts with what it
+does in plain words.
+
 The rest of this file is the detail and the measurements behind each piece.
 
 ## Packages

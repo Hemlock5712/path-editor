@@ -7,6 +7,12 @@ import java.util.List;
 /**
  * The path's shape, indexed by distance along it ({@code s}, metres).
  *
+ * <p><b>In plain words.</b> The spline from {@link QuinticSpline} doesn't know how long it is. This measures it, so
+ * that everything else can ask "where is the point 2.4 m along the path, which way does it face, and how sharply
+ * does it bend?" It also finds the point on the path closest to the robot. <b>You can treat it as a black box:</b>
+ * a distance {@code s} goes in, a point, a direction and a curvature come out. The rest of this comment is how it
+ * does that accurately and fast.
+ *
  * <p>The spline is parameterised by {@code u}, not distance, so this builds an arc-length table:
  * each spline piece is cut into sub-pieces, the length of each comes from 5-point Gauss-Legendre
  * quadrature, and inside a sub-piece {@code u(s)} is a cubic Hermite interpolant through the

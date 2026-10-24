@@ -7,6 +7,12 @@ import java.util.List;
  * breaking any limit, from a forward pass (how fast it can get) and a backward pass (how fast it can
  * still stop or slow in time), both O(N) on a uniform grid of about {@link #DEFAULT_GRID_METERS}.
  *
+ * <p><b>In plain words.</b> How fast the robot may go at every point of the path. One pass runs forward from the
+ * start ("how fast can it be going by here?"), one runs backward from the end ("can it still slow down in time?"),
+ * and the plan is the slower of the two everywhere. Speeding up, braking, cornering and turning all share one grip
+ * budget, the same traction limit as Precision-Drive's AccelerationLimiter. This is worth reading: the two passes
+ * are the idea. The model and the step below are the detail.
+ *
  * <h2>The model</h2>
  *
  * The robot is a rigid body of mass m and yaw inertia I, with its wheels a distance r from the centre.

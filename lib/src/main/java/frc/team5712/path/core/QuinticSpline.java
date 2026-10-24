@@ -5,6 +5,12 @@ import java.util.List;
 /**
  * A chain of quintic Hermite pieces through the waypoints, with curvature continuous at every knot.
  *
+ * <p><b>In plain words.</b> This draws the smooth curve through the waypoints you placed. Between each pair of
+ * waypoints it fits one curved piece, and the pieces meet with the same direction and the same bend, so the robot
+ * never has to jerk its wheels at a waypoint. <b>You can treat it as a black box:</b> waypoints go in, a smooth curve
+ * comes out. {@link PathGeometry} then measures it in metres. The rest of this comment is the maths, for whoever
+ * changes it.
+ *
  * <p>Piece {@code k} runs from waypoint {@code k} to {@code k + 1} with a local parameter
  * {@code u ∈ [0, 1]}. Each end of a piece is pinned by a position, a first derivative {@code V} and a
  * second derivative {@code A}:

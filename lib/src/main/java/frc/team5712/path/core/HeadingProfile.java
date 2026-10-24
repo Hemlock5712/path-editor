@@ -6,6 +6,11 @@ import java.util.List;
  * The robot's planned heading as a function of distance along the path, with its first two
  * derivatives so the velocity profile can budget for the spin.
  *
+ * <p><b>In plain words.</b> Which way the robot faces at each point along the path. It holds a heading, faces where
+ * it is driving, or turns smoothly from one rotation target to the next, and it can be pulled to face a point
+ * (a face-point zone). <b>You can treat it as a black box:</b> a distance {@code s} goes in, a heading (and how fast
+ * it is turning) comes out. The layers below say exactly how.
+ *
  * <p>Layers, bottom to top:
  *
  * <ol>
@@ -143,94 +148,103 @@ public final class HeadingProfile {
 
   /** The heading at a geometry sample already in hand (saves a lookup). */
   public HeadingSample sample(GeometrySample g) {
-    double s = g.s();
-    double theta;
-    double dTheta;
-    double ddTheta;
-
-    if (targetS.length == 0) {
-      theta = Angles.atan2(g.tangentY(), g.tangentX());
-      dTheta = g.curvature();
-      ddTheta = g.dCurvatureDs();
-    } else if (s <= targetS[0]) {
-      theta = targetRadians[0];
-      dTheta = 0.0;
-      ddTheta = 0.0;
-    } else if (s >= targetS[targetS.length - 1]) {
-      theta = targetRadians[targetS.length - 1];
-      dTheta = 0.0;
-      ddTheta = 0.0;
-    } else {
-      int j = 0;
-      while (targetS[j + 1] <= s) {
-        j++;
-      }
-      double length = targetS[j + 1] - targetS[j];
-      double turn = targetRadians[j + 1] - targetRadians[j];
-      double tau = (s - targetS[j]) / length;
-      // quintic Hermite: the targets, the rates m0 and m1 there, zero d²θ/ds² at both
-      double m0 = targetSlope[j];
-      double m1 = targetSlope[j + 1];
-      double t2 = tau * tau;
-      double t3 = t2 * tau;
-      double t4 = t3 * tau;
-      double h1 = tau - 6.0 * t3 + 8.0 * t4 - 3.0 * t4 * tau;
-      double h4 = -4.0 * t3 + 7.0 * t4 - 3.0 * t4 * tau;
-      double h1d = 1.0 - 18.0 * t2 + 32.0 * t3 - 15.0 * t4;
-      double h4d = -12.0 * t2 + 28.0 * t3 - 15.0 * t4;
-      double h1dd = -36.0 * tau + 96.0 * t2 - 60.0 * t3;
-      double h4dd = -24.0 * tau + 84.0 * t2 - 60.0 * t3;
-      theta = targetRadians[j] + turn * Angles.smoothstep5(tau) + length * (m0 * h1 + m1 * h4);
-      dTheta = turn * Angles.smoothstep5Slope(tau) / length + m0 * h1d + m1 * h4d;
-      ddTheta = turn * Angles.smoothstep5Bend(tau) / (length * length) + (m0 * h1dd + m1 * h4dd) / length;
-    }
-
+    HeadingSample h = base(g);
     for (int j = 0; j < zoneStartS.length; j++) {
-      double a = zoneStartS[j];
-      double b = zoneEndS[j];
-      if (s < a || s > b) {
-        continue;
-      }
-      double dx = zonePointX[j] - g.xMeters();
-      double dy = zonePointY[j] - g.yMeters();
-      double distSq = dx * dx + dy * dy;
-      if (distSq < 1e-9) {
-        continue; // on top of the point: no direction to face
-      }
-      // Weight w(s): 0 → 1 over the first blend, 1 → 0 over the last
-      double blend = zoneBlendMeters[j];
-      double w = 1.0;
-      double dw = 0.0;
-      double ddw = 0.0;
-      if (blend > 0.0) {
-        if (s < a + blend) {
-          double tau = (s - a) / blend;
-          w = Angles.smoothstep5(tau);
-          dw = Angles.smoothstep5Slope(tau) / blend;
-          ddw = Angles.smoothstep5Bend(tau) / (blend * blend);
-        } else if (s > b - blend) {
-          double tau = (b - s) / blend;
-          w = Angles.smoothstep5(tau);
-          dw = -Angles.smoothstep5Slope(tau) / blend;
-          ddw = Angles.smoothstep5Bend(tau) / (blend * blend);
-        }
-      }
-      // Facing direction and its derivatives along the path. With d = point − p(s), d' = −T and
-      // T' = κN: θf' = (T × d)/|d|², θf'' = (2(T × d)(T·d) − κ(T·d)|d|²)/|d|⁴.
-      double face = Angles.atan2(dy, dx);
-      double cross = g.tangentX() * dy - g.tangentY() * dx;
-      double along = g.tangentX() * dx + g.tangentY() * dy;
-      double dFace = cross / distSq;
-      double ddFace = (2.0 * cross * along - g.curvature() * along * distSq) / (distSq * distSq);
-
-      double gap = Angles.wrap(face - theta);
-      double newTheta = theta + w * gap;
-      double newDTheta = dTheta + dw * gap + w * (dFace - dTheta);
-      double newDdTheta = ddTheta + ddw * gap + 2.0 * dw * (dFace - dTheta) + w * (ddFace - ddTheta);
-      theta = newTheta;
-      dTheta = newDTheta;
-      ddTheta = newDdTheta;
+      h = faceZone(j, g, h);
     }
-    return new HeadingSample(Angles.wrap(theta), dTheta, ddTheta);
+    return new HeadingSample(Angles.wrap(h.radians()), h.radiansPerMeter(), h.radiansPerMeterSquared());
+  }
+
+  /** The base layer (unwrapped): face travel with no targets, hold before the first and after the last, else blend. */
+  private HeadingSample base(GeometrySample g) {
+    double s = g.s();
+    if (targetS.length == 0) {
+      return new HeadingSample(Angles.atan2(g.tangentY(), g.tangentX()), g.curvature(), g.dCurvatureDs());
+    }
+    if (s <= targetS[0]) {
+      return new HeadingSample(targetRadians[0], 0.0, 0.0);
+    }
+    if (s >= targetS[targetS.length - 1]) {
+      return new HeadingSample(targetRadians[targetS.length - 1], 0.0, 0.0);
+    }
+    int j = 0;
+    while (targetS[j + 1] <= s) {
+      j++;
+    }
+    return betweenTargets(j, s);
+  }
+
+  /**
+   * From target j to target j + 1: a quintic through both headings with the rates {@link #passThroughSlopes} gives at
+   * each and zero d²θ/ds² at both (the smoothstep turn plus two rate terms).
+   */
+  private HeadingSample betweenTargets(int j, double s) {
+    double length = targetS[j + 1] - targetS[j];
+    double turn = targetRadians[j + 1] - targetRadians[j];
+    double tau = (s - targetS[j]) / length;
+    double m0 = targetSlope[j];
+    double m1 = targetSlope[j + 1];
+    double t2 = tau * tau;
+    double t3 = t2 * tau;
+    double t4 = t3 * tau;
+    double h1 = tau - 6.0 * t3 + 8.0 * t4 - 3.0 * t4 * tau;
+    double h4 = -4.0 * t3 + 7.0 * t4 - 3.0 * t4 * tau;
+    double h1d = 1.0 - 18.0 * t2 + 32.0 * t3 - 15.0 * t4;
+    double h4d = -12.0 * t2 + 28.0 * t3 - 15.0 * t4;
+    double h1dd = -36.0 * tau + 96.0 * t2 - 60.0 * t3;
+    double h4dd = -24.0 * tau + 84.0 * t2 - 60.0 * t3;
+    return new HeadingSample(
+        targetRadians[j] + turn * Angles.smoothstep5(tau) + length * (m0 * h1 + m1 * h4),
+        turn * Angles.smoothstep5Slope(tau) / length + m0 * h1d + m1 * h4d,
+        turn * Angles.smoothstep5Bend(tau) / (length * length) + (m0 * h1dd + m1 * h4dd) / length);
+  }
+
+  /** Face-point zone j: inside it, pull the heading toward the zone's point, eased in and out over its blend. */
+  private HeadingSample faceZone(int j, GeometrySample g, HeadingSample h) {
+    double s = g.s();
+    double a = zoneStartS[j];
+    double b = zoneEndS[j];
+    if (s < a || s > b) {
+      return h;
+    }
+    double dx = zonePointX[j] - g.xMeters();
+    double dy = zonePointY[j] - g.yMeters();
+    double distSq = dx * dx + dy * dy;
+    if (distSq < 1e-9) {
+      return h; // on top of the point: no direction to face
+    }
+    // Weight w(s): 0 → 1 over the first blend, 1 → 0 over the last
+    double blend = zoneBlendMeters[j];
+    double w = 1.0;
+    double dw = 0.0;
+    double ddw = 0.0;
+    if (blend > 0.0) {
+      if (s < a + blend) {
+        double tau = (s - a) / blend;
+        w = Angles.smoothstep5(tau);
+        dw = Angles.smoothstep5Slope(tau) / blend;
+        ddw = Angles.smoothstep5Bend(tau) / (blend * blend);
+      } else if (s > b - blend) {
+        double tau = (b - s) / blend;
+        w = Angles.smoothstep5(tau);
+        dw = -Angles.smoothstep5Slope(tau) / blend;
+        ddw = Angles.smoothstep5Bend(tau) / (blend * blend);
+      }
+    }
+    // Facing direction and its derivatives along the path. With d = point − p(s), d' = −T and
+    // T' = κN: θf' = (T × d)/|d|², θf'' = (2(T × d)(T·d) − κ(T·d)|d|²)/|d|⁴.
+    double face = Angles.atan2(dy, dx);
+    double cross = g.tangentX() * dy - g.tangentY() * dx;
+    double along = g.tangentX() * dx + g.tangentY() * dy;
+    double dFace = cross / distSq;
+    double ddFace = (2.0 * cross * along - g.curvature() * along * distSq) / (distSq * distSq);
+    double theta = h.radians();
+    double dTheta = h.radiansPerMeter();
+    double ddTheta = h.radiansPerMeterSquared();
+    double gap = Angles.wrap(face - theta);
+    return new HeadingSample(
+        theta + w * gap,
+        dTheta + dw * gap + w * (dFace - dTheta),
+        ddTheta + ddw * gap + 2.0 * dw * (dFace - dTheta) + w * (ddFace - ddTheta));
   }
 }
