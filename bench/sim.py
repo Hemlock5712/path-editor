@@ -69,39 +69,12 @@ def make_robot(course, seed):
     return rp, rng
 
 
-class Guard:
-    """The drivetrain guard a team puts between any follower and the modules: the commanded speed capped at the
-    course's, and its change per loop at the course's acceleration (translation) and spin acceleration limits.
-    Applied the same to every follower; one that already keeps to the limits is untouched."""
-
-    def __init__(self, limits, v0):
-        self.lim = limits
-        self.last = tuple(v0)
-
-    def __call__(self, cmd, dt):
-        lim, (lx, ly, lw) = self.lim, self.last
-        vx, vy, w = cmd
-        sp = math.hypot(vx, vy)
-        if sp > lim.max_speed:
-            vx, vy = vx * lim.max_speed / sp, vy * lim.max_speed / sp
-        dx, dy = vx - lx, vy - ly
-        step = math.hypot(dx, dy)
-        if step > lim.max_accel * dt:
-            k = lim.max_accel * dt / step
-            vx, vy = lx + dx * k, ly + dy * k
-        w = max(-lim.max_omega, min(lim.max_omega, w))
-        w = lw + max(-lim.max_alpha * dt, min(lim.max_alpha * dt, w - lw))
-        self.last = (vx, vy, w)
-        return self.last
-
-
-def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, guard=None):
+def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None):
     """Run one follower on its native path from `start` (pose) with field velocity v0 for T seconds
     (reset is called here and timed). Returns a dict of 250 Hz traces
     (t, x, y, unwrapped heading, true speed) and run facts.
 
-    pose_src: 'truth' or 'odom' (WPILib wheel odometry + gyro).
-    guard: a Limits; every command then goes through the same Guard (speed and acceleration caps)."""
+    pose_src: 'truth' or 'odom' (WPILib wheel odometry + gyro)."""
     if plant is None:
         plant = DisturbedPlant(rp, start, v0, rng)
     gyro0, modules0 = plant.read_gyro(), plant.read_modules()
@@ -128,8 +101,6 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, guar
 
     dt = LP.sim_dt
     t, next_odom, next_main = 0.0, 0.0, LP.main_period
-    guarding = Guard(guard, v0) if guard is not None else None
-    last_main = 0.0
     requests, cur_req, cur_ff = [], (v0[0], v0[1], v0[2]), None
     ts, xs, ys, ths, sp = [], [], [], [], []
     wheel_slip = 0.0
@@ -169,9 +140,6 @@ def simulate(follower, native, start, v0, rp, rng, T, pose_src, plant=None, guar
                     t_done = t
                     cmd = (0.0, 0.0, 0.0) if follower.end_output == "zero" else "idle"
                     ff = None
-                if guarding is not None and cmd != "idle":
-                    cmd = guarding(tuple(cmd), max(t - last_main, 1e-3))
-                last_main = t
                 requests.append((t + LP.actuation_delay, cmd if cmd == "idle" else tuple(cmd), ff))
         plant.step(dt)
         t += dt
@@ -203,10 +171,6 @@ def run_one(job, trace=False):
     """job = (course name, method key, options dict or None, seed, pose source 'odom' | 'truth').
     trace=True adds the true path every 40 ms as [[t, x, y, heading], ...]."""
     cname, mkey, opts, seed, pose_src = job
-    guard = None
-    if opts and "guard" in opts:  # the drivetrain guard at the course's limits (see Guard)
-        guard = COURSES[cname].limits if opts["guard"] else None
-        opts = {k: v for k, v in opts.items() if k != "guard"}
     course = COURSES[cname]
     npath = NeutralPath(course)
     rp, rng = make_robot(course, seed)
@@ -221,7 +185,7 @@ def run_one(job, trace=False):
     follower, native = make_follower(cname, mkey, opts, seed)
     if getattr(follower, "needs_plant", False):  # an end that moves when it is seen needs the true pose
         follower.plant = plant
-    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant, guard)
+    r = simulate(follower, native, start, v0, rp, rng, t_end(course), pose_src, plant)
     ts, xs, ys, ths = r["t"], r["x"], r["y"], r["th"]
     end = getattr(follower, "true_end", course.end_pose)
     dist, eth, t_5cm, t_settle = end_metrics(r, end)

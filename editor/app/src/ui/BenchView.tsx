@@ -215,8 +215,9 @@ function Differences() {
         <strong>Where it isn't ahead.</strong> Ours runs on the library's defaults here, nothing tuned for this robot. One of those
         defaults reads the plan 0.05 s ahead to cover the drivetrain's lag; ChoreoLib reads its trajectory at the current time, and
         given a 0.06 s lead on its feedforward, Choreo + final hold finishes these courses faster than ours. Choreo's plans are also
-        faster on courses that turn while driving, path2 wins the straight and the long fast courses, and BLine and path2 follow the
-        line more closely.
+        faster on courses that turn while driving, path2 wins the straight, the hairpin and the long fast course, and BLine and path2
+        follow the line more closely. Shoved or on a slippery floor, ours still brakes as hard as its plan (the library's default), so
+        it recovers more slowly than path2 and Choreo + final hold there.
       </p>
     </Section>
   );
@@ -302,7 +303,7 @@ function GoesWrong({ d, rule }: { d: MatchedData; rule: string }) {
     <Section
       id="disturbed"
       title="When something goes wrong"
-      lead="The S-curve three more ways: shoved sideways for 0.3 s halfway along, on a floor with 61 % of the grip, and with the grip dropping to that halfway along. Each follower knows exactly where the robot is."
+      lead="The S-curve two more ways: shoved sideways for 0.3 s halfway along, and on a floor with 61 % of the grip. Each follower knows exactly where the robot is."
     >
       <DisturbTable d={d} rule={rule} pose="truth" courses={courses} testId="bench-disturbed-table" showFinished />
     </Section>
@@ -514,7 +515,7 @@ function HowTested({ d, rule }: { d: MatchedData; rule: string }) {
           <strong>Optimised</strong> is the editor's Optimise path: it reshapes the curves between the waypoints you drew, which stay put.
         </li>
         <li>
-          The numbers come from <code>bench/matched.py</code> in the repository (tables in <code>bench/MATCHED.md</code>).
+          The numbers come from <code>bench/matched.py</code> in the repository (summary in <code>bench/RESULTS.md</code>).
         </li>
       </ul>
     </details>
