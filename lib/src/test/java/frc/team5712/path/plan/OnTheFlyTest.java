@@ -139,6 +139,35 @@ class OnTheFlyTest {
   }
 
   @Test
+  void aRouteTheSmootherCouldNotClearLosesToAClearWideOne() {
+    // no refits: the spline through the route's corners is left to bow into the obstacles
+    PlannerConfig d = PlannerConfig.DEFAULT;
+    Pathfinder noRefits = new Pathfinder(field2026(), RobotConfig.DEFAULT, new PlannerConfig(d.bumperLengthMeters(),
+        d.bumperWidthMeters(), d.marginMeters(), d.arcStepRadians(), 0, d.checkStepMeters(), d.maxMetersPerSecond(),
+        d.maxMetersPerSecondSquared()));
+    Pathfinder wide = new Pathfinder(field2026(), RobotConfig.DEFAULT, d.withMargin(PlannerConfig.WIDE_MARGIN_METERS));
+    FieldSpeeds still = new FieldSpeeds(0, 0, 0);
+    Random r = new Random(7);
+    for (int i = 0; i < 200; i++) {
+      Pose a = randomFree(r);
+      Pose b = randomFree(r);
+      PlanResult tight = noRefits.plan(a, still, b, 0, Double.NaN);
+      PlanResult w = wide.plan(a, still, b, 0, Double.NaN);
+      if (!tight.ok() || tight.clear() || !w.ok() || !w.clear()) {
+        continue;
+      }
+      OnTheFly alone = new OnTheFly(noRefits, CONFIG, () -> b);
+      assertTrue(alone.start(0.0, a, still), "with nothing better it still drives");
+      assertTrue(!alone.lastPlan().clear());
+      OnTheFly withWide = new OnTheFly(noRefits, CONFIG, () -> b).preferring(wide);
+      assertTrue(withWide.start(0.0, a, still));
+      assertTrue(withWide.lastPlanWide() && withWide.lastPlan().clear(), "the clear wide route wins, even the long way");
+      return;
+    }
+    throw new AssertionError("no start and goal where the smoother needed refits");
+  }
+
+  @Test
   void aGoalThatMovesBehindAnObstacleIsPlannedRound() {
     // heading for a spot by the blue hub's left side, the goal jumps to its right side: bending the path's end
     // straight over to it would drive through the hub, so it must plan again round it

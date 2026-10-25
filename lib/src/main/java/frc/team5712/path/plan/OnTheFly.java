@@ -126,10 +126,20 @@ public final class OnTheFly {
     // the wide berth only when it doesn't send the robot the long way round (a gap it can't use)
     boolean useWide = wide != null
         && wide.routeLengthMeters(pose, target) <= WIDE_DETOUR_RATIO * pathfinder.routeLengthMeters(pose, target);
-    PlanResult r = useWide ? wide.plan(pose, velocity, target, endSpeed, endTangent) : null;
-    lastPlanWide = r != null && r.ok();
+    PlanResult w = useWide ? wide.plan(pose, velocity, target, endSpeed, endTangent) : null;
+    PlanResult r = w;
+    lastPlanWide = w != null && w.ok() && w.clear();
     if (!lastPlanWide) {
       r = pathfinder.plan(pose, velocity, target, endSpeed, endTangent);
+      // the smoother ran out of refits and the bumpers come inside the margin: a clear wide route wins, even
+      // the long way round; with neither clear, drive one anyway (PlanResult.clear() says so)
+      if (w == null && wide != null && !(r.ok() && r.clear())) {
+        w = wide.plan(pose, velocity, target, endSpeed, endTangent);
+      }
+      if (w != null && w.ok() && (w.clear() || !r.ok())) {
+        r = w;
+        lastPlanWide = true;
+      }
     }
     lastPlan = r;
     lastPlanTime = t;

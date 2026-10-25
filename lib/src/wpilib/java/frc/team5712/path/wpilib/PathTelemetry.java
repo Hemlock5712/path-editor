@@ -103,6 +103,7 @@ public final class PathTelemetry {
     table.log("StartSnap", r.startSnapMeters());
     table.log("GoalSnap", r.goalSnapMeters());
     table.log("MinClearance", r.ok() ? r.minClearanceMeters() : Double.NaN);
+    table.log("PlanClear", r.ok() && r.clear());
     table.log("PlanFailure", r.failure() == null ? "" : r.failure());
   }
 
