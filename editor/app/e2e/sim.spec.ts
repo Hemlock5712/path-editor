@@ -5,8 +5,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function dblField(page: Page, x: number, y: number): Promise<void> {
   const box = (await page.getByTestId("field").boundingBox())!;
-  const scale = Math.min((box.width - 48) / 16.54, (box.height - 48) / 8.07);
-  await page.mouse.dblclick(box.x + box.width / 2 + x * scale, box.y + box.height / 2 - y * scale);
+  const [px, py] = await page.evaluate(
+    ([fx, fy]) => (window as unknown as { pathEditorTest: { toCanvas(x: number, y: number): [number, number] } }).pathEditorTest.toCanvas(fx!, fy!),
+    [x, y],
+  );
+  await page.mouse.dblclick(box.x + px, box.y + py);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -30,7 +33,7 @@ test("the sim preview runs and reports a time", async ({ page }) => {
   await expect(bar).toContainText(/cross-track max \d+(\.\d+)? cm/);
   const calm = await bar.textContent();
   // the shove is in the inspector's Sim preview card
-  await page.locator("button.card-head", { hasText: /^Sim preview/ }).click();
+  await page.getByTestId("inspector-tab-optimise").click();
   await page.getByTestId("sim-shove").click();
   await expect(bar).not.toHaveText(calm!);
   await expect(time).toContainText(/Sim \d+(\.\d+)? s vs plan/);

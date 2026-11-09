@@ -268,7 +268,7 @@ export function isDrawn(spec: PathSpec): boolean {
 }
 
 /**
- * A new path to draw: just its start pose, or nothing yet. Double-clicks add the rest (the first two on
+ * A new path to draw: just its start pose, or nothing yet. Draw clicks add the rest (the first two on
  * an empty path make the start and the end).
  */
 export function startSpec(start: { x: number; y: number; heading: number } | null, defaults: PathDefaults = DEFAULT_PATH_DEFAULTS): PathSpec {

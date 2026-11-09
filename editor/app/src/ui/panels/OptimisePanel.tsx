@@ -74,7 +74,7 @@ export function OptimiseControls() {
             data-tip={
               drawn
                 ? `${whatMoves(path.spec, options)} It keeps the bumpers ${cm(CHECKS.bumperMarginMeters)} clear of obstacles and the wall (${formatNumber(o.budgetSeconds, 1)} s budget).`
-                : "Draw the path first: double-click the field for its start and end"
+                : "Draw the path first: press W and click the field for its start and end"
             }
             data-testid="optimise-path"
           >

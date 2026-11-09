@@ -81,8 +81,12 @@ async function folderFile(page: Page, path: string): Promise<string | undefined>
 /** Canvas pixels for a field point on the blue view at the default zoom (the FieldView maths). */
 async function fieldPoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   const box = (await page.getByTestId("field").boundingBox())!;
-  const scale = Math.min((box.width - 48) / 16.54, (box.height - 48) / 8.07);
-  return { x: box.x + box.width / 2 + x * scale, y: box.y + box.height / 2 - y * scale };
+  // through the view the field was last drawn with
+  const [px, py] = await page.evaluate(
+    ([fx, fy]) => (window as unknown as { pathEditorTest: { toCanvas(x: number, y: number): [number, number] } }).pathEditorTest.toCanvas(fx!, fy!),
+    [x, y],
+  );
+  return { x: box.x + px, y: box.y + py };
 }
 
 async function clickField(page: Page, x: number, y: number): Promise<void> {
@@ -117,14 +121,28 @@ async function listedWaypoints(page: Page): Promise<number> {
   return page.getByRole("list", { name: "Waypoints" }).getByRole("listitem").count();
 }
 
-/** On a new, empty path: double-click a start at (-6.5, -1.5) and an end 2.5 m on (both facing 0). The end stays selected. */
+/** Clicks a field point, with Shift so it snaps to the 5 cm grid (exactly where asked). */
+async function shiftClickField(page: Page, x: number, y: number): Promise<void> {
+  const p = await fieldPoint(page, x, y);
+  await page.keyboard.down("Shift");
+  await page.mouse.click(p.x, p.y);
+  await page.keyboard.up("Shift");
+}
+
+/**
+ * On a new, empty path (it opens in Draw): click a start at (-6.5, -1.5) and an end 2.5 m on (both facing 0),
+ * then Enter: back in Select, with the end still selected.
+ */
 async function drawStarter(page: Page): Promise<void> {
-  await expect(page.getByTestId("canvas-hint")).toContainText("Double-click the field to place the start");
+  await expect(page.getByTestId("tool-draw")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("canvas-hint")).toContainText("Click the field to place the start");
   await fieldSettled(page);
-  await dblField(page, -6.5, -1.5);
-  await expect(page.getByTestId("canvas-hint")).toContainText("Double-click the field to place the end");
-  await dblField(page, -4, -1.5);
+  await shiftClickField(page, -6.5, -1.5);
+  await expect(page.getByTestId("canvas-hint")).toContainText("Click the field to place the end");
+  await shiftClickField(page, -4, -1.5);
   await expect(page.getByTestId("path-stats")).toContainText(" s,");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("tool-select")).toHaveAttribute("aria-checked", "true");
 }
 
 async function dragField(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
@@ -149,6 +167,11 @@ function poses(page: Page): Promise<Poses> {
   return page.evaluate(() => (window as unknown as { pathEditorTest: { poses(): Promise<Poses> } }).pathEditorTest.poses());
 }
 
+/** The document as the app's test hook reports it (just what these tests read). */
+function doc(page: Page): Promise<{ selection: unknown }> {
+  return page.evaluate(() => (window as unknown as { pathEditorTest: { doc(): { selection: unknown } } }).pathEditorTest.doc());
+}
+
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** How many waypoints the active path has, once the plan has caught up. */
@@ -156,12 +179,25 @@ async function waypointCount(page: Page): Promise<number> {
   return (await poses(page)).waypoints.length;
 }
 
-/** Back to the inspector's path overview, and open one of its cards. */
+/** The inspector tab each overview section is on. */
+const SECTION_TABS: Record<string, string> = {
+  Waypoints: "path",
+  "Global constraints": "path",
+  "Start and end state": "path",
+  "Rotation targets": "heading",
+  "Point-towards zones": "heading",
+  "Event markers": "events",
+  "Constraint zones": "zones",
+  "Named points": "points",
+  "Optimiser settings": "optimise",
+  "Sim preview": "optimise",
+};
+
+/** Back to the inspector's path overview, on the tab with one of its sections. */
 async function openCard(page: Page, title: string): Promise<void> {
   const back = page.getByTestId("inspector-back");
   if (await back.isVisible()) await back.click();
-  const head = page.locator("button.card-head", { hasText: new RegExp(`^${title}`) });
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  await page.getByTestId(`inspector-tab-${SECTION_TABS[title]}`).click();
 }
 const DEG = Math.PI / 180;
 
@@ -488,12 +524,62 @@ test("a two-point path into the wall: Optimise is on, reshapes the curve clear o
   await expect.poll(async () => (await poses(page)).collisions.map((c) => c.message).join()).toContain("field wall");
 });
 
-test("double-click adds a waypoint after the selected one; a single click never adds one", async ({ page }) => {
+test("Draw: each click adds a point after the selected one; Enter, Esc and right-click finish", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("path-stats")).toContainText("no path yet");
-  // a single click on an empty path does nothing but select nothing
+  // a new project opens in Draw: four clicks, four points, the newest selected each time
+  await expect(page.getByTestId("tool-draw")).toHaveAttribute("aria-checked", "true");
+  await fieldSettled(page);
+  for (const [x, y] of [
+    [-6.5, -1.5],
+    [-4, -1.5],
+    [-2, 1.5],
+    [1, 0.5],
+  ]) {
+    await shiftClickField(page, x!, y!);
+  }
+  expect(await waypointCount(page)).toBe(4);
+  expect((await doc(page)).selection).toEqual({ kind: "waypoint", index: 3 });
+  // a double-click is one click, not two points
+  await dblField(page, 3, 1);
+  expect(await waypointCount(page)).toBe(5);
+  // each point is its own undo step
+  await page.keyboard.press("Control+z");
+  expect(await waypointCount(page)).toBe(4);
+  // clicking a robot builds from it: the next point goes in after it
+  await clickField(page, -6.5, -1.5);
+  await shiftClickField(page, -5.5, 0.5);
+  const p = await poses(page);
+  expect(p.waypoints.map((w) => [Math.round(w.x * 10) / 10, Math.round(w.y * 10) / 10])).toEqual([
+    [-6.5, -1.5],
+    [-5.5, 0.5],
+    [-4, -1.5],
+    [-2, 1.5],
+    [1, 0.5],
+  ]);
+  // Esc finishes (Select, nothing selected); W draws again; right-click on the field finishes too
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("tool-select")).toHaveAttribute("aria-checked", "true");
+  expect((await doc(page)).selection).toBeNull();
+  await page.keyboard.press("w");
+  await expect(page.getByTestId("tool-draw")).toHaveAttribute("aria-checked", "true");
+  const empty = await fieldPoint(page, 6, -3);
+  await page.mouse.click(empty.x, empty.y, { button: "right" });
+  await expect(page.getByTestId("tool-select")).toHaveAttribute("aria-checked", "true");
+  expect(await waypointCount(page)).toBe(5);
+  // a new path opens in Draw, its start where the last one ended
+  await page.getByTestId("new-path").click();
+  await expect(page.getByTestId("tool-draw")).toHaveAttribute("aria-checked", "true");
+});
+
+test("Select: double-click adds a waypoint after the selected one; a single click never adds one", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("path-stats")).toContainText("no path yet");
+  // in Select, a single click on an empty path does nothing but select nothing
+  await page.keyboard.press("v");
   await clickField(page, -6, -2);
   expect(await listedWaypoints(page)).toBe(0);
+  await page.keyboard.press("w");
   await drawStarter(page);
   expect(await listedWaypoints(page)).toBe(2);
   await clickField(page, 0, 2.5);
@@ -533,20 +619,20 @@ test("usability, first run: draw a typical swerve auto in about ten actions", as
     await what();
   };
 
-  // 1. the start pose: double-click the start line, and
+  // 1. the start pose: click the start line (a new path opens in Draw), and
   // 2. turn it by its knob to face 180° (the 15° snap lands it exactly)
-  await expect(page.getByTestId("canvas-hint")).toContainText("Double-click the field to place the start");
-  await act(() => dblField(page, -6, -2));
+  await expect(page.getByTestId("canvas-hint")).toContainText("Click the field to place the start");
+  await act(() => shiftClickField(page, -6, -2));
   let p = await poses(page);
   await act(() => dragField(page, { x: p.waypoints[0]!.knobX, y: p.waypoints[0]!.knobY }, { x: -7, y: -2.02 }));
-  // 3-6. four double-clicks add the end, then a point after it each time (the end so far becomes a pass-through point)
+  // 3-6. four clicks add the end, then a point after it each time (the end so far becomes a pass-through point)
   for (const [x, y] of [
     [-4, -1.5],
     [-2, 1.5],
     [1, 0.5],
     [4, 2],
   ]) {
-    await act(() => dblField(page, x!, y!));
+    await act(() => shiftClickField(page, x!, y!));
   }
   // 7. the scoring pose: turn the end robot's knob to 30°
   p = await poses(page);

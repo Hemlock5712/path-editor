@@ -15,7 +15,8 @@ export const SHORTCUTS: [string, string][] = [
   ["Ctrl+K", "Command palette: every command, by name"],
   ["Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)", "Undo / redo"],
   ["Ctrl+S / Ctrl+O", "Save / open a folder"],
-  ["Double-click the field", "Add a waypoint after the selected one (an empty path: the start, then the end)"],
+  ["W", "Draw: each click on the field adds a waypoint after the selected one (Enter, Esc or right-click: done)"],
+  ["Double-click the field", "In Select: add a waypoint after the selected one"],
   ["V O", "Select and Obstacle tools"],
   ["R M Z T N", "Add a heading, an event marker, a constraint zone, a point-towards zone or a named point, step by step (Esc cancels)"],
   ["Alt while turning", "Turn freely (headings snap to 15° otherwise)"],
@@ -32,7 +33,7 @@ export const SHORTCUTS: [string, string][] = [
   ["[ and ]", "Previous and next path"],
   ["A", "Blue or red view"],
   ["F", "Fit the field"],
-  ["Enter / Esc", "Finish / cancel an obstacle; Esc also deselects"],
+  ["Enter / Esc", "Finish / cancel an obstacle or drawing; Esc also deselects"],
   ["Shift while dragging", "Snap to 5 cm"],
   ["Double-click a tangent handle", "Back to the automatic tangent"],
   ["Wheel, right or middle drag", "Zoom, pan"],
@@ -112,11 +113,16 @@ export function onKeyDown(e: KeyboardEvent): void {
       if (inGesture()) cancelGesture();
       else if (flow.get().kind) cancelFlow();
       else if (editor.get().draftObstacle) setDraftObstacle(null);
-      else if (editor.get().selection) select(null);
+      else if (editor.get().tool === "draw") {
+        // done drawing: back to Select, with the path's overview
+        setTool("select");
+        select(null);
+      } else if (editor.get().selection) select(null);
       else setTool("select");
       return;
     case "Enter":
       if (editor.get().draftObstacle) finishObstacle();
+      else if (editor.get().tool === "draw") setTool("select");
       return;
     case "ArrowLeft":
     case "ArrowRight":
@@ -162,6 +168,10 @@ export function onKeyDown(e: KeyboardEvent): void {
   switch (key) {
     case "v":
       setTool("select");
+      return;
+    case "w":
+      cancelFlow();
+      setTool("draw");
       return;
     case "q":
       rotateSelection(5 * DEG);

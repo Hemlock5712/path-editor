@@ -13,10 +13,12 @@ import {
   Gauge,
   Grid3x3,
   Hexagon,
+  LoaderCircle,
   MapPin,
   Maximize2,
   MousePointer2,
   Pause,
+  PenLine,
   Play,
   Radio,
   Redo2,
@@ -45,10 +47,11 @@ import { deleteItem } from "../../state/actions.ts";
 import { cancelFlow, flow, startFlow, type FlowKind } from "../../state/flow.ts";
 import { formatNumber, IconButton, Portal, Slider, useDismiss, usePopoverPosition } from "../controls.tsx";
 import { atS } from "../draw.ts";
-import { FieldCanvas, TOOL_HINTS } from "../FieldCanvas.tsx";
+import { CanvasHint, FieldCanvas, TOOL_HINTS } from "../FieldCanvas.tsx";
 import { useActivePath, useAnalysis, useEditor } from "../panels/common.tsx";
 
 const TOOL_ICONS: Record<Tool, typeof Spline> = {
+  draw: PenLine,
   select: MousePointer2,
   obstacle: Hexagon,
   measure: Ruler,
@@ -78,7 +81,6 @@ function ToolBar() {
   const canRedo = useEditor((s) => s.canRedo);
   const undoLabel = useEditor((s) => s.undoLabel);
   const redoLabel = useEditor((s) => s.redoLabel);
-  const path = useActivePath();
   const active = useStore(flow, (f) => f.kind);
   const toolButton = (t: (typeof TOOLS)[number]) => {
     const Icon = TOOL_ICONS[t.tool];
@@ -106,6 +108,7 @@ function ToolBar() {
     <div className="float-bar canvas-tools" role="toolbar" aria-label="Tools">
       <div role="radiogroup" aria-label="Tool" className="row" style={{ gap: 2 }}>
         {toolButton(TOOLS[0]!)}
+        {toolButton(TOOLS[1]!)}
         {FLOWS.map((f) => {
           const Icon = FLOW_ICONS[f.flow];
           return (
@@ -125,7 +128,7 @@ function ToolBar() {
             </button>
           );
         })}
-        {TOOLS.slice(1).map(toolButton)}
+        {TOOLS.slice(2).map(toolButton)}
       </div>
       <span className="sep" />
       <IconButton label={undoLabel ? `Undo ${undoLabel}` : "Undo"} shortcut="Ctrl+Z" onClick={undo} disabled={!canUndo} testId="undo">
@@ -134,11 +137,20 @@ function ToolBar() {
       <IconButton label={redoLabel ? `Redo ${redoLabel}` : "Redo"} shortcut="Ctrl+Y" onClick={redo} disabled={!canRedo} testId="redo">
         <Redo2 size={16} />
       </IconButton>
-      <span className="sep" />
+    </div>
+  );
+}
+
+/** The path being edited and its plan, over the playback bar, with what the tool does beside them. */
+function PathInfo() {
+  const path = useActivePath();
+  return (
+    <div className="path-info">
       <span className="path-title" data-testid="path-title" data-tip="The path being edited (rename it in the Paths rail)">
         {path.name}
       </span>
       <PathStats />
+      <CanvasHint />
     </div>
   );
 }
@@ -178,22 +190,27 @@ function samePlace(failure: string): number | null {
 
 function ChecksBadge() {
   const a = useAnalysis();
-  const failure = useStore(analysis, (s) => (s.result && !s.result.ok ? s.result.error : null));
+  const spec = useActivePath().spec;
+  // only this version of the path's failure: an old one would flash while the new plan is worked out
+  const failure = useStore(analysis, (s) => (s.spec === spec && s.result && !s.result.ok ? s.result.error : null));
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   const style = usePopoverPosition(button, open, 360, true);
   useDismiss(open, () => setOpen(false), button, pop);
-  const drawn = isDrawn(useActivePath().spec);
+  const drawn = isDrawn(spec);
+  const planning = drawn && !failure && !a;
   const checks = a?.checks ?? [];
   const errors = checks.filter((c) => c.severity === "error").length;
   const issues = checks.filter((c) => c.severity !== "info").length;
   const notes = checks.length - issues;
-  const level = drawn && (failure || errors > 0) ? "error" : drawn && issues > 0 ? "warning" : "ok";
-  const Icon = level === "error" ? CircleAlert : level === "warning" ? TriangleAlert : CircleCheck;
+  const level = planning ? "pending" : drawn && (failure || errors > 0) ? "error" : drawn && issues > 0 ? "warning" : "ok";
+  const Icon = level === "pending" ? LoaderCircle : level === "error" ? CircleAlert : level === "warning" ? TriangleAlert : CircleCheck;
   const text = !drawn
     ? "No path yet"
-    : failure
+    : planning
+      ? "Planning…"
+      : failure
       ? "Can't plan"
       : issues > 0
         ? `${issues} ${issues === 1 ? "issue" : "issues"}`
@@ -218,7 +235,7 @@ function ChecksBadge() {
       {open && (
         <Portal>
           <div ref={pop} className="popover checks-popover" style={style} role="dialog" aria-label="Checks">
-            {!drawn && <p className="hint">Double-click the field to place the start and the end.</p>}
+            {!drawn && <p className="hint">Draw (W): click the field to place the start, then the end.</p>}
             {drawn && failure && (
               <>
                 <p className="check error" role="alert">
@@ -364,6 +381,7 @@ function PlaybackBar() {
   return (
     <div className="playback-overlay">
       <SimResultRow />
+      <PathInfo />
       <div className="playback-bar" role="group" aria-label="Playback">
       <IconButton label={playing ? "Pause" : "Play"} shortcut="Space" onClick={togglePlay} disabled={total === 0} testId="play">
         {playing ? <Pause size={16} /> : <Play size={16} />}

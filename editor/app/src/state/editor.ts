@@ -8,7 +8,7 @@ import { diff, type ProjectCommand } from "./commands.ts";
 import { History } from "./history.ts";
 import { createStore } from "./store.ts";
 
-export type Tool = "select" | "obstacle" | "measure";
+export type Tool = "draw" | "select" | "obstacle" | "measure";
 
 export type Selection =
   | { readonly kind: "waypoint"; readonly index: number }
@@ -70,12 +70,18 @@ export const DEFAULT_VIEW: ViewState = {
 const history = new History<Project>();
 let gestureBase: Project | null = null;
 
+/** The tool a freshly shown project starts in: Draw while its first path is empty, else the current tool. */
+function startTool(project: Project, current: Tool): Tool {
+  if (project.paths[0]!.spec.waypoints.length === 0) return "draw";
+  return current === "draw" ? "select" : current;
+}
+
 function initialState(project: Project): EditorState {
   return {
     project,
     activePathId: project.paths[0]!.id,
     selection: null,
-    tool: "select",
+    tool: startTool(project, "select"),
     view: DEFAULT_VIEW,
     draftObstacle: null,
     status: null,
@@ -281,7 +287,7 @@ export function setDraftObstacle(draft: EditorState["draftObstacle"]): void {
 export function loadProject(project: Project, view?: Partial<ViewState>): void {
   history.clear();
   gestureBase = null;
-  editor.set({ ...initialState(project), view: { ...DEFAULT_VIEW, ...view }, tool: editor.get().tool });
+  editor.set({ ...initialState(project), view: { ...DEFAULT_VIEW, ...view }, tool: startTool(project, editor.get().tool) });
 }
 
 export function markSaved(): void {

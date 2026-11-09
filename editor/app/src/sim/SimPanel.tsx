@@ -129,7 +129,7 @@ export function SimCard() {
   const { enabled, result } = useSimResult();
   const s = useStore(simSettings, (x) => x);
   return (
-    <Card title="Sim preview" cardKey="sim" testId="sim-card">
+    <Card title="Sim preview" testId="sim-card">
       <p className="hint">
         The robot's follower, ported, on a simulated drivetrain (latency, lag and grip in{" "}
         <button type="button" className="link" onClick={() => openSettings("sim")}>

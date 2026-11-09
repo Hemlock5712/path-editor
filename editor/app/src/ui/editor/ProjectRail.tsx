@@ -1,11 +1,12 @@
 // The left rail: the project's paths as cards with a small preview of each on the field. Click to open
 // one; double-click (or F2, or Rename) to rename it; right-click for more.
 
-import { Copy, CornerDownRight, FlipHorizontal2, Link2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, CornerDownRight, FlipHorizontal2, Link2, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isValidPathName, type EditorPath, type Project } from "../../model/project.ts";
 import { duplicatePath, newPath, removeActivePath, unlinkActivePath } from "../../state/actions.ts";
-import { geometryOf } from "../../state/analysis.ts";
+import { analysis, geometryOf } from "../../state/analysis.ts";
+import { useStore } from "../../state/store.ts";
 import { editPath, notify, setActivePath } from "../../state/editor.ts";
 import { openContextMenu, ui } from "../../state/ui.ts";
 import { formatNumber, IconButton } from "../controls.tsx";
@@ -124,11 +125,58 @@ function LinkBadge({ path, paths }: { path: EditorPath; paths: readonly EditorPa
   );
 }
 
+/** How the active path's plan stands: an error, a warning, fine, or not known yet (still planning). */
+function useActiveLevel(): "error" | "warning" | "ok" | null {
+  const spec = useEditor((s) => s.project.paths.find((p) => p.id === s.activePathId)?.spec);
+  return useStore(analysis, (a) => {
+    if (!spec || a.spec !== spec || !a.result || spec.waypoints.length < 2) return null;
+    if (!a.result.ok) return "error";
+    const checks = a.result.checks;
+    if (checks.some((c) => c.severity === "error")) return "error";
+    return checks.some((c) => c.severity === "warning") ? "warning" : "ok";
+  });
+}
+
+/** The rail folded: one swatch per path (click to open it), New path and the way back out. */
+export function RailStrip() {
+  const paths = useEditor((s) => s.project.paths);
+  const activeId = useEditor((s) => s.activePathId);
+  return (
+    <div className="rail-strip-body">
+      <IconButton label="Show the paths rail" onClick={() => ui.set({ railCollapsed: false })} testId="expand-rail">
+        <PanelLeftOpen size={16} />
+      </IconButton>
+      <IconButton label="New path, starting where this one ends" onClick={() => newPath()} testId="new-path">
+        <Plus size={16} />
+      </IconButton>
+      <span className="rail-strip-sep" />
+      <div role="tablist" aria-label="Paths" aria-orientation="vertical" className="rail-swatches">
+        {paths.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            aria-selected={p.id === activeId}
+            aria-label={p.name}
+            className="rail-swatch"
+            data-tip={p.name}
+            data-testid={`tab-${p.name}`}
+            onClick={() => setActivePath(p.id)}
+          >
+            <span style={{ background: p.colour }} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ProjectRail() {
   const paths = useEditor((s) => s.project.paths);
   const field = useEditor((s) => s.project.field);
   const activeId = useEditor((s) => s.activePathId);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const level = useActiveLevel();
 
   const menuFor = (p: EditorPath, x: number, y: number) => {
     setActivePath(p.id);
@@ -162,10 +210,22 @@ export function ProjectRail() {
           <IconButton label="Delete this path" onClick={removeActivePath} disabled={paths.length <= 1} testId="delete-path">
             <Trash2 size={15} />
           </IconButton>
+          <IconButton label="Fold the paths rail (more room for the field)" onClick={() => ui.set({ railCollapsed: true })} testId="collapse-rail">
+            <PanelLeftClose size={15} />
+          </IconButton>
         </>
       }
     >
-      <ul className="path-cards" role="tablist" aria-label="Paths" aria-orientation="vertical">
+      <ul
+        className="path-cards"
+        role="tablist"
+        aria-label="Paths"
+        aria-orientation="vertical"
+        onDoubleClick={(e) => {
+          // the rail's empty space: a new path, ready to draw
+          if (e.target === e.currentTarget) newPath();
+        }}
+      >
         {paths.map((p) => {
           const g = geometryOf(p.spec);
           return (
@@ -203,6 +263,9 @@ export function ProjectRail() {
                     <span className="name">
                       <span className="colour" style={{ background: p.colour }} />
                       <span>{p.name}</span>
+                      {p.id === activeId && level && level !== "ok" && (
+                        <i className={`path-level ${level}`} aria-label={level === "error" ? "has errors" : "has warnings"} data-tip={level === "error" ? "The checks found an error" : "The checks found a warning"} />
+                      )}
                     </span>
                   )}
                   <span className="meta">
