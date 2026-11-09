@@ -2,8 +2,9 @@
 // come from the core (the main-thread geometry for the line itself, so it follows a drag at once,
 // and the worker's analysis for speeds, headings and checks).
 
-import { eventMeters, type PathGeometry, type RotationTarget } from "../../../core/src/index.ts";
+import { BUMPERS, eventMeters, type Footprint, type PathGeometry, type RotationTarget } from "../../../core/src/index.ts";
 import type { Analysis, Check, Stations } from "../compute/analysis.ts";
+import { outlineAtS } from "../compute/footprints.ts";
 import type { BlockedAt } from "../compute/optimiser.ts";
 import type { EditorPath, Project } from "../model/project.ts";
 import type { Selection, Tool } from "../state/editor.ts";
@@ -35,6 +36,8 @@ export const COLOURS = {
   error: "#ef4444",
   warning: "#f59e0b",
   robot: "rgba(56,189,248,0.25)",
+  /** A mechanism out past the bumpers (an event's footprint). */
+  mechanism: "#fb923c",
   live: "#f472b6",
 };
 
@@ -150,6 +153,7 @@ export function drawField(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   for (const p of m.project.paths) if (p.id !== m.active.id) drawOtherPath(ctx, m, p);
   drawZones(ctx, m);
   drawChecks(ctx, m);
+  drawMechanismStretches(ctx, m);
   drawPath(ctx, m);
   drawCollisions(ctx, m);
   drawGhost(ctx, m);
@@ -415,7 +419,7 @@ function drawPath(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   ctx.lineJoin = "miter";
 }
 
-/** Where the swept bumpers hit an obstacle or the wall: the path itself turns red there, with the bumpers at the middle. */
+/** Where the swept bumpers (or footprint) hit an obstacle or the wall: the path turns red there, with the outline at the middle. */
 function drawCollisions(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const a = m.analysis;
   const g = m.geometry;
@@ -424,7 +428,7 @@ function drawCollisions(ctx: CanvasRenderingContext2D, m: DrawModel): void {
     band(ctx, m, c.sFrom, c.sTo, COLOURS.collision, 5);
     const s = (c.sFrom + c.sTo) / 2;
     const p = g.sample(s);
-    const corners = robotOutline(m.view, p.xMeters, p.yMeters, headingAtS(a.stations, s), m.project.robot.bumperLengthMeters, m.project.robot.bumperWidthMeters);
+    const corners = footprintOutline(m.view, p.xMeters, p.yMeters, headingAtS(a.stations, s), outlineAtS(a.outlines, s).footprint);
     ctx.strokeStyle = COLOURS.collision;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -432,6 +436,41 @@ function drawCollisions(ctx: CanvasRenderingContext2D, m: DrawModel): void {
     ctx.closePath();
     ctx.stroke();
   }
+}
+
+/** Where an event has a mechanism out: a band under the path, so it's clear where the robot is bigger. */
+function drawMechanismStretches(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const a = m.analysis;
+  if (!a) return;
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  for (const r of a.outlines) if (r.outline.footprint.name !== BUMPERS || r.outline.retracting.length > 0) band(ctx, m, r.sFrom, r.sTo, COLOURS.mechanism, 12);
+  ctx.restore();
+}
+
+/** The footprint in force at s on the active path, or null where it's the bumpers alone. */
+function mechanismAt(m: DrawModel, s: number): Footprint | null {
+  const a = m.analysis;
+  if (!a || !Number.isFinite(s)) return null;
+  const o = outlineAtS(a.outlines, s);
+  return o.footprint.name === BUMPERS && o.retracting.length === 0 ? null : o.footprint;
+}
+
+/** A mechanism's outline (dashed, around the bumpers) at a pose on the path, if one is out at s. */
+function drawMechanism(ctx: CanvasRenderingContext2D, m: DrawModel, x: number, y: number, heading: number, s: number, alpha = 1): void {
+  const f = mechanismAt(m, s);
+  if (!f) return;
+  const pts = footprintOutline(m.view, x, y, heading, f);
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = COLOURS.mechanism;
+  ctx.beginPath();
+  pts.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** The stretches where the swept bumpers touch an obstacle or the field wall. */
@@ -511,6 +550,18 @@ function drawChecks(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   }
 }
 
+/** A footprint's rectangle at a blue-frame pose, in canvas pixels. */
+export function footprintOutline(view: FieldView, x: number, y: number, heading: number, f: Footprint): [number, number][] {
+  const c = Math.cos(heading);
+  const s = Math.sin(heading);
+  return [
+    [f.frontMeters, f.leftMeters],
+    [-f.backMeters, f.leftMeters],
+    [-f.backMeters, -f.rightMeters],
+    [f.frontMeters, -f.rightMeters],
+  ].map(([u, v]) => view.toCanvas(x + u! * c - v! * s, y + u! * s + v! * c));
+}
+
 /** The bumper rectangle at a blue-frame pose, in canvas pixels. */
 export function robotOutline(view: FieldView, x: number, y: number, heading: number, length: number, width: number): [number, number][] {
   const c = Math.cos(heading);
@@ -555,7 +606,9 @@ function drawFootprints(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   if (!a || !(every > 0)) return;
   ctx.lineWidth = 1;
   for (let s = 0; s <= a.lengthMeters + 1e-9; s += every) {
-    drawRobot(ctx, m, atS(a.stations, a.stations.x, s), atS(a.stations, a.stations.y, s), headingAtS(a.stations, s), "rgba(255,255,255,0.22)", null);
+    const [x, y, h] = [atS(a.stations, a.stations.x, s), atS(a.stations, a.stations.y, s), headingAtS(a.stations, s)];
+    drawRobot(ctx, m, x, y, h, "rgba(255,255,255,0.22)", null);
+    drawMechanism(ctx, m, x, y, h, s, 0.6);
   }
   const end = a.lengthMeters;
   drawRobot(ctx, m, atS(a.stations, a.stations.x, end), atS(a.stations, a.stations.y, end), headingAtS(a.stations, end), "rgba(255,255,255,0.4)", null);
@@ -718,6 +771,7 @@ function drawWaypoints(ctx: CanvasRenderingContext2D, m: DrawModel): void {
     const colour = sel ? COLOURS.selected : p.set ? COLOURS.waypoint : "rgba(248,250,252,0.55)";
     drawRobot(ctx, m, p.x, p.y, p.heading, colour, sel ? "rgba(251,191,36,0.15)" : p.set ? "rgba(248,250,252,0.08)" : null);
     ctx.setLineDash([]);
+    drawMechanism(ctx, m, p.x, p.y, p.heading, m.analysis?.waypointS[i] ?? Number.NaN);
     drawRotateHandle(ctx, m, waypointHandle(m, i), sel ? COLOURS.selected : p.set ? COLOURS.waypoint : "rgba(248,250,252,0.6)", p.set, sel);
   });
   if (selected >= 0 && m.view.view.shapeCurve) {
@@ -934,6 +988,7 @@ function drawPlaybackRobot(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const p = poseAtTime(a, m.playbackT);
   ctx.lineWidth = 2;
   drawRobot(ctx, m, p.x, p.y, p.heading, "#38bdf8", COLOURS.robot);
+  drawMechanism(ctx, m, p.x, p.y, p.heading, p.s);
 }
 
 function drawLive(ctx: CanvasRenderingContext2D, m: DrawModel): void {

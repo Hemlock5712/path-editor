@@ -3,14 +3,16 @@
 // path as unlocked pass-through waypoints. The waypoints either side of the stretch stay where they are,
 // and so does any waypoint between them that is locked, linked to a named point or has a heading (the
 // route goes through it, one leg at a time); the plain pass-through points in between are what the route
-// replaces. It doesn't optimise: the caller runs the curves-only optimiser on the result.
+// replaces. It doesn't optimise: the caller runs the curves-only optimiser on the result. Where an event has a
+// mechanism out over the stretch, the pathfinder plans with that footprint (every one in force there, merged).
 
-import { DEFAULT_PLANNER, fieldFromJson, Pathfinder, type RobotConfig } from "../../../core/src/index.ts";
+import { BUMPERS, DEFAULT_PLANNER, fieldFromJson, Pathfinder, type RobotConfig } from "../../../core/src/index.ts";
 import { deleteWaypoint, insertWaypoint } from "../model/edits.ts";
 import { round5 } from "../model/positions.ts";
 import type { EditorPath, FieldDoc } from "../model/project.ts";
 import { CHECKS, type Analysis } from "./analysis.ts";
-import { bumperCorners, convexHull, convexOverlap } from "./polygons.ts";
+import { outlineAtS, outlineOver } from "./footprints.ts";
+import { convexHull, convexOverlap, outlineCorners } from "./polygons.ts";
 
 export interface RouteSetup {
   readonly field: FieldDoc;
@@ -56,6 +58,7 @@ export function routeAround(path: EditorPath, a: Analysis, setup: RouteSetup): R
   for (let i = from; i <= to; i++) if (kept(i)) legs.push(i);
 
   const spec = path.spec;
+  const outline = outlineOver(a.outlines, s[from]!, s[to]!);
   const finder = new Pathfinder(
     fieldFromJson({
       field: { length_m: setup.field.lengthMeters, width_m: setup.field.widthMeters },
@@ -69,6 +72,7 @@ export function routeAround(path: EditorPath, a: Analysis, setup: RouteSetup): R
       marginMeters: CHECKS.bumperMarginMeters,
       maxMetersPerSecond: Number.isFinite(spec.maxMetersPerSecond) ? spec.maxMetersPerSecond : DEFAULT_PLANNER.maxMetersPerSecond,
       maxMetersPerSecondSquared: Number.isFinite(spec.maxMetersPerSecondSquared) ? spec.maxMetersPerSecondSquared : DEFAULT_PLANNER.maxMetersPerSecondSquared,
+      ...(outline.name === BUMPERS ? {} : { footprint: outline }),
     },
   );
   const still = { vxMetersPerSecond: 0, vyMetersPerSecond: 0, omegaRadPerSec: 0 };
@@ -79,7 +83,8 @@ export function routeAround(path: EditorPath, a: Analysis, setup: RouteSetup): R
   // a waypoint the robot can't stand on: say so (the route goes between waypoints and never moves them)
   for (const i of legs) {
     const w = spec.waypoints[i]!;
-    const body = bumperCorners(w.xMeters, w.yMeters, Number.isNaN(w.headingRadians) ? 0 : w.headingRadians, setup.bumperLengthMeters, setup.bumperWidthMeters);
+    const here = outlineAtS(a.outlines, s[i]!).footprint;
+    const body = outlineCorners(w.xMeters, w.yMeters, Number.isNaN(w.headingRadians) ? 0 : w.headingRadians, here);
     const hit = setup.field.obstacles.find((o) => {
       const hull = convexHull(o.polygon);
       return hull.length >= 3 && convexOverlap(body, hull);
@@ -87,7 +92,9 @@ export function routeAround(path: EditorPath, a: Analysis, setup: RouteSetup): R
     if (!hit) continue;
     return {
       ok: false,
-      reason: `Waypoint ${i}'s bumpers are inside the ${hit.name}. Move it out first: Route around goes between your waypoints and doesn't move them.`,
+      reason:
+        `Waypoint ${i}'s ${here.name === BUMPERS ? "bumpers are" : `outline (with ${here.name}) is`} inside the ${hit.name}. ` +
+        "Move it out first: Route around goes between your waypoints and doesn't move them.",
     };
   }
   // each leg's corners, between two kept waypoints

@@ -6,7 +6,7 @@ import { CornerDownRight, Link2, Lock, MapPin, Navigation, Trash2 } from "lucide
 import { unlinkPoint } from "../../model/mirror.ts";
 import { splitZone } from "../../state/fixes.ts";
 import { faceNext, faceTargets, faceToward } from "../../state/helpers.ts";
-import { DEFAULT_BLEND_METERS, makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../../core/src/index.ts";
+import { BUMPERS, DEFAULT_BLEND_METERS, makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../../core/src/index.ts";
 import {
   deleteWaypoint,
   addWaypointAfter,
@@ -233,6 +233,36 @@ export function RotationInspector({ index }: { index: number }) {
   );
 }
 
+/** "" in a footprint select: the event leaves the outline as it is. */
+const NO_CHANGE = "";
+
+/**
+ * Picks one of the robot's footprints (Settings, Robot): the bumpers, each named one, and (for an event) no
+ * change. A name the robot no longer has stays listed, marked missing, so the select still shows it.
+ */
+export function FootprintSelect({
+  label,
+  value,
+  noChange,
+  onChange,
+  testId,
+}: {
+  label: string;
+  value: string;
+  noChange?: boolean;
+  onChange: (name: string) => void;
+  testId?: string;
+}) {
+  const footprints = useEditor((s) => s.project.robot.footprints);
+  const options = [
+    ...(noChange ? [{ value: NO_CHANGE, label: "No change" }] : []),
+    { value: BUMPERS, label: noChange ? "Bumpers (all mechanisms in)" : "Bumpers" },
+    ...footprints.map((f) => ({ value: f.name, label: f.name })),
+  ];
+  if (!options.some((o) => o.value === value)) options.push({ value, label: `${value} (missing)` });
+  return <SelectField label={label} value={value} options={options} onChange={onChange} testId={testId} />;
+}
+
 export function EventInspector({ index }: { index: number }) {
   const path = useActivePath();
   const project = useEditor((s) => s.project);
@@ -248,15 +278,26 @@ export function EventInspector({ index }: { index: number }) {
         options={eventNames(project)}
         testId={`event-name-${index}`}
         autoFocus={e.name === "event"}
-        onCommit={(name) => editPath("Rename event", (p) => updateEvent(p, index, makePathEvent(name, e.waypoint, e.meters)))}
+        onCommit={(name) => editPath("Rename event", (p) => updateEvent(p, index, makePathEvent(name, e.waypoint, e.meters, e.footprint)))}
       />
       <PositionField
         label="At"
         waypoint={e.waypoint}
         meters={e.meters}
         testId={`event-at-${index}`}
-        onCommit={(w, m) => editPath("Move event", (p) => updateEvent(p, index, makePathEvent(e.name, w, m)))}
+        onCommit={(w, m) => editPath("Move event", (p) => updateEvent(p, index, makePathEvent(e.name, w, m, e.footprint)))}
       />
+      {(project.robot.footprints.length > 0 || e.footprint !== undefined) && (
+        <FootprintSelect
+          label="Robot outline from here"
+          value={e.footprint ?? NO_CHANGE}
+          noChange
+          testId={`event-footprint-${index}`}
+          onChange={(f) =>
+            editPath("Event footprint", (p) => updateEvent(p, index, makePathEvent(e.name, e.waypoint, e.meters, f === NO_CHANGE ? undefined : f)))
+          }
+        />
+      )}
       {placed && (
         <p className="stats">
           {formatNumber(placed.s, 2)} m along, fires at{" "}
@@ -267,6 +308,7 @@ export function EventInspector({ index }: { index: number }) {
       )}
       <p className="hint">
         Robot code binds each name once with <code>PathLibrary.bindEvent</code>.
+        {e.footprint !== undefined && " The path is checked with this outline from here until another event changes it."}
       </p>
       <DeleteButton label={`Delete event ${e.name}`} onClick={() => editPath("Delete event", (p) => removeEvent(p, index), null)} />
     </div>

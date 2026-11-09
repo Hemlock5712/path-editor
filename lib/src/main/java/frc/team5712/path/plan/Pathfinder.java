@@ -1,6 +1,7 @@
 package frc.team5712.path.plan;
 
 import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.GeometrySample;
 import frc.team5712.path.core.HeadingProfile;
 import frc.team5712.path.core.Path;
@@ -18,9 +19,16 @@ import java.util.List;
 /**
  * Plans a collision-free path across the field during a match.
  *
- * <p>At boot ({@link #Pathfinder}): every obstacle is grown by the bumpers' half-diagonal plus a margin
- * (a Minkowski sum with a disc, rounded corners as short arcs, approximated from outside), the field
- * walls are moved in by the same amount, and the visibility graph between the grown corners is built.
+ * <p>At boot ({@link #Pathfinder}): every obstacle is grown by the robot's reach (the bumpers' half-diagonal, or
+ * the far corner of a {@link Footprint} with a mechanism out) plus a margin (a Minkowski sum with a disc, rounded
+ * corners as short arcs, approximated from outside), the field walls are moved in by the same amount, and the
+ * visibility graph between the grown corners is built.
+ *
+ * <p>Growing by a footprint's reach clears it in any heading, but closes gaps the robot fits through nose-first
+ * (a 0.35 m intake shuts the 2026 field's 1.85 m hub-to-trench gaps). So a footprint that reaches further than the
+ * bumpers also gets a second graph, grown by the bumpers' reach, which {@link #plan} tries when the first has no
+ * route or no clear one. Either way the footprint itself is what's swept, so {@code clear()} means it keeps the
+ * margin.
  *
  * <p>Per query ({@link #plan}):
  * <ol>
@@ -52,13 +60,18 @@ public final class Pathfinder {
   /** Straight-line length between visible node pairs, +∞ where blocked. */
   private final double[][] edge;
   private final double bootMicros;
+  /** The same footprint over a graph grown by the bumpers' reach only, or null (see the class comment). */
+  private final Pathfinder bumperGraph;
 
   public Pathfinder(FieldMap field, RobotConfig robot, PlannerConfig config) {
+    this(field, robot, config, config.growMeters(), config.bumperGrowMeters() < config.growMeters());
+  }
+
+  private Pathfinder(FieldMap field, RobotConfig robot, PlannerConfig config, double r, boolean withBumperGraph) {
     long t0 = System.nanoTime();
     this.field = field;
     this.robot = robot;
     this.config = config;
-    double r = config.growMeters();
     List<ConvexPolygon> g = new ArrayList<>();
     for (ConvexPolygon p : field.obstacles()) {
       g.add(p.grow(r, config.arcStepRadians()));
@@ -95,6 +108,7 @@ public final class Pathfinder {
         }
       }
     }
+    bumperGraph = withBumperGraph ? new Pathfinder(field, robot, config, config.bumperGrowMeters(), false) : null;
     bootMicros = (System.nanoTime() - t0) / 1e3;
   }
 
@@ -175,6 +189,11 @@ public final class Pathfinder {
    * alone, a tenth of a millisecond, without the smoothing and the profile {@link #plan} adds.
    */
   public double routeLengthMeters(Pose start, Pose goal) {
+    double len = routeLengthHere(start, goal);
+    return Double.isInfinite(len) && bumperGraph != null ? bumperGraph.routeLengthHere(start, goal) : len;
+  }
+
+  private double routeLengthHere(Pose start, Pose goal) {
     double[] s = snap(start.xMeters(), start.yMeters());
     double[] g = snap(goal.xMeters(), goal.yMeters());
     List<double[]> route = shortestRoute(s, g);
@@ -202,6 +221,16 @@ public final class Pathfinder {
    * goal is far enough away; otherwise the direction is dropped.
    */
   public PlanResult plan(Pose start, FieldSpeeds startVelocity, Pose goal, double endSpeed, double endTangent) {
+    PlanResult r = planHere(start, startVelocity, goal, endSpeed, endTangent);
+    if (bumperGraph == null || (r.ok() && r.clear())) {
+      return r;
+    }
+    // no route, or no clear one, with the footprint's reach grown in: try the bumpers' graph (still sweeping the footprint)
+    PlanResult b = bumperGraph.planHere(start, startVelocity, goal, endSpeed, endTangent);
+    return b.ok() && (b.clear() || !r.ok()) ? b : r;
+  }
+
+  private PlanResult planHere(Pose start, FieldSpeeds startVelocity, Pose goal, double endSpeed, double endTangent) {
     long t0 = System.nanoTime();
     // 1. Snap: a start or goal inside a grown obstacle (or too near a wall) moves out to the nearest free point
     double[] s = snap(start.xMeters(), start.yMeters());
@@ -559,7 +588,7 @@ public final class Pathfinder {
     return new Sweep(min, worst);
   }
 
-  /** Clearance of the bumper rectangle at (x, y, th) to every obstacle and the field walls. */
+  /** Clearance of the robot's outline (the config's footprint) at (x, y, th) to every obstacle and the walls. */
   public double clearance(double x, double y, double th) {
     return clearance(x, y, th, config.halfDiagonalMeters(), new double[4], new double[4]);
   }
@@ -567,10 +596,10 @@ public final class Pathfinder {
   private double clearance(double x, double y, double th, double reach, double[] qx, double[] qy) {
     double c = StrictMath.cos(th);
     double s = StrictMath.sin(th);
-    double hl = config.bumperLengthMeters() / 2;
-    double hw = config.bumperWidthMeters() / 2;
-    double[] px = {hl, -hl, -hl, hl}; // front-left, back-left, back-right, front-right: counter-clockwise
-    double[] py = {hw, hw, -hw, -hw};
+    Footprint f = config.footprint();
+    // front-left, back-left, back-right, front-right: counter-clockwise
+    double[] px = {f.frontMeters(), -f.backMeters(), -f.backMeters(), f.frontMeters()};
+    double[] py = {f.leftMeters(), f.leftMeters(), -f.rightMeters(), -f.rightMeters()};
     double halfL = field.lengthMeters() / 2;
     double halfW = field.widthMeters() / 2;
     double best = Double.POSITIVE_INFINITY;

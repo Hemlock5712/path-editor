@@ -35,6 +35,7 @@ import {
   makeWaypoint,
   Path,
   PathGeometry,
+  robotFootprints,
   tangentRadians,
   type PathEvent,
   type PathSpec,
@@ -43,7 +44,8 @@ import {
 import { round5 } from "../model/positions.ts";
 import { analyse, CHECKS, type AnalysisInput } from "./analysis.ts";
 import { hasReversal, reversedTangents } from "./cusps.ts";
-import { bumperCorners, convexHull, insideRectMargin, signedClearance, type Pt } from "./polygons.ts";
+import { FootprintTimeline } from "./footprints.ts";
+import { convexHull, insideRectMargin, outlineCorners, signedClearance, type Pt } from "./polygons.ts";
 
 export interface OptimiseOptions {
   /** Also move the unlocked interior waypoints (off: only the curve's tangents change). */
@@ -191,9 +193,14 @@ function awayFrom(x: number, y: number, what: Hull | null, halfLength: number, h
   return gaps.reduce((a, b) => (b[0] < a[0] ? b : a))[1];
 }
 
-/** How far the swept bumpers fall short of the margin from each obstacle and the field wall. */
+/** How far the swept bumpers (or footprint, where an event has a mechanism out) fall short of the margin from each obstacle and the field wall. */
 export function shortfall(path: Path, input: AnalysisInput, hulls: readonly Hull[], margin: number): Shortfall {
   const L = path.lengthMeters;
+  const outline = new FootprintTimeline(
+    path.spec,
+    robotFootprints(input.bumperLengthMeters, input.bumperWidthMeters, input.footprints ?? []),
+    path,
+  );
   const n = Math.max(1, Math.ceil(L / CLEARANCE_STEP));
   let total = 0;
   let least = Infinity;
@@ -202,7 +209,7 @@ export function shortfall(path: Path, input: AnalysisInput, hulls: readonly Hull
   let at = { s: 0, x: 0, y: 0 };
   for (let i = 0; i <= n; i++) {
     const p = path.sample((L * i) / n);
-    const body = bumperCorners(p.xMeters, p.yMeters, p.headingRadians, input.bumperLengthMeters, input.bumperWidthMeters);
+    const body = outlineCorners(p.xMeters, p.yMeters, p.headingRadians, outline.at((L * i) / n, p.seconds).footprint);
     let here = insideRectMargin(body, input.fieldLengthMeters / 2, input.fieldWidthMeters / 2);
     let what = "the field wall";
     let whatHull: Hull | null = null;

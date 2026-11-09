@@ -49,6 +49,7 @@ public final class Pathfinding {
   final FieldFrame redFrame;
   DoubleSupplier clock;
   Supplier<FieldFrame> frame;
+  Supplier<String> footprint;
 
   public Pathfinding(PathLibrary library, FollowerConfig config, Supplier<Pose2d> pose,
       Supplier<ChassisVelocities> fieldVelocity, Consumer<ChassisVelocities> fieldOutput, FieldFrame redFrame) {
@@ -72,12 +73,24 @@ public final class Pathfinding {
     return this;
   }
 
+  /**
+   * Every command built from here on plans with this footprint (robot.json's, or {@code "bumpers"}, the
+   * default), read as each one starts: e.g. {@code () -> intake.isOut() ? "intakeOut" : "bumpers"}.
+   */
+  public Pathfinding withFootprint(Supplier<String> footprintName) {
+    this.footprint = footprintName;
+    return this;
+  }
+
   private PathfindCommand v3(PathfindCommand c) {
     if (clock != null) {
       c.withClock(clock);
     }
     if (frame != null) {
       c.withFrame(frame);
+    }
+    if (footprint != null) {
+      c.withFootprint(footprint);
     }
     return c;
   }
@@ -88,6 +101,9 @@ public final class Pathfinding {
     }
     if (frame != null) {
       c.withFrame(frame);
+    }
+    if (footprint != null) {
+      c.withFootprint(footprint);
     }
     return c;
   }

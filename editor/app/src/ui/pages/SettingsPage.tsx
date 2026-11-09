@@ -3,7 +3,7 @@
 // preview's drivetrain, and the editor's own preferences.
 
 import { useEffect, useState } from "react";
-import { Bot, Cpu, FolderCog, Hexagon, Map as MapIcon, Route, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Bot, Cpu, FolderCog, Hexagon, Map as MapIcon, Plus, Route, SlidersHorizontal, Trash2 } from "lucide-react";
 import {
   checkRobot,
   gripMetersPerSecondSquared,
@@ -17,6 +17,7 @@ import {
 import { isValidPackage } from "../../io/javaEnum.ts";
 import { PATHS_DIR } from "../../io/projectIo.ts";
 import { withRobotLimits } from "../../model/edits.ts";
+import { addFootprint, deleteFootprint, footprintNameProblem, footprintUses, renameFootprint, updateFootprint } from "../../model/footprints.ts";
 import { parseRobotCode, type RobotCodeImport } from "../../io/robotCode.ts";
 import { importSummary, slipCurrentWarning, withRobotCode } from "../../model/robotImport.ts";
 import {
@@ -295,6 +296,7 @@ function RobotSettingsTab() {
           <NumberField label="Bumper width" unit="m" min={0.1} value={robot.bumperWidthMeters} onCommit={(v) => setBumpers({ bumperWidthMeters: v })} />
         </div>
       </div>
+      <FootprintsGroup />
       <details className="settings-group settings-advanced" aria-label="Advanced" data-testid="robot-advanced">
         <summary>
           <h4>Advanced: path follower only</h4>
@@ -591,6 +593,65 @@ function FieldTab() {
         </div>
       </div>
     </section>
+  );
+}
+
+/** Mechanisms that reach past the bumpers: path events switch the robot's outline to one of these. */
+function FootprintsGroup() {
+  const project = useEditor((s) => s.project);
+  const footprints = project.robot.footprints;
+  return (
+    <div className="settings-group" aria-label="Footprints" data-testid="footprints">
+      <h4>Mechanisms out (footprints)</h4>
+      <p className="hint">
+        How far an intake or arm reaches past the bumpers on each side. An event can switch the robot's outline to one of these
+        (and back to the bumpers), and from there on the path is checked, optimised and routed with it. The retract time is how
+        long it takes to come back in: the checks keep it out that long after the event that stows it. The robot library builds a
+        pathfinder for each, for <code>Pathfinding.withFootprint</code>.
+      </p>
+      {footprints.map((f, i) => {
+        const uses = footprintUses(project, f.name);
+        const set = (label: string, change: Parameters<typeof updateFootprint>[2]) => editProject(label, (p) => updateFootprint(p, i, change));
+        return (
+          <div key={i} className="footprint-row" role="group" aria-label={`Footprint ${f.name}`} data-testid={`footprint-${i}`}>
+            <div className="row" style={{ flexWrap: "nowrap", alignItems: "flex-end" }}>
+              <TextField
+                label="Name"
+                value={f.name}
+                testId={`footprint-name-${i}`}
+                validate={(name) => footprintNameProblem(project, i, name)}
+                onCommit={(name) => name !== f.name && editProject("Rename footprint", (p) => renameFootprint(p, i, name))}
+              />
+              <span className="tag" data-tip="Events and path starts that switch to it">
+                {uses === 0 ? "unused" : `used ${uses}×`}
+              </span>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`Delete footprint ${f.name}`}
+                data-tip={uses > 0 ? "Delete (the events that use it will be flagged)" : "Delete"}
+                onClick={() => editProject("Delete footprint", (p) => deleteFootprint(p, i), null)}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+            <div className="grid3">
+              <NumberField label="Front" unit="m" min={0} value={f.frontMeters} title="Past the front bumper (the way the robot faces)" onCommit={(v) => set("Footprint size", { frontMeters: v })} />
+              <NumberField label="Back" unit="m" min={0} value={f.backMeters} onCommit={(v) => set("Footprint size", { backMeters: v })} />
+              <NumberField label="Retract" unit="s" min={0} value={f.retractSeconds} title="How long it takes to come back in" onCommit={(v) => set("Footprint retract time", { retractSeconds: v })} />
+              <NumberField label="Left" unit="m" min={0} value={f.leftMeters} onCommit={(v) => set("Footprint size", { leftMeters: v })} />
+              <NumberField label="Right" unit="m" min={0} value={f.rightMeters} onCommit={(v) => set("Footprint size", { rightMeters: v })} />
+            </div>
+          </div>
+        );
+      })}
+      <div>
+        <Button onClick={() => editProject("Add footprint", addFootprint)} testId="add-footprint">
+          <Plus size={14} />
+          Add a footprint
+        </Button>
+      </div>
+    </div>
   );
 }
 

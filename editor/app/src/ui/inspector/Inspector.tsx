@@ -3,7 +3,7 @@
 
 import { ArrowLeft, ChevronLeft, ChevronRight, Flag, Gauge, Link2, Lock, MapPin, Plus, RotateCw, Spline, Trash2, WandSparkles } from "lucide-react";
 import { useEffect } from "react";
-import { tractionMetersPerSecondSquared, wheelSpeedCapMetersPerSecond } from "../../../../core/src/index.ts";
+import { BUMPERS, tractionMetersPerSecondSquared, wheelSpeedCapMetersPerSecond } from "../../../../core/src/index.ts";
 import { withSpec } from "../../model/edits.ts";
 import { deleteItem, unlinkActivePath } from "../../state/actions.ts";
 import { TRANSFORM_LABELS } from "../../model/mirror.ts";
@@ -19,6 +19,7 @@ import {
   ConstraintZoneInspector,
   EventInspector,
   FaceZoneInspector,
+  FootprintSelect,
   ObstacleInspector,
   PointInspector,
   RotationInspector,
@@ -94,6 +95,7 @@ function ConstraintsCard() {
 
 function EndStateCard() {
   const spec = useActivePath().spec;
+  const footprints = useEditor((s) => s.project.robot.footprints.length);
   return (
     <Card title="Start and end state">
       <div className="grid2">
@@ -115,6 +117,14 @@ function EndStateCard() {
         />
       </div>
       <p className="hint">The end pose is the last waypoint's (its heading is set in its row).</p>
+      {(footprints > 0 || spec.startFootprint !== BUMPERS) && (
+        <FootprintSelect
+          label="Robot outline at the start"
+          value={spec.startFootprint}
+          testId="start-footprint"
+          onChange={(startFootprint) => editPath("Start footprint", (p) => withSpec(p, { startFootprint }))}
+        />
+      )}
     </Card>
   );
 }
@@ -165,6 +175,11 @@ function EventsCard() {
             <button type="button" className="item" onClick={() => select({ kind: "event", index: i })} data-testid={`event-item-${i}`}>
               <span className="idx">{i + 1}</span>
               <span className="main">{e.name}</span>
+              {e.footprint !== undefined && (
+                <span className="heading-tag footprint" title={`Robot outline from here: ${e.footprint}`}>
+                  {e.footprint}
+                </span>
+              )}
               <span className="heading-tag">{Number.isNaN(e.waypoint) ? `${formatNumber(e.meters, 2)} m` : `wp ${formatNumber(e.waypoint, 2)}`}</span>
             </button>
             <RowDelete label={`Delete event ${e.name}`} onClick={() => deleteItem({ kind: "event", index: i })} />

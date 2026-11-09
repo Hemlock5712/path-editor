@@ -50,12 +50,14 @@ export interface ConstraintZone {
 
 /**
  * A named event at a place on the path: waypoint-relative (1.5 = halfway along the arc between
- * waypoints 1 and 2) or metres along the path. Exactly one is set; the other is NaN.
+ * waypoints 1 and 2) or metres along the path. Exactly one is set; the other is NaN. footprint, if
+ * set, is the robot's outline from here on (a Footprint named in robot.json, or "bumpers").
  */
 export interface PathEvent {
   readonly name: string;
   readonly waypoint: number;
   readonly meters: number;
+  readonly footprint?: string;
 }
 
 /**
@@ -78,9 +80,13 @@ export interface PathSpec {
   /** Named events, in file order (the follower fires them in path order). */
   readonly events: readonly PathEvent[];
   readonly headingMode: HeadingMode;
+  /** The robot's outline at the start: "bumpers" unless a mechanism is already out. Events can switch it. */
+  readonly startFootprint: string;
 }
 
 export const DEFAULT_BLEND_METERS = 0.5;
+
+import { BUMPERS } from "./footprint.ts";
 
 function fail(message: string): never {
   throw new RangeError(message);
@@ -139,11 +145,12 @@ export function makeConstraintZone(
   return { fromWaypoint, toWaypoint, maxMetersPerSecond, maxMetersPerSecondSquared };
 }
 
-export function makePathEvent(name: string, waypoint: number, meters: number): PathEvent {
+export function makePathEvent(name: string, waypoint: number, meters: number, footprint?: string): PathEvent {
   if (name.trim() === "") fail("an event needs a name");
   if (Number.isNaN(waypoint) === Number.isNaN(meters)) fail("set exactly one of atWaypoint or atMeters");
   if (Math.abs(waypoint) === Infinity || Math.abs(meters) === Infinity) fail("event position must be finite");
-  return { name, waypoint, meters };
+  if (footprint !== undefined && footprint.trim() === "") fail(`event ${name}: a footprint needs a name (absent = no change)`);
+  return footprint === undefined ? { name, waypoint, meters } : { name, waypoint, meters, footprint };
 }
 
 export function eventAtWaypoint(name: string, waypoint: number): PathEvent {
@@ -156,6 +163,11 @@ export function eventAtMeters(name: string, meters: number): PathEvent {
 
 export function eventByWaypoint(e: PathEvent): boolean {
   return !Number.isNaN(e.waypoint);
+}
+
+/** True when the event switches the robot's outline. */
+export function eventChangesFootprint(e: PathEvent): e is PathEvent & { readonly footprint: string } {
+  return e.footprint !== undefined;
 }
 
 /** A checked spec; unspecified parts default to none, no caps, from rest to rest. */
@@ -171,6 +183,7 @@ export function makePathSpec(parts: Partial<PathSpec> & { waypoints: readonly Wa
     endMetersPerSecond: parts.endMetersPerSecond ?? 0.0,
     events: parts.events ?? [],
     headingMode: parts.headingMode ?? "hold",
+    startFootprint: parts.startFootprint ?? BUMPERS,
   };
   if (spec.waypoints.length < 2) fail("a path needs at least two waypoints");
   if (!(spec.maxMetersPerSecond > 0.0) || !(spec.maxMetersPerSecondSquared > 0.0)) {
@@ -179,5 +192,6 @@ export function makePathSpec(parts: Partial<PathSpec> & { waypoints: readonly Wa
   if (!(spec.startMetersPerSecond >= 0.0) || !(spec.endMetersPerSecond >= 0.0)) {
     fail("start and end speeds must be >= 0");
   }
+  if (spec.startFootprint.trim() === "") fail('a start footprint is needed ("bumpers" for the bumpers alone)');
   return spec;
 }

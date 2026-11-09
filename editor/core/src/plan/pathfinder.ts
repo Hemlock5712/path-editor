@@ -2,15 +2,18 @@
 // planned in the editor ("Route around obstacles") is the route the robot plans. The Java writes the fixtures
 // (fixtures/plan, PlanFixtureGen); this must reproduce them to 1e-9.
 //
-// At construction: every obstacle is grown by the bumpers' half-diagonal plus a margin, the walls are moved in
+// At construction: every obstacle is grown by the robot's reach (the bumpers' half-diagonal, or a footprint's far
+// corner) plus a margin, the walls are moved in
 // by the same, and the visibility graph between the grown corners is built. Per plan: snap the start and goal
 // out of grown obstacles, connect them, A*, fit the core's spline through the route's corners, sweep the
 // oriented bumper rectangle along it with the planned heading, add route points where the margin is broken and
-// refit, then build the Path (profile from the robot's speed to the end speed).
+// refit, then build the Path (profile from the robot's speed to the end speed). A footprint reaching further than
+// the bumpers also gets a graph grown by the bumpers' reach, tried when the first has no route or no clear one.
 
 import type { FieldSpeeds, Pose } from "../frame.ts";
 import { PathGeometry } from "../geometry.ts";
 import { HeadingProfile } from "../heading.ts";
+import { bumperFootprint, reachMeters, type Footprint } from "../footprint.ts";
 import { javaHypot } from "../jmath.ts";
 import { Path, pureRotation } from "../path.ts";
 import type { RobotConfig } from "../robot.ts";
@@ -26,6 +29,8 @@ export interface PlannerConfig {
   readonly checkStepMeters: number;
   readonly maxMetersPerSecond: number;
   readonly maxMetersPerSecondSquared: number;
+  /** The outline planned with (Java's PlannerConfig.footprint); absent = the bumpers. */
+  readonly footprint?: Footprint;
 }
 
 /** 0.85 m square bumpers, 5 cm margin, 30° arcs, 8 refits, 2 cm checks, 4 m/s and 6 m/s². */
@@ -40,12 +45,23 @@ export const DEFAULT_PLANNER: PlannerConfig = {
   maxMetersPerSecondSquared: 6.0,
 };
 
+/** The outline planned with: the config's footprint, or the bumpers. */
+export function plannerFootprint(c: PlannerConfig): Footprint {
+  return c.footprint ?? bumperFootprint(c.bumperLengthMeters, c.bumperWidthMeters);
+}
+
+/** The robot's reach in any heading: the bumpers' half-diagonal, or the footprint's far corner. */
 export function halfDiagonalMeters(c: PlannerConfig): number {
-  return javaHypot(c.bumperLengthMeters, c.bumperWidthMeters) / 2;
+  return reachMeters(plannerFootprint(c));
 }
 
 export function growMeters(c: PlannerConfig): number {
   return halfDiagonalMeters(c) + c.marginMeters;
+}
+
+/** growMeters for the bumpers alone (the half-diagonal plus margin), whatever the footprint. */
+export function bumperGrowMeters(c: PlannerConfig): number {
+  return javaHypot(c.bumperLengthMeters, c.bumperWidthMeters) / 2 + c.marginMeters;
 }
 
 /** The static field: size and obstacles (each replaced by its convex hull), centre origin. */
@@ -93,6 +109,8 @@ export class Pathfinder {
   readonly field: FieldMap;
   readonly robot: RobotConfig;
   readonly config: PlannerConfig;
+  /** The rectangle swept along a plan: the config's footprint, or the bumpers. */
+  readonly outline: Footprint;
   /** The grown obstacles (what the robot centre must stay out of). */
   readonly grown: readonly ConvexPolygon[];
   private readonly xMin: number;
@@ -102,12 +120,18 @@ export class Pathfinder {
   private readonly nodeX: Float64Array;
   private readonly nodeY: Float64Array;
   private readonly edge: Float64Array[];
+  /** The same footprint over a graph grown by the bumpers' reach only, or null (see Java's class comment). */
+  private readonly bumperGraph: Pathfinder | null;
 
-  constructor(field: FieldMap, robot: RobotConfig, config: PlannerConfig = DEFAULT_PLANNER) {
+  /** growOverride is internal: the bumpers' graph's grow distance. */
+  constructor(field: FieldMap, robot: RobotConfig, config: PlannerConfig = DEFAULT_PLANNER, growOverride?: number) {
     this.field = field;
     this.robot = robot;
     this.config = config;
-    const r = growMeters(config);
+    this.outline = plannerFootprint(config);
+    const r = growOverride ?? growMeters(config);
+    this.bumperGraph =
+      growOverride === undefined && bumperGrowMeters(config) < r ? new Pathfinder(field, robot, config, bumperGrowMeters(config)) : null;
     this.grown = field.obstacles.map((p) => p.grow(r, config.arcStepRadians));
     this.xMin = -field.lengthMeters / 2 + r;
     this.xMax = field.lengthMeters / 2 - r;
@@ -160,6 +184,14 @@ export class Pathfinder {
    * endTangent (NaN = whatever the route gives; see Pathfinder.plan in Java).
    */
   plan(start: Pose, startVelocity: FieldSpeeds, goal: Pose, endSpeed = 0.0, endTangent = Number.NaN): PlanResult {
+    const r = this.planHere(start, startVelocity, goal, endSpeed, endTangent);
+    if (this.bumperGraph === null || (r.path !== null && r.clear)) return r;
+    // no route, or no clear one, with the footprint's reach grown in: try the bumpers' graph (still sweeping the footprint)
+    const b = this.bumperGraph.planHere(start, startVelocity, goal, endSpeed, endTangent);
+    return b.path !== null && (b.clear || r.path === null) ? b : r;
+  }
+
+  private planHere(start: Pose, startVelocity: FieldSpeeds, goal: Pose, endSpeed: number, endTangent: number): PlanResult {
     const cfg = this.config;
     const s = this.snap(start.xMeters, start.yMeters);
     const g = this.snap(goal.xMeters, goal.yMeters);
@@ -390,7 +422,7 @@ export class Pathfinder {
     return { minClearance: min, violations: worst };
   }
 
-  /** Clearance of the bumper rectangle at (x, y, th) to every obstacle and the field walls. */
+  /** Clearance of the robot's outline (the config's footprint) at (x, y, th) to every obstacle and the walls. */
   clearance(x: number, y: number, th: number): number {
     return this.clearanceWith(x, y, th, halfDiagonalMeters(this.config), new Float64Array(4), new Float64Array(4));
   }
@@ -398,10 +430,9 @@ export class Pathfinder {
   private clearanceWith(x: number, y: number, th: number, reach: number, qx: Float64Array, qy: Float64Array): number {
     const c = Math.cos(th);
     const s = Math.sin(th);
-    const hl = this.config.bumperLengthMeters / 2;
-    const hw = this.config.bumperWidthMeters / 2;
-    const px = [hl, -hl, -hl, hl];
-    const py = [hw, hw, -hw, -hw];
+    const f = this.outline;
+    const px = [f.frontMeters, -f.backMeters, -f.backMeters, f.frontMeters];
+    const py = [f.leftMeters, f.leftMeters, -f.rightMeters, -f.rightMeters];
     const halfL = this.field.lengthMeters / 2;
     const halfW = this.field.widthMeters / 2;
     let best = Infinity;

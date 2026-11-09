@@ -985,8 +985,8 @@ export function FieldCanvas() {
           const along = g.projectGlobal(fx, fy).s;
           const ev = p.spec.events[drag.index]!;
           const moved = Number.isNaN(ev.waypoint)
-            ? makePathEvent(ev.name, Number.NaN, round5(along))
-            : makePathEvent(ev.name, round5(waypointAtS(g, along)), Number.NaN);
+            ? makePathEvent(ev.name, Number.NaN, round5(along), ev.footprint)
+            : makePathEvent(ev.name, round5(waypointAtS(g, along)), Number.NaN, ev.footprint);
           return updateEvent(p, drag.index, moved);
         });
         return;

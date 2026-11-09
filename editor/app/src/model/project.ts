@@ -7,6 +7,7 @@ import {
   makePathSpec,
   makeWaypoint,
   type FieldFrame,
+  type FootprintExtension,
   type HeadingMode,
   type PathSpec,
   type RobotConfig,
@@ -58,12 +59,14 @@ export interface FieldDoc {
   readonly fieldExtra: Readonly<Record<string, unknown>>;
 }
 
-/** The robot file: RobotConfig plus the bumper size (read by PlannerConfig.fromRobotFile in Java). */
+/** The robot file: RobotConfig plus the bumper size (read by PlannerConfig.fromRobotFile in Java) and footprints. */
 export interface RobotSettings {
   /** The robot's numbers; config.maxWheelMetersPerSecond is topSpeedShare of the top speed (withTopSpeed). */
   readonly config: RobotConfig;
   readonly bumperLengthMeters: number;
   readonly bumperWidthMeters: number;
+  /** Mechanisms that stick out past the bumpers (Java's Footprint.fromRobotFile): events switch to them by name. */
+  readonly footprints: readonly FootprintExtension[];
   /** The share of the top speed paths may ask any wheel for, in (0, 1]: 0.9 leaves feedback room. */
   readonly topSpeedShare: number;
   /** TunerConstants' kSpeedAt12Volts, m/s; NaN = the motor's free speed through the gearing. */
@@ -187,6 +190,7 @@ export const DEFAULT_ROBOT_SETTINGS: RobotSettings = withTopSpeed({
   config: { ...DEFAULT_ROBOT, statorCurrentLimitAmps: 150.0, maxAngularRadPerSecSquared: 12.0 },
   bumperLengthMeters: 0.85,
   bumperWidthMeters: 0.85,
+  footprints: [],
   topSpeedShare: DEFAULT_SHARE,
   speedAt12VoltsMetersPerSecond: Number.NaN,
   extra: {},
