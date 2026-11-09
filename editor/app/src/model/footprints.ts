@@ -12,9 +12,15 @@ export function uniqueFootprintName(project: Project, base = "intakeOut"): strin
   for (let k = 2; ; k++) if (!taken.has(`${base}${k}`)) return `${base}${k}`;
 }
 
-/** A new footprint reaching 0.3 m past the front bumper (a typical over-the-bumper intake). */
+/**
+ * A new footprint's reach past the front bumper: a 0.3 m extension limit, which the rules measure from the frame
+ * perimeter, less a typical bumper's depth (about 8.5 cm), since a footprint is measured from the bumpers.
+ */
+export const DEFAULT_EXTENSION_METERS = 0.22;
+
+/** A new footprint reaching DEFAULT_EXTENSION_METERS past the front bumper (an over-the-bumper intake). */
 export function addFootprint(project: Project): Project {
-  const f: FootprintExtension = { name: uniqueFootprintName(project), frontMeters: 0.3, backMeters: 0, leftMeters: 0, rightMeters: 0, retractSeconds: 0 };
+  const f: FootprintExtension = { name: uniqueFootprintName(project), frontMeters: DEFAULT_EXTENSION_METERS, backMeters: 0, leftMeters: 0, rightMeters: 0, retractSeconds: 0 };
   return { ...project, robot: { ...project.robot, footprints: [...project.robot.footprints, f] } };
 }
 

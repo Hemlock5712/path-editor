@@ -181,6 +181,36 @@ describe("Route around with the intake facing an obstacle", () => {
   });
 });
 
+describe("Route around turning a long footprint end-on", () => {
+  it("writes the turn into the path: corners with headings, so the robot crosses the hub gap end-on", () => {
+    const H = Math.PI / 2;
+    // 0.6 m out the front and 0.4 m out the back: 1.85 m long, too long for the 1.85 m gap side-on with the margin
+    const s = makePathSpec({
+      waypoints: [makeWaypoint(-6.3, -1.55, 0, 1, H), makeWaypoint(-1, -1.55, 0, 1, H)],
+      maxMetersPerSecond: 4,
+      maxMetersPerSecondSquared: 6,
+      startFootprint: "longOut",
+    });
+    const i: AnalysisInput = {
+      spec: s,
+      robot: DEFAULT_ROBOT,
+      bumperLengthMeters: 0.85,
+      bumperWidthMeters: 0.85,
+      footprints: [{ name: "longOut", frontMeters: 0.6, backMeters: 0.4, leftMeters: 0, rightMeters: 0, retractSeconds: 0 }],
+      fieldLengthMeters: DEFAULT_FIELD.lengthMeters,
+      fieldWidthMeters: DEFAULT_FIELD.widthMeters,
+      obstacles: DEFAULT_FIELD.obstacles,
+    };
+    expect(hits(ok(i)).length).toBeGreaterThan(0);
+    const r = routeAround(makeEditorPath("P", s, 0), ok(i), { field: DEFAULT_FIELD, robot: DEFAULT_ROBOT, bumperLengthMeters: 0.85, bumperWidthMeters: 0.85 });
+    if (!r.ok) throw new Error(r.reason);
+    const turned = r.path.spec.waypoints.slice(1, -1).filter((w) => !Number.isNaN(w.headingRadians));
+    expect(turned.length).toBeGreaterThan(0);
+    for (const w of turned) expect(Math.abs(Math.sin(w.headingRadians))).toBeLessThan(0.2); // end-on: along x
+    expect(hits(ok({ ...i, spec: r.path.spec }))).toEqual([]);
+  });
+});
+
 describe("robot.json footprints", () => {
   it("round-trip, writing only the sides that reach past the bumpers, as the Java reads them", () => {
     const robot = parseRobot('{ "footprints": [ { "name": "intakeOut", "frontMeters": 0.3, "retractSeconds": 0.4 }, { "name": "arm", "backMeters": 0.1 } ] }');
@@ -205,6 +235,8 @@ describe("footprint edits", () => {
   it("a rename carries every event and path start that used the old name", () => {
     let p = addFootprint(emptyProject());
     expect(p.robot.footprints.map((f) => f.name)).toEqual(["intakeOut"]);
+    // measured from the bumpers: a 0.3 m frame-perimeter limit less the bumpers' depth
+    expect(p.robot.footprints[0]!.frontMeters).toBe(0.22);
     p = {
       ...p,
       paths: [

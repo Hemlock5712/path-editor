@@ -7,7 +7,7 @@
 // mechanism out over the stretch, the pathfinder plans with that footprint (every one in force there, merged).
 
 import { BUMPERS, DEFAULT_PLANNER, fieldFromJson, Pathfinder, type RobotConfig } from "../../../core/src/index.ts";
-import { deleteWaypoint, insertWaypoint } from "../model/edits.ts";
+import { deleteWaypoint, insertWaypoint, setHeading } from "../model/edits.ts";
 import { round5 } from "../model/positions.ts";
 import type { EditorPath, FieldDoc } from "../model/project.ts";
 import { CHECKS, type Analysis } from "./analysis.ts";
@@ -98,11 +98,12 @@ export function routeAround(path: EditorPath, a: Analysis, setup: RouteSetup): R
     };
   }
   // each leg's corners, between two kept waypoints
-  const corners: (readonly [number, number])[][] = [];
+  const corners: (readonly [number, number, number])[][] = [];
   for (let k = 0; k + 1 < legs.length; k++) {
     const r = finder.plan(pose(legs[k]!), still, pose(legs[k + 1]!));
     if (r.failure) return { ok: false, reason: `No route from waypoint ${legs[k]} to ${legs[k + 1]}: ${r.failure}.` };
-    corners.push(r.waypoints.slice(1, -1).map(([x, y]) => [round5(x), round5(y)] as const));
+    // with the heading where the plan turns the robot (a long footprint end-on through a gap), else NaN
+    corners.push(r.waypoints.slice(1, -1).map(([x, y], m) => [round5(x), round5(y), r.waypointHeadings[m + 1]!] as const));
   }
 
   // drop the plain pass-through points between, back to front, then put each leg's corners in after its start
@@ -126,8 +127,9 @@ export function routeAround(path: EditorPath, a: Analysis, setup: RouteSetup): R
   let added = 0;
   for (let k = legs.length - 2; k >= 0; k--) {
     const pts = corners[k]!;
-    pts.forEach(([x, y], m) => {
+    pts.forEach(([x, y, heading], m) => {
       out = insertWaypoint(out, keptAfter[k]! + m, 1 / (pts.length - m + 1), x, y);
+      if (Number.isFinite(heading)) out = setHeading(out, keptAfter[k]! + m + 1, heading);
       added++;
     });
   }

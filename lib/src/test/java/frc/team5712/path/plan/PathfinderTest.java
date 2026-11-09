@@ -371,6 +371,27 @@ class PathfinderTest {
     assertTrue(r.refits() > 0);
   }
 
+  @Test
+  void aLongFootprintTurnsNarrowSideFirstThroughAGapItCantCrossSideways() {
+    // a 1.40 m gap in a wall across the field; facing +y with a 0.45 m intake the robot is 1.325 m along y, too
+    // long for the gap with the margin each side, but 0.85 m wide: it fits turned nose or tail first
+    FieldMap f = field(new double[][] {{-0.5, 0.7}, {0.5, 0.7}, {0.5, 4.1}, {-0.5, 4.1}},
+        new double[][] {{-0.5, -4.1}, {0.5, -4.1}, {0.5, -0.7}, {-0.5, -0.7}});
+    Footprint intake = Footprint.extended(Footprint.bumpers(0.85, 0.85), "intakeOut", 0.45, 0, 0, 0, 0);
+    Pathfinder pf = new Pathfinder(f, RobotConfig.DEFAULT, PlannerConfig.DEFAULT.withFootprint(intake));
+    PlanResult r = pf.plan(new Pose(-4, 0, Math.PI / 2), STOPPED, new Pose(4, 0, Math.PI / 2));
+    assertTrue(r.ok() && r.clear(), "not clear: " + r.minClearanceMeters());
+    assertTrue(minClearance(pf, r.path()) >= PlannerConfig.DEFAULT.marginMeters() - 0.01);
+    // in the gap it faces along x, and it ends facing +y as asked
+    PathSample mid = r.path().sample(r.path().lengthMeters() / 2);
+    assertEquals(0.0, Math.abs(Math.sin(mid.headingRadians())), 0.15);
+    assertEquals(Math.PI / 2, r.path().sample(r.path().lengthMeters()).headingRadians(), 1e-9);
+    // a square robot the same width needs no turn: the bumpers alone go straight through, facing +y
+    PlanResult square = planner(f).plan(new Pose(-4, 0, Math.PI / 2), STOPPED, new Pose(4, 0, Math.PI / 2));
+    assertTrue(square.clear());
+    assertEquals(Math.PI / 2, square.path().sample(square.path().lengthMeters() / 2).headingRadians(), 1e-9);
+  }
+
   static double minClearance(Pathfinder pf, Path path) {
     double min = Double.POSITIVE_INFINITY;
     for (double s = 0; s <= path.lengthMeters(); s += 0.01) {

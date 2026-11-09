@@ -604,7 +604,8 @@ function FootprintsGroup() {
     <div className="settings-group" aria-label="Footprints" data-testid="footprints">
       <h4>Mechanisms out (footprints)</h4>
       <p className="hint">
-        How far an intake or arm reaches past the bumpers on each side. An event can switch the robot's outline to one of these
+        How far an intake or arm reaches past the bumpers on each side (the rules' extension limit is from the frame
+        perimeter, so past the bumpers it's that less the bumpers' depth). An event can switch the robot's outline to one of these
         (and back to the bumpers), and from there on the path is checked, optimised and routed with it. The retract time is how
         long it takes to come back in: the checks keep it out that long after the event that stows it. The robot library builds a
         pathfinder for each, for <code>Pathfinding.withFootprint</code>.

@@ -1,5 +1,6 @@
 package frc.team5712.path.plan;
 
+import frc.team5712.path.core.Angles;
 import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.GeometrySample;
@@ -258,8 +259,20 @@ public final class Pathfinder {
     double startTangent = moving ? StrictMath.atan2(startVelocity.vyMetersPerSecond(), startVelocity.vxMetersPerSecond())
         : Double.NaN;
     double startSpeed = moving ? Math.min(v, config.maxMetersPerSecond()) : 0.0;
+    List<double[]> corners = new ArrayList<>(pts);
     Smoothed smoothed = smooth(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians(),
-        route.endDirection(), arrive, startSnap, goalSnap);
+        route.endDirection(), arrive, startSnap, goalSnap, false);
+    if (!smoothed.sweep().violations.isEmpty() && longerThanWide()) {
+      // 4b. A footprint longer one way than the other that can't get through as blended: again, turning its narrow
+      // side across each stretch it hits (kept only if that clears)
+      List<double[]> turnedPts = new ArrayList<>(corners);
+      Smoothed turned = smooth(turnedPts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians(),
+          route.endDirection(), arrive, startSnap, goalSnap, true);
+      if (turned.sweep().violations.isEmpty()) {
+        smoothed = turned;
+        pts = turnedPts;
+      }
+    }
     long t2 = System.nanoTime();
 
     // 5. Profile: the same speed plan as a drawn path
@@ -324,7 +337,7 @@ public final class Pathfinder {
    * (already inside the margin) aren't checked.
    */
   private Smoothed smooth(List<double[]> pts, double startTangent, double startSpeed, double startHeading,
-      double goalHeading, double endDirection, double arrive, double startSnap, double goalSnap) {
+      double goalHeading, double endDirection, double arrive, double startSnap, double goalSnap, boolean turn) {
     int refits = 0;
     while (true) {
       PathSpec spec = Path.pureRotation(spec(pts, startTangent, startSpeed, startHeading, goalHeading, endDirection,
@@ -338,17 +351,19 @@ public final class Pathfinder {
         return new Smoothed(spec, sweep, refits);
       }
       refits++;
-      addWaypointsUnder(sweep.violations, geometry, heading, pts);
+      addWaypointsUnder(sweep.violations, geometry, heading, pts, turn);
     }
   }
 
   /**
    * One new waypoint per stretch that came too close, on the route segment under its worst point (at least 5 cm from
    * the segment's ends, one per segment per round). Where the route itself is too close there (a footprint planned
-   * on the bumpers' graph), the waypoint is pushed off what it's closest to ({@link #clearOf}).
+   * on the bumpers' graph), the waypoint is pushed off what it's closest to ({@link #clearOf}). With {@code turn}, it
+   * also gets a heading: the footprint's narrow side across the way it's going ({@link #narrowSideAcross}), which
+   * becomes a rotation target there.
    */
   private void addWaypointsUnder(List<Double> violations, PathGeometry geometry, HeadingProfile heading,
-      List<double[]> pts) {
+      List<double[]> pts, boolean turn) {
     List<double[]> inserts = new ArrayList<>();
     for (double sv : violations) {
       int seg = segmentAt(geometry, sv, pts.size());
@@ -361,8 +376,13 @@ public final class Pathfinder {
       double t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / (len * len);
       double minT = Math.min(0.5, 0.05 / len);
       t = Math.max(minT, Math.min(1 - minT, t));
-      double[] q = clearOf(a[0] + t * ex, a[1] + t * ey, heading.sample(geometry.sample(sv)).radians());
-      inserts.add(new double[] {seg, q[0], q[1]});
+      GeometrySample here = geometry.sample(sv);
+      double th = heading.sample(here).radians();
+      if (turn) {
+        th = narrowSideAcross(here, th);
+      }
+      double[] q = clearOf(a[0] + t * ex, a[1] + t * ey, th);
+      inserts.add(new double[] {seg, q[0], q[1], turn ? th : Double.NaN});
     }
     inserts.sort((x, y) -> Double.compare(y[0], x[0])); // back to front keeps indices valid
     int lastSeg = -1;
@@ -371,8 +391,27 @@ public final class Pathfinder {
         continue;
       }
       lastSeg = (int) ins[0];
-      pts.add(lastSeg + 1, new double[] {ins[1], ins[2]});
+      pts.add(lastSeg + 1, Double.isNaN(ins[3]) ? new double[] {ins[1], ins[2]} : new double[] {ins[1], ins[2], ins[3]});
     }
+  }
+
+  /** True when the footprint is longer one way than the other, so which way it faces through a gap matters. */
+  private boolean longerThanWide() {
+    Footprint f = config.footprint();
+    return Math.abs((f.frontMeters() + f.backMeters()) - (f.leftMeters() + f.rightMeters())) > 1e-9;
+  }
+
+  /**
+   * The heading nearest {@code th} that puts the footprint's narrow side across the direction of travel: its long
+   * axis along the way it's going, nose or tail first, whichever is the smaller turn.
+   */
+  private double narrowSideAcross(GeometrySample p, double th) {
+    Footprint f = config.footprint();
+    double travel = StrictMath.atan2(p.tangentY(), p.tangentX());
+    double along = f.frontMeters() + f.backMeters() >= f.leftMeters() + f.rightMeters() ? travel : travel + Math.PI / 2;
+    double a = Angles.wrap(along - th);
+    double b = Angles.wrap(along + Math.PI - th);
+    return th + (Math.abs(a) <= Math.abs(b) ? a : b);
   }
 
   /** How much further than the shortfall {@link #clearOf} pushes, so the spline's sag between waypoints still clears. */
@@ -476,9 +515,16 @@ public final class Pathfinder {
       double tangent = i == 0 ? startTangent : i == pts.size() - 1 ? endTangent : Double.NaN;
       wps.add(new Waypoint(pts.get(i)[0], pts.get(i)[1], tangent, 1.0));
     }
+    // the ends' headings, and any a turning refit gave a waypoint (a third number)
+    List<RotationTarget> targets = new ArrayList<>(List.of(RotationTarget.atWaypoint(0, startHeading)));
+    for (int i = 1; i < pts.size() - 1; i++) {
+      if (pts.get(i).length > 2) {
+        targets.add(RotationTarget.atWaypoint(i, pts.get(i)[2]));
+      }
+    }
+    targets.add(RotationTarget.atWaypoint(pts.size() - 1, goalHeading));
     return PathSpec.of(wps)
-        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, startHeading),
-            RotationTarget.atWaypoint(pts.size() - 1, goalHeading)))
+        .withRotationTargets(targets)
         .withLimits(config.maxMetersPerSecond(), config.maxMetersPerSecondSquared())
         .withEndSpeeds(startSpeed, endSpeed);
   }

@@ -24,7 +24,7 @@ import java.util.Random;
 /**
  * Golden plans for the TypeScript pathfinder ({@code editor/core/src/plan}): {@code fixtures/plan/plans.json},
  * the 2026 field ({@code fixtures/plan/field_2026.json}) with the default robot and planner settings (two plans
- * with an intake out the front, {@link #INTAKE_OUT}), the grown
+ * with an intake out the front, {@link #INTAKE_OUT}, and one long one turned end-on, {@link #LONG_OUT}), the grown
  * obstacles and graph size, and for each start and goal: the waypoints, the planner's figures and the path
  * sampled every 0.25 m. Written by {@code lib/gradlew -p lib fixtures} (through {@link FixtureGen}).
  */
@@ -49,6 +49,13 @@ public final class PlanFixtureGen {
   public static final Footprint INTAKE_OUT = Footprint.extended(Footprint.bumpers(0.85, 0.85), "intakeOut",
       0.35, 0.0, 0.0, 0.0, 0.3);
 
+  /**
+   * Mechanisms 0.6 m out the front and 0.4 m out the back: 1.85 m long, too long to cross the hub-to-trench gap
+   * sideways with the margin, so the plan turns it end-on through the gap.
+   */
+  public static final Footprint LONG_OUT = Footprint.extended(Footprint.bumpers(0.85, 0.85), "longOut",
+      0.6, 0.4, 0.0, 0.0, 0.0);
+
   public static List<Case> cases(Pathfinder pf) {
     List<Case> out = new ArrayList<>();
     Random r = new Random(2027);
@@ -71,6 +78,8 @@ public final class PlanFixtureGen {
         0.0, Double.NaN, INTAKE_OUT));
     out.add(new Case("intake out, past the hub", new Pose(-6.0, -1.5, 0.3), new FieldSpeeds(1.2, -1.5, 0.5),
         new Pose(1.0, -1.5, Math.PI / 2), 0.0, Double.NaN, INTAKE_OUT));
+    out.add(new Case("long and side-on, through the hub gap", new Pose(-6.3, -1.55, Math.PI / 2), still,
+        new Pose(-1.0, -1.55, Math.PI / 2), 0.0, Double.NaN, LONG_OUT));
     return out;
   }
 

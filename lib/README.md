@@ -543,6 +543,10 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   footprint. A route on that graph can run too close for the footprint (an intake facing the hub), so where a refit
   finds the route point itself short of the margin, it pushes the new waypoint straight off whatever is nearest
   until the footprint clears it (`Pathfinder.clearOf`); a bumpers-only plan never needs this and is unchanged.
+  A footprint longer one way than the other that still can't get through as its heading blends (too long to cross
+  a gap side-on) is smoothed again with each refit's waypoint turned narrow side across the way it's going, nose or
+  tail first, whichever is the smaller turn; those headings become rotation targets (and Route around writes them
+  into the path as waypoint headings). That pass is kept only if it clears, so it costs nothing when the first does.
   `PlanResult.clear()` is true only when the footprint itself keeps the margin.
 
 - **Planning.** Each command plans when it starts, from the measured pose and velocity, with `OnTheFly` (in `plan`,
