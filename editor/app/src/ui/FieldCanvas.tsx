@@ -45,6 +45,7 @@ import {
   refuseLinkedCopy,
   select,
   setDraftObstacle,
+  setTool,
   setView,
   type EditorState,
   type Selection,
@@ -114,24 +115,65 @@ const DRAG_START_PX = 4;
 
 /** What each tool does, shown on the field. */
 export const TOOL_HINTS: Record<EditorState["tool"], string> = {
-  select:
-    "Select a waypoint and double-click the field to add one after it. Drag a robot to move it, the knob on its ring to turn it (Alt: freely). Drag the path to insert a point. Right-click a point for more.",
+  draw: "Click to add a point after the selected one; click a robot to build from it. Enter, Esc or right-click: done.",
+  select: "Drag a robot to move it, its knob to turn it (Alt: freely). Drag the path to insert a point. W draws.",
   obstacle: "Click the corners of an obstacle; double-click or Enter to finish.",
   measure: "Drag from one point to another to measure (ends snap to waypoints and named points; Shift: 5 cm grid).",
 };
 
-/** The Select tool's hint on a path still being drawn. */
+/** The hint on a path still being drawn. */
 function drawingHint(n: number): string | null {
-  return n === 0 ? "Double-click the field to place the start." : n === 1 ? "Double-click the field to place the end." : null;
+  return n === 0 ? "Click the field to place the start." : n === 1 ? "Click the field to place the end." : null;
 }
 
 /** What a double-click on the field says when it can't add a waypoint. */
-export const ADD_HINT = "Select a waypoint, then double-click to add one after it";
+export const ADD_HINT = "Select a waypoint, then double-click to add one after it (or press W and click)";
 /** Presses closer together than this are one click sequence (a double-click), ms. */
 const DOUBLE_CLICK_MS = 600;
+/** In Draw, a click this soon and this close to the last added point is the same click (a double-click), ms and px. */
+const DRAW_REPEAT_MS = 450;
+const DRAW_REPEAT_PX = 6;
+
+/** Draw: the waypoint the next click goes in after (the selected one, else the end), and the preview to the pointer. */
+function drawNext(
+  s: EditorState,
+  hover: { x: number; y: number } | null,
+): { after: number; from: { x: number; y: number } | null; to: { x: number; y: number } | null } | null {
+  const path = activePath(s);
+  if (path.mirrorOf) return null;
+  const n = path.spec.waypoints.length;
+  const after = s.selection?.kind === "waypoint" && s.selection.index < n ? s.selection.index : n - 1;
+  const w = after >= 0 ? path.spec.waypoints[after]! : null;
+  return { after, from: w ? { x: w.xMeters, y: w.yMeters } : null, to: hover };
+}
+
+/** Room kept clear for the bars floating over the field (tool and view bars on top, playback below), pixels. */
+const EDITOR_INSETS = { top: 60, right: 16, bottom: 92, left: 16 };
+
+/** What the current tool does, one line (shown in the playback panel; a running flow has its own bar). */
+export function CanvasHint() {
+  const tool = useStore(editor, (s) => s.tool);
+  const drawing = useStore(editor, (s) => drawingHint(activePath(s).spec.waypoints.length));
+  const flowing = useStore(flow, (f) => f.kind !== null);
+  if (flowing) return null;
+  const text = ((tool === "select" || tool === "draw") && drawing) || TOOL_HINTS[tool];
+  return (
+    <div className="canvas-hint" data-testid="canvas-hint" aria-live="polite" data-tip={text}>
+      {text}
+    </div>
+  );
+}
 
 function makeView(s: EditorState, width: number, height: number): FieldView {
-  return new FieldView(width, height, s.project.field.lengthMeters, s.project.field.widthMeters, s.view, s.project.settings.redFrame);
+  return new FieldView(width, height, s.project.field.lengthMeters, s.project.field.widthMeters, s.view, s.project.settings.redFrame, EDITOR_INSETS);
+}
+
+/** The view the field was last drawn with (the browser tests map field points to pixels through it). */
+let shownView: FieldView | null = null;
+
+/** A blue-frame field point in pixels from the field canvas's top-left, as last drawn. */
+export function fieldToCanvas(x: number, y: number): [number, number] | null {
+  return shownView ? shownView.toCanvas(x, y) : null;
 }
 
 /** Point in convex-or-not polygon (even-odd). */
@@ -230,15 +272,16 @@ export function FieldCanvas() {
   const flowState = useStore(flow, (f) => f);
   const motionRef = useRef(0);
   const zoomTarget = useRef<{ zoom: number; px: number; py: number } | null>(null);
-  const tool = useStore(editor, (s) => s.tool);
-  const drawing = useStore(editor, (s) => drawingHint(activePath(s).spec.waypoints.length));
-  /** The waypoint selected at the last press: a double-click adds after it, though its first click deselected it. */
+  /** The waypoint selected at the press before the last, and at the last: a double-click adds after the one
+   *  selected at its own first press, though that click deselected it. */
   const deselectedRef = useRef<{ index: number; pathId: string } | null>(null);
+  const lastPressSelRef = useRef<{ index: number; pathId: string } | null>(null);
   /** When the last press was: a press long after it starts a new click sequence. */
   const lastPressRef = useRef(-Infinity);
-  /** The waypoint selected when the current click sequence began (a double-click on a robot builds on it). */
-  const sequenceStartRef = useRef<{ index: number; pathId: string } | null>(null);
   const liveOverlay = useStore(ui, (u) => u.liveOverlay);
+  /** Draw: the field point under the pointer (the next point's preview), and the last click that added one. */
+  const drawHoverRef = useRef<{ x: number; y: number } | null>(null);
+  const lastDrawRef = useRef({ t: -Infinity, px: 0, py: 0, index: -1 });
 
   // ---------------------------------------------------------------------------- drawing
 
@@ -256,6 +299,7 @@ export function FieldCanvas() {
     const a = analysis.get().result;
     const pb = playback.get();
     const view = makeView(s, width, height);
+    shownView = view;
     drawField(ctx, {
       view,
       image: imageRef.current,
@@ -280,6 +324,7 @@ export function FieldCanvas() {
       flow: flow.get(),
       flowHover: fieldHoverRef.current,
       measure: s.tool === "measure" ? measureRef.current : null,
+      drawNext: s.tool === "draw" && !flow.get().kind ? drawNext(s, drawHoverRef.current) : null,
       blocked: optimiser.get().pathId === active.id && optimiser.get().status === "done" ? (optimiser.get().result?.blockedAt ?? null) : null,
     });
     const simResult = sim.get().result;
@@ -468,14 +513,15 @@ export function FieldCanvas() {
     }
     const [fx, fy] = v.toField(px, py);
     // robot bodies grab in the tools that move them; the placing tools click straight through them
-    if (g && s.tool === "select") {
+    const grabs = s.tool === "select" || s.tool === "draw";
+    if (g && grabs) {
       // a heading's robot slides along the path
       for (let i = spec.rotationTargets.length - 1; i >= 0; i--) {
         const p = g.sample(rotationTargetS(spec.rotationTargets[i]!, g));
         if (Math.hypot(p.xMeters - fx, p.yMeters - fy) <= s.project.robot.bumperWidthMeters / 2) return { kind: "slide", index: i };
       }
     }
-    if (s.tool === "select") {
+    if (grabs) {
       for (let i = spec.waypoints.length - 1; i >= 0; i--) {
         if (insideFootprint(model, i, fx, fy)) return { kind: "waypoint", index: i };
       }
@@ -528,6 +574,22 @@ export function FieldCanvas() {
         const [rx, ry] = v.toRaw(px, py);
         const draft = s.draftObstacle ?? [];
         setDraftObstacle([...draft, [snapMeters(rx, shift, s.view.gridSnap), snapMeters(ry, shift, s.view.gridSnap)]]);
+        return true;
+      }
+      case "draw": {
+        const now = performance.now();
+        const last = lastDrawRef.current;
+        if (now - last.t < DRAW_REPEAT_MS && Math.hypot(px - last.px, py - last.py) < DRAW_REPEAT_PX) return true;
+        lastDrawRef.current = { t: now, px, py, index: -1 };
+        const next = drawNext(s, null);
+        if (!next) {
+          refuseLinkedCopy();
+          return true;
+        }
+        const [fx, fy] = v.toField(px, py);
+        addAfter(next.after, snapMeters(fx, shift, s.view.gridSnap), snapMeters(fy, shift, s.view.gridSnap));
+        const added = editor.get().selection;
+        lastDrawRef.current.index = added?.kind === "waypoint" ? added.index : -1;
         return true;
       }
       case "select":
@@ -629,9 +691,9 @@ export function FieldCanvas() {
     const now = performance.now();
     const s0 = editor.get();
     const selected = s0.selection?.kind === "waypoint" ? { index: s0.selection.index, pathId: s0.activePathId } : null;
-    if (now - lastPressRef.current > DOUBLE_CLICK_MS) sequenceStartRef.current = selected;
-    if (selected) deselectedRef.current = selected;
-    else if (now - lastPressRef.current > DOUBLE_CLICK_MS) deselectedRef.current = null;
+    // this press may be a double-click's second: what was selected at its first press
+    deselectedRef.current = now - lastPressRef.current > DOUBLE_CLICK_MS ? selected : (lastPressSelRef.current ?? selected);
+    lastPressSelRef.current = selected;
     lastPressRef.current = now;
     stopMotion();
     const [px, py] = pointer(e);
@@ -732,8 +794,8 @@ export function FieldCanvas() {
       canvasRef.current!.setPointerCapture(e.pointerId);
       return;
     }
-    // pressing on the path in Select: dragging away inserts a point there
-    if (s.tool === "select") {
+    // pressing on the path in Select or Draw: dragging away inserts a point there
+    if (s.tool === "select" || s.tool === "draw") {
       const onPath = projectToPath(px, py);
       if (onPath && onPath.px <= PATH_SNAP_PX && onPath.s > 1e-3 && onPath.s < onPath.g.lengthMeters - 1e-3) {
         dragRef.current = { kind: "insert", s: onPath.s, startX: px, startY: py, started: false };
@@ -753,6 +815,11 @@ export function FieldCanvas() {
     const v = view();
     const s = editor.get();
     if (!drag) {
+      if (s.tool === "draw") {
+        const [fx, fy] = v.toField(px, py);
+        drawHoverRef.current = { x: snapMeters(fx, e.shiftKey, s.view.gridSnap), y: snapMeters(fy, e.shiftKey, s.view.gridSnap) };
+        schedule();
+      } else drawHoverRef.current = null;
       const f = flow.get();
       if (f.kind) {
         const [fx, fy] = v.toField(px, py);
@@ -789,10 +856,12 @@ export function FieldCanvas() {
           : under.kind === "tangent" || under.kind === "vertex"
             ? "crosshair"
             : "move"
-        : s.tool === "select"
+        : s.tool === "select" || s.tool === "draw"
           ? Number.isFinite(hoverS)
             ? "copy"
-            : "default"
+            : s.tool === "draw"
+              ? "crosshair"
+              : "default"
           : "crosshair";
       return;
     }
@@ -955,7 +1024,10 @@ export function FieldCanvas() {
     if (drag.kind === "pan") {
       canvasRef.current!.style.cursor = "";
       if (!drag.moved && drag.button === 0) select(null);
-      else if (!drag.moved && drag.button === 2) fieldMenu(e.clientX, e.clientY, pointer(e));
+      else if (!drag.moved && drag.button === 2) {
+        if (editor.get().tool === "draw") setTool("select");
+        else fieldMenu(e.clientX, e.clientY, pointer(e));
+      }
       else if (drag.moved && performance.now() - drag.lastT < 60) glide(drag.vx, drag.vy);
       return;
     }
@@ -1022,8 +1094,12 @@ export function FieldCanvas() {
       finishObstacle();
       return;
     }
-    if (s.tool !== "select") return;
+    if (s.tool !== "select" && s.tool !== "draw") return;
     const hit = hitTest(px, py);
+    // Draw adds on single clicks; its double-click only puts a point on another robot (closing a loop),
+    // not on the robot its own first click just added
+    const justAdded = performance.now() - lastDrawRef.current.t < DOUBLE_CLICK_MS && hit?.kind === "waypoint" && hit.index === lastDrawRef.current.index;
+    if (s.tool === "draw" && (hit?.kind !== "waypoint" || justAdded)) return;
     if (hit?.kind === "tangent") {
       editPath("Automatic tangent", (p) => setTangent(p, hit.index, Number.NaN, 1.0));
       return;
@@ -1032,7 +1108,7 @@ export function FieldCanvas() {
     // waypoint selected when the double-click began
     if (hit?.kind === "waypoint") {
       const path = activePath(s);
-      const from = sequenceStartRef.current;
+      const from = deselectedRef.current;
       deselectedRef.current = null;
       lastPressRef.current = -Infinity;
       if (!from || from.pathId !== path.id || from.index === hit.index) return;
@@ -1145,6 +1221,7 @@ export function FieldCanvas() {
         onPointerLeave={() => {
           if (dragRef.current) return;
           playback.set({ hoverS: Number.NaN });
+          drawHoverRef.current = null;
           hoverItemRef.current = null;
           deleteHotRef.current = false;
           schedule();
@@ -1152,11 +1229,6 @@ export function FieldCanvas() {
         onDoubleClick={onDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
-      {!flowState.kind && (
-        <div className="canvas-hint" data-testid="canvas-hint" aria-live="polite">
-          {(tool === "select" && drawing) || TOOL_HINTS[tool]}
-        </div>
-      )}
       <FlowBar />
       {flowState.kind && flowFormAt()}
       <QuickStartOverlay />

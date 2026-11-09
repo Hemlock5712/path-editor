@@ -82,36 +82,48 @@ export function WaypointInspector({ index }: { index: number }) {
   };
   return (
     <div className="inspector-body" role="group" aria-label={`Waypoint ${index}`}>
-      <div className="grid2">
+      <div className="grid3">
         <NumberField label="x" unit="m" value={w.xMeters} onCommit={(v) => moveTo(round5(v), w.yMeters)} />
         <NumberField label="y" unit="m" value={w.yMeters} onCommit={(v) => moveTo(w.xMeters, round5(v))} />
         <NumberField
           label="Heading"
           unit="°"
           value={toDegrees(w.headingRadians)}
-          blank={isEnd ? "" : "pass-through"}
+          blank={isEnd ? "" : "pass"}
           blankValue={isEnd ? undefined : Number.NaN}
           step={15}
           testId="waypoint-heading"
           title="Where the robot faces here (a swerve's heading is its own). Blank: pass through"
           onCommit={(v) => editPath("Set heading", (p) => setHeading(p, index, Number.isNaN(v) ? v : round5Radians(v * DEGREES)))}
         />
-        <div className="field" style={{ justifyContent: "flex-end" }}>
-          <Switch
-            label="Pass-through"
-            checked={passThrough}
-            disabled={isEnd}
-            testId="waypoint-pass-through"
-            title={isEnd ? "The first and last waypoints always have a heading" : "No heading here: the robot blends between the set ones"}
-            onChange={(on) => editPath(on ? "Pass through" : "Set heading", (p) => setHeading(p, index, on ? Number.NaN : plannedHeading()))}
-          />
-        </div>
       </div>
-      <div className="grid2">
-        <Button onClick={() => faceNext(index)} label={index < n - 1 ? "Face the next waypoint" : "Face the way it arrives"} testId="face-next">
-          <Navigation size={14} />
-          Face next
-        </Button>
+      <div className="waypoint-actions">
+        <Switch
+          label="Pass-through"
+          checked={passThrough}
+          disabled={isEnd}
+          testId="waypoint-pass-through"
+          title={isEnd ? "The first and last waypoints always have a heading" : "No heading here: the robot blends between the set ones"}
+          onChange={(on) => editPath(on ? "Pass through" : "Set heading", (p) => setHeading(p, index, on ? Number.NaN : plannedHeading()))}
+        />
+        <IconButton onClick={() => faceNext(index)} label={index < n - 1 ? "Face the next waypoint" : "Face the way it arrives"} testId="face-next">
+          <Navigation size={15} />
+        </IconButton>
+        <IconButton onClick={insertAfter} label={`Add a waypoint after waypoint ${index}`} testId="add-after">
+          <CornerDownRight size={15} />
+        </IconButton>
+        <IconButton
+          label="Delete waypoint"
+          className="danger"
+          disabled={n <= 2}
+          onClick={() => editPath("Delete waypoint", (p) => deleteWaypoint(p, index), null)}
+          testId="delete-waypoint"
+        >
+          <Trash2 size={15} />
+        </IconButton>
+      </div>
+      <h3 className="sub-head">More</h3>
+      <div>
         <SelectField
           label="Face target"
           value=""
@@ -192,13 +204,6 @@ export function WaypointInspector({ index }: { index: number }) {
           </Button>
         </div>
       )}
-      <div className="row">
-        <Button onClick={insertAfter} label={`Add a waypoint after waypoint ${index}`} testId="add-after">
-          <CornerDownRight size={14} />
-          Add after
-        </Button>
-      </div>
-      <DeleteButton label="Delete waypoint" disabled={n <= 2} onClick={() => editPath("Delete waypoint", (p) => deleteWaypoint(p, index), null)} />
     </div>
   );
 }

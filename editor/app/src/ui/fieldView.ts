@@ -7,9 +7,22 @@ import type { ViewState } from "../state/editor.ts";
 
 export const FIELD_PADDING_PX = 24;
 
+/** Room kept clear around the fitted field, pixels: for bars floating over the canvas. */
+export interface Insets {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+}
+
+const EVEN: Insets = { top: FIELD_PADDING_PX, right: FIELD_PADDING_PX, bottom: FIELD_PADDING_PX, left: FIELD_PADDING_PX };
+
 export class FieldView {
   readonly frame: FieldFrame;
   readonly scale: number; // pixels per metre
+  /** Where the view's centre is drawn, canvas pixels (the middle of the room inside the insets). */
+  readonly cx: number;
+  readonly cy: number;
 
   constructor(
     readonly width: number,
@@ -18,26 +31,29 @@ export class FieldView {
     readonly fieldWidth: number,
     readonly view: ViewState,
     redFrame: Exclude<FieldFrame, "BLUE">,
+    insets: Insets = EVEN,
   ) {
     this.frame = view.alliance === "red" ? redFrame : "BLUE";
-    const fit = Math.min((width - 2 * FIELD_PADDING_PX) / fieldLength, (height - 2 * FIELD_PADDING_PX) / fieldWidth);
+    const fit = Math.min((width - insets.left - insets.right) / fieldLength, (height - insets.top - insets.bottom) / fieldWidth);
     this.scale = Math.max(1e-3, fit) * view.zoom;
+    this.cx = (insets.left + width - insets.right) / 2;
+    this.cy = (insets.top + height - insets.bottom) / 2;
   }
 
   /** A blue-frame field point to canvas pixels. */
   toCanvas(x: number, y: number): [number, number] {
     const p = flipPoint(this.frame, { x, y });
-    return [this.width / 2 + (p.x - this.view.centerX) * this.scale, this.height / 2 - (p.y - this.view.centerY) * this.scale];
+    return [this.cx + (p.x - this.view.centerX) * this.scale, this.cy - (p.y - this.view.centerY) * this.scale];
   }
 
   /** A point in the displayed frame (the real field, as the robot reports it) to canvas pixels. */
   toCanvasRaw(x: number, y: number): [number, number] {
-    return [this.width / 2 + (x - this.view.centerX) * this.scale, this.height / 2 - (y - this.view.centerY) * this.scale];
+    return [this.cx + (x - this.view.centerX) * this.scale, this.cy - (y - this.view.centerY) * this.scale];
   }
 
   /** Canvas pixels to the displayed frame (no flip): for obstacles, which are real field features. */
   toRaw(px: number, py: number): [number, number] {
-    return [(px - this.width / 2) / this.scale + this.view.centerX, -(py - this.height / 2) / this.scale + this.view.centerY];
+    return [(px - this.cx) / this.scale + this.view.centerX, -(py - this.cy) / this.scale + this.view.centerY];
   }
 
   /** A real-field pose (as on the robot, either alliance) in the blue frame the paths use. */
@@ -48,8 +64,8 @@ export class FieldView {
 
   /** Canvas pixels to a blue-frame field point. */
   toField(px: number, py: number): [number, number] {
-    const x = (px - this.width / 2) / this.scale + this.view.centerX;
-    const y = -(py - this.height / 2) / this.scale + this.view.centerY;
+    const x = (px - this.cx) / this.scale + this.view.centerX;
+    const y = -(py - this.cy) / this.scale + this.view.centerY;
     const p = flipPoint(this.frame, { x, y });
     return [p.x, p.y];
   }
@@ -68,8 +84,8 @@ export class FieldView {
   zoomAbout(px: number, py: number, factor: number): { zoom: number; centerX: number; centerY: number } {
     const zoom = Math.min(40, Math.max(0.3, this.view.zoom * factor));
     const k = zoom / this.view.zoom;
-    const dx = (px - this.width / 2) / this.scale;
-    const dy = -(py - this.height / 2) / this.scale;
+    const dx = (px - this.cx) / this.scale;
+    const dy = -(py - this.cy) / this.scale;
     return { zoom, centerX: this.view.centerX + dx - dx / k, centerY: this.view.centerY + dy - dy / k };
   }
 }

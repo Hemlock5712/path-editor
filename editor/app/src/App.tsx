@@ -9,7 +9,7 @@ import { editor, isDirty } from "./state/editor.ts";
 import { useStore } from "./state/store.ts";
 import { INSPECTOR, RAIL, ui } from "./state/ui.ts";
 import { BenchView } from "./ui/BenchView.tsx";
-import { ProjectRail } from "./ui/editor/ProjectRail.tsx";
+import { ProjectRail, RailStrip } from "./ui/editor/ProjectRail.tsx";
 import { Stage } from "./ui/editor/Stage.tsx";
 import { Inspector } from "./ui/inspector/Inspector.tsx";
 import { SettingsPage } from "./ui/pages/SettingsPage.tsx";
@@ -46,13 +46,18 @@ function usePlaybackClock(): void {
 
 function EditorPage() {
   const railWidth = useStore(ui, (s) => s.railWidth);
+  const railCollapsed = useStore(ui, (s) => s.railCollapsed);
   const inspectorWidth = useStore(ui, (s) => s.inspectorWidth);
   return (
     <div className="split">
-      <aside className="pane side" style={{ width: railWidth }} aria-label="Project">
-        <ProjectRail />
+      <aside className={railCollapsed ? "pane side rail-strip" : "pane side"} style={railCollapsed ? undefined : { width: railWidth }} aria-label="Project">
+        {railCollapsed ? <RailStrip /> : <ProjectRail />}
       </aside>
-      <Splitter label="Resize the paths rail" side="left" width={railWidth} min={RAIL.min} max={RAIL.max} onResize={(w) => ui.set({ railWidth: w })} />
+      {railCollapsed ? (
+        <div className="rail-edge" />
+      ) : (
+        <Splitter label="Resize the paths rail" side="left" width={railWidth} min={RAIL.min} max={RAIL.max} onResize={(w) => ui.set({ railWidth: w })} />
+      )}
       <div className="pane main">
         <Stage />
       </div>

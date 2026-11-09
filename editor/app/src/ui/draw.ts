@@ -91,6 +91,8 @@ export interface DrawModel {
   readonly flowHover?: { readonly x: number; readonly y: number } | null;
   /** The Measure tool's line (blue frame). */
   readonly measure?: { readonly a: readonly [number, number]; readonly b: readonly [number, number] } | null;
+  /** Draw: where the next click puts a point, from the waypoint it follows. */
+  readonly drawNext?: { readonly from: { readonly x: number; readonly y: number } | null; readonly to: { readonly x: number; readonly y: number } | null } | null;
 }
 
 /** Linear interpolation of a station column at s. */
@@ -164,6 +166,7 @@ export function drawField(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   drawDraftObstacle(ctx, m);
   drawHover(ctx, m);
   drawMeasure(ctx, m);
+  drawNextPoint(ctx, m);
   if (m.showPlaybackRobot) drawPlaybackRobot(ctx, m);
   drawLive(ctx, m);
   drawLegend(ctx, m);
@@ -885,6 +888,25 @@ function drawMeasure(ctx: CanvasRenderingContext2D, m: DrawModel): void {
   const dx = ms.b[0] - ms.a[0];
   const dy = ms.b[1] - ms.a[1];
   label(ctx, `${d.toFixed(2)} m · ${deg.toFixed(0)}° (Δx ${dx.toFixed(2)}, Δy ${dy.toFixed(2)})`, (ax + bx) / 2 + 10, (ay + by) / 2 - 8);
+}
+
+/** Draw: a dashed line from the waypoint being built on to the pointer, and the robot that a click puts there. */
+function drawNextPoint(ctx: CanvasRenderingContext2D, m: DrawModel): void {
+  const d = m.drawNext;
+  if (!d?.to) return;
+  const [bx, by] = m.view.toCanvas(d.to.x, d.to.y);
+  const heading = d.from ? Math.atan2(d.to.y - d.from.y, d.to.x - d.from.x) : 0;
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 5]);
+  ctx.strokeStyle = "rgba(248,250,252,0.75)";
+  if (d.from) {
+    const [ax, ay] = m.view.toCanvas(d.from.x, d.from.y);
+    line(ctx, ax, ay, bx, by);
+  }
+  drawRobot(ctx, m, d.to.x, d.to.y, heading, "rgba(248,250,252,0.6)", "rgba(248,250,252,0.06)");
+  ctx.restore();
+  if (d.from) label(ctx, `${Math.hypot(d.to.x - d.from.x, d.to.y - d.from.y).toFixed(2)} m`, bx + 14, by - 10);
 }
 
 /** The playback sample at time t, interpolated between the worker's time samples. */

@@ -12,8 +12,12 @@ const SIZES = [
 
 async function fieldPoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   const box = (await page.getByTestId("field").boundingBox())!;
-  const scale = Math.min((box.width - 48) / 16.54, (box.height - 48) / 8.07);
-  return { x: box.x + box.width / 2 + x * scale, y: box.y + box.height / 2 - y * scale };
+  // through the view the field was last drawn with
+  const [px, py] = await page.evaluate(
+    ([fx, fy]) => (window as unknown as { pathEditorTest: { toCanvas(x: number, y: number): [number, number] } }).pathEditorTest.toCanvas(fx!, fy!),
+    [x, y],
+  );
+  return { x: box.x + px, y: box.y + py };
 }
 
 async function dblField(page: Page, x: number, y: number): Promise<void> {
@@ -57,18 +61,16 @@ for (const size of SIZES) {
     // the sim preview: its switch and numbers in the playback bar, its card in the inspector
     await page.getByTestId("sim-toggle").click();
     await expect(page.getByTestId("sim-time")).toBeVisible();
-    await page.locator("button.card-head", { hasText: /^Sim preview/ }).click();
-    await page.locator("button.card-head", { hasText: /^Waypoints/ }).click();
+    await page.getByTestId("inspector-tab-optimise").click();
     await page.getByTestId("play").click();
     await page.waitForTimeout(1500);
     await page.getByTestId("play").click();
     await settle(page);
     await shot("2b-sim-preview");
     await page.getByTestId("sim-toggle").click();
-    await page.locator("button.card-head", { hasText: /^Waypoints/ }).click();
-    await page.locator("button.card-head", { hasText: /^Sim preview/ }).click();
+    await page.getByTestId("inspector-tab-path").click();
 
-    await page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(2).click();
+    await page.getByRole("list", { name: "Waypoints" }).getByRole("listitem").nth(2).getByRole("button").first().click();
     await settle(page);
     await shot("3-selected-waypoint");
 

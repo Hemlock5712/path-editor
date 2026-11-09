@@ -573,6 +573,81 @@ code {
   border-radius: 2px;
 }
 
+.path-card .path-level {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.path-card .path-level.error {
+  background: var(--danger);
+}
+
+.path-cards {
+  min-height: calc(100% - 2 * var(--s2));
+}
+
+/* the rail folded to a strip: its swatches, New path, and the way back */
+.pane.side.rail-strip {
+  width: 40px;
+}
+
+.rail-strip-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s1) 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.rail-strip-sep {
+  width: 20px;
+  height: 1px;
+  background: var(--border);
+}
+
+.rail-edge {
+  flex: none;
+  width: 1px;
+  background: var(--border);
+}
+
+.rail-swatches {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rail-swatch {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--r2);
+  background: transparent;
+}
+
+.rail-swatch:hover {
+  background: var(--raised);
+}
+
+.rail-swatch[aria-selected="true"] {
+  border-color: rgba(76, 166, 255, 0.5);
+  background: var(--accent-soft);
+}
+
+.rail-swatch span {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
 .rename-input {
   width: 100%;
   height: 22px;
@@ -709,22 +784,38 @@ code {
   color: var(--danger);
 }
 
-.canvas-hint {
-  position: absolute;
-  z-index: 2;
-  left: 50%;
-  bottom: 92px;
-  transform: translateX(-50%);
-  max-width: calc(100% - 32px);
-  padding: var(--s1) var(--s3);
-  border-radius: 999px;
-  background: rgba(11, 14, 19, 0.82);
+.check-badge.pending {
   color: var(--muted);
+}
+
+.check-badge.pending svg {
+  animation: spin 0.9s linear infinite;
+}
+
+.path-info {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  min-width: 0;
+  padding: 6px var(--s3) 0;
   font-size: var(--fs-sm);
+}
+
+.path-info .path-title {
+  padding: 0;
+  flex: none;
+  max-width: 160px;
+}
+
+.canvas-hint {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--muted);
+  font-size: var(--fs-xs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  pointer-events: none;
 }
 
 .playback-bar {
@@ -984,33 +1075,91 @@ code {
   color: var(--accent);
 }
 
-/* collapsible cards in the overview */
+/* the overview's tabs, and the sections in them */
+.inspector-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  flex: none;
+  padding: 0 var(--s1);
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 0 5px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.inspector-tab:hover {
+  color: var(--text);
+}
+
+.inspector-tab[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.inspector-tab .icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.inspector-tab .badge {
+  position: absolute;
+  top: -5px;
+  left: 12px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--raised-2);
+  color: var(--text);
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+}
+
+.inspector-tab[aria-selected="true"] .badge {
+  background: var(--accent);
+  color: #fff;
+}
+
 .card {
   border-bottom: 1px solid var(--border);
+}
+
+.card:last-child {
+  border-bottom: none;
 }
 
 .card-head {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  width: 100%;
-  height: 36px;
-  padding: 0 var(--s3) 0 var(--s2);
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-weight: 600;
-  font-size: var(--fs-md);
-  text-align: left;
-  transition: background var(--dur) var(--ease);
-}
-
-.card-head:hover {
-  background: var(--raised);
-}
-
-.card-head .chev {
+  margin: 0;
+  height: 34px;
+  padding: 0 var(--s3);
   color: var(--muted);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .card-head .count {
@@ -2145,7 +2294,7 @@ dialog::backdrop {
   container-type: inline-size;
 }
 
-@container (max-width: 880px) {
+@container (max-width: 680px) {
   .canvas-view {
     top: 58px;
   }
@@ -2857,4 +3006,53 @@ dialog.transform legend {
 .import-btn {
   align-self: flex-start;
   cursor: pointer;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* a narrow side panel: paired fields stack rather than clip */
+.pane.side {
+  container-type: inline-size;
+}
+
+@container (max-width: 250px) {
+  .grid2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .grid2 > .span2 {
+    grid-column: auto;
+  }
+}
+
+/* the waypoint inspector: its quick actions in one row, the rest under "More" */
+.waypoint-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.waypoint-actions > .switch,
+.waypoint-actions > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.icon-btn.danger:not(:disabled) {
+  color: var(--danger);
+}
+
+.sub-head {
+  margin: var(--s1) 0 calc(-1 * var(--s1));
+  padding-top: var(--s2);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }

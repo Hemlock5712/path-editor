@@ -1,12 +1,11 @@
 // The editor's controls, drawn by the app rather than the browser: number fields that scrub (drag the
 // label) and step (arrows, or the steppers), selects with a custom list, switches, a slider, segmented
-// choices, collapsible cards and icon buttons with tooltips. Edits commit on Enter, blur, a step or the
+// choices, section cards and icon buttons with tooltips. Edits commit on Enter, blur, a step or the
 // end of a scrub (one undo step each), and Escape reverts. Every control has an accessible name.
 
-import { Check, ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { createStore, useStore } from "../state/store.ts";
 
 /** A number as the file would print it: up to 5 decimals, no trailing zeros. */
 export function formatNumber(x: number, decimals = 5): string {
@@ -14,6 +13,9 @@ export function formatNumber(x: number, decimals = 5): string {
   const s = x.toFixed(decimals);
   return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
 }
+
+/** How many decimals a field shows, by unit (mm, a tenth of a degree); the value itself keeps all of its own. */
+const SHOWN_DECIMALS: Record<string, number> = { m: 3, "°": 1, "m/s": 2, "m/s²": 2 };
 
 const DEFAULT_STEPS: Record<string, number> = { "°": 5, m: 0.05, "m/s": 0.1, "m/s²": 0.1, wp: 0.1, s: 0.1, kg: 0.5, A: 5, ms: 5 };
 
@@ -40,7 +42,8 @@ interface NumberFieldProps {
 
 export function NumberField({ label, value, onCommit, unit, blank, blankValue, decimals = 5, min, max, step, title, testId, className, code }: NumberFieldProps) {
   const id = useId();
-  const shown = formatNumber(value, decimals);
+  // shown short (2.657 m); left as shown, the value keeps every decimal it has
+  const shown = formatNumber(value, Math.min(decimals, SHOWN_DECIMALS[unit ?? ""] ?? decimals));
   const [text, setText] = useState(shown);
   const [scrubbing, setScrubbing] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -56,6 +59,8 @@ export function NumberField({ label, value, onCommit, unit, blank, blankValue, d
 
   const commit = () => {
     const t = text.trim();
+    // untouched: the short form stands for the exact value
+    if (t === shown) return;
     if (t === "") {
       if (blankValue !== undefined) {
         if (!(Number.isNaN(blankValue) && Number.isNaN(value)) && blankValue !== value) onCommit(blankValue);
@@ -578,51 +583,18 @@ export function Segmented<T extends string>({
 
 // ------------------------------------------------------------------------------ cards and buttons
 
-/** Which cards are open, by key, so they stay as left when the inspector switches views. */
-const cardsOpen = createStore<Record<string, boolean>>({});
-
-export function Card({
-  title,
-  children,
-  open = false,
-  count,
-  cardKey,
-  testId,
-}: {
-  title: string;
-  children: ReactNode;
-  open?: boolean;
-  count?: number;
-  cardKey?: string;
-  testId?: string;
-}) {
-  const key = cardKey ?? title;
-  const isOpen = useStore(cardsOpen, (s) => s[key] ?? open);
+/** A titled section of the inspector's tabs (always open: the tab is the choice of what to see). */
+export function Card({ title, children, count, testId }: { title: string; children: ReactNode; count?: number; testId?: string }) {
   const id = useId();
   return (
     <section className="card" data-testid={testId} aria-labelledby={`${id}-head`}>
-      <button
-        type="button"
-        id={`${id}-head`}
-        className="card-head"
-        aria-expanded={isOpen}
-        aria-controls={`${id}-body`}
-        onClick={() => cardsOpen.set((s) => ({ ...s, [key]: !isOpen }))}
-      >
-        <ChevronRight className="chev" size={14} />
+      <h3 id={`${id}-head`} className="card-head">
         {title}
         {count !== undefined && <span className="count">{count}</span>}
-      </button>
-      <div className={isOpen ? "collapse open" : "collapse"} id={`${id}-body`}>
-        <div className="collapse-inner">{isOpen && <div className="card-body">{children}</div>}</div>
-      </div>
+      </h3>
+      <div className="card-body">{children}</div>
     </section>
   );
-}
-
-/** Opens a card (for actions that add something into it). */
-export function openCard(key: string): void {
-  cardsOpen.set((s) => ({ ...s, [key]: true }));
 }
 
 /** An icon button; its tooltip gives the label and the shortcut. */

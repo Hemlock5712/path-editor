@@ -1,17 +1,19 @@
 // The right-hand inspector. With something selected it shows only that item; otherwise the path's
 // overview: Optimise path first, then collapsible cards in PathPlanner's order (waypoints open).
 
-import { ArrowLeft, ChevronLeft, ChevronRight, Link2, Lock, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Flag, Gauge, Link2, Lock, MapPin, Plus, RotateCw, Spline, Trash2, WandSparkles } from "lucide-react";
+import { useEffect } from "react";
 import { tractionMetersPerSecondSquared, wheelSpeedCapMetersPerSecond } from "../../../../core/src/index.ts";
 import { withSpec } from "../../model/edits.ts";
 import { deleteItem, unlinkActivePath } from "../../state/actions.ts";
 import { TRANSFORM_LABELS } from "../../model/mirror.ts";
-import { editPath, select } from "../../state/editor.ts";
+import { editPath, select, type Selection } from "../../state/editor.ts";
+import { useStore } from "../../state/store.ts";
+import { INSPECTOR_TABS, ui, type InspectorTab } from "../../state/ui.ts";
 import { startFlow } from "../../state/flow.ts";
 import { Button, Card, formatNumber, IconButton, NumberField, SelectField } from "../controls.tsx";
 import { OptimiseControls, OptimiserSettings } from "../panels/OptimisePanel.tsx";
 import { toDegrees, useActivePath, useEditor } from "../panels/common.tsx";
-import { Pane } from "../shell.tsx";
 import { SimCard } from "../../sim/SimPanel.tsx";
 import {
   ConstraintZoneInspector,
@@ -29,7 +31,7 @@ function WaypointsCard() {
   const points = useEditor((s) => s.project.namedPoints);
   const n = path.spec.waypoints.length;
   return (
-    <Card title="Waypoints" open count={n} cardKey="waypoints">
+    <Card title="Waypoints" count={n}>
       <ol className="item-list" aria-label="Waypoints">
         {path.spec.waypoints.map((w, i) => {
           const set = !Number.isNaN(w.headingRadians);
@@ -44,16 +46,17 @@ function WaypointsCard() {
                 {path.links[i] && <span className="tag accent">{points.find((q) => q.id === path.links[i])?.name}</span>}
                 <span className={set ? "heading-tag set" : "heading-tag"}>{set ? `${formatNumber(toDegrees(w.headingRadians), 1)}°` : "pass"}</span>
               </button>
+              <RowDelete label={`Delete waypoint ${i}`} onClick={() => deleteItem({ kind: "waypoint", index: i })} />
             </li>
           );
         })}
       </ol>
       <p className="hint" data-testid="add-waypoint-hint">
         {n === 0
-          ? "Double-click the field to place the start, then the end."
+          ? "Draw (W): click the field to place the start, then the end."
           : n === 1
-            ? "Double-click the field to place the end."
-            : "Select a waypoint, then double-click the field to add one after it."}
+            ? "Click the field to place the end."
+            : "Draw (W): click the field to add a point after the selected one, or at the end."}
       </p>
     </Card>
   );
@@ -63,7 +66,7 @@ function ConstraintsCard() {
   const spec = useActivePath().spec;
   const robot = useEditor((s) => s.project.robot.config);
   return (
-    <Card title="Global constraints" cardKey="constraints">
+    <Card title="Global constraints">
       <div className="grid2">
         <NumberField
           label="Top speed"
@@ -92,7 +95,7 @@ function ConstraintsCard() {
 function EndStateCard() {
   const spec = useActivePath().spec;
   return (
-    <Card title="Start and end state" cardKey="end-state">
+    <Card title="Start and end state">
       <div className="grid2">
         <NumberField
           label="Start speed"
@@ -120,7 +123,7 @@ function RotationCard() {
   const path = useActivePath();
   const spec = path.spec;
   return (
-    <Card title="Rotation targets" count={spec.rotationTargets.length} cardKey="rotation">
+    <Card title="Rotation targets" count={spec.rotationTargets.length}>
       <SelectField
         label="Heading between set headings"
         value={spec.headingMode}
@@ -155,7 +158,7 @@ function RotationCard() {
 function EventsCard() {
   const events = useActivePath().spec.events;
   return (
-    <Card title="Event markers" count={events.length} cardKey="events">
+    <Card title="Event markers" count={events.length}>
       <ul className="item-list" aria-label="Event markers">
         {events.map((e, i) => (
           <li key={i}>
@@ -179,7 +182,7 @@ function EventsCard() {
 function ConstraintZonesCard() {
   const spec = useActivePath().spec;
   return (
-    <Card title="Constraint zones" count={spec.constraintZones.length} cardKey="constraint-zones">
+    <Card title="Constraint zones" count={spec.constraintZones.length}>
       <ul className="item-list" aria-label="Constraint zones">
         {spec.constraintZones.map((z, i) => (
           <li key={i}>
@@ -205,7 +208,7 @@ function ConstraintZonesCard() {
 function FaceZonesCard() {
   const spec = useActivePath().spec;
   return (
-    <Card title="Point-towards zones" count={spec.facePointZones.length} cardKey="face-zones">
+    <Card title="Point-towards zones" count={spec.facePointZones.length}>
       <ul className="item-list" aria-label="Point-towards zones">
         {spec.facePointZones.map((z, i) => (
           <li key={i}>
@@ -233,7 +236,7 @@ function FaceZonesCard() {
 function PointsCard() {
   const points = useEditor((s) => s.project.namedPoints);
   return (
-    <Card title="Named points" count={points.length} cardKey="points">
+    <Card title="Named points" count={points.length}>
       <ul className="item-list" aria-label="Named points">
         {points.map((p) => (
           <li key={p.id}>
@@ -282,25 +285,107 @@ function LinkedNote() {
   );
 }
 
+const TABS: Record<InspectorTab, { label: string; icon: typeof Spline; tip: string }> = {
+  path: { label: "Path", icon: Spline, tip: "Waypoints, speed limits, start and end" },
+  heading: { label: "Heading", icon: RotateCw, tip: "Headings along the path and point-towards zones" },
+  events: { label: "Events", icon: Flag, tip: "Event markers" },
+  zones: { label: "Zones", icon: Gauge, tip: "Constraint zones (speed limits on a stretch)" },
+  points: { label: "Points", icon: MapPin, tip: "Named points, shared across paths" },
+  optimise: { label: "Optimise", icon: WandSparkles, tip: "Optimiser settings and the sim preview" },
+};
+
+/** Which tab an item belongs to: Back from it lands there. */
+function tabOf(sel: Selection): InspectorTab | null {
+  switch (sel.kind) {
+    case "waypoint":
+      return "path";
+    case "rotation":
+    case "face":
+      return "heading";
+    case "event":
+      return "events";
+    case "constraint":
+      return "zones";
+    case "point":
+      return "points";
+    default:
+      return null;
+  }
+}
+
+function TabBar({ tab }: { tab: InspectorTab }) {
+  const spec = useActivePath().spec;
+  const points = useEditor((s) => s.project.namedPoints.length);
+  const counts: Partial<Record<InspectorTab, number>> = {
+    path: spec.waypoints.length,
+    heading: spec.rotationTargets.length + spec.facePointZones.length,
+    events: spec.events.length,
+    zones: spec.constraintZones.length,
+    points,
+  };
+  return (
+    <div className="inspector-tabs" role="tablist" aria-label="Path details">
+      {INSPECTOR_TABS.map((t) => {
+        const { label, icon: Icon, tip } = TABS[t];
+        const n = counts[t];
+        return (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={t === tab}
+            className="inspector-tab"
+            data-tip={tip}
+            data-testid={`inspector-tab-${t}`}
+            onClick={() => ui.set({ inspectorTab: t })}
+          >
+            <span className="icon">
+              <Icon size={15} />
+              {n !== undefined && n > 0 && <span className="badge">{n}</span>}
+            </span>
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function Overview() {
+  const tab = useStore(ui, (s) => s.inspectorTab);
   return (
     <>
       <div className="inspector-top">
         <LinkedNote />
         <OptimiseControls />
       </div>
-      <WaypointsCard />
-      <ConstraintsCard />
-      <EndStateCard />
-      <RotationCard />
-      <EventsCard />
-      <ConstraintZonesCard />
-      <FaceZonesCard />
-      <PointsCard />
-      <SimCard />
-      <Card title="Optimiser settings" cardKey="optimiser">
-        <OptimiserSettings />
-      </Card>
+      <TabBar tab={tab} />
+      <div className="pane-body" role="tabpanel" aria-label={TABS[tab].label}>
+        {tab === "path" && (
+          <>
+            <WaypointsCard />
+            <ConstraintsCard />
+            <EndStateCard />
+          </>
+        )}
+        {tab === "heading" && (
+          <>
+            <RotationCard />
+            <FaceZonesCard />
+          </>
+        )}
+        {tab === "events" && <EventsCard />}
+        {tab === "zones" && <ConstraintZonesCard />}
+        {tab === "points" && <PointsCard />}
+        {tab === "optimise" && (
+          <>
+            <Card title="Optimiser settings">
+              <OptimiserSettings />
+            </Card>
+            <SimCard />
+          </>
+        )}
+      </div>
     </>
   );
 }
@@ -310,13 +395,12 @@ export function Inspector() {
   const path = useActivePath();
   const obstacles = useEditor((s) => s.project.field.obstacles);
   const points = useEditor((s) => s.project.namedPoints);
-  if (!sel) {
-    return (
-      <Pane title="Path">
-        <Overview />
-      </Pane>
-    );
-  }
+  // the overview comes back on the selected item's tab
+  useEffect(() => {
+    const t = sel && tabOf(sel);
+    if (t && ui.get().inspectorTab !== t) ui.set({ inspectorTab: t });
+  }, [sel]);
+  if (!sel) return <Overview />;
   const n = sel.kind === "waypoint" ? path.spec.waypoints.length : 0;
   return (
     <>

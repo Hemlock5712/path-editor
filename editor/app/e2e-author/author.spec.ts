@@ -291,11 +291,24 @@ async function overview(page: Page): Promise<void> {
   await expect(page.getByTestId("optimise-path")).toBeVisible();
 }
 
-/** Opens one of the overview's cards. */
+/** The inspector tab each overview section is on. */
+const SECTION_TABS: Record<string, string> = {
+  Waypoints: "path",
+  "Global constraints": "path",
+  "Start and end state": "path",
+  "Rotation targets": "heading",
+  "Point-towards zones": "heading",
+  "Event markers": "events",
+  "Constraint zones": "zones",
+  "Named points": "points",
+  "Optimiser settings": "optimise",
+  "Sim preview": "optimise",
+};
+
+/** Opens the overview's tab with one of its sections. */
 async function openSection(page: Page, title: string): Promise<void> {
   await overview(page);
-  const head = page.locator("button.card-head", { hasText: new RegExp(`^${title}`) });
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  await page.getByTestId(`inspector-tab-${SECTION_TABS[title]}`).click();
 }
 
 /** Picks an option in one of the app's selects. */
@@ -307,15 +320,19 @@ async function choose(page: Page, select: Locator, option: string): Promise<void
 /** Canvas pixels for a blue-frame field point at the default view. */
 async function fieldPoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   const box = (await page.getByTestId("field").boundingBox())!;
-  const scale = Math.min((box.width - 48) / 16.54, (box.height - 48) / 8.07);
-  return { x: box.x + box.width / 2 + x * scale, y: box.y + box.height / 2 - y * scale };
+  // through the view the field was last drawn with
+  const [px, py] = await page.evaluate(
+    ([fx, fy]) => (window as unknown as { pathEditorTest: { toCanvas(x: number, y: number): [number, number] } }).pathEditorTest.toCanvas(fx!, fy!),
+    [x, y],
+  );
+  return { x: box.x + px, y: box.y + py };
 }
 
 const waypointGroup = (page: Page, i: number) => page.getByRole("group", { name: `Waypoint ${i}`, exact: true });
 
 async function selectWaypoint(page: Page, i: number): Promise<void> {
   await openSection(page, "Waypoints");
-  await page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(i).click();
+  await page.getByRole("list", { name: "Waypoints" }).getByRole("listitem").nth(i).getByRole("button").first().click();
 }
 
 async function setWaypoint(page: Page, i: number, [x, y, tangent]: readonly [number, number, number?], heading?: number): Promise<void> {
@@ -342,7 +359,7 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
   const name = page.getByTestId("path-name");
   await name.fill(plan.name);
   await name.press("Enter");
-  await expect(page.getByRole("tab", { name: plan.name })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId(`tab-${plan.name}`)).toHaveAttribute("aria-selected", "true");
 
   // waypoints: a new project's path is empty, so two double-clicks make its start and end; a new path
   // starts with just its start (selected), and Add after makes its end. Add after on the last one adds
@@ -372,7 +389,7 @@ async function author(page: Page, plan: PathPlan, first: boolean): Promise<void>
     await setNumber(card.getByLabel("y", { exact: true }), y);
     // the linked waypoint followed the point
     await openSection(page, "Waypoints");
-    await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("button").nth(wp)).toContainText(`(${x}, ${y})`);
+    await expect(page.getByRole("list", { name: "Waypoints" }).getByRole("listitem").nth(wp).getByRole("button").first()).toContainText(`(${x}, ${y})`);
   }
 
   // the guided flows click the path: at its first two waypoints (on the path, and apart)
@@ -480,7 +497,7 @@ test("author the end-to-end suite in the editor and save it", async ({ page }) =
   // the editor's preview of every path, read back tab by tab once the worker has planned it
   const previews = [];
   for (const plan of chosen) {
-    await page.getByRole("tab", { name: plan.name, exact: true }).click();
+    await page.getByTestId(`tab-${plan.name}`).click();
     previews.push(await page.evaluate(() => (window as unknown as { pathEditorTest: { preview(): Promise<unknown> } }).pathEditorTest.preview()));
   }
   writeFileSync(join(OUT, "preview.json"), JSON.stringify({ chains: CHAINS, paths: previews }, null, 2) + "\n");
