@@ -540,7 +540,10 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   plans with that outline, read as each command starts. Obstacles are grown by the footprint's far corner, which
   clears it in any heading but can close gaps it fits through nose-first (a 0.35 m intake shuts the 2026 field's
   hub-to-trench gaps), so such a pathfinder also tries a graph grown for the bumpers alone, still sweeping the
-  footprint: `PlanResult.clear()` is true only when the footprint itself keeps the margin.
+  footprint. A route on that graph can run too close for the footprint (an intake facing the hub), so where a refit
+  finds the route point itself short of the margin, it pushes the new waypoint straight off whatever is nearest
+  until the footprint clears it (`Pathfinder.clearOf`); a bumpers-only plan never needs this and is unchanged.
+  `PlanResult.clear()` is true only when the footprint itself keeps the margin.
 
 - **Planning.** Each command plans when it starts, from the measured pose and velocity, with `OnTheFly` (in `plan`,
   no WPILib). This is the one place path work happens at go: about 1 ms median and under 5 ms at the 95th

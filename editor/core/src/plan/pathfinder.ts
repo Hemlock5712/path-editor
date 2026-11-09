@@ -51,6 +51,9 @@ export function plannerFootprint(c: PlannerConfig): Footprint {
 }
 
 /** The robot's reach in any heading: the bumpers' half-diagonal, or the footprint's far corner. */
+/** How much further than the shortfall a refit's pushed waypoint goes, so the spline's sag between waypoints still clears. */
+export const PUSH_SLACK_METERS = 0.02;
+
 export function halfDiagonalMeters(c: PlannerConfig): number {
   return reachMeters(plannerFootprint(c));
 }
@@ -258,7 +261,8 @@ export class Pathfinder {
         let t = ((q.xMeters - a[0]) * ex + (q.yMeters - a[1]) * ey) / (len * len);
         const minT = Math.min(0.5, 0.05 / len);
         t = Math.max(minT, Math.min(1 - minT, t));
-        inserts.push([seg, a[0] + t * ex, a[1] + t * ey]);
+        const c = this.clearOf(a[0] + t * ex, a[1] + t * ey, heading.sampleAt(q).radians);
+        inserts.push([seg, c[0], c[1]]);
       }
       inserts.sort((x, y) => (y[0] < x[0] ? -1 : y[0] > x[0] ? 1 : 0)); // back to front
       let lastSeg = -1;
@@ -274,6 +278,73 @@ export class Pathfinder {
       startSnapMeters: startSnap, goalSnapMeters: goalSnap, refits, clear: sweep.violations.length === 0,
       minClearanceMeters: sweep.minClearance, failure: null,
     };
+  }
+
+  /**
+   * (x, y) itself when the outline there (at heading th) keeps the margin, which every point of a route on its own
+   * graph does. Otherwise (x, y) moved straight away from what it's closest to, an obstacle (from its nearest
+   * boundary point) or a wall (along the wall's normal), until the outline is the margin plus PUSH_SLACK_METERS
+   * clear of it along that direction. Port of Java's Pathfinder.clearOf.
+   */
+  private clearOf(x: number, y: number, th: number): Xy {
+    const need = this.config.marginMeters;
+    const qx = new Float64Array(4);
+    const qy = new Float64Array(4);
+    if (this.clearanceWith(x, y, th, halfDiagonalMeters(this.config), qx, qy) >= need - 1e-9) return [x, y];
+    const halfL = this.field.lengthMeters / 2;
+    const halfW = this.field.widthMeters / 2;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < 4; i++) {
+      minX = Math.min(minX, qx[i]!);
+      maxX = Math.max(maxX, qx[i]!);
+      minY = Math.min(minY, qy[i]!);
+      maxY = Math.max(maxY, qy[i]!);
+    }
+    // the walls: right, left, top, bottom (how far inside, and the way in)
+    const walls = [[halfL - maxX, -1, 0], [minX + halfL, 1, 0], [halfW - maxY, 0, -1], [minY + halfW, 0, 1]] as const;
+    let best = Infinity;
+    let dx = 0;
+    let dy = 0;
+    let sep = 0;
+    for (const w of walls) {
+      if (w[0] < best) {
+        best = w[0];
+        dx = w[1];
+        dy = w[2];
+        sep = w[0];
+      }
+    }
+    for (const p of this.field.obstacles) {
+      const gap = p.distanceToPolygon(qx, qy);
+      if (gap >= best) continue;
+      const nb = p.nearestBoundaryPoint(x, y);
+      let ux = x - nb[0];
+      let uy = y - nb[1];
+      let len = javaHypot(ux, uy);
+      if (len < 1e-9) {
+        // the centre on the boundary: away from the obstacle's centre instead
+        ux = x - p.cx;
+        uy = y - p.cy;
+        len = javaHypot(ux, uy);
+      }
+      if (len < 1e-9) continue;
+      ux /= len;
+      uy /= len;
+      // separation along u: the outline's nearest corner past the obstacle's furthest vertex
+      let lo = Infinity;
+      for (let i = 0; i < 4; i++) lo = Math.min(lo, qx[i]! * ux + qy[i]! * uy);
+      let hi = -Infinity;
+      for (let k = 0; k < p.size; k++) hi = Math.max(hi, p.xs[k]! * ux + p.ys[k]! * uy);
+      best = gap;
+      dx = ux;
+      dy = uy;
+      sep = lo - hi;
+    }
+    const push = Math.max(0.0, need - sep) + PUSH_SLACK_METERS;
+    return [x + push * dx, y + push * dy];
   }
 
   private spec(

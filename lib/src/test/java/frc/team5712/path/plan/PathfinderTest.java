@@ -358,6 +358,19 @@ class PathfinderTest {
     assertEquals(out.minClearanceMeters(), minClearance(withIntake, out.path()), 0.02);
   }
 
+  @Test
+  void anIntakeFacingTheHubIsPushedOffItInTheGapToTheTrench() {
+    // the 1.85 m gap between the blue hub and the lower trench support, facing the hub with a 0.45 m intake out: the
+    // footprint's far-corner graph has no route; on the bumpers' graph the route runs too close to the hub, and the
+    // refits push it down the gap until the intake keeps the margin
+    Footprint intake = Footprint.extended(Footprint.bumpers(0.85, 0.85), "intakeOut", 0.45, 0, 0, 0, 0);
+    Pathfinder pf = new Pathfinder(OnTheFlyTest.field2026(), RobotConfig.DEFAULT, PlannerConfig.DEFAULT.withFootprint(intake));
+    PlanResult r = pf.plan(new Pose(-6.3, -1.4, Math.PI / 2), STOPPED, new Pose(-1.0, -1.4, Math.PI / 2));
+    assertTrue(r.ok() && r.clear(), "not clear: " + r.minClearanceMeters());
+    assertTrue(minClearance(pf, r.path()) >= PlannerConfig.DEFAULT.marginMeters() - 0.01);
+    assertTrue(r.refits() > 0);
+  }
+
   static double minClearance(Pathfinder pf, Path path) {
     double min = Double.POSITIVE_INFINITY;
     for (double s = 0; s <= path.lengthMeters(); s += 0.01) {

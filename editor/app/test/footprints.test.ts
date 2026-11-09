@@ -152,6 +152,35 @@ describe("checks with a mechanism out", () => {
   });
 });
 
+describe("Route around with the intake facing an obstacle", () => {
+  it("finds the offset line through the 2026 hub-to-trench gap that keeps a front intake off the hub", () => {
+    const H = Math.PI / 2;
+    const s = makePathSpec({
+      waypoints: [makeWaypoint(-6.3, -1.4, 0, 1, H), makeWaypoint(-1, -1.4, 0, 1, H)],
+      maxMetersPerSecond: 4,
+      maxMetersPerSecondSquared: 6,
+      events: [makePathEvent("deployIntake", 0.3, Number.NaN, "intakeOut")],
+    });
+    const i: AnalysisInput = {
+      spec: s,
+      robot: DEFAULT_ROBOT,
+      bumperLengthMeters: 0.85,
+      bumperWidthMeters: 0.85,
+      footprints: [{ name: "intakeOut", frontMeters: 0.45, backMeters: 0, leftMeters: 0, rightMeters: 0, retractSeconds: 0 }],
+      fieldLengthMeters: DEFAULT_FIELD.lengthMeters,
+      fieldWidthMeters: DEFAULT_FIELD.widthMeters,
+      obstacles: DEFAULT_FIELD.obstacles,
+    };
+    const before = ok(i);
+    expect(hits(before).map((c) => c.message)).toEqual([expect.stringMatching(/^With intakeOut, the robot hits blue hub/)]);
+    const r = routeAround(makeEditorPath("P", s, 0), before, { field: DEFAULT_FIELD, robot: DEFAULT_ROBOT, bumperLengthMeters: 0.85, bumperWidthMeters: 0.85 });
+    if (!r.ok) throw new Error(r.reason);
+    // the corners sit below the straight line, down the gap, and the intake no longer touches anything
+    expect(r.path.spec.waypoints.slice(1, -1).every((w) => w.yMeters < -1.45)).toBe(true);
+    expect(hits(ok({ ...i, spec: r.path.spec }))).toEqual([]);
+  });
+});
+
 describe("robot.json footprints", () => {
   it("round-trip, writing only the sides that reach past the bumpers, as the Java reads them", () => {
     const robot = parseRobot('{ "footprints": [ { "name": "intakeOut", "frontMeters": 0.3, "retractSeconds": 0.4 }, { "name": "arm", "backMeters": 0.1 } ] }');

@@ -99,11 +99,9 @@ describe("pathfinder parity with lib (fixtures/plan)", () => {
   }
 
   it("keeps every plan clear of the obstacles", () => {
-    // but one: with the intake out the front, the heading's half-turn across the field swings it into something,
-    // on either graph (the route is still driven, PlanResult.clear says so)
     for (const c of fx.plans) {
-      if (c.name === "intake out, across the field") expect(c.clear).toBe(false);
-      else expect(c.minClearanceMeters).toBeGreaterThan(0);
+      expect(c.clear).toBe(true);
+      expect(c.minClearanceMeters).toBeGreaterThan(0);
     }
   });
 });

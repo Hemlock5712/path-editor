@@ -338,15 +338,17 @@ public final class Pathfinder {
         return new Smoothed(spec, sweep, refits);
       }
       refits++;
-      addWaypointsUnder(sweep.violations, geometry, pts);
+      addWaypointsUnder(sweep.violations, geometry, heading, pts);
     }
   }
 
   /**
    * One new waypoint per stretch that came too close, on the route segment under its worst point (at least 5 cm from
-   * the segment's ends, one per segment per round).
+   * the segment's ends, one per segment per round). Where the route itself is too close there (a footprint planned
+   * on the bumpers' graph), the waypoint is pushed off what it's closest to ({@link #clearOf}).
    */
-  private static void addWaypointsUnder(List<Double> violations, PathGeometry geometry, List<double[]> pts) {
+  private void addWaypointsUnder(List<Double> violations, PathGeometry geometry, HeadingProfile heading,
+      List<double[]> pts) {
     List<double[]> inserts = new ArrayList<>();
     for (double sv : violations) {
       int seg = segmentAt(geometry, sv, pts.size());
@@ -359,7 +361,8 @@ public final class Pathfinder {
       double t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / (len * len);
       double minT = Math.min(0.5, 0.05 / len);
       t = Math.max(minT, Math.min(1 - minT, t));
-      inserts.add(new double[] {seg, a[0] + t * ex, a[1] + t * ey});
+      double[] q = clearOf(a[0] + t * ex, a[1] + t * ey, heading.sample(geometry.sample(sv)).radians());
+      inserts.add(new double[] {seg, q[0], q[1]});
     }
     inserts.sort((x, y) -> Double.compare(y[0], x[0])); // back to front keeps indices valid
     int lastSeg = -1;
@@ -370,6 +373,85 @@ public final class Pathfinder {
       lastSeg = (int) ins[0];
       pts.add(lastSeg + 1, new double[] {ins[1], ins[2]});
     }
+  }
+
+  /** How much further than the shortfall {@link #clearOf} pushes, so the spline's sag between waypoints still clears. */
+  static final double PUSH_SLACK_METERS = 0.02;
+
+  /**
+   * (x, y) itself when the outline there (at heading th) keeps the margin, which every point of a route on its own
+   * graph does. Otherwise (x, y) moved straight away from what it's closest to, an obstacle (from its nearest
+   * boundary point) or a wall (along the wall's normal), until the outline is the margin plus {@link
+   * #PUSH_SLACK_METERS} clear of it along that direction.
+   */
+  private double[] clearOf(double x, double y, double th) {
+    double need = config.marginMeters();
+    double[] qx = new double[4];
+    double[] qy = new double[4];
+    if (clearance(x, y, th, config.halfDiagonalMeters(), qx, qy) >= need - 1e-9) {
+      return new double[] {x, y};
+    }
+    double halfL = field.lengthMeters() / 2;
+    double halfW = field.widthMeters() / 2;
+    double minX = Double.POSITIVE_INFINITY;
+    double maxX = Double.NEGATIVE_INFINITY;
+    double minY = Double.POSITIVE_INFINITY;
+    double maxY = Double.NEGATIVE_INFINITY;
+    for (int i = 0; i < 4; i++) {
+      minX = Math.min(minX, qx[i]);
+      maxX = Math.max(maxX, qx[i]);
+      minY = Math.min(minY, qy[i]);
+      maxY = Math.max(maxY, qy[i]);
+    }
+    // the walls: right, left, top, bottom (how far inside, and the way in)
+    double[][] walls = {{halfL - maxX, -1, 0}, {minX + halfL, 1, 0}, {halfW - maxY, 0, -1}, {minY + halfW, 0, 1}};
+    double best = Double.POSITIVE_INFINITY;
+    double dx = 0;
+    double dy = 0;
+    double sep = 0;
+    for (double[] w : walls) {
+      if (w[0] < best) {
+        best = w[0];
+        dx = w[1];
+        dy = w[2];
+        sep = w[0];
+      }
+    }
+    for (ConvexPolygon p : field.obstacles()) {
+      double gap = p.distanceToPolygon(qx, qy);
+      if (gap >= best) {
+        continue;
+      }
+      double[] nb = p.nearestBoundaryPoint(x, y);
+      double ux = x - nb[0];
+      double uy = y - nb[1];
+      double len = Math.hypot(ux, uy);
+      if (len < 1e-9) { // the centre on the boundary: away from the obstacle's centre instead
+        ux = x - p.cx;
+        uy = y - p.cy;
+        len = Math.hypot(ux, uy);
+      }
+      if (len < 1e-9) {
+        continue;
+      }
+      ux /= len;
+      uy /= len;
+      // separation along u: the outline's nearest corner past the obstacle's furthest vertex
+      double lo = Double.POSITIVE_INFINITY;
+      for (int i = 0; i < 4; i++) {
+        lo = Math.min(lo, qx[i] * ux + qy[i] * uy);
+      }
+      double hi = Double.NEGATIVE_INFINITY;
+      for (int k = 0; k < p.size(); k++) {
+        hi = Math.max(hi, p.x(k) * ux + p.y(k) * uy);
+      }
+      best = gap;
+      dx = ux;
+      dy = uy;
+      sep = lo - hi;
+    }
+    double push = Math.max(0.0, need - sep) + PUSH_SLACK_METERS;
+    return new double[] {x + push * dx, y + push * dy};
   }
 
   private static double[] xy(PathGeometry geometry, double s) {
