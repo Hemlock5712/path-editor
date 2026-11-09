@@ -1250,6 +1250,24 @@ code {
   color: var(--text);
 }
 
+/* Settings, Robot: one footprint (name, then its reach on each side) */
+.footprint-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--border);
+}
+
+.footprint-row .row > .field {
+  flex: 1;
+}
+
+/* an event that switches the robot's outline: the field draws that stretch in the same orange */
+.item .heading-tag.footprint {
+  color: #fb923c;
+}
+
 /* ------------------------------------------------------------------ fields */
 
 .field {

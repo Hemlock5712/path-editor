@@ -2,6 +2,7 @@ package frc.team5712.path.tools;
 
 import frc.team5712.path.core.ConstraintZone;
 import frc.team5712.path.core.FacePointZone;
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.HeadingMode;
 import frc.team5712.path.core.PathEvent;
 import frc.team5712.path.core.PathSpec;
@@ -27,6 +28,8 @@ public final class PathFileSamples {
   private static final String[] NAMES = {
     "intakeDown", "shoot", "score \"L4\"", "align tag 18", "back\\slash", "tab\there", "ünïcödé", "x"
   };
+
+  private static final String[] FOOTPRINTS = {Footprint.BUMPERS, "intakeOut", "arm \"up\""};
 
   private int state;
 
@@ -94,7 +97,8 @@ public final class PathFileSamples {
     List<PathEvent> events = new ArrayList<>();
     for (int k = below(4); k > 0; k--) {
       String name = NAMES[below(NAMES.length)];
-      events.add(next() < 0.5 ? PathEvent.atWaypoint(name, next() * last) : PathEvent.atMeters(name, next() * 12.0));
+      PathEvent e = next() < 0.5 ? PathEvent.atWaypoint(name, next() * last) : PathEvent.atMeters(name, next() * 12.0);
+      events.add(next() < 0.4 ? e.withFootprint(FOOTPRINTS[below(FOOTPRINTS.length)]) : e);
     }
 
     double maxSpeed = next() < 0.5 ? Double.POSITIVE_INFINITY : 1.0 + next() * 4.0;
@@ -102,6 +106,8 @@ public final class PathFileSamples {
     double startSpeed = next() < 0.3 ? next() * 2.0 : 0.0;
     double endSpeed = next() < 0.3 ? next() * 2.0 : 0.0;
     HeadingMode mode = next() < 0.3 ? HeadingMode.FACE_TRAVEL : HeadingMode.HOLD;
-    return new PathSpec(waypoints, targets, faces, zones, maxSpeed, maxAccel, startSpeed, endSpeed, events, mode);
+    String start = next() < 0.2 ? FOOTPRINTS[below(FOOTPRINTS.length)] : Footprint.BUMPERS;
+    return new PathSpec(waypoints, targets, faces, zones, maxSpeed, maxAccel, startSpeed, endSpeed, events, mode,
+        start);
   }
 }

@@ -2,15 +2,19 @@
 // planned in the editor ("Route around obstacles") is the route the robot plans. The Java writes the fixtures
 // (fixtures/plan, PlanFixtureGen); this must reproduce them to 1e-9.
 //
-// At construction: every obstacle is grown by the bumpers' half-diagonal plus a margin, the walls are moved in
+// At construction: every obstacle is grown by the robot's reach (the bumpers' half-diagonal, or a footprint's far
+// corner) plus a margin, the walls are moved in
 // by the same, and the visibility graph between the grown corners is built. Per plan: snap the start and goal
 // out of grown obstacles, connect them, A*, fit the core's spline through the route's corners, sweep the
 // oriented bumper rectangle along it with the planned heading, add route points where the margin is broken and
-// refit, then build the Path (profile from the robot's speed to the end speed).
+// refit, then build the Path (profile from the robot's speed to the end speed). A footprint reaching further than
+// the bumpers also gets a graph grown by the bumpers' reach, tried when the first has no route or no clear one.
 
 import type { FieldSpeeds, Pose } from "../frame.ts";
-import { PathGeometry } from "../geometry.ts";
+import { wrap } from "../angles.ts";
+import { PathGeometry, type GeometrySample } from "../geometry.ts";
 import { HeadingProfile } from "../heading.ts";
+import { bumperFootprint, reachMeters, type Footprint } from "../footprint.ts";
 import { javaHypot } from "../jmath.ts";
 import { Path, pureRotation } from "../path.ts";
 import type { RobotConfig } from "../robot.ts";
@@ -26,6 +30,8 @@ export interface PlannerConfig {
   readonly checkStepMeters: number;
   readonly maxMetersPerSecond: number;
   readonly maxMetersPerSecondSquared: number;
+  /** The outline planned with (Java's PlannerConfig.footprint); absent = the bumpers. */
+  readonly footprint?: Footprint;
 }
 
 /** 0.85 m square bumpers, 5 cm margin, 30° arcs, 8 refits, 2 cm checks, 4 m/s and 6 m/s². */
@@ -40,12 +46,26 @@ export const DEFAULT_PLANNER: PlannerConfig = {
   maxMetersPerSecondSquared: 6.0,
 };
 
+/** The outline planned with: the config's footprint, or the bumpers. */
+export function plannerFootprint(c: PlannerConfig): Footprint {
+  return c.footprint ?? bumperFootprint(c.bumperLengthMeters, c.bumperWidthMeters);
+}
+
+/** The robot's reach in any heading: the bumpers' half-diagonal, or the footprint's far corner. */
+/** How much further than the shortfall a refit's pushed waypoint goes, so the spline's sag between waypoints still clears. */
+export const PUSH_SLACK_METERS = 0.02;
+
 export function halfDiagonalMeters(c: PlannerConfig): number {
-  return javaHypot(c.bumperLengthMeters, c.bumperWidthMeters) / 2;
+  return reachMeters(plannerFootprint(c));
 }
 
 export function growMeters(c: PlannerConfig): number {
   return halfDiagonalMeters(c) + c.marginMeters;
+}
+
+/** growMeters for the bumpers alone (the half-diagonal plus margin), whatever the footprint. */
+export function bumperGrowMeters(c: PlannerConfig): number {
+  return javaHypot(c.bumperLengthMeters, c.bumperWidthMeters) / 2 + c.marginMeters;
 }
 
 /** The static field: size and obstacles (each replaced by its convex hull), centre origin. */
@@ -74,6 +94,8 @@ export function fieldFromJson(root: {
 export interface PlanResult {
   readonly path: Path | null;
   readonly waypoints: readonly (readonly [number, number])[];
+  /** Each waypoint's heading where the plan turns the robot there (a turning refit), else NaN (Java: a third number). */
+  readonly waypointHeadings: readonly number[];
   readonly routeLengthMeters: number;
   readonly straightLineMeters: number;
   readonly startSnapMeters: number;
@@ -85,6 +107,8 @@ export interface PlanResult {
 }
 
 type Xy = [number, number];
+/** A smoothing waypoint: x, y, and the heading a turning refit gave it (a rotation target), if any. */
+type Wp = Xy | [number, number, number];
 
 /** A straight approach this long (plus the braking distance from the end speed) ends a route with a set direction. */
 export const APPROACH_METERS = 0.5;
@@ -93,6 +117,8 @@ export class Pathfinder {
   readonly field: FieldMap;
   readonly robot: RobotConfig;
   readonly config: PlannerConfig;
+  /** The rectangle swept along a plan: the config's footprint, or the bumpers. */
+  readonly outline: Footprint;
   /** The grown obstacles (what the robot centre must stay out of). */
   readonly grown: readonly ConvexPolygon[];
   private readonly xMin: number;
@@ -102,12 +128,18 @@ export class Pathfinder {
   private readonly nodeX: Float64Array;
   private readonly nodeY: Float64Array;
   private readonly edge: Float64Array[];
+  /** The same footprint over a graph grown by the bumpers' reach only, or null (see Java's class comment). */
+  private readonly bumperGraph: Pathfinder | null;
 
-  constructor(field: FieldMap, robot: RobotConfig, config: PlannerConfig = DEFAULT_PLANNER) {
+  /** growOverride is internal: the bumpers' graph's grow distance. */
+  constructor(field: FieldMap, robot: RobotConfig, config: PlannerConfig = DEFAULT_PLANNER, growOverride?: number) {
     this.field = field;
     this.robot = robot;
     this.config = config;
-    const r = growMeters(config);
+    this.outline = plannerFootprint(config);
+    const r = growOverride ?? growMeters(config);
+    this.bumperGraph =
+      growOverride === undefined && bumperGrowMeters(config) < r ? new Pathfinder(field, robot, config, bumperGrowMeters(config)) : null;
     this.grown = field.obstacles.map((p) => p.grow(r, config.arcStepRadians));
     this.xMin = -field.lengthMeters / 2 + r;
     this.xMax = field.lengthMeters / 2 - r;
@@ -160,6 +192,14 @@ export class Pathfinder {
    * endTangent (NaN = whatever the route gives; see Pathfinder.plan in Java).
    */
   plan(start: Pose, startVelocity: FieldSpeeds, goal: Pose, endSpeed = 0.0, endTangent = Number.NaN): PlanResult {
+    const r = this.planHere(start, startVelocity, goal, endSpeed, endTangent);
+    if (this.bumperGraph === null || (r.path !== null && r.clear)) return r;
+    // no route, or no clear one, with the footprint's reach grown in: try the bumpers' graph (still sweeping the footprint)
+    const b = this.bumperGraph.planHere(start, startVelocity, goal, endSpeed, endTangent);
+    return b.path !== null && (b.clear || r.path === null) ? b : r;
+  }
+
+  private planHere(start: Pose, startVelocity: FieldSpeeds, goal: Pose, endSpeed: number, endTangent: number): PlanResult {
     const cfg = this.config;
     const s = this.snap(start.xMeters, start.yMeters);
     const g = this.snap(goal.xMeters, goal.yMeters);
@@ -184,7 +224,7 @@ export class Pathfinder {
     const straight = javaHypot(goal.xMeters - start.xMeters, goal.yMeters - start.yMeters);
     if (route === null) {
       return {
-        path: null, waypoints: [], routeLengthMeters: Number.NaN, straightLineMeters: straight, startSnapMeters: startSnap,
+        path: null, waypoints: [], waypointHeadings: [], routeLengthMeters: Number.NaN, straightLineMeters: straight, startSnapMeters: startSnap,
         goalSnapMeters: goalSnap, refits: 0, clear: false, minClearanceMeters: Number.NaN,
         failure: "no route between the start and the goal",
       };
@@ -202,19 +242,48 @@ export class Pathfinder {
     const startTangent = moving ? Math.atan2(startVelocity.vyMetersPerSecond, startVelocity.vxMetersPerSecond) : Number.NaN;
     const startSpeed = moving ? Math.min(v, cfg.maxMetersPerSecond) : 0.0;
 
+    const ends = { startTangent, startSpeed, startHeading: start.headingRadians, goalHeading: goal.headingRadians, endDirection, arrive, startSnap, goalSnap };
+    let wps: Wp[] = [...pts];
+    let smoothed = this.smooth(wps, ends, false);
+    if (smoothed.sweep.violations.length > 0 && this.longerThanWide()) {
+      // 4b. A footprint longer one way than the other that can't get through as blended: again, turning its narrow
+      // side across each stretch it hits (kept only if that clears)
+      const turnedPts: Wp[] = [...pts];
+      const turned = this.smooth(turnedPts, ends, true);
+      if (turned.sweep.violations.length === 0) {
+        smoothed = turned;
+        wps = turnedPts;
+      }
+    }
+    const { spec, sweep, refits } = smoothed;
+    const path = Path.build(spec, this.robot);
+    return {
+      path, waypoints: wps.map((p) => [p[0], p[1]] as const), waypointHeadings: wps.map((p) => (p.length > 2 ? p[2]! : Number.NaN)), routeLengthMeters: routeLength, straightLineMeters: straight,
+      startSnapMeters: startSnap, goalSnapMeters: goalSnap, refits, clear: sweep.violations.length === 0,
+      minClearanceMeters: sweep.minClearance, failure: null,
+    };
+  }
+
+  /** Step 4: fit, sweep, add waypoints where it comes too close, refit (Java's smooth and addWaypointsUnder). */
+  private smooth(
+    pts: Wp[],
+    e: { startTangent: number; startSpeed: number; startHeading: number; goalHeading: number; endDirection: number; arrive: number; startSnap: number; goalSnap: number },
+    turn: boolean,
+  ): { spec: PathSpec; sweep: Sweep; refits: number } {
+    const cfg = this.config;
     let refits = 0;
     let sweep: Sweep;
     let spec: PathSpec;
     for (;;) {
-      spec = pureRotation(this.spec(pts, startTangent, startSpeed, start.headingRadians, goal.headingRadians, endDirection, arrive));
+      spec = pureRotation(this.spec(pts, e.startTangent, e.startSpeed, e.startHeading, e.goalHeading, e.endDirection, e.arrive));
       const geometry = PathGeometry.build(spec.waypoints);
       const heading = HeadingProfile.build(geometry, spec.rotationTargets, spec.facePointZones);
-      const skipStart = startSnap > 1e-9 ? geometry.waypointS(1) : 0.0;
-      const skipEnd = goalSnap > 1e-9 ? geometry.waypointS(pts.length - 2) : geometry.lengthMeters;
+      const skipStart = e.startSnap > 1e-9 ? geometry.waypointS(1) : 0.0;
+      const skipEnd = e.goalSnap > 1e-9 ? geometry.waypointS(pts.length - 2) : geometry.lengthMeters;
       sweep = this.sweep(geometry, heading, skipStart, skipEnd);
       if (sweep.violations.length === 0 || refits >= cfg.maxRefits) break;
       refits++;
-      const inserts: [number, number, number][] = [];
+      const inserts: [number, number, number, number][] = [];
       for (const sv of sweep.violations) {
         const seg = segmentAt(geometry, sv, pts.length);
         const a = pts[seg]!;
@@ -226,33 +295,119 @@ export class Pathfinder {
         let t = ((q.xMeters - a[0]) * ex + (q.yMeters - a[1]) * ey) / (len * len);
         const minT = Math.min(0.5, 0.05 / len);
         t = Math.max(minT, Math.min(1 - minT, t));
-        inserts.push([seg, a[0] + t * ex, a[1] + t * ey]);
+        let th = heading.sampleAt(q).radians;
+        if (turn) th = this.narrowSideAcross(q, th);
+        const c = this.clearOf(a[0] + t * ex, a[1] + t * ey, th);
+        inserts.push([seg, c[0], c[1], turn ? th : Number.NaN]);
       }
       inserts.sort((x, y) => (y[0] < x[0] ? -1 : y[0] > x[0] ? 1 : 0)); // back to front
       let lastSeg = -1;
       for (const ins of inserts) {
         if (ins[0] === lastSeg) continue;
         lastSeg = ins[0];
-        pts.splice(lastSeg + 1, 0, [ins[1], ins[2]]);
+        pts.splice(lastSeg + 1, 0, Number.isNaN(ins[3]) ? [ins[1], ins[2]] : [ins[1], ins[2], ins[3]]);
       }
     }
-    const path = Path.build(spec, this.robot);
-    return {
-      path, waypoints: pts.map((p) => [p[0], p[1]] as const), routeLengthMeters: routeLength, straightLineMeters: straight,
-      startSnapMeters: startSnap, goalSnapMeters: goalSnap, refits, clear: sweep.violations.length === 0,
-      minClearanceMeters: sweep.minClearance, failure: null,
-    };
+    return { spec, sweep, refits };
+  }
+
+  /** True when the footprint is longer one way than the other, so which way it faces through a gap matters. */
+  private longerThanWide(): boolean {
+    const f = this.outline;
+    return Math.abs(f.frontMeters + f.backMeters - (f.leftMeters + f.rightMeters)) > 1e-9;
+  }
+
+  /** The heading nearest th that puts the footprint's narrow side across the travel: long axis along it, nose or tail first. */
+  private narrowSideAcross(p: GeometrySample, th: number): number {
+    const f = this.outline;
+    const travel = Math.atan2(p.tangentY, p.tangentX);
+    const along = f.frontMeters + f.backMeters >= f.leftMeters + f.rightMeters ? travel : travel + Math.PI / 2;
+    const a = wrap(along - th);
+    const b = wrap(along + Math.PI - th);
+    return th + (Math.abs(a) <= Math.abs(b) ? a : b);
+  }
+
+  /**
+   * (x, y) itself when the outline there (at heading th) keeps the margin, which every point of a route on its own
+   * graph does. Otherwise (x, y) moved straight away from what it's closest to, an obstacle (from its nearest
+   * boundary point) or a wall (along the wall's normal), until the outline is the margin plus PUSH_SLACK_METERS
+   * clear of it along that direction. Port of Java's Pathfinder.clearOf.
+   */
+  private clearOf(x: number, y: number, th: number): Xy {
+    const need = this.config.marginMeters;
+    const qx = new Float64Array(4);
+    const qy = new Float64Array(4);
+    if (this.clearanceWith(x, y, th, halfDiagonalMeters(this.config), qx, qy) >= need - 1e-9) return [x, y];
+    const halfL = this.field.lengthMeters / 2;
+    const halfW = this.field.widthMeters / 2;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < 4; i++) {
+      minX = Math.min(minX, qx[i]!);
+      maxX = Math.max(maxX, qx[i]!);
+      minY = Math.min(minY, qy[i]!);
+      maxY = Math.max(maxY, qy[i]!);
+    }
+    // the walls: right, left, top, bottom (how far inside, and the way in)
+    const walls = [[halfL - maxX, -1, 0], [minX + halfL, 1, 0], [halfW - maxY, 0, -1], [minY + halfW, 0, 1]] as const;
+    let best = Infinity;
+    let dx = 0;
+    let dy = 0;
+    let sep = 0;
+    for (const w of walls) {
+      if (w[0] < best) {
+        best = w[0];
+        dx = w[1];
+        dy = w[2];
+        sep = w[0];
+      }
+    }
+    for (const p of this.field.obstacles) {
+      const gap = p.distanceToPolygon(qx, qy);
+      if (gap >= best) continue;
+      const nb = p.nearestBoundaryPoint(x, y);
+      let ux = x - nb[0];
+      let uy = y - nb[1];
+      let len = javaHypot(ux, uy);
+      if (len < 1e-9) {
+        // the centre on the boundary: away from the obstacle's centre instead
+        ux = x - p.cx;
+        uy = y - p.cy;
+        len = javaHypot(ux, uy);
+      }
+      if (len < 1e-9) continue;
+      ux /= len;
+      uy /= len;
+      // separation along u: the outline's nearest corner past the obstacle's furthest vertex
+      let lo = Infinity;
+      for (let i = 0; i < 4; i++) lo = Math.min(lo, qx[i]! * ux + qy[i]! * uy);
+      let hi = -Infinity;
+      for (let k = 0; k < p.size; k++) hi = Math.max(hi, p.xs[k]! * ux + p.ys[k]! * uy);
+      best = gap;
+      dx = ux;
+      dy = uy;
+      sep = lo - hi;
+    }
+    const push = Math.max(0.0, need - sep) + PUSH_SLACK_METERS;
+    return [x + push * dx, y + push * dy];
   }
 
   private spec(
-    pts: readonly Xy[], startTangent: number, startSpeed: number, startHeading: number, goalHeading: number,
+    pts: readonly Wp[], startTangent: number, startSpeed: number, startHeading: number, goalHeading: number,
     endTangent: number, endSpeed: number,
   ): PathSpec {
     const wps = pts.map((p, i) =>
       makeWaypoint(p[0], p[1], i === 0 ? startTangent : i === pts.length - 1 ? endTangent : Number.NaN, 1.0));
     return makePathSpec({
       waypoints: wps,
-      rotationTargets: [makeRotationTarget(0, Number.NaN, startHeading), makeRotationTarget(pts.length - 1, Number.NaN, goalHeading)],
+      // the ends' headings, and any a turning refit gave a waypoint (a third number)
+      rotationTargets: [
+        makeRotationTarget(0, Number.NaN, startHeading),
+        ...pts.flatMap((p, i) => (i > 0 && i < pts.length - 1 && p.length > 2 ? [makeRotationTarget(i, Number.NaN, p[2]!)] : [])),
+        makeRotationTarget(pts.length - 1, Number.NaN, goalHeading),
+      ],
       maxMetersPerSecond: this.config.maxMetersPerSecond,
       maxMetersPerSecondSquared: this.config.maxMetersPerSecondSquared,
       startMetersPerSecond: startSpeed,
@@ -390,7 +545,7 @@ export class Pathfinder {
     return { minClearance: min, violations: worst };
   }
 
-  /** Clearance of the bumper rectangle at (x, y, th) to every obstacle and the field walls. */
+  /** Clearance of the robot's outline (the config's footprint) at (x, y, th) to every obstacle and the walls. */
   clearance(x: number, y: number, th: number): number {
     return this.clearanceWith(x, y, th, halfDiagonalMeters(this.config), new Float64Array(4), new Float64Array(4));
   }
@@ -398,10 +553,9 @@ export class Pathfinder {
   private clearanceWith(x: number, y: number, th: number, reach: number, qx: Float64Array, qy: Float64Array): number {
     const c = Math.cos(th);
     const s = Math.sin(th);
-    const hl = this.config.bumperLengthMeters / 2;
-    const hw = this.config.bumperWidthMeters / 2;
-    const px = [hl, -hl, -hl, hl];
-    const py = [hw, hw, -hw, -hw];
+    const f = this.outline;
+    const px = [f.frontMeters, -f.backMeters, -f.backMeters, f.frontMeters];
+    const py = [f.leftMeters, f.leftMeters, -f.rightMeters, -f.rightMeters];
     const halfL = this.field.lengthMeters / 2;
     const halfW = this.field.widthMeters / 2;
     let best = Infinity;

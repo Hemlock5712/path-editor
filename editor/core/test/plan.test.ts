@@ -6,7 +6,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { wrap } from "../src/angles.ts";
-import { fieldFromJson, Pathfinder } from "../src/plan/pathfinder.ts";
+import { makeFootprint } from "../src/footprint.ts";
+import { DEFAULT_PLANNER, fieldFromJson, Pathfinder } from "../src/plan/pathfinder.ts";
 import { DEFAULT_ROBOT } from "../src/robot.ts";
 
 const DIR = join(import.meta.dirname, "..", "..", "..", "fixtures");
@@ -28,6 +29,8 @@ interface PlanCase {
   refits: number;
   clear: boolean;
   minClearanceMeters: number;
+  /** Planned with this outline (front, back, left, right), not the bumpers. */
+  footprint?: [number, number, number, number];
   lengthMeters: number;
   totalTimeSeconds: number;
   samples: number[][];
@@ -63,7 +66,10 @@ describe("pathfinder parity with lib (fixtures/plan)", () => {
 
   for (const c of fx.plans) {
     it(`plans ${c.name}`, () => {
-      const r = planner.plan(
+      const pf = c.footprint
+        ? new Pathfinder(field, DEFAULT_ROBOT, { ...DEFAULT_PLANNER, footprint: makeFootprint("intakeOut", ...c.footprint) })
+        : planner;
+      const r = pf.plan(
         { xMeters: c.start[0], yMeters: c.start[1], headingRadians: c.start[2] },
         { vxMetersPerSecond: c.velocity[0], vyMetersPerSecond: c.velocity[1], omegaRadPerSec: c.velocity[2] },
         { xMeters: c.goal[0], yMeters: c.goal[1], headingRadians: c.goal[2] },
@@ -93,6 +99,9 @@ describe("pathfinder parity with lib (fixtures/plan)", () => {
   }
 
   it("keeps every plan clear of the obstacles", () => {
-    for (const c of fx.plans) expect(c.minClearanceMeters).toBeGreaterThan(0);
+    for (const c of fx.plans) {
+      expect(c.clear).toBe(true);
+      expect(c.minClearanceMeters).toBeGreaterThan(0);
+    }
   });
 });

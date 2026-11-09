@@ -1,7 +1,7 @@
 // field.json and robot.json: parsing and writing, keeping keys the editor doesn't edit. No editor state
 // here, so the headless tools (tools/optimise.mjs) can load it under Node.
 
-import { fixed5, robotFromJson, robotToJson, writeJson, type JsonValue } from "../../../core/src/index.ts";
+import { extensionsFromJson, fixed5, robotFromJson, robotToJson, writeJson, type JsonValue } from "../../../core/src/index.ts";
 import {
   DEFAULT_FIELD,
   DEFAULT_ROBOT_SETTINGS,
@@ -67,6 +67,7 @@ export function parseRobot(text: string): RobotSettings {
     config,
     bumperLengthMeters: num("bumperLengthMeters", DEFAULT_ROBOT_SETTINGS.bumperLengthMeters),
     bumperWidthMeters: num("bumperWidthMeters", DEFAULT_ROBOT_SETTINGS.bumperWidthMeters),
+    footprints: extensionsFromJson(root.footprints),
     topSpeedShare: num("topSpeedShare", kept),
     speedAt12VoltsMetersPerSecond,
     extra: root,
@@ -80,16 +81,25 @@ const OWN_KEYS = new Set([
   "tipDistanceMeters",
   "bumperLengthMeters",
   "bumperWidthMeters",
+  "footprints",
   "topSpeedShare",
   "speedAt12VoltsMetersPerSecond",
   "tractionRule", // the old second traction rule: there is only the one now
 ]);
 
-/** Always in the same order (RobotConfig's, then the bumpers and the editor's keys, then the team's). */
+/** Always in the same order (RobotConfig's, then the bumpers, footprints and the editor's keys, then the team's). */
 export function writeRobot(robot: RobotSettings): string {
   const root: JsonObject = { ...robotToJson(robot.config) };
   root.bumperLengthMeters = robot.bumperLengthMeters;
   root.bumperWidthMeters = robot.bumperWidthMeters;
+  // each side only when it reaches past the bumpers there, as Footprint.fromRobotFile reads them
+  if (robot.footprints.length > 0) {
+    root.footprints = robot.footprints.map((f) => {
+      const m: JsonObject = { name: f.name };
+      for (const key of ["frontMeters", "backMeters", "leftMeters", "rightMeters", "retractSeconds"] as const) if (f[key] > 0) m[key] = f[key];
+      return m;
+    });
+  }
   // editor-only (the robot reads maxWheelMetersPerSecond): what the top speed share is of
   root.topSpeedShare = robot.topSpeedShare;
   if (Number.isFinite(robot.speedAt12VoltsMetersPerSecond)) root.speedAt12VoltsMetersPerSecond = robot.speedAt12VoltsMetersPerSecond;

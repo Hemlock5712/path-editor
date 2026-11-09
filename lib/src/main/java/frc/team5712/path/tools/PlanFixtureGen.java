@@ -1,6 +1,7 @@
 package frc.team5712.path.tools;
 
 import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.Json;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.PathSample;
@@ -22,7 +23,8 @@ import java.util.Random;
 
 /**
  * Golden plans for the TypeScript pathfinder ({@code editor/core/src/plan}): {@code fixtures/plan/plans.json},
- * the 2026 field ({@code fixtures/plan/field_2026.json}) with the default robot and planner settings, the grown
+ * the 2026 field ({@code fixtures/plan/field_2026.json}) with the default robot and planner settings (two plans
+ * with an intake out the front, {@link #INTAKE_OUT}, and one long one turned end-on, {@link #LONG_OUT}), the grown
  * obstacles and graph size, and for each start and goal: the waypoints, the planner's figures and the path
  * sampled every 0.25 m. Written by {@code lib/gradlew -p lib fixtures} (through {@link FixtureGen}).
  */
@@ -32,8 +34,27 @@ public final class PlanFixtureGen {
 
   private PlanFixtureGen() {}
 
-  /** One query: start pose, its field velocity, goal pose, and the end speed and direction (NaN = free). */
-  public record Case(String name, Pose start, FieldSpeeds velocity, Pose goal, double endSpeed, double endTangent) {}
+  /**
+   * One query: start pose, its field velocity, goal pose, the end speed and direction (NaN = free), and the
+   * footprint to plan with (null = the default bumpers).
+   */
+  public record Case(String name, Pose start, FieldSpeeds velocity, Pose goal, double endSpeed, double endTangent,
+      Footprint footprint) {
+    public Case(String name, Pose start, FieldSpeeds velocity, Pose goal, double endSpeed, double endTangent) {
+      this(name, start, velocity, goal, endSpeed, endTangent, null);
+    }
+  }
+
+  /** An intake reaching 0.35 m out of the default bumpers' front, which takes 0.3 s to come back in. */
+  public static final Footprint INTAKE_OUT = Footprint.extended(Footprint.bumpers(0.85, 0.85), "intakeOut",
+      0.35, 0.0, 0.0, 0.0, 0.3);
+
+  /**
+   * Mechanisms 0.6 m out the front and 0.4 m out the back: 1.85 m long, too long to cross the hub-to-trench gap
+   * sideways with the margin, so the plan turns it end-on through the gap.
+   */
+  public static final Footprint LONG_OUT = Footprint.extended(Footprint.bumpers(0.85, 0.85), "longOut",
+      0.6, 0.4, 0.0, 0.0, 0.0);
 
   public static List<Case> cases(Pathfinder pf) {
     List<Case> out = new ArrayList<>();
@@ -53,6 +74,12 @@ public final class PlanFixtureGen {
         Double.NaN));
     out.add(new Case("hand-over", new Pose(-6.0, 2.5, 0.0), still, new Pose(-1.4, -2.2, Math.PI / 2), 1.5, Math.PI / 2));
     out.add(new Case("across the field", new Pose(-7.0, -3.0, 0.0), still, new Pose(7.0, 3.0, Math.PI), 0.0, Double.NaN));
+    out.add(new Case("intake out, across the field", new Pose(-7.0, -3.0, 0.0), still, new Pose(7.0, 3.0, Math.PI),
+        0.0, Double.NaN, INTAKE_OUT));
+    out.add(new Case("intake out, past the hub", new Pose(-6.0, -1.5, 0.3), new FieldSpeeds(1.2, -1.5, 0.5),
+        new Pose(1.0, -1.5, Math.PI / 2), 0.0, Double.NaN, INTAKE_OUT));
+    out.add(new Case("long and side-on, through the hub gap", new Pose(-6.3, -1.55, Math.PI / 2), still,
+        new Pose(-1.0, -1.55, Math.PI / 2), 0.0, Double.NaN, LONG_OUT));
     return out;
   }
 
@@ -84,7 +111,9 @@ public final class PlanFixtureGen {
     root.put("nodeCount", pf.nodeCount());
     List<Object> plans = new ArrayList<>();
     for (Case c : cases(pf)) {
-      PlanResult r = pf.plan(c.start(), c.velocity(), c.goal(), c.endSpeed(), c.endTangent());
+      Pathfinder planner = c.footprint() == null ? pf
+          : new Pathfinder(field, RobotConfig.DEFAULT, PlannerConfig.DEFAULT.withFootprint(c.footprint()));
+      PlanResult r = planner.plan(c.start(), c.velocity(), c.goal(), c.endSpeed(), c.endTangent());
       Map<String, Object> m = new LinkedHashMap<>();
       m.put("name", c.name());
       m.put("start", List.of(c.start().xMeters(), c.start().yMeters(), c.start().headingRadians()));
@@ -94,6 +123,10 @@ public final class PlanFixtureGen {
       m.put("endSpeed", c.endSpeed());
       if (Double.isFinite(c.endTangent())) {
         m.put("endTangent", c.endTangent());
+      }
+      if (c.footprint() != null) {
+        Footprint f = c.footprint();
+        m.put("footprint", List.of(f.frontMeters(), f.backMeters(), f.leftMeters(), f.rightMeters()));
       }
       m.put("ok", r.ok());
       List<Object> wps = new ArrayList<>();

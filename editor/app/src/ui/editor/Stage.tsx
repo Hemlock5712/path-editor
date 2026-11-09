@@ -71,6 +71,7 @@ const KIND_LABELS = {
   heading: "Turn",
   bumper: "Bumpers",
   event: "Event",
+  footprint: "Footprint",
   position: "Placement",
   speed: "Speed",
 };

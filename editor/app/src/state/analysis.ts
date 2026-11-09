@@ -36,6 +36,7 @@ export function analysisInput(project: Project, spec: PathSpec): AnalysisInput {
     robot: project.robot.config,
     bumperLengthMeters: project.robot.bumperLengthMeters,
     bumperWidthMeters: project.robot.bumperWidthMeters,
+    footprints: project.robot.footprints,
     fieldLengthMeters: project.field.lengthMeters,
     fieldWidthMeters: project.field.widthMeters,
     obstacles: project.field.obstacles,

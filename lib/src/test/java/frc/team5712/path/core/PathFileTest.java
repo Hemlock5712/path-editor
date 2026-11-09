@@ -64,6 +64,37 @@ class PathFileTest {
   }
 
   @Test
+  void footprintsRoundTripAndAreLeftOutWhenUnset() {
+    PathSpec plain = PathSpec.of(List.of(Waypoint.at(0, 0), Waypoint.at(3, 1)))
+        .withEvents(List.of(PathEvent.atWaypoint("shoot", 0.5)));
+    String plainText = PathFile.write(plain);
+    assertTrue(!plainText.contains("ootprint"), plainText);
+    PathSpec read = PathFile.read(plainText);
+    assertEquals(Footprint.BUMPERS, read.startFootprint());
+    assertTrue(!read.events().get(0).changesFootprint());
+
+    PathSpec spec = plain.withStartFootprint("armUp").withEvents(List.of(
+        PathEvent.atWaypoint("deployIntake", 0.25).withFootprint("intakeOut"),
+        PathEvent.atMeters("stowIntake", 2.5).withFootprint(Footprint.BUMPERS),
+        PathEvent.atWaypoint("shoot", 0.9)));
+    String text = PathFile.write(spec);
+    assertTrue(text.contains("\"footprint\": \"intakeOut\""), text);
+    assertTrue(text.contains("\"startFootprint\": \"armUp\""), text);
+    assertEquals(spec, PathFile.read(text));
+    assertEquals(text, PathFile.write(PathFile.read(text)));
+  }
+
+  @Test
+  void footprintKeysMustBeNamesIfPresent() {
+    String base = "{ \"schema\": 3, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 2, \"y\": 1 } ], ";
+    assertThrows(IllegalArgumentException.class,
+        () -> PathFile.read(base + "\"events\": [ { \"name\": \"a\", \"atMeters\": 1, \"footprint\": 3 } ] }"));
+    assertThrows(IllegalArgumentException.class,
+        () -> PathFile.read(base + "\"events\": [ { \"name\": \"a\", \"atMeters\": 1, \"footprint\": \" \" } ] }"));
+    assertThrows(IllegalArgumentException.class, () -> PathFile.read(base + "\"startFootprint\": \"\" }"));
+  }
+
+  @Test
   void optionalKeysAreLeftOutAndDefaulted() {
     String text =
         """

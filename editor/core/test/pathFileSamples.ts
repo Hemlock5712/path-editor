@@ -16,10 +16,12 @@ import {
   type RotationTarget,
   type Waypoint,
 } from "../src/spec.ts";
+import { BUMPERS } from "../src/footprint.ts";
 
 export const COUNT = 40;
 export const SEED = 5712;
 
+const FOOTPRINTS = [BUMPERS, "intakeOut", 'arm "up"'];
 const NAMES = ["intakeDown", "shoot", 'score "L4"', "align tag 18", "back\\slash", "tab\there", "ünïcödé", "x"];
 
 class Lcg {
@@ -89,7 +91,8 @@ function spec(g: Lcg): PathSpec {
   const events: PathEvent[] = [];
   for (let k = g.below(4); k > 0; k--) {
     const name = NAMES[g.below(NAMES.length)]!;
-    events.push(g.next() < 0.5 ? eventAtWaypoint(name, g.next() * last) : eventAtMeters(name, g.next() * 12.0));
+    const e = g.next() < 0.5 ? eventAtWaypoint(name, g.next() * last) : eventAtMeters(name, g.next() * 12.0);
+    events.push(g.next() < 0.4 ? { ...e, footprint: FOOTPRINTS[g.below(FOOTPRINTS.length)]! } : e);
   }
 
   const maxMetersPerSecond = g.next() < 0.5 ? Infinity : 1.0 + g.next() * 4.0;
@@ -97,6 +100,7 @@ function spec(g: Lcg): PathSpec {
   const startMetersPerSecond = g.next() < 0.3 ? g.next() * 2.0 : 0.0;
   const endMetersPerSecond = g.next() < 0.3 ? g.next() * 2.0 : 0.0;
   const headingMode = g.next() < 0.3 ? "faceTravel" : "hold";
+  const startFootprint = g.next() < 0.2 ? FOOTPRINTS[g.below(FOOTPRINTS.length)]! : BUMPERS;
   return makePathSpec({
     waypoints,
     rotationTargets,
@@ -108,5 +112,6 @@ function spec(g: Lcg): PathSpec {
     endMetersPerSecond,
     events,
     headingMode,
+    startFootprint,
   });
 }

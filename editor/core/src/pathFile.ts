@@ -1,13 +1,16 @@
 // Reads and writes *.path.json. Port of lib's PathFile.java and RobotFile.java: 5-decimal numbers,
 // keys in a fixed order, degrees in the file and radians everywhere else, unknown keys ignored.
 // Schema 2 added events; schema 3 added waypoint headings and headingMode. Schema 1 and 2 files still
-// read, as "faceTravel" (what they did); writing always gives the current schema.
+// read, as "faceTravel" (what they did); writing always gives the current schema. An event's footprint and
+// startFootprint need no new schema: they don't change how the path is followed, so older libraries read it the same.
 
 import { fixed5, writeJson, type JsonValue } from "./json.ts";
+import { BUMPERS } from "./footprint.ts";
 import { DEFAULT_ROBOT, checkRobot, type Motor, type RobotConfig } from "./robot.ts";
 import {
   DEFAULT_BLEND_METERS,
   eventByWaypoint,
+  eventChangesFootprint,
   hasHeading,
   hasTangent,
   makeConstraintZone,
@@ -66,9 +69,12 @@ export function pathToJson(spec: PathSpec): JsonObject {
     putIfFinite(m, "maxMetersPerSecondSquared", z.maxMetersPerSecondSquared);
     return m;
   });
-  root.events = spec.events.map((e): JsonObject =>
-    eventByWaypoint(e) ? { name: e.name, atWaypoint: e.waypoint } : { name: e.name, atMeters: e.meters },
-  );
+  root.events = spec.events.map((e): JsonObject => {
+    const m: JsonObject = eventByWaypoint(e) ? { name: e.name, atWaypoint: e.waypoint } : { name: e.name, atMeters: e.meters };
+    if (eventChangesFootprint(e)) m.footprint = e.footprint;
+    return m;
+  });
+  if (spec.startFootprint !== BUMPERS) root.startFootprint = spec.startFootprint;
   putIfFinite(root, "maxMetersPerSecond", spec.maxMetersPerSecond);
   putIfFinite(root, "maxMetersPerSecondSquared", spec.maxMetersPerSecondSquared);
   root.startMetersPerSecond = spec.startMetersPerSecond;
@@ -127,7 +133,7 @@ export function pathFromJson(root: JsonObject): PathSpec {
   const events = list(root, "events").map((o) => {
     const m = asObject(o, "event");
     if (typeof m.name !== "string") throw new RangeError("an event needs a 'name' string");
-    return makePathEvent(m.name, num(m, "atWaypoint", Number.NaN), num(m, "atMeters", Number.NaN));
+    return makePathEvent(m.name, num(m, "atWaypoint", Number.NaN), num(m, "atMeters", Number.NaN), str(m, "footprint"));
   });
   return makePathSpec({
     waypoints,
@@ -140,7 +146,16 @@ export function pathFromJson(root: JsonObject): PathSpec {
     endMetersPerSecond: num(root, "endMetersPerSecond", 0.0),
     events,
     headingMode: headingModeOf(root, schema),
+    startFootprint: str(root, "startFootprint") ?? BUMPERS,
   });
+}
+
+/** An optional string key. */
+function str(m: JsonObject, key: string): string | undefined {
+  const v = m[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "string") throw new RangeError(`'${key}' must be a string`);
+  return v;
 }
 
 /** Schema 3 says; older files faced the direction of travel when no heading was set. */

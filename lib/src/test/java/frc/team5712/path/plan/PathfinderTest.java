@@ -3,9 +3,11 @@ package frc.team5712.path.plan;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.Json;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.PathFile;
@@ -315,6 +317,88 @@ class PathfinderTest {
     assertEquals(0.8, c.bumperWidthMeters(), 0.0);
     assertEquals(PlannerConfig.DEFAULT.marginMeters(), c.marginMeters(), 0.0);
     assertEquals(PlannerConfig.DEFAULT, PlannerConfig.fromRobotFile(Map.of()));
+  }
+
+  @Test
+  void footprintsComeFromTheRobotFile() {
+    List<Footprint> fs = Footprint.fromRobotFile(PathFile.asMap(Json.parse(
+        "{\"bumperLengthMeters\": 0.9, \"bumperWidthMeters\": 0.8, \"footprints\": ["
+            + "{\"name\": \"intakeOut\", \"frontMeters\": 0.3, \"retractSeconds\": 0.4},"
+            + "{\"name\": \"armUp\", \"backMeters\": 0.1, \"leftMeters\": 0.05}]}"), "r"));
+    assertEquals(List.of(Footprint.bumpers(0.9, 0.8), new Footprint("intakeOut", 0.75, 0.45, 0.4, 0.4, 0.4),
+        new Footprint("armUp", 0.45, 0.55, 0.45, 0.4, 0.0)), fs);
+    assertEquals(List.of(Footprint.bumpers(0.85, 0.85)), Footprint.fromRobotFile(Map.of()));
+    for (String bad : List.of("[{\"name\": \"bumpers\"}]", "[{\"name\": \"a\"}, {\"name\": \"a\"}]",
+        "[{\"name\": \"a\", \"frontMeters\": -0.1}]", "[{\"frontMeters\": 0.1}]")) {
+      assertThrows(IllegalArgumentException.class,
+          () -> Footprint.fromRobotFile(PathFile.asMap(Json.parse("{\"footprints\": " + bad + "}"), "r")), bad);
+    }
+  }
+
+  @Test
+  void theBumpersAsAFootprintPlanBitForBitAsBefore() {
+    // the plan fixtures (fixtures/plan) depend on this: the reach is still exactly the half-diagonal
+    assertEquals(Math.hypot(0.85, 0.85) / 2, PlannerConfig.DEFAULT.halfDiagonalMeters(), 0.0);
+    assertEquals(Math.hypot(0.9, 0.7) / 2, Footprint.bumpers(0.9, 0.7).reachMeters(), 0.0);
+    assertEquals(PlannerConfig.DEFAULT, PlannerConfig.DEFAULT.withFootprint(Footprint.bumpers(0.85, 0.85)));
+  }
+
+  @Test
+  void aDeployedIntakeIsPlannedClearOfObstacles() {
+    // a pillar just above a straight line: the bumpers pass under it, an intake out the left side wouldn't
+    FieldMap f = field(square(0, 1.2, 0.3));
+    Footprint intake = Footprint.extended(Footprint.bumpers(0.85, 0.85), "intakeOut", 0, 0, 0.6, 0, 0);
+    Pathfinder bumpers = planner(f);
+    Pathfinder withIntake = new Pathfinder(f, RobotConfig.DEFAULT, PlannerConfig.DEFAULT.withFootprint(intake));
+    PlanResult plain = bumpers.plan(new Pose(-3, 0, 0), STOPPED, new Pose(3, 0, 0));
+    PlanResult out = withIntake.plan(new Pose(-3, 0, 0), STOPPED, new Pose(3, 0, 0));
+    assertTrue(plain.clear() && out.clear());
+    assertEquals(0.0, minClearance(withIntake, plain.path()), 0.0, "the bumpers' plan should run the intake into the pillar");
+    assertTrue(minClearance(withIntake, out.path()) >= PlannerConfig.DEFAULT.marginMeters() - 1e-9);
+    assertEquals(out.minClearanceMeters(), minClearance(withIntake, out.path()), 0.02);
+  }
+
+  @Test
+  void anIntakeFacingTheHubIsPushedOffItInTheGapToTheTrench() {
+    // the 1.85 m gap between the blue hub and the lower trench support, facing the hub with a 0.45 m intake out: the
+    // footprint's far-corner graph has no route; on the bumpers' graph the route runs too close to the hub, and the
+    // refits push it down the gap until the intake keeps the margin
+    Footprint intake = Footprint.extended(Footprint.bumpers(0.85, 0.85), "intakeOut", 0.45, 0, 0, 0, 0);
+    Pathfinder pf = new Pathfinder(OnTheFlyTest.field2026(), RobotConfig.DEFAULT, PlannerConfig.DEFAULT.withFootprint(intake));
+    PlanResult r = pf.plan(new Pose(-6.3, -1.4, Math.PI / 2), STOPPED, new Pose(-1.0, -1.4, Math.PI / 2));
+    assertTrue(r.ok() && r.clear(), "not clear: " + r.minClearanceMeters());
+    assertTrue(minClearance(pf, r.path()) >= PlannerConfig.DEFAULT.marginMeters() - 0.01);
+    assertTrue(r.refits() > 0);
+  }
+
+  @Test
+  void aLongFootprintTurnsNarrowSideFirstThroughAGapItCantCrossSideways() {
+    // a 1.40 m gap in a wall across the field; facing +y with a 0.45 m intake the robot is 1.325 m along y, too
+    // long for the gap with the margin each side, but 0.85 m wide: it fits turned nose or tail first
+    FieldMap f = field(new double[][] {{-0.5, 0.7}, {0.5, 0.7}, {0.5, 4.1}, {-0.5, 4.1}},
+        new double[][] {{-0.5, -4.1}, {0.5, -4.1}, {0.5, -0.7}, {-0.5, -0.7}});
+    Footprint intake = Footprint.extended(Footprint.bumpers(0.85, 0.85), "intakeOut", 0.45, 0, 0, 0, 0);
+    Pathfinder pf = new Pathfinder(f, RobotConfig.DEFAULT, PlannerConfig.DEFAULT.withFootprint(intake));
+    PlanResult r = pf.plan(new Pose(-4, 0, Math.PI / 2), STOPPED, new Pose(4, 0, Math.PI / 2));
+    assertTrue(r.ok() && r.clear(), "not clear: " + r.minClearanceMeters());
+    assertTrue(minClearance(pf, r.path()) >= PlannerConfig.DEFAULT.marginMeters() - 0.01);
+    // in the gap it faces along x, and it ends facing +y as asked
+    PathSample mid = r.path().sample(r.path().lengthMeters() / 2);
+    assertEquals(0.0, Math.abs(Math.sin(mid.headingRadians())), 0.15);
+    assertEquals(Math.PI / 2, r.path().sample(r.path().lengthMeters()).headingRadians(), 1e-9);
+    // a square robot the same width needs no turn: the bumpers alone go straight through, facing +y
+    PlanResult square = planner(f).plan(new Pose(-4, 0, Math.PI / 2), STOPPED, new Pose(4, 0, Math.PI / 2));
+    assertTrue(square.clear());
+    assertEquals(Math.PI / 2, square.path().sample(square.path().lengthMeters() / 2).headingRadians(), 1e-9);
+  }
+
+  static double minClearance(Pathfinder pf, Path path) {
+    double min = Double.POSITIVE_INFINITY;
+    for (double s = 0; s <= path.lengthMeters(); s += 0.01) {
+      PathSample p = path.sample(s);
+      min = Math.min(min, pf.clearance(p.xMeters(), p.yMeters(), p.headingRadians()));
+    }
+    return min;
   }
 
   static double[] freePoint(Pathfinder pf, Random rnd) {

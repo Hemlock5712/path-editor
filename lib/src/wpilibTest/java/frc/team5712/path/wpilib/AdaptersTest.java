@@ -1,6 +1,8 @@
 package frc.team5712.path.wpilib;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -61,6 +63,26 @@ class AdaptersTest {
 
     Files.writeString(dir.toPath().resolve("Bad.path.json"), "{ \"schema\": 9 }");
     assertThrows(IllegalStateException.class, () -> PathLibrary.loadAll(dir, RobotConfig.DEFAULT));
+  }
+
+  @Test
+  void libraryBuildsAPathfinderPerFootprintAndChecksTheNames(@TempDir File dir) throws IOException {
+    Files.writeString(dir.toPath().resolve("robot.json"),
+        "{ \"footprints\": [ { \"name\": \"intakeOut\", \"frontMeters\": 0.3 } ] }");
+    PathFile.write(FixturePaths.sCurve().withEvents(List.of(
+        PathEvent.atWaypoint("deploy", 0.5).withFootprint("intakeOut"),
+        PathEvent.atWaypoint("stow", 1.5).withFootprint("bumpers"))), dir.toPath().resolve("Pick.path.json"));
+    PathLibrary lib = PathLibrary.loadAll(dir);
+    assertEquals(List.of("bumpers", "intakeOut"), List.copyOf(lib.footprintNames()));
+    assertSame(lib.pathfinder(), lib.pathfinder("bumpers"));
+    assertSame(lib.widePathfinder(), lib.widePathfinder("bumpers"));
+    assertEquals(0.425 + 0.3, lib.pathfinder("intakeOut").config().footprint().frontMeters(), 1e-12);
+    assertNotNull(lib.widePathfinder("intakeOut"));
+    assertThrows(java.util.NoSuchElementException.class, () -> lib.pathfinder("armUp"));
+
+    PathFile.write(FixturePaths.sCurve().withStartFootprint("armUp"), dir.toPath().resolve("Bad.path.json"));
+    IllegalStateException e = assertThrows(IllegalStateException.class, () -> PathLibrary.loadAll(dir));
+    assertTrue(e.getMessage().contains("Bad starts with \"armUp\""), e.getMessage());
   }
 
   /** The v2 adapter's lifecycle by hand (no scheduler): it drives a kinematic robot to the goal. */
