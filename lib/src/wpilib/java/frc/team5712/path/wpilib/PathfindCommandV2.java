@@ -2,6 +2,7 @@ package frc.team5712.path.wpilib;
 
 import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.plan.OnTheFly;
 import java.util.Optional;
@@ -27,6 +28,7 @@ public final class PathfindCommandV2 extends Command {
   private Supplier<Optional<Pose2d>> movingGoal;
   private DoubleSupplier clock = Timer::getTimestamp;
   private Supplier<FieldFrame> frameSource;
+  private Supplier<String> footprint;
   private OnTheFly run;
   private double lastStep = Double.NEGATIVE_INFINITY;
   private static final double SAME_LOOP_SECONDS = 0.005;
@@ -52,6 +54,15 @@ public final class PathfindCommandV2 extends Command {
 
   public PathfindCommandV2 withMovingGoal(Supplier<Optional<Pose2d>> realGoal) {
     this.movingGoal = realGoal;
+    return this;
+  }
+
+  /**
+   * Plans with this footprint's outline (robot.json's, or {@code "bumpers"}, the default), read when it starts
+   * and on every re-plan's start: e.g. {@code () -> intake.isOut() ? "intakeOut" : "bumpers"}.
+   */
+  public PathfindCommandV2 withFootprint(Supplier<String> footprintName) {
+    this.footprint = footprintName;
     return this;
   }
 
@@ -89,8 +100,9 @@ public final class PathfindCommandV2 extends Command {
   @Override
   public void initialize() {
     FieldFrame frame = frameSource == null ? Conversions.allianceFrame(ctx.redFrame) : frameSource.get();
-    run = new OnTheFly(ctx.library.pathfinder(), ctx.config, () -> goal.apply(frame))
-        .preferring(ctx.library.widePathfinder()).replanAbove(replanAbove)
+    String outline = footprint == null ? Footprint.BUMPERS : footprint.get();
+    run = new OnTheFly(ctx.library.pathfinder(outline), ctx.config, () -> goal.apply(frame))
+        .preferring(ctx.library.widePathfinder(outline)).replanAbove(replanAbove)
         .onPlan(r -> {
           telemetry.plan(r.lastPlan(), r.replans());
           if (r.follower() != null) {

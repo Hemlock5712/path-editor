@@ -8,7 +8,8 @@ import java.util.List;
  *
  * @param path the path to follow, or null when there is no route ({@link #failure} says why)
  * @param waypoints the spline's waypoints: the route's corners plus any the smoother added (and the
- *     robot's and goal's own positions when they were snapped)
+ *     robot's and goal's own positions when they were snapped), each {x, y}, or {x, y, heading} where the plan
+ *     turns a long footprint end-on through a gap (a rotation target there)
  * @param routeLengthMeters length of the corner-to-corner route (before smoothing)
  * @param straightLineMeters start to goal in a straight line
  * @param startSnapMeters how far the start was moved out of a grown obstacle (0 = not moved)

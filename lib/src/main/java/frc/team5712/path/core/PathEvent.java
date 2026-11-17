@@ -7,8 +7,12 @@ package frc.team5712.path.core;
  * <p>The place is either a waypoint-relative position ({@code 1.5} = halfway along the arc between
  * waypoints 1 and 2), which survives geometry edits, or a distance along the path in metres. Exactly
  * one of the two is set; the other is NaN.
+ *
+ * <p>An event can also say what the robot's outline becomes from here on ({@code footprint}, a {@link
+ * Footprint} named in robot.json, or {@code "bumpers"}): "deployIntake" switches to "intakeOut" and
+ * "stowIntake" back to "bumpers". The editor checks the path with that outline; null leaves it as it was.
  */
-public record PathEvent(String name, double waypoint, double meters) {
+public record PathEvent(String name, double waypoint, double meters, String footprint) {
   public PathEvent {
     if (name == null || name.isBlank()) {
       throw new IllegalArgumentException("an event needs a name");
@@ -19,6 +23,14 @@ public record PathEvent(String name, double waypoint, double meters) {
     if (Double.isInfinite(waypoint) || Double.isInfinite(meters)) {
       throw new IllegalArgumentException("event position must be finite");
     }
+    if (footprint != null && footprint.isBlank()) {
+      throw new IllegalArgumentException("event " + name + ": a footprint needs a name (null = no change)");
+    }
+  }
+
+  /** An event that leaves the footprint as it is. */
+  public PathEvent(String name, double waypoint, double meters) {
+    this(name, waypoint, meters, null);
   }
 
   public static PathEvent atWaypoint(String name, double waypoint) {
@@ -29,8 +41,18 @@ public record PathEvent(String name, double waypoint, double meters) {
     return new PathEvent(name, Double.NaN, meters);
   }
 
+  /** The same event, switching the robot's outline to {@code footprintName} (null = no change). */
+  public PathEvent withFootprint(String footprintName) {
+    return new PathEvent(name, waypoint, meters, footprintName);
+  }
+
   public boolean byWaypoint() {
     return !Double.isNaN(waypoint);
+  }
+
+  /** True when this event switches the robot's outline. */
+  public boolean changesFootprint() {
+    return footprint != null;
   }
 
   /** Metres along the path built from {@code geometry}. Waypoint positions clamp to the path; metres don't. */

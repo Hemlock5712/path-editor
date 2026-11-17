@@ -2,6 +2,7 @@ package frc.team5712.path.wpilib;
 
 import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.Pose;
 import frc.team5712.path.plan.OnTheFly;
@@ -34,6 +35,7 @@ public final class PathfindCommand implements Command {
   private Supplier<Optional<Pose2d>> movingGoal;
   private DoubleSupplier clock = Timer::getTimestamp;
   private Supplier<FieldFrame> frameSource;
+  private Supplier<String> footprint;
   private OnTheFly run;
   private boolean following;
 
@@ -57,6 +59,15 @@ public final class PathfindCommand implements Command {
   /** Finishes on a moving goal (real field frame, e.g. from vision); empty keeps the last. */
   public PathfindCommand withMovingGoal(Supplier<Optional<Pose2d>> realGoal) {
     this.movingGoal = realGoal;
+    return this;
+  }
+
+  /**
+   * Plans with this footprint's outline (robot.json's, or {@code "bumpers"}, the default), read when it starts
+   * and on every re-plan's start: e.g. {@code () -> intake.isOut() ? "intakeOut" : "bumpers"}.
+   */
+  public PathfindCommand withFootprint(Supplier<String> footprintName) {
+    this.footprint = footprintName;
     return this;
   }
 
@@ -109,8 +120,9 @@ public final class PathfindCommand implements Command {
   public void run(Coroutine coroutine) {
     FieldFrame frame = frameSource == null ? Conversions.allianceFrame(ctx.redFrame) : frameSource.get();
     following = false;
-    run = new OnTheFly(ctx.library.pathfinder(), ctx.config, () -> goal.apply(frame))
-        .preferring(ctx.library.widePathfinder()).replanAbove(replanAbove)
+    String outline = footprint == null ? Footprint.BUMPERS : footprint.get();
+    run = new OnTheFly(ctx.library.pathfinder(outline), ctx.config, () -> goal.apply(frame))
+        .preferring(ctx.library.widePathfinder(outline)).replanAbove(replanAbove)
         .onPlan(r -> {
           telemetry.plan(r.lastPlan(), r.replans());
           if (r.follower() != null) {

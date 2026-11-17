@@ -1,7 +1,7 @@
 // Fix-it buttons for the checks: the one or two edits that usually answer each one, as one undo step
 // (or, for a collision, the optimiser or Route around, shown dashed until applied).
 
-import { makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../core/src/index.ts";
+import { BUMPERS, makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../core/src/index.ts";
 import type { Check } from "../compute/analysis.ts";
 import { addConstraintZone, addFacePointZone, setTangent, updateConstraintZone, updateEvent, updateFacePointZone, updateRotationTarget, withSpec } from "../model/edits.ts";
 import { round5, waypointAtS } from "../model/positions.ts";
@@ -104,9 +104,30 @@ export function fixesFor(check: Check): Fix[] {
               updateEvent(
                 p,
                 r.index,
-                Number.isNaN(e.waypoint) ? makePathEvent(e.name, Number.NaN, round5(clamp(e.meters, 0, g.lengthMeters))) : makePathEvent(e.name, clamp(e.waypoint, 0, last), Number.NaN),
+                Number.isNaN(e.waypoint) ? makePathEvent(e.name, Number.NaN, round5(clamp(e.meters, 0, g.lengthMeters)), e.footprint) : makePathEvent(e.name, clamp(e.waypoint, 0, last), Number.NaN, e.footprint),
               ),
             ),
+        },
+      ];
+    }
+    case "footprint": {
+      const r = check.ref;
+      const e = r?.kind === "event" ? spec.events[r.index] : undefined;
+      if (r && e) {
+        return [
+          { label: "Pick its footprint", tip: "Select the event to choose one of the robot's footprints", run: () => select({ kind: "event", index: r.index }) },
+          {
+            label: "Leave the footprint as it is",
+            tip: "The event no longer switches the robot's outline",
+            run: () => editPath("Clear event footprint", (p) => updateEvent(p, r.index, makePathEvent(e.name, e.waypoint, e.meters)), { kind: "event", index: r.index }),
+          },
+        ];
+      }
+      return [
+        {
+          label: "Start with the bumpers",
+          tip: "The path starts with no mechanism out",
+          run: () => editPath("Start with the bumpers", (p) => withSpec(p, { startFootprint: BUMPERS })),
         },
       ];
     }

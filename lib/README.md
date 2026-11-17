@@ -530,6 +530,25 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   away once the robot is 1.5 m out. `PathLibrary` holds no drivetrain, so the factory lives on `Pathfinding`
   rather than as `paths.follow(...)`.
 
+- **Mechanisms out (footprints).** `robot.json` can name footprints, each the bumpers plus how far a mechanism
+  reaches past them on each side (`"footprints": [{ "name": "intakeOut", "frontMeters": 0.3, "retractSeconds": 0.4 }]`,
+  `core.Footprint`). In the editor an event can switch the robot's outline to one (`"footprint"` on the event in the
+  path file; `"startFootprint"` for a path that starts with it out), and the checks, the optimiser and Route around
+  use that outline from the event on, keeping a stowed one for its `retractSeconds`. Following a path doesn't use
+  them. `PathLibrary.loadAll` builds a pathfinder pair per footprint at boot, and fails if a path names one robot.json
+  doesn't have. `otf.withFootprint(() -> intake.isOut() ? "intakeOut" : "bumpers")` (or the same on one command)
+  plans with that outline, read as each command starts. Obstacles are grown by the footprint's far corner, which
+  clears it in any heading but can close gaps it fits through nose-first (a 0.35 m intake shuts the 2026 field's
+  hub-to-trench gaps), so such a pathfinder also tries a graph grown for the bumpers alone, still sweeping the
+  footprint. A route on that graph can run too close for the footprint (an intake facing the hub), so where a refit
+  finds the route point itself short of the margin, it pushes the new waypoint straight off whatever is nearest
+  until the footprint clears it (`Pathfinder.clearOf`); a bumpers-only plan never needs this and is unchanged.
+  A footprint longer one way than the other that still can't get through as its heading blends (too long to cross
+  a gap side-on) is smoothed again with each refit's waypoint turned narrow side across the way it's going, nose or
+  tail first, whichever is the smaller turn; those headings become rotation targets (and Route around writes them
+  into the path as waypoint headings). That pass is kept only if it clears, so it costs nothing when the first does.
+  `PlanResult.clear()` is true only when the footprint itself keeps the margin.
+
 - **Planning.** Each command plans when it starts, from the measured pose and velocity, with `OnTheFly` (in `plan`,
   no WPILib). This is the one place path work happens at go: about 1 ms median and under 5 ms at the 95th
   percentile on the desktop.

@@ -1,5 +1,6 @@
 package frc.team5712.path.plan;
 
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.PathFile;
 import java.util.Map;
 
@@ -15,6 +16,8 @@ import java.util.Map;
  * @param checkStepMeters spacing of the swept-bumper check along the path
  * @param maxMetersPerSecond path speed cap
  * @param maxMetersPerSecondSquared path acceleration and braking cap
+ * @param footprint the outline planned with: the bumpers, or the bumpers with a mechanism out ({@link
+ *     #withFootprint}), e.g. to pathfind with the intake deployed
  */
 public record PlannerConfig(
     double bumperLengthMeters,
@@ -24,7 +27,8 @@ public record PlannerConfig(
     int maxRefits,
     double checkStepMeters,
     double maxMetersPerSecond,
-    double maxMetersPerSecondSquared) {
+    double maxMetersPerSecondSquared,
+    Footprint footprint) {
 
   /**
    * The margin on-the-fly paths try first (m): odometry can drift more than {@link #DEFAULT}'s 5 cm, so where
@@ -43,6 +47,17 @@ public record PlannerConfig(
         || !(checkStepMeters > 0) || !(maxMetersPerSecond > 0) || !(maxMetersPerSecondSquared > 0)) {
       throw new IllegalArgumentException("bad planner settings");
     }
+    if (footprint == null) {
+      throw new IllegalArgumentException("a footprint is needed (Footprint.bumpers for the bumpers alone)");
+    }
+  }
+
+  /** Settings planning with the bumpers alone. */
+  public PlannerConfig(double bumperLengthMeters, double bumperWidthMeters, double marginMeters,
+      double arcStepRadians, int maxRefits, double checkStepMeters, double maxMetersPerSecond,
+      double maxMetersPerSecondSquared) {
+    this(bumperLengthMeters, bumperWidthMeters, marginMeters, arcStepRadians, maxRefits, checkStepMeters,
+        maxMetersPerSecond, maxMetersPerSecondSquared, Footprint.bumpers(bumperLengthMeters, bumperWidthMeters));
   }
 
   /**
@@ -58,23 +73,37 @@ public record PlannerConfig(
         DEFAULT.maxMetersPerSecond, DEFAULT.maxMetersPerSecondSquared);
   }
 
-  /** The bumpers' half-diagonal: the robot's reach in any heading. */
+  /**
+   * The robot's reach in any heading: the bumpers' half-diagonal, or the far corner of the footprint when a
+   * mechanism is out ({@link Footprint#reachMeters}).
+   */
   public double halfDiagonalMeters() {
-    return Math.hypot(bumperLengthMeters, bumperWidthMeters) / 2;
+    return footprint.reachMeters();
   }
 
-  /** How far obstacles are grown: half-diagonal plus margin. */
+  /** How far obstacles are grown: the reach plus margin. */
   public double growMeters() {
     return halfDiagonalMeters() + marginMeters;
   }
 
+  /** {@link #growMeters} for the bumpers alone (the half-diagonal plus margin), whatever the footprint. */
+  public double bumperGrowMeters() {
+    return Math.hypot(bumperLengthMeters, bumperWidthMeters) / 2 + marginMeters;
+  }
+
   public PlannerConfig withMargin(double margin) {
     return new PlannerConfig(bumperLengthMeters, bumperWidthMeters, margin, arcStepRadians, maxRefits,
-        checkStepMeters, maxMetersPerSecond, maxMetersPerSecondSquared);
+        checkStepMeters, maxMetersPerSecond, maxMetersPerSecondSquared, footprint);
   }
 
   public PlannerConfig withLimits(double maxSpeed, double maxAccel) {
     return new PlannerConfig(bumperLengthMeters, bumperWidthMeters, marginMeters, arcStepRadians, maxRefits,
-        checkStepMeters, maxSpeed, maxAccel);
+        checkStepMeters, maxSpeed, maxAccel, footprint);
+  }
+
+  /** The same settings planning with {@code outline} (one of {@link Footprint#fromRobotFile}'s). */
+  public PlannerConfig withFootprint(Footprint outline) {
+    return new PlannerConfig(bumperLengthMeters, bumperWidthMeters, marginMeters, arcStepRadians, maxRefits,
+        checkStepMeters, maxMetersPerSecond, maxMetersPerSecondSquared, outline);
   }
 }

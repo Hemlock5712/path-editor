@@ -73,23 +73,31 @@ after PathPlanner's.
   command palette (**Ctrl+K**: every command by name, with its shortcut), help (**?**) and **Settings**
   (**Ctrl+,**).
 - **Editor page.**
-  - **Paths rail (left).** One card per path with a small preview: New (from the active path's end),
-    Duplicate, Rename (F2 or double-click), Delete (undoable), and a right-click menu.
-  - **Field (centre).** The tools and Undo/Redo float top left, with the path's name and plan (length, time,
-    top speed). The checks badge (its popover lists them), blue/red view, grid snap, footprints and Fit float
-    top right. Playback is a slim bar along the bottom. The charts are a drawer underneath, closed until opened.
-  - **Inspector (right).** With nothing selected: **Optimise path**, then the path's cards in PathPlanner's
-    order (Waypoints open; Global constraints, Start and end state, Rotation targets, Event markers,
-    Constraint zones, Point-towards zones, Named points, Optimiser settings). With something selected: only
-    that item, with Back (Esc) and, for waypoints, previous/next.
-  - The rail and the inspector resize by dragging their edges, and the sizes are remembered.
+  - **Paths rail (left).** One card per path with a small preview: New (from the active path's end, ready
+    to draw; double-clicking the rail's empty space does the same), Duplicate, Rename (F2 or double-click),
+    Delete (undoable), and a right-click menu. The active path's card has a dot when its checks found an
+    error (red) or a warning (amber). The rail folds to a strip of path swatches for a bigger field.
+  - **Field (centre).** The tools (Draw first) and Undo/Redo float top left. The checks badge (its popover
+    lists them; "Planning…" while a new plan is worked out), blue/red view, grid snap, footprints and Fit
+    float top right. Along the bottom: the path's name and plan (length, time, top speed) and what the
+    current tool does, over the playback bar. The field fits the room between the bars. The charts are a
+    drawer underneath, closed until opened.
+  - **Inspector (right).** With nothing selected: **Optimise path**, then tabs: **Path** (waypoints, global
+    constraints, start and end state), **Heading** (the heading mode, rotation targets, point-towards
+    zones), **Events**, **Zones** (constraint zones), **Points** (named points) and **Optimise** (optimiser
+    settings, sim preview). Each tab shows how many items it has. With something selected: only that item,
+    with Back (Esc) to its tab and, for waypoints, previous/next. A waypoint shows x, y and heading on one
+    row, then pass-through, Face next, Add after and Delete; the rest is under **More**.
+  - The rail and the inspector resize by dragging their edges; the sizes, the folded rail and the tab are
+    remembered.
 - **Settings page.** Robot (robot.json), Path defaults (what a new path starts with), Field (size and
   obstacles), Project (the robot project folder, red flip, the generated names' package), Sim preview drivetrain (latency,
   lag, grip), and Editor (snapping, footprints, the quick start).
 - **Telemetry page.** The NT4 connection and live data. The connection stays up on the other pages, and a
   switch shows the live robot on the editor's field.
 - **Feel.** Number fields scrub when you drag their label (Shift for finer) and step with the arrow keys or
-  their steppers. Selects, switches, sliders, menus, tooltips (with shortcuts) and toasts are the app's own.
+  their steppers. They show 3 decimals for metres, 1 for degrees and 2 for speeds, and every decimal while
+  you edit them. Selects, switches, sliders, menus, tooltips (with shortcuts) and toasts are the app's own.
   The field pans with a little inertia and zooms smoothly toward the pointer. Ctrl+wheel, pinch and
   Ctrl +/−/0 zoom the field, never the page. There is no text selection or drag ghost on the app's chrome.
   Motion is 120-180 ms and off with the system's reduced-motion setting.
@@ -107,21 +115,25 @@ after PathPlanner's.
   made there are converted back to blue. Obstacles are physical, so they never flip.
 - The path line is the robot's centre, coloured by planned speed. Every waypoint is drawn as the robot
   there (its bumper footprint). Faint footprints between waypoints are optional (every 0.5, 1 or 2 m).
-- A one-line hint at the bottom of the field says what the current tool does. A quick start shows on the
+- A one-line hint over the playback bar says what the current tool does. A quick start shows on the
   first run; **?** shows it again with the keyboard shortcuts.
 
 **Drawing a swerve path.** A swerve's heading is its own, so a waypoint is a robot pose: a position and,
 optionally, a heading.
-- **Adding waypoints: double-click.** A new project's path is empty: the first double-click places the
-  start, the second the end. After that, select a waypoint and double-click the field: the new point goes
-  right after it (between it and the next, or as the new end), at the double-clicked spot, and is selected,
-  so more double-clicks build forward from it. Double-clicking another waypoint's robot puts the new point
-  exactly there (a loop auto's end back on its start). With nothing selected a double-click only says how. A single
-  click never adds a point: it selects or deselects. A new path (**+**) starts with just its start, at the
+- **Adding waypoints: Draw (W).** A new project, and every new path, opens in Draw. Each click on the field
+  adds a point right after the selected waypoint (between it and the next, or as the new end; with nothing
+  selected, at the end) and selects it, so clicks build the path forward. A dashed line and a ghost robot
+  show where the next click goes, with the distance. Clicking a robot selects it, so the next click goes in
+  after it; robots and knobs still drag, and pressing on the path and dragging inserts a point, all without
+  leaving Draw. Double-clicking another waypoint's robot puts the new point exactly there (a loop auto's
+  end back on its start). A double-click elsewhere counts as one click. **Enter** or right-clicking the
+  field finishes (back to Select, the last point still selected); **Esc** finishes and deselects. Each
+  point is its own undo step.
+- **In Select (V),** a single click never adds a point: it selects or deselects. Double-clicking the field
+  adds a point after the selected waypoint, as before. A new path (**+**) starts with just its start, at the
   last path's end, selected. **Add after** in a waypoint's inspector does the same from the keyboard
-  (halfway to the next point, or 1 m past the end), and right-clicking the field offers it too. There is no
-  separate drawing tool any more: double-click does its job in Select.
-  Drag a robot to move it; Delete or right-click removes it. Pressing on the path and dragging still inserts a
+  (halfway to the next point, or 1 m past the end), and right-clicking the field offers it too.
+  Drag a robot to move it; Delete or right-click removes it. Pressing on the path and dragging inserts a
   point there.
 - Drag the knob on a robot's ring to turn it. Headings snap to 15° (hold Alt to turn freely); the
   waypoint's **Heading** field takes a typed angle. Right-click a waypoint for **Set heading…**,

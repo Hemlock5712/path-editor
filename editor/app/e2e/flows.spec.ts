@@ -22,8 +22,12 @@ const doc = (page: Page): Promise<Doc> => page.evaluate(() => (window as unknown
 
 async function fieldPoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   const box = (await page.getByTestId("field").boundingBox())!;
-  const scale = Math.min((box.width - 48) / 16.54, (box.height - 48) / 8.07);
-  return { x: box.x + box.width / 2 + x * scale, y: box.y + box.height / 2 - y * scale };
+  // through the view the field was last drawn with
+  const [px, py] = await page.evaluate(
+    ([fx, fy]) => (window as unknown as { pathEditorTest: { toCanvas(x: number, y: number): [number, number] } }).pathEditorTest.toCanvas(fx!, fy!),
+    [x, y],
+  );
+  return { x: box.x + px, y: box.y + py };
 }
 
 async function clickField(page: Page, x: number, y: number, button: "left" | "right" = "left"): Promise<void> {
@@ -205,13 +209,13 @@ test("removing things: the × on the field, right-click Delete, the Delete key a
   // the event again: select it from its row and press Delete; then the row's trash
   await page.keyboard.press("Control+z");
   await page.keyboard.press("Escape");
-  await page.locator("button.card-head", { hasText: /^Event markers/ }).click();
+  await page.getByTestId("inspector-tab-events").click();
   await page.getByTestId("event-item-0").click();
   await page.keyboard.press("Delete");
   await expect.poll(async () => (await doc(page)).file!.events.length).toBe(0);
   await page.keyboard.press("Control+z");
   await page.keyboard.press("Escape");
-  await page.locator("button.card-head", { hasText: /^Constraint zones/ }).click();
+  await page.getByTestId("inspector-tab-zones").click();
   await page.getByRole("button", { name: "Delete constraint zone 1" }).click();
   await expect.poll(async () => (await doc(page)).file!.constraintZones.length).toBe(0);
 });

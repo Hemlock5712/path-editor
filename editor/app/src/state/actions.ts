@@ -6,7 +6,7 @@ import { makeEditorPath, startSpec, uniquePathName } from "../model/project.ts";
 import { round5 } from "../model/positions.ts";
 import { analysis, playback } from "./analysis.ts";
 import { deletePath, insertPath } from "./commands.ts";
-import { activePath, editor, editPath, editProject, execute, notify, refuseLinkedCopy, select, setActivePath, setView, type Selection } from "./editor.ts";
+import { activePath, editor, editPath, editProject, execute, notify, refuseLinkedCopy, select, setActivePath, setTool, setView, type Selection } from "./editor.ts";
 import type { ItemRef } from "../ui/drawItems.ts";
 import { transformPath, unlinkPath, type Transform, type TransformMode } from "../model/mirror.ts";
 
@@ -73,7 +73,7 @@ export function nudge(dx: number, dy: number): void {
 
 /**
  * A new path starting where the active one ends, facing the way the robot ends up (a swerve auto is a
- * chain of paths), or at a given pose: just its start, selected, so double-clicks carry on from there.
+ * chain of paths), or at a given pose: just its start, selected, so Draw clicks carry on from there.
  * After an empty path, an empty one.
  */
 export function newPath(start?: { x: number; y: number; heading: number; pointId?: string }): void {
@@ -85,6 +85,8 @@ export function newPath(start?: { x: number; y: number; heading: number; pointId
   execute(insertPath("New path", path, s.project.paths.length));
   setActivePath(path.id);
   if (pose) select({ kind: "waypoint", index: 0 });
+  // a new path is for drawing: each click on the field adds the next point
+  setTool("draw");
 }
 
 /** Flips or mirrors the active path: in place, as a copy, or as a linked copy (one undo step). */

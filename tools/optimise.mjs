@@ -93,6 +93,7 @@ const result = optimise(
     robot: robot.config,
     bumperLengthMeters: robot.bumperLengthMeters,
     bumperWidthMeters: robot.bumperWidthMeters,
+    footprints: robot.footprints,
     fieldLengthMeters: field.lengthMeters,
     fieldWidthMeters: field.widthMeters,
     obstacles: field.obstacles,

@@ -3,6 +3,7 @@
 
 export * from "./angles.ts";
 export * from "./spec.ts";
+export * from "./footprint.ts";
 export * from "./spline.ts";
 export * from "./geometry.ts";
 export * from "./heading.ts";

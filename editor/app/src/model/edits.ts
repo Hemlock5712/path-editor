@@ -93,7 +93,7 @@ export function remapPositions(spec: PathSpec, map: (p: number) => number): Part
     const to = map(z.toWaypoint);
     if (to > from) constraintZones.push(makeConstraintZone(from, to, z.maxMetersPerSecond, z.maxMetersPerSecondSquared));
   }
-  const events = spec.events.map((e) => (Number.isNaN(e.waypoint) ? e : makePathEvent(e.name, map(e.waypoint), Number.NaN)));
+  const events = spec.events.map((e) => (Number.isNaN(e.waypoint) ? e : makePathEvent(e.name, map(e.waypoint), Number.NaN, e.footprint)));
   return { rotationTargets, facePointZones, constraintZones, events };
 }
 

@@ -55,7 +55,7 @@ export function stepTakes(kind: FlowKind, step: number): "path" | "field" | "for
 
 export function startFlow(kind: FlowKind): void {
   if (kind !== "point" && activePath().spec.waypoints.length < 2) {
-    notify("Draw the path first: double-click the field for its start and end.");
+    notify("Draw the path first: press W and click the field for its start and end.");
     return;
   }
   setTool("select");

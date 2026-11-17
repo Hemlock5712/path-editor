@@ -1,6 +1,8 @@
 package frc.team5712.path.plan;
 
+import frc.team5712.path.core.Angles;
 import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.GeometrySample;
 import frc.team5712.path.core.HeadingProfile;
 import frc.team5712.path.core.Path;
@@ -18,9 +20,16 @@ import java.util.List;
 /**
  * Plans a collision-free path across the field during a match.
  *
- * <p>At boot ({@link #Pathfinder}): every obstacle is grown by the bumpers' half-diagonal plus a margin
- * (a Minkowski sum with a disc, rounded corners as short arcs, approximated from outside), the field
- * walls are moved in by the same amount, and the visibility graph between the grown corners is built.
+ * <p>At boot ({@link #Pathfinder}): every obstacle is grown by the robot's reach (the bumpers' half-diagonal, or
+ * the far corner of a {@link Footprint} with a mechanism out) plus a margin (a Minkowski sum with a disc, rounded
+ * corners as short arcs, approximated from outside), the field walls are moved in by the same amount, and the
+ * visibility graph between the grown corners is built.
+ *
+ * <p>Growing by a footprint's reach clears it in any heading, but closes gaps the robot fits through nose-first
+ * (a 0.35 m intake shuts the 2026 field's 1.85 m hub-to-trench gaps). So a footprint that reaches further than the
+ * bumpers also gets a second graph, grown by the bumpers' reach, which {@link #plan} tries when the first has no
+ * route or no clear one. Either way the footprint itself is what's swept, so {@code clear()} means it keeps the
+ * margin.
  *
  * <p>Per query ({@link #plan}):
  * <ol>
@@ -52,13 +61,18 @@ public final class Pathfinder {
   /** Straight-line length between visible node pairs, +∞ where blocked. */
   private final double[][] edge;
   private final double bootMicros;
+  /** The same footprint over a graph grown by the bumpers' reach only, or null (see the class comment). */
+  private final Pathfinder bumperGraph;
 
   public Pathfinder(FieldMap field, RobotConfig robot, PlannerConfig config) {
+    this(field, robot, config, config.growMeters(), config.bumperGrowMeters() < config.growMeters());
+  }
+
+  private Pathfinder(FieldMap field, RobotConfig robot, PlannerConfig config, double r, boolean withBumperGraph) {
     long t0 = System.nanoTime();
     this.field = field;
     this.robot = robot;
     this.config = config;
-    double r = config.growMeters();
     List<ConvexPolygon> g = new ArrayList<>();
     for (ConvexPolygon p : field.obstacles()) {
       g.add(p.grow(r, config.arcStepRadians()));
@@ -95,6 +109,7 @@ public final class Pathfinder {
         }
       }
     }
+    bumperGraph = withBumperGraph ? new Pathfinder(field, robot, config, config.bumperGrowMeters(), false) : null;
     bootMicros = (System.nanoTime() - t0) / 1e3;
   }
 
@@ -175,6 +190,11 @@ public final class Pathfinder {
    * alone, a tenth of a millisecond, without the smoothing and the profile {@link #plan} adds.
    */
   public double routeLengthMeters(Pose start, Pose goal) {
+    double len = routeLengthHere(start, goal);
+    return Double.isInfinite(len) && bumperGraph != null ? bumperGraph.routeLengthHere(start, goal) : len;
+  }
+
+  private double routeLengthHere(Pose start, Pose goal) {
     double[] s = snap(start.xMeters(), start.yMeters());
     double[] g = snap(goal.xMeters(), goal.yMeters());
     List<double[]> route = shortestRoute(s, g);
@@ -202,6 +222,16 @@ public final class Pathfinder {
    * goal is far enough away; otherwise the direction is dropped.
    */
   public PlanResult plan(Pose start, FieldSpeeds startVelocity, Pose goal, double endSpeed, double endTangent) {
+    PlanResult r = planHere(start, startVelocity, goal, endSpeed, endTangent);
+    if (bumperGraph == null || (r.ok() && r.clear())) {
+      return r;
+    }
+    // no route, or no clear one, with the footprint's reach grown in: try the bumpers' graph (still sweeping the footprint)
+    PlanResult b = bumperGraph.planHere(start, startVelocity, goal, endSpeed, endTangent);
+    return b.ok() && (b.clear() || !r.ok()) ? b : r;
+  }
+
+  private PlanResult planHere(Pose start, FieldSpeeds startVelocity, Pose goal, double endSpeed, double endTangent) {
     long t0 = System.nanoTime();
     // 1. Snap: a start or goal inside a grown obstacle (or too near a wall) moves out to the nearest free point
     double[] s = snap(start.xMeters(), start.yMeters());
@@ -229,8 +259,20 @@ public final class Pathfinder {
     double startTangent = moving ? StrictMath.atan2(startVelocity.vyMetersPerSecond(), startVelocity.vxMetersPerSecond())
         : Double.NaN;
     double startSpeed = moving ? Math.min(v, config.maxMetersPerSecond()) : 0.0;
+    List<double[]> corners = new ArrayList<>(pts);
     Smoothed smoothed = smooth(pts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians(),
-        route.endDirection(), arrive, startSnap, goalSnap);
+        route.endDirection(), arrive, startSnap, goalSnap, false);
+    if (!smoothed.sweep().violations.isEmpty() && longerThanWide()) {
+      // 4b. A footprint longer one way than the other that can't get through as blended: again, turning its narrow
+      // side across each stretch it hits (kept only if that clears)
+      List<double[]> turnedPts = new ArrayList<>(corners);
+      Smoothed turned = smooth(turnedPts, startTangent, startSpeed, start.headingRadians(), goal.headingRadians(),
+          route.endDirection(), arrive, startSnap, goalSnap, true);
+      if (turned.sweep().violations.isEmpty()) {
+        smoothed = turned;
+        pts = turnedPts;
+      }
+    }
     long t2 = System.nanoTime();
 
     // 5. Profile: the same speed plan as a drawn path
@@ -295,7 +337,7 @@ public final class Pathfinder {
    * (already inside the margin) aren't checked.
    */
   private Smoothed smooth(List<double[]> pts, double startTangent, double startSpeed, double startHeading,
-      double goalHeading, double endDirection, double arrive, double startSnap, double goalSnap) {
+      double goalHeading, double endDirection, double arrive, double startSnap, double goalSnap, boolean turn) {
     int refits = 0;
     while (true) {
       PathSpec spec = Path.pureRotation(spec(pts, startTangent, startSpeed, startHeading, goalHeading, endDirection,
@@ -309,15 +351,19 @@ public final class Pathfinder {
         return new Smoothed(spec, sweep, refits);
       }
       refits++;
-      addWaypointsUnder(sweep.violations, geometry, pts);
+      addWaypointsUnder(sweep.violations, geometry, heading, pts, turn);
     }
   }
 
   /**
    * One new waypoint per stretch that came too close, on the route segment under its worst point (at least 5 cm from
-   * the segment's ends, one per segment per round).
+   * the segment's ends, one per segment per round). Where the route itself is too close there (a footprint planned
+   * on the bumpers' graph), the waypoint is pushed off what it's closest to ({@link #clearOf}). With {@code turn}, it
+   * also gets a heading: the footprint's narrow side across the way it's going ({@link #narrowSideAcross}), which
+   * becomes a rotation target there.
    */
-  private static void addWaypointsUnder(List<Double> violations, PathGeometry geometry, List<double[]> pts) {
+  private void addWaypointsUnder(List<Double> violations, PathGeometry geometry, HeadingProfile heading,
+      List<double[]> pts, boolean turn) {
     List<double[]> inserts = new ArrayList<>();
     for (double sv : violations) {
       int seg = segmentAt(geometry, sv, pts.size());
@@ -330,7 +376,13 @@ public final class Pathfinder {
       double t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / (len * len);
       double minT = Math.min(0.5, 0.05 / len);
       t = Math.max(minT, Math.min(1 - minT, t));
-      inserts.add(new double[] {seg, a[0] + t * ex, a[1] + t * ey});
+      GeometrySample here = geometry.sample(sv);
+      double th = heading.sample(here).radians();
+      if (turn) {
+        th = narrowSideAcross(here, th);
+      }
+      double[] q = clearOf(a[0] + t * ex, a[1] + t * ey, th);
+      inserts.add(new double[] {seg, q[0], q[1], turn ? th : Double.NaN});
     }
     inserts.sort((x, y) -> Double.compare(y[0], x[0])); // back to front keeps indices valid
     int lastSeg = -1;
@@ -339,8 +391,106 @@ public final class Pathfinder {
         continue;
       }
       lastSeg = (int) ins[0];
-      pts.add(lastSeg + 1, new double[] {ins[1], ins[2]});
+      pts.add(lastSeg + 1, Double.isNaN(ins[3]) ? new double[] {ins[1], ins[2]} : new double[] {ins[1], ins[2], ins[3]});
     }
+  }
+
+  /** True when the footprint is longer one way than the other, so which way it faces through a gap matters. */
+  private boolean longerThanWide() {
+    Footprint f = config.footprint();
+    return Math.abs((f.frontMeters() + f.backMeters()) - (f.leftMeters() + f.rightMeters())) > 1e-9;
+  }
+
+  /**
+   * The heading nearest {@code th} that puts the footprint's narrow side across the direction of travel: its long
+   * axis along the way it's going, nose or tail first, whichever is the smaller turn.
+   */
+  private double narrowSideAcross(GeometrySample p, double th) {
+    Footprint f = config.footprint();
+    double travel = StrictMath.atan2(p.tangentY(), p.tangentX());
+    double along = f.frontMeters() + f.backMeters() >= f.leftMeters() + f.rightMeters() ? travel : travel + Math.PI / 2;
+    double a = Angles.wrap(along - th);
+    double b = Angles.wrap(along + Math.PI - th);
+    return th + (Math.abs(a) <= Math.abs(b) ? a : b);
+  }
+
+  /** How much further than the shortfall {@link #clearOf} pushes, so the spline's sag between waypoints still clears. */
+  static final double PUSH_SLACK_METERS = 0.02;
+
+  /**
+   * (x, y) itself when the outline there (at heading th) keeps the margin, which every point of a route on its own
+   * graph does. Otherwise (x, y) moved straight away from what it's closest to, an obstacle (from its nearest
+   * boundary point) or a wall (along the wall's normal), until the outline is the margin plus {@link
+   * #PUSH_SLACK_METERS} clear of it along that direction.
+   */
+  private double[] clearOf(double x, double y, double th) {
+    double need = config.marginMeters();
+    double[] qx = new double[4];
+    double[] qy = new double[4];
+    if (clearance(x, y, th, config.halfDiagonalMeters(), qx, qy) >= need - 1e-9) {
+      return new double[] {x, y};
+    }
+    double halfL = field.lengthMeters() / 2;
+    double halfW = field.widthMeters() / 2;
+    double minX = Double.POSITIVE_INFINITY;
+    double maxX = Double.NEGATIVE_INFINITY;
+    double minY = Double.POSITIVE_INFINITY;
+    double maxY = Double.NEGATIVE_INFINITY;
+    for (int i = 0; i < 4; i++) {
+      minX = Math.min(minX, qx[i]);
+      maxX = Math.max(maxX, qx[i]);
+      minY = Math.min(minY, qy[i]);
+      maxY = Math.max(maxY, qy[i]);
+    }
+    // the walls: right, left, top, bottom (how far inside, and the way in)
+    double[][] walls = {{halfL - maxX, -1, 0}, {minX + halfL, 1, 0}, {halfW - maxY, 0, -1}, {minY + halfW, 0, 1}};
+    double best = Double.POSITIVE_INFINITY;
+    double dx = 0;
+    double dy = 0;
+    double sep = 0;
+    for (double[] w : walls) {
+      if (w[0] < best) {
+        best = w[0];
+        dx = w[1];
+        dy = w[2];
+        sep = w[0];
+      }
+    }
+    for (ConvexPolygon p : field.obstacles()) {
+      double gap = p.distanceToPolygon(qx, qy);
+      if (gap >= best) {
+        continue;
+      }
+      double[] nb = p.nearestBoundaryPoint(x, y);
+      double ux = x - nb[0];
+      double uy = y - nb[1];
+      double len = Math.hypot(ux, uy);
+      if (len < 1e-9) { // the centre on the boundary: away from the obstacle's centre instead
+        ux = x - p.cx;
+        uy = y - p.cy;
+        len = Math.hypot(ux, uy);
+      }
+      if (len < 1e-9) {
+        continue;
+      }
+      ux /= len;
+      uy /= len;
+      // separation along u: the outline's nearest corner past the obstacle's furthest vertex
+      double lo = Double.POSITIVE_INFINITY;
+      for (int i = 0; i < 4; i++) {
+        lo = Math.min(lo, qx[i] * ux + qy[i] * uy);
+      }
+      double hi = Double.NEGATIVE_INFINITY;
+      for (int k = 0; k < p.size(); k++) {
+        hi = Math.max(hi, p.x(k) * ux + p.y(k) * uy);
+      }
+      best = gap;
+      dx = ux;
+      dy = uy;
+      sep = lo - hi;
+    }
+    double push = Math.max(0.0, need - sep) + PUSH_SLACK_METERS;
+    return new double[] {x + push * dx, y + push * dy};
   }
 
   private static double[] xy(PathGeometry geometry, double s) {
@@ -365,9 +515,16 @@ public final class Pathfinder {
       double tangent = i == 0 ? startTangent : i == pts.size() - 1 ? endTangent : Double.NaN;
       wps.add(new Waypoint(pts.get(i)[0], pts.get(i)[1], tangent, 1.0));
     }
+    // the ends' headings, and any a turning refit gave a waypoint (a third number)
+    List<RotationTarget> targets = new ArrayList<>(List.of(RotationTarget.atWaypoint(0, startHeading)));
+    for (int i = 1; i < pts.size() - 1; i++) {
+      if (pts.get(i).length > 2) {
+        targets.add(RotationTarget.atWaypoint(i, pts.get(i)[2]));
+      }
+    }
+    targets.add(RotationTarget.atWaypoint(pts.size() - 1, goalHeading));
     return PathSpec.of(wps)
-        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, startHeading),
-            RotationTarget.atWaypoint(pts.size() - 1, goalHeading)))
+        .withRotationTargets(targets)
         .withLimits(config.maxMetersPerSecond(), config.maxMetersPerSecondSquared())
         .withEndSpeeds(startSpeed, endSpeed);
   }
@@ -559,7 +716,7 @@ public final class Pathfinder {
     return new Sweep(min, worst);
   }
 
-  /** Clearance of the bumper rectangle at (x, y, th) to every obstacle and the field walls. */
+  /** Clearance of the robot's outline (the config's footprint) at (x, y, th) to every obstacle and the walls. */
   public double clearance(double x, double y, double th) {
     return clearance(x, y, th, config.halfDiagonalMeters(), new double[4], new double[4]);
   }
@@ -567,10 +724,10 @@ public final class Pathfinder {
   private double clearance(double x, double y, double th, double reach, double[] qx, double[] qy) {
     double c = StrictMath.cos(th);
     double s = StrictMath.sin(th);
-    double hl = config.bumperLengthMeters() / 2;
-    double hw = config.bumperWidthMeters() / 2;
-    double[] px = {hl, -hl, -hl, hl}; // front-left, back-left, back-right, front-right: counter-clockwise
-    double[] py = {hw, hw, -hw, -hw};
+    Footprint f = config.footprint();
+    // front-left, back-left, back-right, front-right: counter-clockwise
+    double[] px = {f.frontMeters(), -f.backMeters(), -f.backMeters(), f.frontMeters()};
+    double[] py = {f.leftMeters(), f.leftMeters(), -f.rightMeters(), -f.rightMeters()};
     double halfL = field.lengthMeters() / 2;
     double halfW = field.widthMeters() / 2;
     double best = Double.POSITIVE_INFINITY;

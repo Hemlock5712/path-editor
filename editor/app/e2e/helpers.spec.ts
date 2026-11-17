@@ -17,8 +17,12 @@ const doc = (page: Page): Promise<Doc> => page.evaluate(() => (window as unknown
 
 async function fieldPoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   const box = (await page.getByTestId("field").boundingBox())!;
-  const scale = Math.min((box.width - 48) / 16.54, (box.height - 48) / 8.07);
-  return { x: box.x + box.width / 2 + x * scale, y: box.y + box.height / 2 - y * scale };
+  // through the view the field was last drawn with
+  const [px, py] = await page.evaluate(
+    ([fx, fy]) => (window as unknown as { pathEditorTest: { toCanvas(x: number, y: number): [number, number] } }).pathEditorTest.toCanvas(fx!, fy!),
+    [x, y],
+  );
+  return { x: box.x + px, y: box.y + py };
 }
 
 async function clickField(page: Page, x: number, y: number): Promise<void> {

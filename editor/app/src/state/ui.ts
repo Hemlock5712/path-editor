@@ -8,13 +8,20 @@ import { editor } from "./editor.ts";
 import { createStore } from "./store.ts";
 
 export type Page = "editor" | "telemetry" | "bench" | "settings";
+/** The inspector's tabs, with nothing selected. */
+export type InspectorTab = "path" | "heading" | "events" | "zones" | "points" | "optimise";
+export const INSPECTOR_TABS: readonly InspectorTab[] = ["path", "heading", "events", "zones", "points", "optimise"];
+
 export type SettingsTab = "robot" | "defaults" | "field" | "project" | "sim" | "editor";
 
 export interface UiState {
   readonly page: Page;
   readonly settingsTab: SettingsTab;
   readonly railWidth: number;
+  /** The Paths rail folded to a strip of swatches, for a bigger field. */
+  readonly railCollapsed: boolean;
   readonly inspectorWidth: number;
+  readonly inspectorTab: InspectorTab;
   readonly chartsOpen: boolean;
   readonly paletteOpen: boolean;
   readonly helpOpen: boolean;
@@ -32,7 +39,9 @@ function remembered(): Partial<UiState> {
     return {
       railWidth: typeof saved.railWidth === "number" ? saved.railWidth : undefined,
       inspectorWidth: typeof saved.inspectorWidth === "number" ? saved.inspectorWidth : undefined,
+      inspectorTab: INSPECTOR_TABS.includes(saved.inspectorTab as InspectorTab) ? saved.inspectorTab : undefined,
       chartsOpen: saved.chartsOpen === true,
+      railCollapsed: saved.railCollapsed === true,
       liveOverlay: saved.liveOverlay !== false,
     };
   } catch {
@@ -47,7 +56,9 @@ export const ui = createStore<UiState>({
   page: "editor",
   settingsTab: "robot",
   railWidth: RAIL.initial,
+  railCollapsed: false,
   inspectorWidth: INSPECTOR.initial,
+  inspectorTab: "path",
   chartsOpen: false,
   paletteOpen: false,
   helpOpen: false,
@@ -61,7 +72,14 @@ ui.subscribe(() => {
   try {
     localStorage.setItem(
       LAYOUT_KEY,
-      JSON.stringify({ railWidth: s.railWidth, inspectorWidth: s.inspectorWidth, chartsOpen: s.chartsOpen, liveOverlay: s.liveOverlay }),
+      JSON.stringify({
+        railWidth: s.railWidth,
+        railCollapsed: s.railCollapsed,
+        inspectorWidth: s.inspectorWidth,
+        inspectorTab: s.inspectorTab,
+        chartsOpen: s.chartsOpen,
+        liveOverlay: s.liveOverlay,
+      }),
     );
   } catch {
     // not remembered

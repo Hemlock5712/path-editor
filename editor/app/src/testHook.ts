@@ -15,6 +15,7 @@ function simSummary() {
 }
 import { flowKnob } from "./ui/drawItems.ts";
 import { activePath, editor } from "./state/editor.ts";
+import { fieldToCanvas } from "./ui/FieldCanvas.tsx";
 import { collisions, rotationHandle, rotationTargetS, waypointHandle, waypointPose } from "./ui/draw.ts";
 
 export interface Poses {
@@ -93,5 +94,10 @@ export function currentDoc() {
 }
 
 export function installTestHook(): void {
-  (window as unknown as { pathEditorTest: object }).pathEditorTest = { preview: currentPreview, poses: currentPoses, doc: currentDoc };
+  (window as unknown as { pathEditorTest: object }).pathEditorTest = {
+    preview: currentPreview,
+    poses: currentPoses,
+    doc: currentDoc,
+    toCanvas: fieldToCanvas,
+  };
 }

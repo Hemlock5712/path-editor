@@ -4,7 +4,7 @@
 import { createStore, useStore } from "../state/store.ts";
 
 export const QUICK_START: readonly string[] = [
-  "Double-click the field to place the start, then the end. Select a point and double-click to add one after it.",
+  "Draw (W, on for a new path): click the field to place the start, then each next point. Click a robot to build from it; Enter, Esc or right-click when done.",
   "Every point is a robot pose: drag the knob on its ring to turn it (15° steps; Alt turns freely).",
   "Points without a heading are pass-through: the robot blends between the set ones.",
   "Drag the path to insert a point; right-click a point to set its heading, lock it or delete it.",

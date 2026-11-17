@@ -7,18 +7,23 @@ import {
   eventMeters,
   makeRotationTarget,
   Path,
+  robotFootprints,
+  type FootprintExtension,
   tractionMetersPerSecondSquared,
   wheelSpeedCapMetersPerSecond,
   type PathSpec,
   type RobotConfig,
 } from "../../../core/src/index.ts";
-import { bumperCorners, convexDistance, convexHull, insideRectMargin, type Pt } from "./polygons.ts";
+import { FootprintTimeline, outlineSays, type Outline, type OutlineStretch } from "./footprints.ts";
+import { convexDistance, convexHull, insideRectMargin, outlineCorners, type Pt } from "./polygons.ts";
 
 export interface AnalysisInput {
   readonly spec: PathSpec;
   readonly robot: RobotConfig;
   readonly bumperLengthMeters: number;
   readonly bumperWidthMeters: number;
+  /** robot.json's footprints (the bumpers plus a mechanism out), which events switch to; absent = none. */
+  readonly footprints?: readonly FootprintExtension[];
   readonly fieldLengthMeters: number;
   readonly fieldWidthMeters: number;
   readonly obstacles: readonly { readonly name: string; readonly polygon: readonly Pt[] }[];
@@ -58,7 +63,7 @@ export interface PlacedEvent {
   readonly y: number;
 }
 
-export type CheckKind = "cusp" | "curvature" | "heading" | "bumper" | "event" | "position" | "speed";
+export type CheckKind = "cusp" | "curvature" | "heading" | "bumper" | "event" | "footprint" | "position" | "speed";
 
 export interface Check {
   readonly kind: CheckKind;
@@ -85,8 +90,10 @@ export interface Analysis {
   readonly waypointS: readonly number[];
   readonly events: readonly PlacedEvent[];
   readonly checks: readonly Check[];
-  /** Closest the swept bumpers come to any obstacle or the field wall, metres (0 = touching). */
+  /** Closest the swept bumpers (or footprint, where one is out) come to any obstacle or the field wall, metres (0 = touching). */
   readonly minClearanceMeters: number;
+  /** The robot's outline along the path, in stretches (one, the bumpers, when no event switches it). */
+  readonly outlines: readonly OutlineStretch[];
   readonly buildMillis: number;
 }
 
@@ -132,7 +139,14 @@ export function analyse(input: AnalysisInput): Analysis | AnalysisFailure {
     const p = path.sample(s);
     return { index, name: e.name, s, t: p.seconds, x: p.xMeters, y: p.yMeters };
   });
-  const bumpers = bumperChecks(input, stations);
+  const timeline = new FootprintTimeline(
+    input.spec,
+    robotFootprints(input.bumperLengthMeters, input.bumperWidthMeters, input.footprints ?? []),
+    path,
+  );
+  const outlines: Outline[] = [];
+  for (let i = 0; i < stations.s.length; i++) outlines.push(timeline.at(stations.s[i]!, stations.t[i]!));
+  const bumpers = bumperChecks(input, stations, outlines);
   const checks = [
     ...cuspChecks(input, path),
     ...speedChecks(input, path, stations),
@@ -140,6 +154,7 @@ export function analyse(input: AnalysisInput): Analysis | AnalysisFailure {
     ...headingChecks(input, stations),
     ...bumpers.checks,
     ...positionChecks(input, path),
+    ...footprintChecks(input, timeline),
   ];
   return {
     ok: true,
@@ -151,6 +166,7 @@ export function analyse(input: AnalysisInput): Analysis | AnalysisFailure {
     events,
     checks,
     minClearanceMeters: bumpers.minClearance,
+    outlines: stretches(stations, outlines),
     buildMillis,
   };
 }
@@ -362,14 +378,15 @@ function wrapDiff(d: number): number {
   return Math.atan2(Math.sin(d), Math.cos(d));
 }
 
-/** The bumper rectangle swept along the plan (with its heading) against obstacles and walls. */
-function bumperChecks(input: AnalysisInput, st: Stations): { checks: Check[]; minClearance: number } {
+/**
+ * The robot's outline swept along the plan (with its heading) against obstacles and walls: the bumpers, or
+ * where an event has a mechanism out, its footprint (and one still retracting).
+ */
+function bumperChecks(input: AnalysisInput, st: Stations, outlines: readonly Outline[]): { checks: Check[]; minClearance: number } {
   const n = st.s.length;
-  const L = input.bumperLengthMeters;
-  const W = input.bumperWidthMeters;
   const shapes = input.obstacles.map((o) => ({ name: o.name, hull: convexHull(o.polygon) })).filter((o) => o.hull.length >= 3);
   const bodies: Pt[][] = [];
-  for (let i = 0; i < n; i++) bodies.push(bumperCorners(st.x[i]!, st.y[i]!, st.heading[i]!, L, W));
+  for (let i = 0; i < n; i++) bodies.push(outlineCorners(st.x[i]!, st.y[i]!, st.heading[i]!, outlines[i]!.footprint));
   const out: Check[] = [];
   const margin = CHECKS.bumperMarginMeters;
   let minClearance = Infinity;
@@ -384,12 +401,13 @@ function bumperChecks(input: AnalysisInput, st: Stations): { checks: Check[]; mi
       let worst = a;
       for (let i = a; i <= b; i++) if (gaps[i]! < gaps[worst]!) worst = i;
       const touching = gaps[worst]! <= 0;
+      const o = outlines[worst]!;
       out.push({
         kind: "bumper",
         severity: touching ? "error" : "warning",
         message: touching
-          ? `Bumpers hit ${what} from ${f2(st.s[a]!)} to ${f2(st.s[b]!)} m.`
-          : `Bumpers pass ${f2(gaps[worst]! * 100)} cm from ${what} at ${f2(st.s[worst]!)} m ` +
+          ? `${outlineSays(o, "hit", "hits")} ${what} from ${f2(st.s[a]!)} to ${f2(st.s[b]!)} m.`
+          : `${outlineSays(o, "pass", "passes")} ${f2(gaps[worst]! * 100)} cm from ${what} at ${f2(st.s[worst]!)} m ` +
             `(under the ${f2(margin * 100)} cm margin).`,
         sFrom: st.s[a]!,
         sTo: st.s[b]!,
@@ -400,6 +418,39 @@ function bumperChecks(input: AnalysisInput, st: Stations): { checks: Check[]; mi
   for (const o of shapes) report(o.name, (i) => convexDistance(bodies[i]!, o.hull));
   report("the field wall", (i) => insideRectMargin(bodies[i]!, input.fieldLengthMeters / 2, input.fieldWidthMeters / 2));
   return { checks: out, minClearance };
+}
+
+/** Footprint names the robot doesn't have: the path would be checked with the bumpers there instead. */
+function footprintChecks(input: AnalysisInput, timeline: FootprintTimeline): Check[] {
+  const have = ["bumpers", ...(input.footprints ?? []).map((f) => f.name)].map((n) => `"${n}"`).join(", ");
+  return timeline.unknown.map((u): Check => {
+    const e = u.event >= 0 ? input.spec.events[u.event]! : null;
+    return {
+      kind: "footprint",
+      severity: "error",
+      message:
+        (e ? `Event "${e.name}" switches to` : "The path starts with") +
+        ` the footprint "${u.name}", which the robot doesn't have (it has ${have}). ` +
+        "The robot library won't load this path; add the footprint in Settings or pick another.",
+      sFrom: 0,
+      sTo: 0,
+      ...(e ? { ref: { kind: "event" as const, index: u.event } } : {}),
+    };
+  });
+}
+
+/** Station outlines as stretches: a new one wherever the footprint or what's retracting changes. */
+function stretches(st: Stations, outlines: readonly Outline[]): OutlineStretch[] {
+  const out: OutlineStretch[] = [];
+  const key = (o: Outline) => `${o.footprint.name}|${o.retracting.join("|")}`;
+  let from = 0;
+  for (let i = 1; i <= outlines.length; i++) {
+    if (i === outlines.length || key(outlines[i]!) !== key(outlines[from]!)) {
+      out.push({ sFrom: st.s[from]!, sTo: st.s[i - 1]!, outline: outlines[from]! });
+      from = i;
+    }
+  }
+  return out;
 }
 
 /** Events, rotation targets and zones placed off the path. */

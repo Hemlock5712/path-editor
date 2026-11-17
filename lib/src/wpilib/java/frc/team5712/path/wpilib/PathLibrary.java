@@ -1,5 +1,6 @@
 package frc.team5712.path.wpilib;
 
+import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.Json;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.PathEvent;
@@ -55,6 +56,10 @@ import org.wpilib.system.Filesystem;
  * the {@link Pathfinder}'s visibility graph, once, for on-the-fly paths ({@link Pathfinding}); and the
  * editor's named points ({@code .pathproject.json}), so a path can be planned to one by name. A bad
  * field.json fails loudly here, at boot. Without one the field is empty (walls only), at the 2026 size.
+ *
+ * <p>robot.json's {@link Footprint}s (the bumpers with a mechanism out) each get their own pathfinder, built
+ * here too, so {@code otf.withFootprint(() -> intake.isOut() ? "intakeOut" : "bumpers")} plans around the
+ * obstacles with the intake's reach. A path whose event names a footprint robot.json doesn't have fails here.
  */
 public final class PathLibrary {
   public static final String SUFFIX = ".path.json";
@@ -70,6 +75,8 @@ public final class PathLibrary {
   private final double buildMillis;
   private Pathfinder pathfinder;
   private Pathfinder widePathfinder;
+  /** Each footprint's pathfinder and wide one (the wide one may be null), by name; "bumpers" is the two above. */
+  private Map<String, Pathfinder[]> footprintPathfinders = Map.of();
   private boolean fieldFromFile;
   private Map<String, double[]> namedPoints = Map.of();
   /** The Java package the editor generates its names in ({@code settings.javaPackage}), or null. */
@@ -105,7 +112,11 @@ public final class PathLibrary {
     PlannerConfig planner = robotFile.isFile()
         ? PlannerConfig.fromRobotFile(PathFile.asMap(Json.parse(read(robotFile)), "robot.json"))
         : PlannerConfig.DEFAULT;
-    lib.loadField(new File(dir, FIELD_FILE), planner);
+    List<Footprint> footprints = robotFile.isFile()
+        ? Footprint.fromRobotFile(PathFile.asMap(Json.parse(read(robotFile)), "robot.json"))
+        : List.of(planner.footprint());
+    lib.requireFootprints(footprints);
+    lib.loadField(new File(dir, FIELD_FILE), planner, footprints);
     lib.loadNamedPoints(new File(dir, PROJECT_FILE));
     lib.fieldMillis = (System.nanoTime() - t0) / 1e6;
     lib.checkGeneratedNames();
@@ -168,12 +179,41 @@ public final class PathLibrary {
     return warmUpMillis;
   }
 
+  /** Every footprint an event switches to or a path starts with must be one of {@code footprints}. */
+  private void requireFootprints(List<Footprint> footprints) {
+    Set<String> known = new TreeSet<>();
+    footprints.forEach(f -> known.add(f.name()));
+    List<String> missing = new ArrayList<>();
+    paths.forEach((name, path) -> {
+      if (!known.contains(path.spec().startFootprint())) {
+        missing.add(name + " starts with \"" + path.spec().startFootprint() + "\"");
+      }
+      for (PathEvent e : path.spec().events()) {
+        if (e.changesFootprint() && !known.contains(e.footprint())) {
+          missing.add(name + "'s event " + e.name() + " switches to \"" + e.footprint() + "\"");
+        }
+      }
+    });
+    if (!missing.isEmpty()) {
+      throw new IllegalStateException("robot.json has no such footprint: " + String.join("; ", missing)
+          + " (have " + known + "). Save the project in Myelin, then deploy again.");
+    }
+  }
+
   /**
    * Reads {@code file} (field.json) if it exists, else an empty 2026-size field, and builds the pathfinder
    * for this robot with {@code planner}'s bumpers and margin, and a second one with {@link
    * PlannerConfig#WIDE_MARGIN_METERS} that on-the-fly paths try first. A bad file throws, naming it.
    */
   public PathLibrary loadField(File file, PlannerConfig planner) {
+    return loadField(file, planner, List.of(planner.footprint()));
+  }
+
+  /**
+   * {@link #loadField(File, PlannerConfig)}, and the same two pathfinders for each of {@code footprints}
+   * ({@link Footprint#fromRobotFile}), for {@link #pathfinder(String)}. The first is the planner's own.
+   */
+  public PathLibrary loadField(File file, PlannerConfig planner, List<Footprint> footprints) {
     FieldMap field;
     fieldFromFile = file.isFile();
     if (fieldFromFile) {
@@ -186,10 +226,24 @@ public final class PathLibrary {
       field = new FieldMap(DEFAULT_FIELD_LENGTH, DEFAULT_FIELD_WIDTH, List.of(), List.of());
     }
     pathfinder = new Pathfinder(field, robot, planner);
-    widePathfinder = planner.marginMeters() < PlannerConfig.WIDE_MARGIN_METERS
-        ? new Pathfinder(field, robot, planner.withMargin(PlannerConfig.WIDE_MARGIN_METERS)) : null;
+    widePathfinder = wide(field, planner);
+    // the warm-up is for the JIT, which every pathfinder shares: the bumpers' two are enough
     warmUpMillis = pathfinder.warmUp(WARM_UP_QUERIES) + (widePathfinder == null ? 0 : widePathfinder.warmUp(WARM_UP_QUERIES));
+    Map<String, Pathfinder[]> byName = new LinkedHashMap<>();
+    byName.put(planner.footprint().name(), new Pathfinder[] {pathfinder, widePathfinder});
+    for (Footprint f : footprints) {
+      if (!byName.containsKey(f.name())) {
+        PlannerConfig c = planner.withFootprint(f);
+        byName.put(f.name(), new Pathfinder[] {new Pathfinder(field, robot, c), wide(field, c)});
+      }
+    }
+    footprintPathfinders = Collections.unmodifiableMap(byName);
     return this;
+  }
+
+  private Pathfinder wide(FieldMap field, PlannerConfig planner) {
+    return planner.marginMeters() < PlannerConfig.WIDE_MARGIN_METERS
+        ? new Pathfinder(field, robot, planner.withMargin(PlannerConfig.WIDE_MARGIN_METERS)) : null;
   }
 
   /** The editor's named points ({@code namedPoints} in .pathproject.json), blue frame; none if absent. */
@@ -229,6 +283,35 @@ public final class PathLibrary {
   public Pathfinder widePathfinder() {
     pathfinder();
     return widePathfinder;
+  }
+
+  /**
+   * The pathfinder that plans with {@code footprint}'s outline (a name from robot.json's footprints, or
+   * {@code "bumpers"}): obstacles grown by its reach, and its rectangle swept along the plan.
+   */
+  public Pathfinder pathfinder(String footprint) {
+    return footprintPathfinders(footprint)[0];
+  }
+
+  /** {@link #pathfinder(String)} with the wider margin on-the-fly paths try first (or null). */
+  public Pathfinder widePathfinder(String footprint) {
+    return footprintPathfinders(footprint)[1];
+  }
+
+  /** The footprints there are pathfinders for, the bumpers first. */
+  public Set<String> footprintNames() {
+    pathfinder();
+    return footprintPathfinders.keySet();
+  }
+
+  private Pathfinder[] footprintPathfinders(String footprint) {
+    pathfinder();
+    Pathfinder[] p = footprintPathfinders.get(footprint);
+    if (p == null) {
+      throw new NoSuchElementException("no footprint named " + footprint + " (have " + footprintPathfinders.keySet()
+          + "; robot.json's footprints)");
+    }
+    return p;
   }
 
   /** True when the obstacles came from a field.json (false: an empty field). */

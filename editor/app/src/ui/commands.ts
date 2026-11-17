@@ -19,6 +19,7 @@ export interface Command {
 }
 
 export const TOOLS: readonly { readonly tool: Tool; readonly label: string; readonly key: string }[] = [
+  { tool: "draw", label: "Draw", key: "W" },
   { tool: "select", label: "Select", key: "V" },
   { tool: "obstacle", label: "Obstacle", key: "O" },
   { tool: "measure", label: "Measure lengths", key: "L" },

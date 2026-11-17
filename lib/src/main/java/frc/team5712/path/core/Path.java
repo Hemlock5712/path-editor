@@ -86,7 +86,7 @@ public final class Path {
     Waypoint b = new Waypoint(p.xMeters(), p.yMeters(), dir, 1.0);
     return new PathSpec(java.util.List.of(a, b), spec.rotationTargets(), spec.facePointZones(),
         spec.constraintZones(), spec.maxMetersPerSecond(), spec.maxMetersPerSecondSquared(),
-        0.0, 0.0, spec.events(), spec.headingMode());
+        0.0, 0.0, spec.events(), spec.headingMode(), spec.startFootprint());
   }
 
   public PathSpec spec() {

@@ -33,9 +33,10 @@ import java.util.Map;
  *     { "fromWaypoint": 1.5, "toWaypoint": 2, "maxMetersPerSecond": 1.5 }
  *   ],
  *   "events": [
- *     { "name": "intakeDown", "atWaypoint": 0.5 },
+ *     { "name": "intakeDown", "atWaypoint": 0.5, "footprint": "intakeOut" },
  *     { "name": "shoot", "atMeters": 4.25 }
  *   ],
+ *   "startFootprint": "bumpers",
  *   "maxMetersPerSecond": 4,
  *   "maxMetersPerSecondSquared": 6,
  *   "startMetersPerSecond": 0,
@@ -44,7 +45,10 @@ import java.util.Map;
  * </pre>
  *
  * Optional keys: {@code tangentDegrees}, {@code tangentScale} (default 1), a zone's two limits and
- * the path-wide maxima (absent = no cap). Unknown keys are ignored, so editor-only data can't break
+ * the path-wide maxima (absent = no cap), an event's {@code footprint} (absent = no change) and {@code
+ * startFootprint} (absent = {@code "bumpers"}). The footprint keys don't change how the path is followed (the
+ * editor checks the path's clearance with them), so they need no new schema: an older library reads the file
+ * the same. Unknown keys are ignored, so editor-only data can't break
  * the robot.
  *
  * <p>Schema 2 added {@code events}. Schema 3 added the robot's heading at a waypoint
@@ -151,9 +155,15 @@ public final class PathFile {
       } else {
         m.put("atMeters", e.meters());
       }
+      if (e.changesFootprint()) {
+        m.put("footprint", e.footprint());
+      }
       events.add(m);
     }
     root.put("events", events);
+    if (!spec.startFootprint().equals(Footprint.BUMPERS)) {
+      root.put("startFootprint", spec.startFootprint());
+    }
 
     putIfFinite(root, "maxMetersPerSecond", spec.maxMetersPerSecond());
     putIfFinite(root, "maxMetersPerSecondSquared", spec.maxMetersPerSecondSquared());
@@ -232,7 +242,8 @@ public final class PathFile {
       if (!(m.get("name") instanceof String name)) {
         throw new IllegalArgumentException("an event needs a 'name' string");
       }
-      events.add(new PathEvent(name, number(m, "atWaypoint", Double.NaN), number(m, "atMeters", Double.NaN)));
+      events.add(new PathEvent(name, number(m, "atWaypoint", Double.NaN), number(m, "atMeters", Double.NaN),
+          string(m, "footprint", null)));
     }
 
     return new PathSpec(
@@ -245,7 +256,19 @@ public final class PathFile {
         number(root, "startMetersPerSecond", 0.0),
         number(root, "endMetersPerSecond", 0.0),
         events,
-        headingMode(root, (int) schema));
+        headingMode(root, (int) schema),
+        string(root, "startFootprint", Footprint.BUMPERS));
+  }
+
+  private static String string(Map<String, Object> m, String key, String fallback) {
+    Object v = m.get(key);
+    if (v == null) {
+      return fallback;
+    }
+    if (!(v instanceof String text)) {
+      throw new IllegalArgumentException("'" + key + "' must be a string");
+    }
+    return text;
   }
 
   /** Schema 3 says; older files faced the direction of travel when no heading was set. */

@@ -6,7 +6,7 @@ import { CornerDownRight, Link2, Lock, MapPin, Navigation, Trash2 } from "lucide
 import { unlinkPoint } from "../../model/mirror.ts";
 import { splitZone } from "../../state/fixes.ts";
 import { faceNext, faceTargets, faceToward } from "../../state/helpers.ts";
-import { DEFAULT_BLEND_METERS, makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../../core/src/index.ts";
+import { BUMPERS, DEFAULT_BLEND_METERS, makeConstraintZone, makeFacePointZone, makePathEvent, makeRotationTarget } from "../../../../core/src/index.ts";
 import {
   deleteWaypoint,
   addWaypointAfter,
@@ -82,36 +82,48 @@ export function WaypointInspector({ index }: { index: number }) {
   };
   return (
     <div className="inspector-body" role="group" aria-label={`Waypoint ${index}`}>
-      <div className="grid2">
+      <div className="grid3">
         <NumberField label="x" unit="m" value={w.xMeters} onCommit={(v) => moveTo(round5(v), w.yMeters)} />
         <NumberField label="y" unit="m" value={w.yMeters} onCommit={(v) => moveTo(w.xMeters, round5(v))} />
         <NumberField
           label="Heading"
           unit="°"
           value={toDegrees(w.headingRadians)}
-          blank={isEnd ? "" : "pass-through"}
+          blank={isEnd ? "" : "pass"}
           blankValue={isEnd ? undefined : Number.NaN}
           step={15}
           testId="waypoint-heading"
           title="Where the robot faces here (a swerve's heading is its own). Blank: pass through"
           onCommit={(v) => editPath("Set heading", (p) => setHeading(p, index, Number.isNaN(v) ? v : round5Radians(v * DEGREES)))}
         />
-        <div className="field" style={{ justifyContent: "flex-end" }}>
-          <Switch
-            label="Pass-through"
-            checked={passThrough}
-            disabled={isEnd}
-            testId="waypoint-pass-through"
-            title={isEnd ? "The first and last waypoints always have a heading" : "No heading here: the robot blends between the set ones"}
-            onChange={(on) => editPath(on ? "Pass through" : "Set heading", (p) => setHeading(p, index, on ? Number.NaN : plannedHeading()))}
-          />
-        </div>
       </div>
-      <div className="grid2">
-        <Button onClick={() => faceNext(index)} label={index < n - 1 ? "Face the next waypoint" : "Face the way it arrives"} testId="face-next">
-          <Navigation size={14} />
-          Face next
-        </Button>
+      <div className="waypoint-actions">
+        <Switch
+          label="Pass-through"
+          checked={passThrough}
+          disabled={isEnd}
+          testId="waypoint-pass-through"
+          title={isEnd ? "The first and last waypoints always have a heading" : "No heading here: the robot blends between the set ones"}
+          onChange={(on) => editPath(on ? "Pass through" : "Set heading", (p) => setHeading(p, index, on ? Number.NaN : plannedHeading()))}
+        />
+        <IconButton onClick={() => faceNext(index)} label={index < n - 1 ? "Face the next waypoint" : "Face the way it arrives"} testId="face-next">
+          <Navigation size={15} />
+        </IconButton>
+        <IconButton onClick={insertAfter} label={`Add a waypoint after waypoint ${index}`} testId="add-after">
+          <CornerDownRight size={15} />
+        </IconButton>
+        <IconButton
+          label="Delete waypoint"
+          className="danger"
+          disabled={n <= 2}
+          onClick={() => editPath("Delete waypoint", (p) => deleteWaypoint(p, index), null)}
+          testId="delete-waypoint"
+        >
+          <Trash2 size={15} />
+        </IconButton>
+      </div>
+      <h3 className="sub-head">More</h3>
+      <div>
         <SelectField
           label="Face target"
           value=""
@@ -192,13 +204,6 @@ export function WaypointInspector({ index }: { index: number }) {
           </Button>
         </div>
       )}
-      <div className="row">
-        <Button onClick={insertAfter} label={`Add a waypoint after waypoint ${index}`} testId="add-after">
-          <CornerDownRight size={14} />
-          Add after
-        </Button>
-      </div>
-      <DeleteButton label="Delete waypoint" disabled={n <= 2} onClick={() => editPath("Delete waypoint", (p) => deleteWaypoint(p, index), null)} />
     </div>
   );
 }
@@ -228,6 +233,36 @@ export function RotationInspector({ index }: { index: number }) {
   );
 }
 
+/** "" in a footprint select: the event leaves the outline as it is. */
+const NO_CHANGE = "";
+
+/**
+ * Picks one of the robot's footprints (Settings, Robot): the bumpers, each named one, and (for an event) no
+ * change. A name the robot no longer has stays listed, marked missing, so the select still shows it.
+ */
+export function FootprintSelect({
+  label,
+  value,
+  noChange,
+  onChange,
+  testId,
+}: {
+  label: string;
+  value: string;
+  noChange?: boolean;
+  onChange: (name: string) => void;
+  testId?: string;
+}) {
+  const footprints = useEditor((s) => s.project.robot.footprints);
+  const options = [
+    ...(noChange ? [{ value: NO_CHANGE, label: "No change" }] : []),
+    { value: BUMPERS, label: noChange ? "Bumpers (all mechanisms in)" : "Bumpers" },
+    ...footprints.map((f) => ({ value: f.name, label: f.name })),
+  ];
+  if (!options.some((o) => o.value === value)) options.push({ value, label: `${value} (missing)` });
+  return <SelectField label={label} value={value} options={options} onChange={onChange} testId={testId} />;
+}
+
 export function EventInspector({ index }: { index: number }) {
   const path = useActivePath();
   const project = useEditor((s) => s.project);
@@ -243,15 +278,26 @@ export function EventInspector({ index }: { index: number }) {
         options={eventNames(project)}
         testId={`event-name-${index}`}
         autoFocus={e.name === "event"}
-        onCommit={(name) => editPath("Rename event", (p) => updateEvent(p, index, makePathEvent(name, e.waypoint, e.meters)))}
+        onCommit={(name) => editPath("Rename event", (p) => updateEvent(p, index, makePathEvent(name, e.waypoint, e.meters, e.footprint)))}
       />
       <PositionField
         label="At"
         waypoint={e.waypoint}
         meters={e.meters}
         testId={`event-at-${index}`}
-        onCommit={(w, m) => editPath("Move event", (p) => updateEvent(p, index, makePathEvent(e.name, w, m)))}
+        onCommit={(w, m) => editPath("Move event", (p) => updateEvent(p, index, makePathEvent(e.name, w, m, e.footprint)))}
       />
+      {(project.robot.footprints.length > 0 || e.footprint !== undefined) && (
+        <FootprintSelect
+          label="Robot outline from here"
+          value={e.footprint ?? NO_CHANGE}
+          noChange
+          testId={`event-footprint-${index}`}
+          onChange={(f) =>
+            editPath("Event footprint", (p) => updateEvent(p, index, makePathEvent(e.name, e.waypoint, e.meters, f === NO_CHANGE ? undefined : f)))
+          }
+        />
+      )}
       {placed && (
         <p className="stats">
           {formatNumber(placed.s, 2)} m along, fires at{" "}
@@ -262,6 +308,7 @@ export function EventInspector({ index }: { index: number }) {
       )}
       <p className="hint">
         Robot code binds each name once with <code>PathLibrary.bindEvent</code>.
+        {e.footprint !== undefined && " The path is checked with this outline from here until another event changes it."}
       </p>
       <DeleteButton label={`Delete event ${e.name}`} onClick={() => editPath("Delete event", (p) => removeEvent(p, index), null)} />
     </div>

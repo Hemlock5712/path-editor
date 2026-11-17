@@ -1,6 +1,8 @@
 // Convex polygon helpers for the swept-bumper check: hulls (the Java FieldMap hulls every obstacle
 // too), the bumper rectangle at a pose, and the exact distance between two convex polygons.
 
+import type { Footprint } from "../../../core/src/index.ts";
+
 export type Pt = readonly [number, number];
 
 /** Convex hull, counter-clockwise, no repeated or collinear points (Andrew's monotone chain). */
@@ -30,6 +32,14 @@ export function bumperCorners(x: number, y: number, heading: number, length: num
   const hw = width / 2;
   const corner = (u: number, v: number): Pt => [x + u * c - v * s, y + u * s + v * c];
   return [corner(hl, hw), corner(-hl, hw), corner(-hl, -hw), corner(hl, -hw)];
+}
+
+/** A footprint's corners at a pose (front-left, back-left, back-right, front-right), its sides from the centre. */
+export function outlineCorners(x: number, y: number, heading: number, f: Footprint): Pt[] {
+  const c = Math.cos(heading);
+  const s = Math.sin(heading);
+  const corner = (u: number, v: number): Pt => [x + u * c - v * s, y + u * s + v * c];
+  return [corner(f.frontMeters, f.leftMeters), corner(-f.backMeters, f.leftMeters), corner(-f.backMeters, -f.rightMeters), corner(f.frontMeters, -f.rightMeters)];
 }
 
 /** True when two convex polygons overlap or touch (separating-axis test). */
