@@ -157,7 +157,8 @@ def wheel_forces(acc, heading, robot=None):
 
 
 class OursV2(Follower):
-    """Options: `mu` (the robot file's grip, default OURS_MU), `robot` (extra robot file fields), `ff` (send the
+    """Options: `mu` (the robot file's grip, default OURS_MU), `robot` (extra robot file fields), `goal_smoothing` (seconds; average a moving
+    goal's estimates), `ff` (send the
     follower's commanded acceleration to the wheels as force feedforward, as CTRE's wheel force feedforwards take
     it; off by default, as the robot code sends velocities only), plus any FollowerConfig field by its Java name
     (crossTrackKp, headingKp, latencySeconds, terminalRadiusMeters, limiterFrictionCoefficient, ...)."""
@@ -165,11 +166,12 @@ class OursV2(Follower):
     robot_overrides = {}  # robot file fields that differ from the bench plant (set for the heavy_robot course)
 
     def __init__(self, mu=OURS_MU, limits: Limits = Limits(), robot=None, plan_speed=None, plan_accel=None,
-                 ff=False, **follower_options):
+                 ff=False, goal_smoothing=None, **follower_options):
         """plan_speed / plan_accel: the path's own speed and acceleration caps in place of the course's (the
         robot's real limits instead of the shared ones)."""
         self.plan_speed, self.plan_accel = plan_speed, plan_accel
         self.ff = ff
+        self.goal_smoothing = goal_smoothing  # seconds: average a moving goal's estimates (PathFollower.bindGoal)
         self.mu = mu
         if robot:  # robot file fields beyond the plant's (e.g. the traction rule)
             self.robot_overrides = dict(robot)
@@ -196,6 +198,8 @@ class OursV2(Follower):
                 src["path"]["maxMetersPerSecond"] = max(self.plan_speed, src["path"]["maxMetersPerSecond"])
             if self.plan_accel:
                 src["path"]["maxMetersPerSecondSquared"] = max(self.plan_accel, src["path"]["maxMetersPerSecondSquared"])
+        if self.goal_smoothing:
+            src["goalSmoothingSeconds"] = self.goal_smoothing
         r = call_fresh(op="load", **src, robot=dict(robot_json(self.mu), **self.robot_overrides),
                        options=self.options)
         self.srv = server()

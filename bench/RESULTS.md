@@ -68,13 +68,13 @@ latency.
 **A noisy goal.** `tag_align_moving_goal` with the goal estimate re-sent every loop with gaussian noise, as a camera
 gives it (6 seeds, perfect pose; time to settle on the true goal, 2.00 s with no noise):
 
-| Noise (1 sigma) | Before | With the goal averaged (`PathFollower`, 0.5 s) |
+| Noise (1 sigma) | As given (`bindGoal(goal)`) | Averaged (`bindGoal(goal, 0.5)`, `OursV2(goal_smoothing=0.5)`) |
 |---|---|---|
-| 1 cm | 4.70 s | 2.00 s |
+| 1 cm | 4.09 s (5 of 6) | 2.00 s (6 of 6) |
 | 2 cm | never (0 of 6) | 2.02 s (6 of 6) |
 | 4 cm | never (0 of 6) | 2.18 s (6 of 6) |
 
-`intake_drive_through` at 4 cm of noise: the piece is passed 0.7 cm off (3.1 cm before).
+`intake_drive_through` at 4 cm of noise: the piece is passed 0.7 cm off averaged, 3.1 cm as given.
 
 ## On the fly
 

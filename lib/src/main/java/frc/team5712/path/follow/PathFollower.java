@@ -107,7 +107,8 @@ public final class PathFollower {
 
   // Moving goal
   private Supplier<Optional<Pose>> goalSupplier;
-  private Pose seenGoal; // the supplier's estimates, smoothed (blue frame); null until the first one
+  private double goalSmoothingSeconds; // 0: the supplier's estimates are followed as given
+  private Pose seenGoal; // the supplier's estimates, averaged if asked (blue frame); null until the first one
   private int seenCount;
 
   // Per-run state
@@ -192,7 +193,21 @@ public final class PathFollower {
    * path also plans again round the obstacles when its goal moves far: {@code OnTheFly}.)
    */
   public PathFollower bindGoal(Supplier<Optional<Pose>> goal) {
+    return bindGoal(goal, 0.0);
+  }
+
+  /**
+   * {@link #bindGoal(Supplier)} for estimates that arrive raw, with a camera's centimetre or two of noise each
+   * loop. Followed as given, the robot chases the noise and never settles, so they are averaged: all of them
+   * equally at first (the best guess at a goal that stands still), then over {@code smoothingSeconds} (0.5 s
+   * suits a goal that stands still or creeps). An estimate more than 25 cm or 20° from the average is a new goal
+   * and is taken at once. Leave it at 0 for a supplier that already filters, and above all for one whose goal
+   * moves with the robot's own pose corrections (a goal held in the odometry frame): averaging would make it
+   * lag them.
+   */
+  public PathFollower bindGoal(Supplier<Optional<Pose>> goal, double smoothingSeconds) {
     this.goalSupplier = goal;
+    this.goalSmoothingSeconds = smoothingSeconds;
     return this;
   }
 
@@ -584,13 +599,6 @@ public final class PathFollower {
   /** Closer than this past the finish's radius, a moved goal is left to the DriveToPose finish. */
   private static final double MIN_TAIL_METERS = 0.15;
 
-  /**
-   * A goal seen by a camera arrives with noise, a centimetre or two each loop. Followed raw, the robot chases
-   * the noise and never settles, so the estimates are averaged: all of them equally at first (the best guess
-   * at a goal that stands still), then with this time constant, so a goal that drifts is still followed.
-   */
-  private static final double GOAL_SMOOTHING_SECONDS = 0.5;
-
   /** An estimate this far from the average is a new goal, not noise: the average starts again from it. */
   private static final double GOAL_JUMP_METERS = 0.25;
   private static final double GOAL_JUMP_RADIANS = Math.toRadians(20.0);
@@ -603,7 +611,8 @@ public final class PathFollower {
     if (next.isEmpty()) {
       return; // hold the last estimate
     }
-    seenGoal = smoothed(frame.toBlue(next.get()), dt);
+    Pose seen = frame.toBlue(next.get());
+    seenGoal = goalSmoothingSeconds > 0.0 ? averaged(seen, dt) : seen;
     if (phase == Phase.TERMINAL) {
       goal = seenGoal; // the DriveToPose law simply drives to it
       return;
@@ -621,7 +630,7 @@ public final class PathFollower {
     }
   }
 
-  private Pose smoothed(Pose seen, double dt) {
+  private Pose averaged(Pose seen, double dt) {
     if (seenGoal == null
         || Math.hypot(seen.xMeters() - seenGoal.xMeters(), seen.yMeters() - seenGoal.yMeters()) > GOAL_JUMP_METERS
         || Math.abs(Angles.wrap(seen.headingRadians() - seenGoal.headingRadians())) > GOAL_JUMP_RADIANS) {
@@ -629,7 +638,7 @@ public final class PathFollower {
       return seen;
     }
     seenCount++;
-    double k = Math.max(1.0 / seenCount, 1.0 - Math.exp(-dt / GOAL_SMOOTHING_SECONDS));
+    double k = Math.max(1.0 / seenCount, 1.0 - Math.exp(-dt / goalSmoothingSeconds));
     return new Pose(seenGoal.xMeters() + k * (seen.xMeters() - seenGoal.xMeters()),
         seenGoal.yMeters() + k * (seen.yMeters() - seenGoal.yMeters()),
         Angles.wrap(seenGoal.headingRadians() + k * Angles.wrap(seen.headingRadians() - seenGoal.headingRadians())));

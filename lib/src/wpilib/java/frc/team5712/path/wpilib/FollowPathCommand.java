@@ -140,6 +140,15 @@ public final class FollowPathCommand implements Command {
     return this;
   }
 
+  /**
+   * {@link #withMovingGoal(Supplier)} for a goal that arrives raw from a camera: its estimates are averaged over
+   * {@code smoothingSeconds} (0.5 s is a good start; see {@link PathFollower#bindGoal(Supplier, double)}).
+   */
+  public FollowPathCommand withMovingGoal(Supplier<Optional<Pose2d>> realGoal, double smoothingSeconds) {
+    follower.bindGoal(() -> realGoal.get().map(Conversions::toPose), smoothingSeconds);
+    return this;
+  }
+
   /** Starts from the previous path's last command instead of the measured velocity (rolling ends). */
   public FollowPathCommand continuingFrom(FollowPathCommand previous) {
     this.handedCommand = previous.follower::endCommand;

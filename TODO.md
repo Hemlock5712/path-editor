@@ -36,6 +36,8 @@ with the full toolchain. Delete each item when it is done, and this file when it
 - [ ] **250 Hz.** The follower uses the real time step, but `PathFollower.NOMINAL_LOOP_SECONDS` (0.02) is still the
       first step's length and the floor of the read-ahead, and the end-to-end `SimDrive` and its tolerances assume
       50 Hz. Run the e2e suite at 250 Hz once the robot code does.
+- [ ] **Goal averaging on on-the-fly paths.** `FollowPathCommand.withMovingGoal(goal, seconds)` exists (not
+      compiled, see above); `OnTheFly.withMovingGoal` and `PathfindCommand.withMovingGoal` still bind the goal raw.
 - [ ] **Bench, feed-forward on the harder courses.** `sim.py` reads `ff_forces` from the follower it is given, and
       the `MovingEnd` and `Chain` wrappers don't pass it on, so `OursV2(ff=True)` has no effect on
       `tag_align_moving_goal`, `intake_drive_through` or `three_piece_chain`.
@@ -49,6 +51,28 @@ with the full toolchain. Delete each item when it is done, and this file when it
 - [ ] The editor's TypeScript follower (`editor/core/src/follow.ts`) has neither the goal average nor
       `commandedAcceleration`. It never had the moving goal, so the sim preview is unaffected; port them only if
       the editor needs them.
+
+## Precision-Drive on this library
+
+Compared 2026-11-25 (Precision-Drive `main` at cce4239 and its `precision-2-DriveToTag` branch). What overlaps and
+what does not:
+
+- [ ] **`DriveToPose` could be this library's finish law.** `PathFollower.driveToGoal` is the same law
+      (`min(top speed, sqrt(2a(d - v t)), k d)` into the same limiter). A two-waypoint path, or an `OnTheFly` plan,
+      already ends in it. Differences to settle first: Precision-Drive brakes at a fixed 6 m/s² with a 6 /s ease-in
+      because "braking harder costs tag accuracy"; the library brakes at the traction limit with 12 /s. Bench the
+      two settings on `tag_align_moving_goal` with wheel odometry before switching.
+- [ ] **`AccelerationLimiter` and `OutputLimiter` are the same idea with two different formulas.** The robot's
+      takes `hypot(|a|, alpha x base radius)` and caps the whole acceleration vector by the motors; the library's
+      takes `|a| + alpha x I/(m r)` and caps only the part along the travel. Pick one and use it in both
+      (teleop needs it too), or have `TeleopDrive` call the library's.
+- [ ] **`TagTracker` + `WheelOdometry` have no equivalent here and should stay.** They are the goal supplier:
+      `DriveToTag` becomes `otf.to(...)` or a drawn path with `.withMovingGoal(() -> tracker.getFieldGoal(tagToGoal))`
+      (raw, no averaging: the tracker already filters and its goal must move with pose corrections).
+      `DriveToTag` finishes only once locked; the library has no such gate, so keep that check in the command.
+- [ ] **Drive output.** Precision-Drive sends `ApplyFieldVelocity` with `DriveRequestType.Velocity` and voltage
+      closed-loop drive gains (kP 0.2, kV 0.124). Sending the feed-forward (above) means adding the wheel forces to
+      that request, and probably moving the drive loop to torque current.
 
 ## Research to confirm with open web access
 

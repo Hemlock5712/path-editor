@@ -125,7 +125,7 @@ public final class BenchServer {
     double buildMs = (System.nanoTime() - t0) / 1e6;
     follower = new PathFollower(path, b.build());
     goal = Optional.empty();
-    follower.bindGoal(() -> goal);
+    follower.bindGoal(() -> goal, msg.get("goalSmoothingSeconds") == null ? 0.0 : number(msg, "goalSmoothingSeconds"));
     Map<String, Object> r = new LinkedHashMap<>();
     r.put("ok", Boolean.TRUE);
     r.put("lengthMeters", path.lengthMeters());
@@ -175,7 +175,7 @@ public final class BenchServer {
     path = plan.path();
     follower = new PathFollower(path, b.build());
     goal = Optional.empty();
-    follower.bindGoal(() -> goal);
+    follower.bindGoal(() -> goal, msg.get("goalSmoothingSeconds") == null ? 0.0 : number(msg, "goalSmoothingSeconds"));
     describe(plan, r);
     return line(r);
   }

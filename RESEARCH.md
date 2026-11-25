@@ -30,8 +30,8 @@ Items 1 to 3 below were tried on `bench/`; the numbers are in bench/RESULTS.md.
   and wheel-odometry drift was a centimetre worse, so it is a time gain, not an accuracy one. The follower now
   reports the acceleration (`commandedAcceleration()`); sending it is the robot code's job.
 - **Moving goal (item 3):** the bench showed the real fault was not how the path is re-planned but that the goal
-  was followed raw. With 2 cm of camera noise the tag align never settled. Averaging the estimates fixed it, in
-  about 30 lines. The state-to-state generator was therefore **not** built: the existing re-plan plus the
+  was followed raw. With 2 cm of camera noise the tag align never settled. Averaging the estimates (`bindGoal(goal, 0.5)`,
+  opt-in) fixed it, in about 30 lines. The state-to-state generator was therefore **not** built: the existing re-plan plus the
   averaged goal passes every case the bench has, and nothing measured yet says a generator would do better. It
   stays the right idea for a goal that really moves (a rolling piece, a moving robot), which the bench cannot
   test yet.

@@ -47,10 +47,12 @@ out; the path is never rebuilt):
 
 A **moving goal** (`bindGoal`, e.g. a tag or a game piece seen by vision) re-plans the rest of the path when
 the goal moves more than 2 cm: one quintic from where the robot is on the path to the goal, ending at the
-path's end speed, so an intake path still drives through its piece. The estimates are averaged first (all of
-them equally to begin with, then over 0.5 s), because a camera's centimetre or two of noise each loop otherwise
-has the robot chasing it: with 2 cm of noise the bench's tag align never settled, and now settles as soon as
-with none. An estimate more than 25 cm or 20° from the average is a new goal and is taken at once.
+path's end speed, so an intake path still drives through its piece. `bindGoal(goal, 0.5)` averages the estimates first (all of them equally to begin with, then over 0.5 s), for a
+goal that arrives raw: a camera's centimetre or two of noise each loop otherwise has the robot chasing it. With
+2 cm of noise the bench's tag align never settled; averaged, it settles as soon as with none. An estimate more
+than 25 cm or 20° from the average is a new goal and is taken at once. Plain `bindGoal(goal)` follows the
+estimates as given: right for a supplier that already filters, and for a goal held in the odometry frame that
+has to move with the robot's own pose corrections.
 
 **Feed-forward.** `commandedAcceleration()` is the acceleration the command just asked for (the limiter's
 step, so never past the traction limit). Sent to the wheels as force next to the velocity (mass times it,

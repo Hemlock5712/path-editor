@@ -474,7 +474,7 @@ class PathFollowerTest {
     f.bindGoal(() -> seen[0]
         ? Optional.of(new Pose(truth.xMeters() + 0.02 * noise.nextGaussian(), truth.yMeters() + 0.02 * noise.nextGaussian(),
             truth.headingRadians() + Math.toRadians(0.5) * noise.nextGaussian()))
-        : Optional.empty());
+        : Optional.empty(), 0.5);
     Run r = run(path, f, FieldFrame.BLUE, 20, (t, plant, ff) -> seen[0] = ff.remainingMeters() < 1.5);
     assertTrue(r.finished(), "it settles on a goal that jitters");
     assertTrue(r.seconds() < calm.seconds() + 0.5, "and soon: " + r.seconds() + " s against " + calm.seconds());
