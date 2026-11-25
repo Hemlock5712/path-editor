@@ -1,8 +1,6 @@
-"""2D/3D pose math. 2D poses are plain (x, y, theta) tuples for speed in the hot loop."""
+"""2D pose math. Poses are plain (x, y, theta) tuples for speed in the hot loop."""
 
 import math
-
-import numpy as np
 
 TAU = 2.0 * math.pi
 
@@ -33,10 +31,6 @@ def rot(v, th):
     return (c * v[0] - s * v[1], s * v[0] + c * v[1])
 
 
-def interp_pose(a, b, u):
-    return (a[0] + u * (b[0] - a[0]), a[1] + u * (b[1] - a[1]), wrap(a[2] + u * wrap(b[2] - a[2])))
-
-
 def twist_exp(dx, dy, dth):
     """WPILib Twist2d.exp(): pose change for a constant-curvature move."""
     if abs(dth) < 1e-9:
@@ -64,42 +58,3 @@ def twist_log(t):
 
 
 # ---------------------------------------------------------------------------- 3D (numpy)
-
-
-def rot3_rpy(roll, pitch, yaw):
-    """Rotation matrix for extrinsic X(roll) then Y(pitch) then Z(yaw), WPILib Rotation3d order.
-
-    NWU: +X forward, +Y left, +Z up. Positive pitch tilts +X DOWN (right-hand rule about +Y).
-    """
-    cr, sr = math.cos(roll), math.sin(roll)
-    cp, sp = math.cos(pitch), math.sin(pitch)
-    cy, sy = math.cos(yaw), math.sin(yaw)
-    rx = np.array([[1, 0, 0], [0, cr, -sr], [0, sr, cr]])
-    ry = np.array([[cp, 0, sp], [0, 1, 0], [-sp, 0, cp]])
-    rz = np.array([[cy, -sy, 0], [sy, cy, 0], [0, 0, 1]])
-    return rz @ ry @ rx
-
-
-def tf3(R, t):
-    T = np.eye(4)
-    T[:3, :3] = R
-    T[:3, 3] = t
-    return T
-
-
-def tf3_from_pose2(p, z=0.0):
-    return tf3(rot3_rpy(0, 0, p[2]), (p[0], p[1], z))
-
-
-def tf3_inv(T):
-    R, t = T[:3, :3], T[:3, 3]
-    return tf3(R.T, -R.T @ t)
-
-
-def tf3_to_pose2(T):
-    """Project a 3D transform to (x, y, yaw)."""
-    return (float(T[0, 3]), float(T[1, 3]), math.atan2(T[1, 0], T[0, 0]))
-
-
-def yaw_of(R):
-    return math.atan2(R[1, 0], R[0, 0])

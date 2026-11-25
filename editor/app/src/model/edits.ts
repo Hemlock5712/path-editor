@@ -149,10 +149,6 @@ export function deleteWaypoint(path: EditorPath, i: number): EditorPath {
   return { ...withSpec(path, { ...remapped, waypoints }), links: removeAt(path.links, i), pinned: removeAt(path.pinned, i) };
 }
 
-export function linkWaypoint(path: EditorPath, i: number, pointId: string | null): EditorPath {
-  return { ...path, links: replaceAt(path.links, i, pointId) };
-}
-
 // ------------------------------------------------------------------------------ rotation targets
 
 export function addRotationTarget(path: EditorPath, t: RotationTarget): EditorPath {

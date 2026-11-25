@@ -157,8 +157,3 @@ export function unlinkPoint(project: Project, id: string): Project {
   const other = p?.twin?.id;
   return { ...project, namedPoints: project.namedPoints.map((q) => (q.id === id || q.id === other ? { ...q, twin: null } : q)) };
 }
-
-/** The paths that follow this one as linked copies. */
-export function linkedCopies(project: Project, pathId: string): EditorPath[] {
-  return project.paths.filter((p) => p.mirrorOf?.id === pathId);
-}

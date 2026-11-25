@@ -34,8 +34,4 @@ public record Vec2(double x, double y) {
   public Vec2 left() {
     return new Vec2(-y, x);
   }
-
-  public static Vec2 fromAngle(double radians) {
-    return new Vec2(Angles.cos(radians), Angles.sin(radians));
-  }
 }

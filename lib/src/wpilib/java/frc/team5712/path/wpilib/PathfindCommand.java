@@ -101,11 +101,6 @@ public final class PathfindCommand implements Command {
     return run;
   }
 
-  /** The library path's follow command after the hand-over, or null. */
-  public FollowPathCommand handOverCommand() {
-    return follow;
-  }
-
   @Override
   public String name() {
     return name;

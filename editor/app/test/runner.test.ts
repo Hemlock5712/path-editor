@@ -4,7 +4,7 @@ import type { AnalysisInput } from "../src/compute/analysis.ts";
 import { AnalysisRunner, TIMEOUT_MS, type AnalysisResult, type WorkerLike } from "../src/compute/runner.ts";
 import type { AnalysisRequest, AnalysisResponse } from "../src/compute/worker.ts";
 
-class FakeWorker implements WorkerLike {
+class FakeWorker implements WorkerLike<AnalysisInput, AnalysisResult> {
   onmessage: ((event: MessageEvent<AnalysisResponse>) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   posted: AnalysisRequest[] = [];

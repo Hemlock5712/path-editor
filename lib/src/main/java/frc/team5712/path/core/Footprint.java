@@ -60,13 +60,6 @@ public record Footprint(
     return Math.hypot(2 * Math.max(frontMeters, backMeters), 2 * Math.max(leftMeters, rightMeters)) / 2;
   }
 
-  /** The smallest rectangle around both (each side the further of the two), named after this one. */
-  public Footprint union(Footprint other) {
-    return new Footprint(name, Math.max(frontMeters, other.frontMeters), Math.max(backMeters, other.backMeters),
-        Math.max(leftMeters, other.leftMeters), Math.max(rightMeters, other.rightMeters),
-        Math.max(retractSeconds, other.retractSeconds));
-  }
-
   /**
    * The robot file's footprints: {@link #bumpers} first (from {@code bumperLengthMeters} and {@code
    * bumperWidthMeters}, 0.85 m if absent), then each of {@code footprints} as the bumpers plus its extensions.

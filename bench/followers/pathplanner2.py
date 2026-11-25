@@ -30,7 +30,6 @@ from followers.pathplanner import RobotConfig
 
 PERIOD = 0.02
 EPS = 1e-6
-GUI_STEER_RATE = 10.0 * 2.0 * math.pi  # swerve_setpoint_generator.dart: 10 rotations per second
 DEFAULT_HANDOFF = 0.25  # DistanceTransition.defaultDistanceMeters
 DEFAULT_END_DISTANCE = 0.1  # EndTolerance defaults
 DEFAULT_END_DEGREES = 2.0
@@ -59,18 +58,6 @@ def _discretize(sp, dt):
         s, c = math.sin(dth) / dth, (1.0 - math.cos(dth)) / dth
     det = s * s + c * c
     return ((s * dx + c * dy) / det / dt, (-c * dx + s * dy) / det / dt, dth / dt)
-
-
-def _integrate(pose, sp, dt):
-    """Pose2d.exp of the robot-relative twist sp * dt."""
-    dx, dy, dth = sp[0] * dt, sp[1] * dt, sp[2] * dt
-    if abs(dth) < 1e-9:
-        s, c = 1.0 - dth * dth / 6.0, dth / 2.0 - dth ** 3 / 24.0
-    else:
-        s, c = math.sin(dth) / dth, (1.0 - math.cos(dth)) / dth
-    tx, ty = dx * s - dy * c, dx * c + dy * s
-    ch, sh = math.cos(pose[2]), math.sin(pose[2])
-    return (pose[0] + tx * ch - ty * sh, pose[1] + tx * sh + ty * ch, wrap(pose[2] + dth))
 
 
 def _to_robot(v, heading):
@@ -499,30 +486,6 @@ def fractional_targets(legs):
 
 def robot_config(cof=None):
     return RobotConfig() if cof is None else RobotConfig(wheel_cof=cof)
-
-
-def plan_time(native, accel_cap=None, limits: Limits = Limits(), cfg=None, gains=(4.0, 2.0, 5.0)):
-    """The GUI's time for the path(s): Path2Simulator from rest at each path's first waypoint (its heading),
-    the setpoint generator at the GUI's 10 rotations per second steering, summed over the paths. None if a
-    path doesn't finish within 120 s."""
-    cfg = cfg or robot_config()
-    cons = None if accel_cap is None else (limits.max_speed, accel_cap, limits.max_omega, limits.max_alpha)
-    gen = SetpointGenerator(cfg, GUI_STEER_RATE, cons)
-    total = 0.0
-    for wps in native["paths"]:
-        first = wps[0]
-        pose = (first["xy"][0], first["xy"][1], first["rot"] or 0.0)
-        f = Path2Follower(wps, native["end_distance"], native["end_angle"], pose, (0.0, 0.0, 0.0), gains=gains)
-        sp = gen.at((0.0, 0.0, 0.0))
-        for step in range(1, 6001):
-            sp = gen.generate(sp, f.calculate(pose))
-            pose = _integrate(pose, sp.speeds, PERIOD)
-            if f.finished:
-                total += step * PERIOD
-                break
-        else:
-            return None
-    return total
 
 
 class PathPlanner2(Follower):

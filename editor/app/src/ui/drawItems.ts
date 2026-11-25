@@ -3,7 +3,7 @@
 // previews (the places picked so far, the zone being drawn, the heading being turned).
 
 import type { FlowState } from "../state/flow.ts";
-import { COLOURS, headingAtS, rotationTargetS, type DrawModel } from "./draw.ts";
+import { COLOURS, rotationTargetS, type DrawModel } from "./draw.ts";
 import { eventMeters } from "../../../core/src/index.ts";
 
 /** An item on the field that can be deleted from it. */
@@ -234,9 +234,4 @@ export function flowKnob(m: Pick<DrawModel, "geometry" | "project">, f: FlowStat
   const p = g.sample(g.sAtWaypoint(f.picks[0]!));
   const reach = Math.hypot(m.project.robot.bumperLengthMeters, m.project.robot.bumperWidthMeters) / 2 + 0.2;
   return [p.xMeters + reach * Math.cos(f.heading), p.yMeters + reach * Math.sin(f.heading)];
-}
-
-/** The plan's heading at the hover point (where a heading flow's robot starts turned). */
-export function planHeadingAt(m: Pick<DrawModel, "analysis">, s: number): number {
-  return m.analysis ? headingAtS(m.analysis.stations, s) : 0;
 }

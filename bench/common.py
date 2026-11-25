@@ -56,14 +56,3 @@ class Limits:
 
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
-
-
-def field_to_robot(v, heading):
-    """Field-relative (vx, vy, w) -> robot-relative."""
-    r = rot((v[0], v[1]), -heading)
-    return (r[0], r[1], v[2])
-
-
-def robot_to_field(v, heading):
-    r = rot((v[0], v[1]), heading)
-    return (r[0], r[1], v[2])

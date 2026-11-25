@@ -36,12 +36,6 @@ class Waypoint:
 
 
 @dataclass(frozen=True)
-class HeadingTarget:
-    pos: float  # waypoint-relative position
-    heading_deg: float
-
-
-@dataclass(frozen=True)
 class Impulse:
     """A lateral shove: fires when the TRUE progress along the neutral path first passes `at_fraction`
     of its length. Force is perpendicular to the path there, positive = to the left of travel."""
@@ -144,12 +138,6 @@ class NeutralPath:
         self.s = np.concatenate([[0.0], np.cumsum(d)])
         self.length = float(self.s[-1])
         self._tree = None
-
-    def s_at_pos(self, pos):
-        return float(np.interp(pos, self.pos, self.s))
-
-    def point_at_s(self, s):
-        return (float(np.interp(s, self.s, self.points[:, 0])), float(np.interp(s, self.s, self.points[:, 1])))
 
     def tangent_at_s(self, s):
         i = int(np.clip(np.searchsorted(self.s, s), 1, len(self.s) - 1))
@@ -448,8 +436,6 @@ COURSES = {
         "grip_drop_s_curve", S_CURVE, grip_drop=(0.5, 0.91, 0.79),
         description="the S-curve; halfway along, the floor drops from mu 1.5 / 1.3 to 0.91 / 0.79 (a worn carpet seam)"),
 }
-
-QUICK_COURSES = ["straight_3m", "s_curve", "moving_start"]
 
 # course -> Choreo trajectory (bench/choreo/*.traj); courses that only change the plant reuse the S-curve's
 CHOREO_TRAJ = {c: c for c in ("straight_3m", "s_curve", "hairpin", "slalom", "long_auto", "moving_start")}
