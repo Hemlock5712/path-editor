@@ -110,6 +110,7 @@ public final class PathFollower {
   private double goalSmoothingSeconds; // 0: the supplier's estimates are followed as given
   private Pose seenGoal; // the supplier's estimates, averaged if asked (blue frame); null until the first one
   private int seenCount;
+  private int jumpsInARow;
 
   // Per-run state
   private FieldFrame frame = FieldFrame.BLUE;
@@ -200,8 +201,8 @@ public final class PathFollower {
    * {@link #bindGoal(Supplier)} for estimates that arrive raw, with a camera's centimetre or two of noise each
    * loop. Followed as given, the robot chases the noise and never settles, so they are averaged: all of them
    * equally at first (the best guess at a goal that stands still), then over {@code smoothingSeconds} (0.5 s
-   * suits a goal that stands still or creeps). An estimate more than 25 cm or 20° from the average is a new goal
-   * and is taken at once. Leave it at 0 for a supplier that already filters, and above all for one whose goal
+   * suits a goal that stands still or creeps). Estimates more than 25 cm or 20° from the average are a
+   * new goal once three in a row say so; one stray one is ignored. Leave it at 0 for a supplier that already filters, and above all for one whose goal
    * moves with the robot's own pose corrections (a goal held in the odometry frame): averaging would make it
    * lag them.
    */
@@ -230,6 +231,7 @@ public final class PathFollower {
     this.goal = baseGoal;
     this.seenGoal = null;
     this.seenCount = 0;
+    this.jumpsInARow = 0;
     FieldSpeeds cmd = frame.toBlue(handedCommand);
     limiter.reset(cmd.vxMetersPerSecond(), cmd.vyMetersPerSecond(), cmd.omegaRadPerSec());
     Pose p = frame.toBlue(measuredPose);
@@ -602,6 +604,8 @@ public final class PathFollower {
   /** An estimate this far from the average is a new goal, not noise: the average starts again from it. */
   private static final double GOAL_JUMP_METERS = 0.25;
   private static final double GOAL_JUMP_RADIANS = Math.toRadians(20.0);
+  /** ... once this many in a row say so (Precision-Drive's TagTracker rule). */
+  private static final int GOAL_JUMPS_TO_RESTART = 3;
 
   private void pollGoal(Pose pose, double dt) {
     if (goalSupplier == null) {
@@ -631,9 +635,14 @@ public final class PathFollower {
   }
 
   private Pose averaged(Pose seen, double dt) {
-    if (seenGoal == null
-        || Math.hypot(seen.xMeters() - seenGoal.xMeters(), seen.yMeters() - seenGoal.yMeters()) > GOAL_JUMP_METERS
-        || Math.abs(Angles.wrap(seen.headingRadians() - seenGoal.headingRadians())) > GOAL_JUMP_RADIANS) {
+    boolean jump = seenGoal != null
+        && (Math.hypot(seen.xMeters() - seenGoal.xMeters(), seen.yMeters() - seenGoal.yMeters()) > GOAL_JUMP_METERS
+            || Math.abs(Angles.wrap(seen.headingRadians() - seenGoal.headingRadians())) > GOAL_JUMP_RADIANS);
+    if (jump && ++jumpsInARow < GOAL_JUMPS_TO_RESTART) {
+      return seenGoal; // one stray estimate (a wrong tag, a flipped solve) is not a new goal
+    }
+    jumpsInARow = 0;
+    if (seenGoal == null || jump) {
       seenCount = 1;
       return seen;
     }

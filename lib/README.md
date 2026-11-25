@@ -49,8 +49,8 @@ A **moving goal** (`bindGoal`, e.g. a tag or a game piece seen by vision) re-pla
 the goal moves more than 2 cm: one quintic from where the robot is on the path to the goal, ending at the
 path's end speed, so an intake path still drives through its piece. `bindGoal(goal, 0.5)` averages the estimates first (all of them equally to begin with, then over 0.5 s), for a
 goal that arrives raw: a camera's centimetre or two of noise each loop otherwise has the robot chasing it. With
-2 cm of noise the bench's tag align never settled; averaged, it settles as soon as with none. An estimate more
-than 25 cm or 20° from the average is a new goal and is taken at once. Plain `bindGoal(goal)` follows the
+2 cm of noise the bench's tag align never settled; averaged, it settles as soon as with none. Estimates more
+than 25 cm or 20° from the average are a new goal once three in a row say so; one stray one is ignored. Plain `bindGoal(goal)` follows the
 estimates as given: right for a supplier that already filters, and for a goal held in the odometry frame that
 has to move with the robot's own pose corrections.
 

@@ -471,10 +471,17 @@ class PathFollowerTest {
     java.util.Random noise = new java.util.Random(5712);
     PathFollower f = new PathFollower(path, CFG);
     boolean[] seen = {false};
-    f.bindGoal(() -> seen[0]
-        ? Optional.of(new Pose(truth.xMeters() + 0.02 * noise.nextGaussian(), truth.yMeters() + 0.02 * noise.nextGaussian(),
-            truth.headingRadians() + Math.toRadians(0.5) * noise.nextGaussian()))
-        : Optional.empty(), 0.5);
+    int[] frame = {0};
+    f.bindGoal(() -> {
+      if (!seen[0]) {
+        return Optional.empty();
+      }
+      if (++frame[0] == 10) {
+        return Optional.of(new Pose(truth.xMeters() - 1.0, truth.yMeters(), truth.headingRadians())); // one stray frame
+      }
+      return Optional.of(new Pose(truth.xMeters() + 0.02 * noise.nextGaussian(), truth.yMeters() + 0.02 * noise.nextGaussian(),
+          truth.headingRadians() + Math.toRadians(0.5) * noise.nextGaussian()));
+    }, 0.5);
     Run r = run(path, f, FieldFrame.BLUE, 20, (t, plant, ff) -> seen[0] = ff.remainingMeters() < 1.5);
     assertTrue(r.finished(), "it settles on a goal that jitters");
     assertTrue(r.seconds() < calm.seconds() + 0.5, "and soon: " + r.seconds() + " s against " + calm.seconds());

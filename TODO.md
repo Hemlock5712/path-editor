@@ -52,27 +52,55 @@ with the full toolchain. Delete each item when it is done, and this file when it
       `commandedAcceleration`. It never had the moving goal, so the sim preview is unaffected; port them only if
       the editor needs them.
 
-## Precision-Drive on this library
+## Bring Precision-Drive's parts into this library
 
-Compared 2026-11-25 (Precision-Drive `main` at cce4239 and its `precision-2-DriveToTag` branch). What overlaps and
-what does not:
+Decided 2026-11-25: the library does everything about moving the robot; robot code keeps the hardware, the
+cameras and the driver. Precision-Drive's pieces move here as they are needed, and the Swerve School videos that
+show its code get redone to match. Both were read at Precision-Drive `main` cce4239 and `precision-2-DriveToTag`.
 
-- [ ] **`DriveToPose` could be this library's finish law.** `PathFollower.driveToGoal` is the same law
-      (`min(top speed, sqrt(2a(d - v t)), k d)` into the same limiter). A two-waypoint path, or an `OnTheFly` plan,
-      already ends in it. Differences to settle first: Precision-Drive brakes at a fixed 6 m/s² with a 6 /s ease-in
-      because "braking harder costs tag accuracy"; the library brakes at the traction limit with 12 /s. Bench the
-      two settings on `tag_align_moving_goal` with wheel odometry before switching.
-- [ ] **`AccelerationLimiter` and `OutputLimiter` are the same idea with two different formulas.** The robot's
-      takes `hypot(|a|, alpha x base radius)` and caps the whole acceleration vector by the motors; the library's
-      takes `|a| + alpha x I/(m r)` and caps only the part along the travel. Pick one and use it in both
-      (teleop needs it too), or have `TeleopDrive` call the library's.
-- [ ] **`TagTracker` + `WheelOdometry` have no equivalent here and should stay.** They are the goal supplier:
-      `DriveToTag` becomes `otf.to(...)` or a drawn path with `.withMovingGoal(() -> tracker.getFieldGoal(tagToGoal))`
-      (raw, no averaging: the tracker already filters and its goal must move with pose corrections).
-      `DriveToTag` finishes only once locked; the library has no such gate, so keep that check in the command.
+Where the two repos do the same job, each difference was checked on the bench (12 matched courses, 6 seeds):
+
+| Same job | Precision-Drive | This library | Which is right |
+|---|---|---|---|
+| Field origin and red flip | blue corner; `(L - x, W - y, heading + 180)` | centre; `(-x, -y, heading + 180)` | **The library's origin, for WPILib 2027** (allwpilib PR 9590, merged 2026-11-07: centre origin). But see the first item below |
+| Motor limit when speeding up | scales the whole acceleration vector | caps only the part along the travel | **The library's.** Precision-Drive's rule: 2 % slower, cross-track 5.6 cm against 4.1 |
+| Sharing grip between driving and spin | `hypot(a, alpha x base radius)` | `a + alpha x I / (m r)` | **Either.** No measurable difference (31.72 s against 31.83 s, same slip). Keep the library's: it is the worst wheel's case and the planner uses the same one |
+| Finish: brake and ease-in | 6 m/s² and 6 /s | the traction limit and 12 /s | **The library's on a path planned to the limit** (Precision-Drive's is 14 % slower to settle on the straight and no more accurate). On a move planned at 6 m/s², as `DriveToPose` always is, Precision-Drive's has no overshoot and a third of the wheel slip: set the path's acceleration, not the finish law |
+| A stray goal estimate | ignored unless 3 in a row agree | restarted on the first | **Precision-Drive's.** Adopted in `PathFollower`'s goal average |
+| Filtering a tag's position | a Kalman filter per axis, noise growing with distance, in the odometry frame | an equal-weight average | **Precision-Drive's.** The library's average is only for a supplier with no filter of its own |
+| Finished | in tolerance and slower than 5 cm/s, at once; 2° | the same held for 0.1 s; 1° | **The library's** (the hold stops a robot passing through the tolerance from finishing) |
+
+What to do:
+
+- [ ] **Field direction, before anything drives.** WPILib 2027 puts +X towards the **blue** wall. The editor and
+      `fixtures/plan/field_2026.json` put blue at x < 0 (`editor/app/src/model/project.ts`), which is that frame
+      turned half a turn. On a robot using the new frame, a blue path would be followed on the red half. Confirm
+      on the WPILib version the robot uses (the library builds against alpha-7, which may predate the change), then
+      either turn the editor's field, obstacles, named points and saved paths half a turn, or swap which alliance
+      `Conversions.allianceFrame` calls `BLUE`. Precision-Drive's `AllianceFlip` and its "blue corner" comments
+      need the same update.
+- [ ] **One limiter.** Make the library's `OutputLimiter` public (it is package-private) with a
+      `limit(current, wanted, dt)` for `TeleopDrive`, built from `robot.json`. Retire `AccelerationLimiter`.
+      Its `MODEL_CURRENT` (150 A) becomes `statorCurrentLimitAmps`; its hand-calibration notes for mu and the
+      centre of mass height belong in the robot file's documentation.
+- [ ] **One drive-to-pose.** A command that runs the follower's finish law from anywhere (`Pathfinding.to` already
+      does on an empty field). Retire `DriveToPose`; keep its settable tolerance (`withTolerance`).
+- [ ] **Tag tracking: the filter here, the camera there.** Move `TagTracker`'s filter (per-axis Kalman, jump
+      rule, lock after 3 frames, the odometry-frame goal) into the library with no Limelight in it: in goes "tag
+      seen at this pose, this far away, with the robot's wheel-odometry pose at capture", out comes the goal.
+      The Limelight reading, `CameraCorrections`, frame age and `WheelOdometry` stay in robot code.
+      `DriveToTag` becomes `.withMovingGoal(() -> tracker.getFieldGoal(tagToGoal))` (raw, no averaging).
+- [ ] **A lock gate.** `DriveToTag` finishes only once the tag is locked. Give the follow commands a way to say
+      "don't finish until this is true".
 - [ ] **Drive output.** Precision-Drive sends `ApplyFieldVelocity` with `DriveRequestType.Velocity` and voltage
-      closed-loop drive gains (kP 0.2, kV 0.124). Sending the feed-forward (above) means adding the wheel forces to
-      that request, and probably moving the drive loop to torque current.
+      drive gains (kP 0.2, kV 0.124). Sending the feed-forward (above) means adding wheel forces to that request,
+      and probably moving the drive loop to torque current.
+- [ ] **Packaging.** Until the first event, the robot project includes `lib/` as source (a Gradle composite build
+      or a submodule). After it, publish a vendordep: `lib/build.gradle` has no publishing today, and the WPILib
+      2027 vendordep format was not checked.
+- [ ] **Swerve School.** The videos copy their on-screen code from Precision-Drive (`precision-1-DriveToPose`,
+      `precision-2-DriveToTag`). List which chapters show `AccelerationLimiter`, `DriveToPose`, `AllianceFlip` and
+      `TagTracker`, and redo those once the code above has moved.
 
 ## Research to confirm with open web access
 
