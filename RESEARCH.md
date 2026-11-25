@@ -21,6 +21,21 @@ recommendation should go through `bench/` before it goes on a robot, as PLAN.md 
 
 So the structure is sound. The gaps are in four places, in the order the evidence supports.
 
+## Measured on the bench since (2026-11-25)
+
+Items 1 to 3 below were tried on `bench/`; the numbers are in bench/RESULTS.md.
+
+- **250 Hz loop (item 1):** 3 % faster with no code change. Predicting the pose over the delay was not tried.
+- **Acceleration feed-forward (item 2):** 4 % faster at 50 Hz, 7 % with 250 Hz. Tracking error did not improve,
+  and wheel-odometry drift was a centimetre worse, so it is a time gain, not an accuracy one. The follower now
+  reports the acceleration (`commandedAcceleration()`); sending it is the robot code's job.
+- **Moving goal (item 3):** the bench showed the real fault was not how the path is re-planned but that the goal
+  was followed raw. With 2 cm of camera noise the tag align never settled. Averaging the estimates fixed it, in
+  about 30 lines. The state-to-state generator was therefore **not** built: the existing re-plan plus the
+  averaged goal passes every case the bench has, and nothing measured yet says a generator would do better. It
+  stays the right idea for a goal that really moves (a rolling piece, a moving robot), which the bench cannot
+  test yet.
+
 ## What to change, ranked
 
 ### 1. Run faster and predict over the delay (strong evidence, small change)

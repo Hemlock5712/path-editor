@@ -462,6 +462,49 @@ class PathFollowerTest {
   }
 
   @Test
+  void aNoisyGoalIsAveragedSoTheRobotStillSettlesOnIt() {
+    // a tag seen by a camera: the same pose every loop, give or take 2 cm and half a degree
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    Run calm = run(path, new PathFollower(path, CFG), FieldFrame.BLUE, 20, NONE);
+    PathSample end = path.sample(path.lengthMeters());
+    Pose truth = new Pose(end.xMeters() + 0.05, end.yMeters() + 0.08, end.headingRadians() + Math.toRadians(3));
+    java.util.Random noise = new java.util.Random(5712);
+    PathFollower f = new PathFollower(path, CFG);
+    boolean[] seen = {false};
+    f.bindGoal(() -> seen[0]
+        ? Optional.of(new Pose(truth.xMeters() + 0.02 * noise.nextGaussian(), truth.yMeters() + 0.02 * noise.nextGaussian(),
+            truth.headingRadians() + Math.toRadians(0.5) * noise.nextGaussian()))
+        : Optional.empty());
+    Run r = run(path, f, FieldFrame.BLUE, 20, (t, plant, ff) -> seen[0] = ff.remainingMeters() < 1.5);
+    assertTrue(r.finished(), "it settles on a goal that jitters");
+    assertTrue(r.seconds() < calm.seconds() + 0.5, "and soon: " + r.seconds() + " s against " + calm.seconds());
+    Pose at = r.trace().get(r.trace().size() - 1);
+    assertEquals(0.0, Math.hypot(at.xMeters() - truth.xMeters(), at.yMeters() - truth.yMeters()), 0.015);
+  }
+
+  @Test
+  void theCommandedAccelerationIsTheStepTheCommandJustTook() {
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    PathFollower f = new PathFollower(path, CFG);
+    KinematicPlant plant = new KinematicPlant(new Pose(-4.0, -1.0, 0.0), new FieldSpeeds(0, 0, 0));
+    f.start(0.0, plant.pose(), plant.velocity(), FieldFrame.BLUE);
+    FieldSpeeds last = new FieldSpeeds(0, 0, 0);
+    double worst = 0.0;
+    for (int i = 1; i <= 100; i++) {
+      FieldSpeeds out = f.step(i * DT, plant.pose(), plant.velocity());
+      FieldSpeeds acc = f.commandedAcceleration();
+      assertEquals((out.vxMetersPerSecond() - last.vxMetersPerSecond()) / DT, acc.vxMetersPerSecond(), 1e-9);
+      assertEquals((out.vyMetersPerSecond() - last.vyMetersPerSecond()) / DT, acc.vyMetersPerSecond(), 1e-9);
+      assertEquals((out.omegaRadPerSec() - last.omegaRadPerSec()) / DT, acc.omegaRadPerSec(), 1e-9);
+      worst = Math.max(worst, Math.hypot(acc.vxMetersPerSecond(), acc.vyMetersPerSecond()));
+      plant.step(out, DT);
+      last = out;
+    }
+    assertTrue(worst > 1.0, "the robot did speed up");
+    assertTrue(worst <= PathFollower.limiterBudget(CFG) + 1e-9, "and never past the traction limit: " + worst);
+  }
+
+  @Test
   void aPathThatDrivesThroughItsGoalFollowsTheGoalAndKeepsGoing() {
     // an intake: the path ends at 2 m/s through a game piece, which is seen 10 cm to the side on the way
     Path path = Path.build(FixturePaths.sCurve().withEndSpeeds(0.0, 2.0), ROBOT);

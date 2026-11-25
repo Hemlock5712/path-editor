@@ -107,6 +107,8 @@ public final class PathFollower {
 
   // Moving goal
   private Supplier<Optional<Pose>> goalSupplier;
+  private Pose seenGoal; // the supplier's estimates, smoothed (blue frame); null until the first one
+  private int seenCount;
 
   // Per-run state
   private FieldFrame frame = FieldFrame.BLUE;
@@ -211,6 +213,8 @@ public final class PathFollower {
     this.frame = frame;
     this.active = path;
     this.goal = baseGoal;
+    this.seenGoal = null;
+    this.seenCount = 0;
     FieldSpeeds cmd = frame.toBlue(handedCommand);
     limiter.reset(cmd.vxMetersPerSecond(), cmd.vyMetersPerSecond(), cmd.omegaRadPerSec());
     Pose p = frame.toBlue(measuredPose);
@@ -250,7 +254,7 @@ public final class PathFollower {
 
     measuredSpeed = Math.hypot(vel.vxMetersPerSecond(), vel.vyMetersPerSecond());
     measuredOmega = vel.omegaRadPerSec();
-    pollGoal(pose);
+    pollGoal(pose, dt);
     updateProgress(pose);
     double remaining = active.lengthMeters() - s;
     if (phase == Phase.TRACKING && readyToFinish(remaining)) {
@@ -303,6 +307,16 @@ public final class PathFollower {
   /** The last command, in the robot's frame: on a rolling end, the velocity to hand on. */
   public FieldSpeeds endCommand() {
     return output();
+  }
+
+  /**
+   * The acceleration the last command asks for, in the robot's frame: m/s² along x and y and rad/s² of spin
+   * (the same record as a velocity, one derivative up). It is the step the limiter just took, so it never asks
+   * for more than the traction limit. Send it to the drivetrain as feed-forward (mass times this, shared between
+   * the wheels) next to the velocity, so the wheels' velocity loops only have the error left to correct.
+   */
+  public FieldSpeeds commandedAcceleration() {
+    return frame.fromBlue(new FieldSpeeds(limiter.ax(), limiter.ay(), limiter.alpha()));
   }
 
   private FieldSpeeds output() {
@@ -570,7 +584,18 @@ public final class PathFollower {
   /** Closer than this past the finish's radius, a moved goal is left to the DriveToPose finish. */
   private static final double MIN_TAIL_METERS = 0.15;
 
-  private void pollGoal(Pose pose) {
+  /**
+   * A goal seen by a camera arrives with noise, a centimetre or two each loop. Followed raw, the robot chases
+   * the noise and never settles, so the estimates are averaged: all of them equally at first (the best guess
+   * at a goal that stands still), then with this time constant, so a goal that drifts is still followed.
+   */
+  private static final double GOAL_SMOOTHING_SECONDS = 0.5;
+
+  /** An estimate this far from the average is a new goal, not noise: the average starts again from it. */
+  private static final double GOAL_JUMP_METERS = 0.25;
+  private static final double GOAL_JUMP_RADIANS = Math.toRadians(20.0);
+
+  private void pollGoal(Pose pose, double dt) {
     if (goalSupplier == null) {
       return;
     }
@@ -578,7 +603,12 @@ public final class PathFollower {
     if (next.isEmpty()) {
       return; // hold the last estimate
     }
-    Pose g = frame.toBlue(next.get());
+    seenGoal = smoothed(frame.toBlue(next.get()), dt);
+    if (phase == Phase.TERMINAL) {
+      goal = seenGoal; // the DriveToPose law simply drives to it
+      return;
+    }
+    Pose g = seenGoal;
     double moved = Math.hypot(g.xMeters() - goal.xMeters(), g.yMeters() - goal.yMeters());
     double turned = Math.abs(Angles.wrap(g.headingRadians() - goal.headingRadians()));
     if (moved < GOAL_MOVE_METERS && turned < GOAL_MOVE_RADIANS) {
@@ -589,7 +619,20 @@ public final class PathFollower {
         > TERMINAL_RADIUS_METERS + MIN_TAIL_METERS) {
       rebuildTail();
     }
-    // in the terminal phase the DriveToPose law simply drives to the new goal
+  }
+
+  private Pose smoothed(Pose seen, double dt) {
+    if (seenGoal == null
+        || Math.hypot(seen.xMeters() - seenGoal.xMeters(), seen.yMeters() - seenGoal.yMeters()) > GOAL_JUMP_METERS
+        || Math.abs(Angles.wrap(seen.headingRadians() - seenGoal.headingRadians())) > GOAL_JUMP_RADIANS) {
+      seenCount = 1;
+      return seen;
+    }
+    seenCount++;
+    double k = Math.max(1.0 / seenCount, 1.0 - Math.exp(-dt / GOAL_SMOOTHING_SECONDS));
+    return new Pose(seenGoal.xMeters() + k * (seen.xMeters() - seenGoal.xMeters()),
+        seenGoal.yMeters() + k * (seen.yMeters() - seenGoal.yMeters()),
+        Angles.wrap(seenGoal.headingRadians() + k * Angles.wrap(seen.headingRadians() - seenGoal.headingRadians())));
   }
 
   /**

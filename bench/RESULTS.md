@@ -47,6 +47,35 @@ Choreo + hold. The rivals' gains are in `matched.py`.
 0.15, 0.25 or 0.30 m, μ 1.2 or 1.0, +20 or +40 ms latency, velocity gain halved or doubled, 68 kg, slow steering
 (10 courses × 6 seeds each). Ours, optimised and as drawn, finished every run on every one, worst end error 0.30 cm.
 
+## Loop rate and acceleration feed-forward (2026-11-25)
+
+Ours as drawn on the 12 courses above (the ten plus shoved and slippery), 6 seeds, the follower otherwise at its
+defaults. "250 Hz" runs the robot loop at the odometry rate (`LP.main_period = 0.004`); "feed-forward" sends
+`PathFollower.commandedAcceleration()` to the wheels as force (`OursV2(ff=True)`).
+
+| | Total time, s (perfect pose) | Cross-track rms, cm | Wheel slip, wheel-s | Odometry only: time, s / end error, cm |
+|---|---|---|---|---|
+| 50 Hz, velocity only (as shipped) | 31.83 | 4.06 | 52.2 | 28.98 / 12.1 |
+| 250 Hz | 30.86 | 4.45 | 49.2 | 28.66 / 12.2 |
+| 50 Hz + feed-forward | 30.59 | 4.10 | 52.2 | 29.20 / 13.9 |
+| 250 Hz + feed-forward | 29.70 | 4.47 | 48.9 | 28.89 / 13.4 |
+
+Both together are 6.7 % faster with a perfect pose, with a little less wheel slip. Tracking is no tighter, and on
+wheel odometry alone the end error is about a centimetre worse (the harder push slips the wheels sooner). Lowering
+`latencySeconds` with either was slower: 0.05 s stays the default. Not tried: predicting the measured pose over the
+latency.
+
+**A noisy goal.** `tag_align_moving_goal` with the goal estimate re-sent every loop with gaussian noise, as a camera
+gives it (6 seeds, perfect pose; time to settle on the true goal, 2.00 s with no noise):
+
+| Noise (1 sigma) | Before | With the goal averaged (`PathFollower`, 0.5 s) |
+|---|---|---|
+| 1 cm | 4.70 s | 2.00 s |
+| 2 cm | never (0 of 6) | 2.02 s (6 of 6) |
+| 4 cm | never (0 of 6) | 2.18 s (6 of 6) |
+
+`intake_drive_through` at 4 cm of noise: the piece is passed 0.7 cm off (3.1 cm before).
+
 ## On the fly
 
 Six fields × 40 pairs, every planner at 4 m/s and 6 m/s². Success = finished, no bumper contact, within 2 cm

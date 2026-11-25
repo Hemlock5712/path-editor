@@ -141,17 +141,35 @@ def to_ours(course):
             "endMetersPerSecond": course.end_speed}
 
 
+def wheel_forces(acc, heading, robot=None):
+    """The force each module should push with for the chassis acceleration `acc` (ax, ay, alpha; field frame):
+    a quarter of mass x acceleration each, plus a quarter of the spin torque at right angles to the module's arm.
+    Field frame, in the plant's module order."""
+    mass = (robot or {}).get("massKg", RP.mass)
+    inertia = (robot or {}).get("momentOfInertiaKgM2", RP.inertia)
+    c, s = math.cos(heading), math.sin(heading)
+    out = []
+    for mx, my in RP.module_positions:
+        rx, ry = c * mx - s * my, s * mx + c * my
+        k = inertia * acc[2] / (4.0 * (mx * mx + my * my))
+        out.append((mass * acc[0] / 4.0 - k * ry, mass * acc[1] / 4.0 + k * rx))
+    return tuple(out)
+
+
 class OursV2(Follower):
-    """Options: `mu` (the robot file's grip, default OURS_MU), `robot` (extra robot file fields), plus any FollowerConfig field by its Java name
+    """Options: `mu` (the robot file's grip, default OURS_MU), `robot` (extra robot file fields), `ff` (send the
+    follower's commanded acceleration to the wheels as force feedforward, as CTRE's wheel force feedforwards take
+    it; off by default, as the robot code sends velocities only), plus any FollowerConfig field by its Java name
     (crossTrackKp, headingKp, latencySeconds, terminalRadiusMeters, limiterFrictionCoefficient, ...)."""
 
     robot_overrides = {}  # robot file fields that differ from the bench plant (set for the heavy_robot course)
 
     def __init__(self, mu=OURS_MU, limits: Limits = Limits(), robot=None, plan_speed=None, plan_accel=None,
-                 **follower_options):
+                 ff=False, **follower_options):
         """plan_speed / plan_accel: the path's own speed and acceleration caps in place of the course's (the
         robot's real limits instead of the shared ones)."""
         self.plan_speed, self.plan_accel = plan_speed, plan_accel
+        self.ff = ff
         self.mu = mu
         if robot:  # robot file fields beyond the plant's (e.g. the traction rule)
             self.robot_overrides = dict(robot)
@@ -190,6 +208,7 @@ class OursV2(Follower):
     def step(self, t, pose, vel):
         r = self.srv.call(op="step", t=float(t), pose=[float(v) for v in pose], vel=[float(v) for v in vel])
         self.finished = r["done"]
+        self.ff_forces = wheel_forces(r["acc"], pose[2], self.robot_overrides) if self.ff else None
         return tuple(r["cmd"])
 
     def done(self):

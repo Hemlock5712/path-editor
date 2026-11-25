@@ -290,6 +290,8 @@ public final class BenchServer {
     }
     double micros = (System.nanoTime() - t0) / 1e3;
     r.put("cmd", List.of(cmd.vxMetersPerSecond(), cmd.vyMetersPerSecond(), cmd.omegaRadPerSec()));
+    FieldSpeeds acc = follower.commandedAcceleration();
+    r.put("acc", List.of(acc.vxMetersPerSecond(), acc.vyMetersPerSecond(), acc.omegaRadPerSec()));
     r.put("done", follower.isFinished());
     r.put("phase", follower.phase().name());
     r.put("s", follower.progressMeters());

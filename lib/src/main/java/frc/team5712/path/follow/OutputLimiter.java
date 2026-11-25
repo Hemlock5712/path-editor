@@ -27,6 +27,10 @@ final class OutputLimiter {
   private double vx;
   private double vy;
   private double omega;
+  // the acceleration of the last step: what the command asks the robot to do, for feed-forward
+  private double ax;
+  private double ay;
+  private double alpha;
 
   OutputLimiter(RobotConfig robot, double budgetMetersPerSecondSquared, double maxAlphaRadPerSecSquared) {
     this.robot = robot;
@@ -39,6 +43,9 @@ final class OutputLimiter {
     vx = vxMetersPerSecond;
     vy = vyMetersPerSecond;
     omega = omegaRadPerSec;
+    ax = 0.0;
+    ay = 0.0;
+    alpha = 0.0;
   }
 
   /** Steps the command toward the wanted velocity over {@code dt} seconds. */
@@ -72,6 +79,9 @@ final class OutputLimiter {
     vx += ax * dt;
     vy += ay * dt;
     omega += alpha * dt;
+    this.ax = ax;
+    this.ay = ay;
+    this.alpha = alpha;
   }
 
   /** Sets the command outright (zero at a finish). */
@@ -79,6 +89,9 @@ final class OutputLimiter {
     vx = newVx;
     vy = newVy;
     omega = newOmega;
+    ax = 0.0;
+    ay = 0.0;
+    alpha = 0.0;
   }
 
   double vx() {
@@ -91,6 +104,18 @@ final class OutputLimiter {
 
   double omega() {
     return omega;
+  }
+
+  double ax() {
+    return ax;
+  }
+
+  double ay() {
+    return ay;
+  }
+
+  double alpha() {
+    return alpha;
   }
 
   double speed() {

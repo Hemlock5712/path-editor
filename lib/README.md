@@ -47,7 +47,16 @@ out; the path is never rebuilt):
 
 A **moving goal** (`bindGoal`, e.g. a tag or a game piece seen by vision) re-plans the rest of the path when
 the goal moves more than 2 cm: one quintic from where the robot is on the path to the goal, ending at the
-path's end speed, so an intake path still drives through its piece.
+path's end speed, so an intake path still drives through its piece. The estimates are averaged first (all of
+them equally to begin with, then over 0.5 s), because a camera's centimetre or two of noise each loop otherwise
+has the robot chasing it: with 2 cm of noise the bench's tag align never settled, and now settles as soon as
+with none. An estimate more than 25 cm or 20° from the average is a new goal and is taken at once.
+
+**Feed-forward.** `commandedAcceleration()` is the acceleration the command just asked for (the limiter's
+step, so never past the traction limit). Sent to the wheels as force next to the velocity (mass times it,
+shared between the modules; CTRE's wheel force feed-forwards take exactly this), it was 4 % faster on the bench
+at 50 Hz and 7 % at 250 Hz, with tracking unchanged (bench/RESULTS.md). The follow command doesn't send it
+yet: read it from `command.follower()` inside the drivetrain's output consumer.
 
 **Settings** (`FollowerConfig`): `latencySeconds` (measure it on the robot), `crossTrackKp`, `headingKp`,
 `brakeMetersPerSecondSquared` (the traction limit unless set), `easeInPerSecond`, `headingEaseInPerSecond`,
