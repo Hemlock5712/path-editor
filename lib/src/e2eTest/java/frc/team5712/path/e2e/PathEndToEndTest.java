@@ -22,7 +22,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
-import org.wpilib.command2.Commands;
 import org.wpilib.command3.Command;
 import org.wpilib.hardware.hal.HAL;
 import org.wpilib.simulation.DriverStationSim;
@@ -35,7 +34,7 @@ import org.wpilib.simulation.DriverStationSim;
  *       e2e/out/robot-project, with its preview numbers in e2e/out/preview.json.
  *   <li>Here {@link PathLibrary#loadAll(File)} loads that folder as the robot loads deploy/paths, and every
  *       event name is bound to a command that records the true pose when it runs.
- *   <li>Each path (a rolling chain counts as one) runs through Commands v3 and v2, on blue and on both red
+ *   <li>Each path (a rolling chain counts as one) runs through Commands v3, on blue and on both red
  *       flips, on {@link SimDrive} at 50 Hz: once to the end, and once cancelled halfway.
  * </ol>
  *
@@ -66,9 +65,8 @@ class PathEndToEndTest {
     preview = Preview.read(DIR.resolve("preview.json"));
     for (String name : library.eventNames()) {
       library.bindEvent(name, Command.noRequirements(co -> current.record(name)).named("record " + name));
-      library.bindEvent(name, Commands.runOnce(() -> current.record(name)));
     }
-    // Commands v2 only runs commands while enabled
+    // as on a robot: the driver station attached and enabled
     HAL.initialize();
     DriverStationSim.setDsAttached(true);
     DriverStationSim.setEnabled(true);

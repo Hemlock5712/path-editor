@@ -18,7 +18,7 @@ import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.system.Timer;
 
 /**
- * Commands v3: an on-the-fly path around the field's obstacles (see {@link Pathfinding}, which builds these).
+ * An on-the-fly path around the field's obstacles (see {@link Pathfinding}, which builds these).
  * Plans when it starts, follows, re-plans when knocked off or asked, and, for {@link Pathfinding#thenFollow},
  * hands over to the library path's own follow command. Telemetry goes out as for a followed path, under
  * Path/&lt;name&gt; (the plan, each loop's state, and the planning figures).

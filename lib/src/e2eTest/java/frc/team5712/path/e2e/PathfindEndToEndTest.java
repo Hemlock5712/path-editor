@@ -15,7 +15,6 @@ import frc.team5712.path.plan.Pathfinder;
 import frc.team5712.path.wpilib.Conversions;
 import frc.team5712.path.wpilib.PathLibrary;
 import frc.team5712.path.wpilib.PathfindCommand;
-import frc.team5712.path.wpilib.PathfindCommandV2;
 import frc.team5712.path.wpilib.Pathfinding;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -30,8 +29,6 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.wpilib.command2.CommandScheduler;
-import org.wpilib.command2.Subsystem;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.command3.Scheduler;
@@ -46,7 +43,7 @@ import org.wpilib.simulation.DriverStationSim;
  * <ul>
  *   <li>A deploy folder like a robot's: field.json (fixtures/plan/field_2026.json), a named point in
  *       .pathproject.json and one path, loaded by {@link PathLibrary#loadAll}, which builds the graph.
- *   <li>50 seeded random start and goal poses across the field, each through Commands v3 and v2, on blue and
+ *   <li>50 seeded random start and goal poses across the field, each through Commands v3, on blue and
  *       on red (the start and goal half-turned; the goal handed in as a blue-frame pose).
  *   <li>Every run: no bumper contact against the TRUE pose (checked every 5 ms against field.json's obstacles
  *       and the walls), arrival within 3 cm and 1.5°, and the planning time.
@@ -71,8 +68,7 @@ class PathfindEndToEndTest {
   private static final List<Result> results = new ArrayList<>();
 
   enum Framework {
-    V3,
-    V2
+    V3
   }
 
   record Result(String kind, Framework framework, FieldFrame frame, int pair, boolean arrived, double endError,
@@ -141,8 +137,8 @@ class PathfindEndToEndTest {
   record Push(double at, double seconds, double dvx, double dvy) {}
 
   interface Maker {
-    /** The command for this run: a v3 {@link Command} or a v2 command. */
-    Object make(Pathfinding pf, Mechanism mechanism, Subsystem subsystem);
+    /** The command for this run. */
+    Command make(Pathfinding pf, Mechanism mechanism);
   }
 
   /** One run from {@code start} (real frame, at rest); the robot must end at {@code end} (real frame). */
@@ -160,27 +156,11 @@ class PathfindEndToEndTest {
         return v3;
       }
     };
-    Subsystem subsystem = new Subsystem() {};
-    CommandScheduler v2 = CommandScheduler.getInstance();
-    v2.cancelAll();
-    Object made = maker.make(pf, mechanism, subsystem);
+    Command c3 = maker.make(pf, mechanism);
     List<String> failures = new ArrayList<>();
-    Supplier<OnTheFly> otf;
-    Command c3 = null;
-    org.wpilib.command2.Command c2 = null;
-    if (fw == Framework.V3) {
-      Command c = (Command) made;
-      otf = c instanceof PathfindCommand pc ? pc::onTheFly : () -> null; // a library path alone plans nothing
-      c3 = c;
-      v3.schedule(c3);
-    } else {
-      org.wpilib.command2.Command c = (org.wpilib.command2.Command) made;
-      PathfindCommandV2 first = c instanceof PathfindCommandV2 pc ? pc
-          : c instanceof Pathfinding.PathfindThenFollowV2 g ? g.pathfind() : null;
-      otf = first == null ? () -> null : first::onTheFly;
-      c2 = c;
-      v2.schedule(c2);
-    }
+    // a library path alone plans nothing
+    Supplier<OnTheFly> otf = c3 instanceof PathfindCommand pc ? pc::onTheFly : () -> null;
+    v3.schedule(c3);
     double minClear = Double.POSITIVE_INFINITY;
     String worstAt = "";
     double endT = Double.NaN;
@@ -206,15 +186,11 @@ class PathfindEndToEndTest {
         drive.push(p.dvx, p.dvy);
       }
       clock[0] = t;
-      if (fw == Framework.V3) {
-        v3.run();
-      } else {
-        v2.run();
-      }
+      v3.run();
       if (Double.isNaN(firstPlan) && otf.get() != null && otf.get().lastPlan() != null) {
         firstPlan = otf.get().lastPlan().totalMicros();
       }
-      boolean running = fw == Framework.V3 ? v3.isScheduledOrRunning(c3) : v2.isScheduled(c2);
+      boolean running = v3.isScheduledOrRunning(c3);
       if (Double.isNaN(endT) && !running && k > 0) {
         endT = t;
       }
@@ -227,7 +203,6 @@ class PathfindEndToEndTest {
       }
     }
     v3.cancelAll();
-    v2.cancelAll();
     OnTheFly o = otf.get();
     if (o != null && o.failure() != null) {
       failures.add("no route: " + o.failure());
@@ -251,7 +226,7 @@ class PathfindEndToEndTest {
   }
 
   @Test
-  void fiftyRandomRoutesOnBothAlliancesThroughV3AndV2() {
+  void fiftyRandomRoutesOnBothAlliances() {
     List<Pose[]> pairs = pairs();
     List<String> failed = new ArrayList<>();
     for (FieldFrame frame : new FieldFrame[] {FieldFrame.BLUE, FieldFrame.RED_HALF_TURN}) {
@@ -261,7 +236,7 @@ class PathfindEndToEndTest {
           Pose g = pairs.get(i)[1];
           Pose2d blueGoal = Conversions.toPose2d(g);
           Result r = check(run("route", i, fw, frame, frame.fromBlue(s), frame.fromBlue(g),
-              (pf, m, sub) -> fw == Framework.V3 ? pf.to(m, blueGoal) : pf.toV2(sub, blueGoal), null, 1000L * i + 7));
+              (pf, m) -> pf.to(m, blueGoal), null, 1000L * i + 7));
           if (!r.pass()) {
             failed.add(r.kind() + " " + i + " " + fw + " " + frame + ": " + r.failures());
           }
@@ -288,7 +263,7 @@ class PathfindEndToEndTest {
       for (Framework fw : Framework.values()) {
         // push across the path, towards the side with more room, for 0.3 s
         Result r = check(run("shove", i, fw, FieldFrame.BLUE, s, g,
-            (pf, m, sub) -> fw == Framework.V3 ? pf.to(m, blueGoal) : pf.toV2(sub, blueGoal), () -> shove, 77L * i));
+            (pf, m) -> pf.to(m, blueGoal), () -> shove, 77L * i));
         List<String> f = new ArrayList<>(r.failures());
         if (r.replans() < 1) {
           f.add("the shove didn't make it plan again");
@@ -339,7 +314,7 @@ class PathfindEndToEndTest {
       for (Framework fw : Framework.values()) {
         for (int i = 0; i < starts.length; i++) {
           Result r = check(run("thenFollow", i, fw, frame, frame.fromBlue(starts[i]), frame.fromBlue(endBlue),
-              (pf, m, sub) -> fw == Framework.V3 ? pf.thenFollow(m, "Sweep") : pf.thenFollowV2(sub, "Sweep"), null,
+              (pf, m) -> pf.thenFollow(m, "Sweep"), null,
               31L * i));
           if (!r.pass()) {
             failed.add("thenFollow " + i + " " + fw + " " + frame + ": " + r.failures());
@@ -372,8 +347,7 @@ class PathfindEndToEndTest {
               ? Optional.of(Conversions.toPose2d(movedReal)) : Optional.empty();
         };
         Result r = check(run("followMovingGoal", 0, fw, frame, frame.fromBlue(startBlue), movedReal,
-            (pf, m, sub) -> fw == Framework.V3 ? pf.follow(m, "Sweep").withMovingGoal(seen)
-                : pf.followV2(sub, "Sweep").withMovingGoal(seen), null, 41L));
+            (pf, m) -> pf.follow(m, "Sweep").withMovingGoal(seen), null, 41L));
         if (!r.pass()) {
           failed.add("followMovingGoal " + fw + " " + frame + ": " + r.failures());
         }
@@ -391,9 +365,7 @@ class PathfindEndToEndTest {
       Pose moved = new Pose(depot[0], depot[1] - 0.25, Math.PI);
       Supplier<Optional<Pose2d>> seen = () -> Optional.of(Conversions.toPose2d(moved));
       Result r = check(run("movingGoal", 0, fw, FieldFrame.BLUE, new Pose(-2.0, 3.2, 0.0), moved,
-          (pf, m, sub) -> fw == Framework.V3
-              ? pf.toPoint(m, "Depot", Rotation2d.k180deg).withMovingGoal(seen)
-              : pf.toPointV2(sub, "Depot", Rotation2d.k180deg).withMovingGoal(seen), null, 99));
+          (pf, m) -> pf.toPoint(m, "Depot", Rotation2d.k180deg).withMovingGoal(seen), null, 99));
       if (!r.pass()) {
         failed.add("movingGoal " + fw + ": " + r.failures());
       }
@@ -409,7 +381,7 @@ class PathfindEndToEndTest {
     StringBuilder md = new StringBuilder();
     md.append("# On-the-fly paths: end-to-end results\n\n");
     md.append("Generated by `lib/gradlew -p lib e2eTest --tests '*PathfindEndToEndTest'`: on-the-fly paths on the 2026 "
-        + "field (fixtures/plan/field_2026.json), through the WPILib adapters (Commands v3 and v2), on the e2e "
+        + "field (fixtures/plan/field_2026.json), through the WPILib adapters (Commands v3), on the e2e "
         + "SimDrive at 50 Hz. Contact is checked against the TRUE pose every 5 ms: the bumper rectangle against "
         + "field.json's obstacles and the walls. Arrival: within 3 cm and 1.5° of the goal. The followMovingGoal rows "
         + "follow a library path on its own (no planning) whose end is seen 8 cm and 3° away when the robot is 1.5 m "

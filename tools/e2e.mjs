@@ -5,7 +5,7 @@
 //   1. Playwright drives the editor to author every test path and save it (editor/app/e2e-author),
 //      writing e2e/out/robot-project and the editor's preview numbers, e2e/out/preview.json.
 //   2. Gradle runs the JUnit end-to-end suite (lib/src/e2eTest): PathLibrary.loadAll() on that folder,
-//      every path through the Commands v3 and v2 adapters on blue and both red flips, in simulation.
+//      every path through the Commands v3 adapters on blue and both red flips, in simulation.
 //   3. That suite writes the table, e2e/RESULTS.md; its summary is printed here.
 //
 // Options: --skip-author reuses e2e/out from the last run (Java side only).

@@ -39,7 +39,7 @@ tasks.named('test') {
 }
 
 // ---------------------------------------------------------------------------------- WPILib adapters
-// src/wpilib/java: Pose2d/ChassisVelocities conversion, Commands v2 and v3 adapters, PathLibrary and
+// src/wpilib/java: Pose2d/ChassisVelocities conversion, the Commands v3 adapters, PathLibrary and
 // telemetry. Built against WPILib 2027 from the installer's offline maven repo (override with
 // -PwpilibMaven=<dir>). The core above never depends on it. Skipped, with a warning, if the repo is missing.
 def wpilibVersion = '2027.0.0-alpha-7'
@@ -91,7 +91,6 @@ if (wpilibMaven.isDirectory()) {
         wpilibImplementation "org.wpilib.tunables:tunables-java:$wpilibVersion"
         wpilibImplementation "org.wpilib:annotations-java:$wpilibVersion"
         wpilibImplementation "org.wpilib:commandsv3-java:$wpilibVersion"
-        wpilibImplementation "org.wpilib.commandsv2:commandsv2-java:$wpilibVersion"
         // third-party jars WPILib loads at run time (versions as shipped in the installer)
         wpilibRuntimeOnly "us.hebi.quickbuf:quickbuf-runtime:1.4"
         wpilibRuntimeOnly "org.ejml:ejml-simple:0.46.0"

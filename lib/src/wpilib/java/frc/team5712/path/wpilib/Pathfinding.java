@@ -10,14 +10,13 @@ import java.util.function.Consumer;
 import java.util.function.DoubleSupplier;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import org.wpilib.command2.Subsystem;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 
 /**
- * On-the-fly paths around the field's obstacles, for Commands v3 and v2. Build one in robot init, next to
+ * On-the-fly paths around the field's obstacles, for Commands v3. Build one in robot init, next to
  * the {@link PathLibrary} (which loaded field.json and built the visibility graph):
  *
  * <pre>
@@ -37,8 +36,7 @@ import org.wpilib.math.kinematics.ChassisVelocities;
  * {@link PathFollower}, and plans again if the robot is knocked more than 20 cm off it
  * ({@link PathfindCommand#replanAbove}) or when asked ({@link PathfindCommand#replan}). The alliance is
  * read when the command starts: authored goals (poses, named points, a path's start) are blue-frame and
- * flipped with {@code redFrame} on red; {@link #toTarget} goals are used as given. The {@code V2} methods
- * build the same commands for Commands v2.
+ * flipped with {@code redFrame} on red; {@link #toTarget} goals are used as given.
  */
 public final class Pathfinding {
   final PathLibrary library;
@@ -82,20 +80,7 @@ public final class Pathfinding {
     return this;
   }
 
-  private PathfindCommand v3(PathfindCommand c) {
-    if (clock != null) {
-      c.withClock(clock);
-    }
-    if (frame != null) {
-      c.withFrame(frame);
-    }
-    if (footprint != null) {
-      c.withFootprint(footprint);
-    }
-    return c;
-  }
-
-  private PathfindCommandV2 v2(PathfindCommandV2 c) {
+  private PathfindCommand configured(PathfindCommand c) {
     if (clock != null) {
       c.withClock(clock);
     }
@@ -137,16 +122,16 @@ public final class Pathfinding {
     return frame.fromBlue(new Pose(p.xMeters(), p.yMeters(), Math.atan2(p.tangentY(), p.tangentX()))).headingRadians();
   }
 
-  // ------------------------------------------------------------------------------ Commands v3
+  // ------------------------------------------------------------------------------ the commands
 
   /** To an authored pose (blue frame; flipped on red). */
   public PathfindCommand to(Mechanism drive, Pose2d blueGoal) {
-    return v3(new PathfindCommand(this, drive, "Pathfind", blue(blueGoal), null, null));
+    return configured(new PathfindCommand(this, drive, "Pathfind", blue(blueGoal), null, null));
   }
 
   /** To an editor named point (blue frame; flipped on red), arriving at {@code heading} (blue frame). */
   public PathfindCommand toPoint(Mechanism drive, String pointName, Rotation2d heading) {
-    return v3(new PathfindCommand(this, drive, "Pathfind " + pointName, point(pointName, heading), null, null));
+    return configured(new PathfindCommand(this, drive, "Pathfind " + pointName, point(pointName, heading), null, null));
   }
 
   /** {@link #toPoint(Mechanism, String, Rotation2d)} by the point's generated name ({@code Points.X}). */
@@ -156,7 +141,7 @@ public final class Pathfinding {
 
   /** To a pose read when it starts and at each re-plan, in the real field frame (not flipped). */
   public PathfindCommand toTarget(Mechanism drive, Supplier<Pose2d> realGoal) {
-    return v3(new PathfindCommand(this, drive, "Pathfind", real(realGoal), null, null));
+    return configured(new PathfindCommand(this, drive, "Pathfind", real(realGoal), null, null));
   }
 
   /**
@@ -180,7 +165,7 @@ public final class Pathfinding {
     Path path = library.get(pathName);
     FollowPathCommand follow = new FollowPathCommand(pathName, drive, new PathFollower(path, config), pose,
         fieldVelocity, fieldOutput, redFrame).withEvents(library);
-    return v3(new PathfindCommand(this, drive, "Pathfind to " + pathName, f -> start(path, f), path, follow));
+    return configured(new PathfindCommand(this, drive, "Pathfind to " + pathName, f -> start(path, f), path, follow));
   }
 
   /**
@@ -198,77 +183,5 @@ public final class Pathfinding {
       c.withFrame(frame);
     }
     return c;
-  }
-
-  // ------------------------------------------------------------------------------ Commands v2
-
-  public PathfindCommandV2 toV2(Subsystem drive, Pose2d blueGoal) {
-    return v2(new PathfindCommandV2(this, drive, "Pathfind", blue(blueGoal), null));
-  }
-
-  public PathfindCommandV2 toPointV2(Subsystem drive, String pointName, Rotation2d heading) {
-    return v2(new PathfindCommandV2(this, drive, "Pathfind " + pointName, point(pointName, heading), null));
-  }
-
-  public PathfindCommandV2 toPointV2(Subsystem drive, PointId point, Rotation2d heading) {
-    return toPointV2(drive, point.pointName(), heading);
-  }
-
-  public PathfindCommandV2 toTargetV2(Subsystem drive, Supplier<Pose2d> realGoal) {
-    return v2(new PathfindCommandV2(this, drive, "Pathfind", real(realGoal), null));
-  }
-
-  /** {@link #follow} for Commands v2. */
-  public FollowPathCommandV2 followV2(Subsystem drive, String pathName) {
-    FollowPathCommandV2 c = new FollowPathCommandV2(pathName, drive, new PathFollower(library.get(pathName), config), pose,
-        fieldVelocity, fieldOutput, redFrame).withEvents(library);
-    if (clock != null) {
-      c.withClock(clock);
-    }
-    if (frame != null) {
-      c.withFrame(frame);
-    }
-    return c;
-  }
-
-  /** {@link #thenFollow} for Commands v2: the pathfinding command, then the path's, handing over the speed. */
-  public PathfindThenFollowV2 thenFollowV2(Subsystem drive, PathId path) {
-    return thenFollowV2(drive, path.fileName());
-  }
-
-  /** {@link #follow} for Commands v2. */
-  public FollowPathCommandV2 followV2(Subsystem drive, PathId path) {
-    return followV2(drive, path.fileName());
-  }
-
-  public PathfindThenFollowV2 thenFollowV2(Subsystem drive, String pathName) {
-    Path path = library.get(pathName);
-    PathfindCommandV2 first = new PathfindCommandV2(this, drive, "Pathfind to " + pathName, f -> start(path, f), path);
-    FollowPathCommandV2 follow = new FollowPathCommandV2(pathName, drive, new PathFollower(path, config), pose,
-        fieldVelocity, fieldOutput, redFrame).withEvents(library).continuingFrom(first::endCommand);
-    first.handsOverTo(follow);
-    v2(first);
-    return new PathfindThenFollowV2(first, follow, "Pathfind then " + pathName);
-  }
-
-  /** The v2 sequence {@link #thenFollowV2} builds: the pathfinding command, then the path's. */
-  public static final class PathfindThenFollowV2 extends org.wpilib.command2.SequentialCommandGroup {
-    private final PathfindCommandV2 pathfind;
-    private final FollowPathCommandV2 follow;
-
-    PathfindThenFollowV2(PathfindCommandV2 pathfind, FollowPathCommandV2 follow, String name) {
-      super(pathfind, follow);
-      this.pathfind = pathfind;
-      this.follow = follow;
-      setName(name);
-    }
-
-    public PathfindCommandV2 pathfind() {
-      return pathfind;
-    }
-
-    public FollowPathCommandV2 follow() {
-      return follow;
-    }
   }
 }

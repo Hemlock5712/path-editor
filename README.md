@@ -1,8 +1,8 @@
 # Myelin
 
-Myelin is team 5712's path editor and follower (a rewrite in progress). The old version is on `master`.
-See [PLAN.md](PLAN.md) for the design and the order of work, and [RESEARCH.md](RESEARCH.md) for how the follower
-compares with control practice outside FRC and what to try next.
+Myelin is team 5712's path editor and follower. The old version is on `master`.
+See [lib/README.md](lib/README.md) for how it works, [RESEARCH.md](RESEARCH.md) for how the follower compares with
+control practice outside FRC and what to try next, and [PLAN.md](PLAN.md) for why it was built this way.
 
 | Folder | What's in it |
 | --- | --- |

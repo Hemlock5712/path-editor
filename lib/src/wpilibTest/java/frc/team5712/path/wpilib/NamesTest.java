@@ -41,7 +41,7 @@ class NamesTest {
     assertArrayEquals(new double[] {1.5, -2}, lib.namedPoint(Points.SCORE_L), 0.0);
     assertThrows(IllegalStateException.class, lib::requireAllEventsBound);
     org.wpilib.command3.Command noop = org.wpilib.command3.Command.noRequirements(co -> {}).named("noop");
-    lib.bindEvent(Events.INTAKE_DOWN, noop).bindEvent(Events.SHOOT, org.wpilib.command2.Commands.none());
+    lib.bindEvent(Events.INTAKE_DOWN, noop).bindEvent(Events.SHOOT, noop);
     assertEquals(Set.of(), lib.unboundEventNames());
     assertSame(lib, lib.requireAllEventsBound());
     assertTrue(lib.eventCommand("intakeDown").isPresent());

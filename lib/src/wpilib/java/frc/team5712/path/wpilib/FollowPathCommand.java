@@ -20,7 +20,7 @@ import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.system.Timer;
 
 /**
- * Commands v3 adapter: follows a path with a {@link PathFollower} built in robot init.
+ * Follows a path with a {@link PathFollower} built in robot init.
  *
  * <pre>
  * Path toReef = paths.get("ToReef");                      // robot init

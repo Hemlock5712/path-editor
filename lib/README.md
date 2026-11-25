@@ -90,11 +90,11 @@ The rest of this file is the detail and the measurements behind each piece.
 
 | Package | What | Depends on |
 | --- | --- | --- |
-| `frc.team5712.path.core` (phase 2) | geometry, heading and velocity profiles, frame flips, path files | nothing |
-| `frc.team5712.path.follow` (phase 3) | `PathFollower`: one controller from path to pose | core |
-| `frc.team5712.path.plan` (phase 4) | `Pathfinder`: obstacle-avoiding paths during a match; `OnTheFly`: plan, follow, re-plan | core |
+| `frc.team5712.path.core` | geometry, heading and velocity profiles, frame flips, path files | nothing |
+| `frc.team5712.path.follow` | `PathFollower`: one controller from path to pose | core |
+| `frc.team5712.path.plan` | `Pathfinder`: obstacle-avoiding paths during a match; `OnTheFly`: plan, follow, re-plan | core |
 | `frc.team5712.path.tools` | `FixtureGen`, `ProfileCli`, `PlanCli`, `BenchServer` (the bench bridge) | core, follow, plan |
-| `frc.team5712.path.wpilib` (source set `src/wpilib`) | Commands v3 and v2 adapters, `PathLibrary`, telemetry | WPILib 2027 |
+| `frc.team5712.path.wpilib` (source set `src/wpilib`) | the Commands v3 adapters, `PathLibrary`, telemetry | WPILib 2027 |
 
 The core and the follower have no dependencies, so they test in seconds; the core ports line for
 line to TypeScript (`editor/core/`).
@@ -197,7 +197,7 @@ every quantity every 5 cm in shortest round-trip precision. A Java test fails if
 **The TS port reproduces all six exactly: worst deviation 0** (the bound is 1e-9). Trig goes
 through `StrictMath` in Java and `Math` in V8, both fdlibm.
 
-## The follower (phase 3)
+## The follower
 
 `PathFollower` (`frc.team5712.path.follow`) is one controller from path to pose. Build the path in
 robot init, make the follower there too, then `start()` when the path begins, `step()` each loop and
@@ -314,16 +314,14 @@ skips them with a warning if the repo is missing.
   project's `PathEditorNames` is compiled in (the package named in `.pathproject.json`), it checks every
   constant against deploy: a stale class (deploy changed and the code wasn't rebuilt, or the other way round)
   fails at boot, naming the missing constants. `requireNames(Class)` runs the same check by hand.
-- `PathLibrary.bindEvent(event, command)` (a v3 or a v2 command) binds an event to a command once for every
+- `PathLibrary.bindEvent(event, command)` binds an event to a command once for every
   path; a follow command picks the bindings up with `withEvents(library)`, and its own `onEvent` wins for the
   same name. `requireAllEventsBound()` fails if any event the files use has nothing bound;
   `unboundEventNames()` lists them.
 - `FollowPathCommand` (Commands v3) runs the follower in its coroutine and forks event commands as
-  children. `FollowPathCommandV2` (Commands v2) schedules event commands independently, and sends its
-  first command from `initialize()`, as v3 does, so a path chained after a rolling end doesn't coast a
-  loop. Both read
-  the alliance as a `FieldFrame` when the path starts, send zero at the end (except on a rolling
-  end), and chain rolling ends with `continuingFrom(previous)`.
+  children. It reads
+  the alliance as a `FieldFrame` when the path starts, sends zero at the end (except on a rolling
+  end), and chains rolling ends with `continuingFrom(previous)`.
 - `Conversions` covers `Pose2d` and `ChassisVelocities`, and the alliance as a frame.
   `PathTelemetry` logs, under `/Telemetry/Path/<path>/` in NetworkTables, the phase, progress, the distance left,
   cross-track, the reference and goal (Pose2d structs, field frame) and the events fired. The
@@ -334,7 +332,7 @@ skips them with a warning if the repo is missing.
   drivetrain in real time and publishing that telemetry, the robot's pose and ntcore's clock. The editor's
   `npm run test:nt4` tests its client against it. Note that `NetworkTablesJNI.now()` is in nanoseconds in 2027,
   while NT4 values carry microseconds on the wire.
-- `wpilibTest` runs both commands for real: v2 by hand, v3 under an independent scheduler, with the
+- `wpilibTest` runs the command for real, under an independent scheduler, with the
   desktop HAL natives extracted from the same repo. Commands v3 needs
   `--add-opens java.base/jdk.internal.vm` and `java.base/java.lang`, which GradleRIO adds on a robot.
 
@@ -376,7 +374,7 @@ zone.
 The cold number is mostly the JVM loading and linking classes, which every path after the first
 shares. See the notes below for what that means for the boot budget.
 
-## Notes and departures from PLAN.md
+## Notes on the core
 
 - **Tangent handles are a direction plus a scale,** not handles in metres. `tangentScale`
   multiplies the arc-length estimate on both sides of the knot. That keeps uneven spacing loop-free
@@ -402,21 +400,20 @@ shares. See the notes below for what that means for the boot budget.
   cameras and the field link, so paths are simply built in robot init. The real rule is
   that starting auto does no path work at all.
 
-### Phase 3 departures from PLAN.md
+### Notes on the follower
 
 - **The v²κ feed-forward is the look-ahead tangent.** The drivetrain takes velocity commands, so the
   curvature term is applied by pointing the speed along the tangent one latency ahead. That adds
   `v²κτ` sideways, rather than a separate acceleration feed-forward.
-- **Cross-track is P only.** PLAN.md had PD; the bench sweeps never needed the D term, so it went (2026-10-23).
+- **Cross-track is P only.** The plan had PD; the bench sweeps never needed the D term, so it went (2026-10-23).
 - **The limiter and the plan now share one traction limit** (see below). Before the μ 1.5 change
   the limiter's grip (1.0) sat above the plan's (0.7) so feedback had room.
-- **Events were set in code only in phase 3.** Phase 5 added them to the path file (schema 2).
 - **Commands v3 events are forked children,** so they end with the path command unless they finish
-  first. v2 schedules them independently.
+  first.
 - **The first `start()` in a fresh JVM takes about 1.4 ms of class loading,** but no path work. One
   throwaway start/step in robot init would remove it.
 
-## Pathfinding (phase 4)
+## Pathfinding
 
 `Pathfinder` (`frc.team5712.path.plan`) is built once at boot from a `FieldMap`. Calling `plan(pose, velocity,
 goal)` returns a `PlanResult` whose `path()` is an ordinary `Path` for the `PathFollower`.
@@ -459,7 +456,7 @@ field centre. Each polygon is replaced by its convex hull. `FieldMap.read(file)`
 | First query in a fresh JVM | 17-35 ms on the bench routes (class loading and the interpreter) |
 | Boot (grow + graph) in a fresh JVM | 32-135 ms |
 
-The sweep dominates and could be cut, but the warm query is already inside PLAN.md's 5 ms. The roboRIO has not
+The sweep dominates and could be cut, but the warm query is already inside the 5 ms budget. The roboRIO has not
 been measured.
 
 **Tests** (`PathfinderTest`):
@@ -470,7 +467,7 @@ been measured.
   (34 needed refits, none failed, closest 5.1 cm);
 - determinism, snapping, a moving start, the end heading, and file errors.
 
-### Phase 4 departures from PLAN.md
+### Notes on the pathfinder
 
 - **The obstacles are grown by the half-diagonal, for any heading.** The swept check then uses the real heading.
   A heading-aware grow would allow tighter gaps but needs a configuration-space search.
@@ -501,7 +498,7 @@ been measured.
 - The bumper size from `robot.json` (`bumperLengthMeters`, `bumperWidthMeters`).
 - The editor's named points (`namedPoints` in `.pathproject.json`).
 
-`Pathfinding` (`src/wpilib`) builds the commands, for Commands v3 and (with a `V2` suffix) v2:
+`Pathfinding` (`src/wpilib`) builds the commands:
 
 ```java
 Pathfinding otf = new Pathfinding(paths, FollowerConfig.defaults(paths.robot()),
@@ -515,10 +512,10 @@ otf.to(drive, goal).withMovingGoal(vision::pieceIfSeen);     // the end follows 
 otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a library path as drawn, its end on vision
 ```
 
-- **Moving goals on library paths.** `follow(drive, name)` (and `followV2`) is the plain `FollowPathCommand` for a
+- **Moving goals on library paths.** `follow(drive, name)` is the plain `FollowPathCommand` for a
   library path, an optimised one included, built with the same drivetrain, settings, clock and alliance. It plans
-  nothing at go. `withMovingGoal(Supplier<Optional<Pose2d>>)` is on `FollowPathCommand` and `FollowPathCommandV2`
-  themselves too, for commands built by hand. The supplier gives the goal in the real field frame, like the
+  nothing at go. `withMovingGoal(Supplier<Optional<Pose2d>>)` is on `FollowPathCommand`
+  itself too, for commands built by hand. The supplier gives the goal in the real field frame, like the
   robot's pose (not flipped on red), or empty to keep the last one. When the goal moves more than 2 cm or 2°, the
   rest of the path is planned again from the robot's progress to the goal (`PathFollower.bindGoal`), and in the
   last 0.3 m DriveToPose's law drives straight to it. That piece knows no obstacles, so on an on-the-fly path a
@@ -526,7 +523,7 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   (`OnTheFly.GOAL_REPLAN_METERS`, at most every 0.2 s). Either alone falls short on the bench: the re-plan alone
   missed a game piece by 10 cm on a drive-through (a library path has no pathfinder), and the piece alone
   touched an obstacle in 36 of 72 on-the-fly moving-goal runs with a perfect pose. Together: every run
-  finishes, none touching (`bench/h2h.py`). The pathfinding e2e suite runs it on v3 and v2, blue and red, with the goal seen 8 cm and 3°
+  finishes, none touching (`bench/h2h.py`). The pathfinding e2e suite runs it on blue and red, with the goal seen 8 cm and 3°
   away once the robot is 1.5 m out. `PathLibrary` holds no drivetrain, so the factory lives on `Pathfinding`
   rather than as `paths.follow(...)`.
 
@@ -589,7 +586,7 @@ the WPILib adapters on the e2e `SimDrive`, with contact checked against the true
 
 | Scenario | Runs | Passed | Worst clearance |
 |---|---|---|---|
-| 50 seeded random routes, v3 and v2, blue and red | 200 | 200 | 5.7 cm |
+| 50 seeded random routes, blue and red (run on Commands v3 and v2 before v2 was removed) | 200 | 200 | 5.7 cm |
 | Sideways shove a third of the way in; every run planned again | 20 | 20 | 5.9 cm |
 | Path hand-overs | 12 | 12 | 7.8 cm |
 | Moving named-point goal | 2 | 2 | 6.8 cm |
@@ -624,30 +621,15 @@ With 540°/s and 720°/s² (`ShortHopTest`):
 Peak spin acceleration is within 1 % of the cap. The TS port matches, with new `short_hop` and `pure_rotation`
 fixtures; parity is still exact.
 
-## End-to-end tests (phase 6)
+## End-to-end tests
 
 `node tools/e2e.mjs` (from the repo root) authors every test path in the editor with Playwright, saves it
 through the editor's own save flow, and runs `lib/gradlew -p lib e2eTest`. That suite (`src/e2eTest`) loads the
 folder with `PathLibrary.loadAll(dir)`, binds every event name to a recording command, and runs each path
-through Commands v3 and v2, on blue and both red flips, on a simulated drivetrain at 50 Hz (`SimDrive`: 20 ms
+through Commands v3, on blue and both red flips, on a simulated drivetrain at 50 Hz (`SimDrive`: 20 ms
 latency, 40 ms first-order lag, pose and velocity noise). It also runs each path once more and cancels it
 halfway through. The results table is `e2e/RESULTS.md`, and the pass marks are in `Tolerances.java`.
 `-Pe2eTrace=<path>` prints one path's run loop by loop.
-
-**What it found, and what was fixed:**
-
-| Found | Fix |
-| --- | --- |
-| Events fired on the first loop after the robot passed them: up to 8 cm late at 4 m/s | They fire on the loop nearest to passing (`PathFollower`) |
-| A path shorter than the 0.3 m terminal radius (a 0.2 m hop with an 80° turn) ignored its plan: 1.0 m/s against 0.29 planned, with events 0.48 s off | The DriveToPose hand-over also waits until the plan has no more than `TERMINAL_TURN_RADIANS` (2°) left to turn. At 10° the robot was still spinning too fast to stop and overshot by 7° |
-| A rolling end handed over on the first loop past its end line, so the next path started up to a loop late and its start events fired up to 8 cm past their point (RollA → RollB, 3.0 cm against 3 cm allowed) | It hands over on the loop nearest the line, as events fire (`PathFollower.checkFinished`); the chain also arrives 0.06 s sooner |
-| The plan turned at the robot file's spin acceleration cap while the follower had its own fixed 720°/s², so at AccelerationLimiter's 12 rad/s² the plan left the follower almost no room (Zones settled in 0.54 s against 0.5) | The plan turns at `tractionShare` of the cap (`plannedSpinAccelRadPerSecSquared`) and the follower is held to the cap itself (`FollowerConfig.maxAlphaRadPerSecSquared()`), as for traction. Zones settles in 0.36 to 0.42 s |
-| The end-of-path brake law used a fixed 6 m/s², so on paths planned harder the robot braked early and arrived about 0.2 s late | `brakeMetersPerSecondSquared` defaults to the robot's traction limit |
-| A turn on the spot fired every event at once and stalled mid-turn: progress came from projecting onto a 1 mm segment, and the distance brake capped the spin | Progress comes from the heading; the follower spins on the plan and holds the point |
-| The first step after `start()` comes at the same timestamp, so dt clamped to 1 ms and the limiter allowed a millisecond's acceleration: every path started a loop late | That step plans for a nominal loop |
-| An event at the end fired only after the robot settled (0.1 s hold plus the ease-in) | It fires when the robot gets inside the finish band |
-| `onEvent` replaced the listener, so robot code calling it silently disconnected the adapters' event commands | Listeners add up |
-| Commands v2: a path chained after a rolling end sent nothing for one loop | `FollowPathCommandV2` steps in `initialize()` |
 
 **Open at the robot's full limits.** The suite authors its paths at 4 m/s and 6 m/s². Planned to the
 default robot's own limits (4.1 m/s, 12.8 m/s²) it is 65 of 66: Slalom (Commands v3, blue) settles 0.52 s

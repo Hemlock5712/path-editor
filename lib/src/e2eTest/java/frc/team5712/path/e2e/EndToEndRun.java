@@ -10,13 +10,10 @@ import frc.team5712.path.core.VelocityProfile;
 import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.follow.PathFollower;
 import frc.team5712.path.wpilib.FollowPathCommand;
-import frc.team5712.path.wpilib.FollowPathCommandV2;
 import frc.team5712.path.wpilib.PathLibrary;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import org.wpilib.command2.CommandScheduler;
-import org.wpilib.command2.Subsystem;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.command3.Scheduler;
@@ -28,8 +25,7 @@ import org.wpilib.command3.Scheduler;
  */
 final class EndToEndRun {
   enum Framework {
-    V3,
-    V2
+    V3
   }
 
   /** One fired event: which segment of the chain, its name, the sim time and the true pose then. */
@@ -100,8 +96,7 @@ final class EndToEndRun {
 
   /**
    * Called by the recording event commands, when the command runs: that moment and the true pose then
-   * are what gets checked. Which path it belongs to comes from the followers' own listeners (in v2 the
-   * commands run at the end of the scheduler's loop, after a chain's next path may have started).
+   * are what gets checked. Which path it belongs to comes from the followers' own listeners.
    */
   void record(String name) {
     int seg = -1;
@@ -135,7 +130,7 @@ final class EndToEndRun {
           .onEvent(name -> firedByFollower.add(new Object[] {index, name}));
     }
 
-    Driver driver = framework == Framework.V3 ? new V3Driver(clock) : new V2Driver(clock);
+    Driver driver = new V3Driver(clock);
     long g0 = PathGeometry.buildCount();
     long p0 = VelocityProfile.buildCount();
     driver.schedule();
@@ -446,57 +441,6 @@ final class EndToEndRun {
     @Override
     public boolean running() {
       return scheduler.isScheduledOrRunning(command);
-    }
-
-    @Override
-    public void close() {
-      scheduler.cancelAll();
-    }
-  }
-
-  /** Commands v2 on the global CommandScheduler; event commands are scheduled independently. */
-  private final class V2Driver implements Driver {
-    private final CommandScheduler scheduler = CommandScheduler.getInstance();
-    private final org.wpilib.command2.Command command;
-
-    V2Driver(double[] clock) {
-      scheduler.cancelAll();
-      Subsystem subsystem = new Subsystem() {};
-      org.wpilib.command2.Command chained = null;
-      FollowPathCommandV2 previous = null;
-      for (Segment s : segments) {
-        FollowPathCommandV2 c = new FollowPathCommandV2(s.name, subsystem, s.follower,
-            drive::measuredPose, drive::measuredVelocity, drive::command, FieldFrame.RED_HALF_TURN)
-            .withClock(() -> clock[0])
-            .withFrame(() -> frame)
-            .withEvents(library);
-        if (previous != null) {
-          c.continuingFrom(previous);
-        }
-        chained = chained == null ? c : chained.andThen(c);
-        previous = c;
-      }
-      command = chained;
-    }
-
-    @Override
-    public void schedule() {
-      scheduler.schedule(command);
-    }
-
-    @Override
-    public void run() {
-      scheduler.run();
-    }
-
-    @Override
-    public void cancel() {
-      scheduler.cancel(command);
-    }
-
-    @Override
-    public boolean running() {
-      return scheduler.isScheduled(command);
     }
 
     @Override

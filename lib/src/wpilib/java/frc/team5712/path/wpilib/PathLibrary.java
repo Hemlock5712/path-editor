@@ -84,7 +84,6 @@ public final class PathLibrary {
   /** The class of generated names the editor writes. */
   public static final String NAMES_CLASS = "PathEditorNames";
   private final Map<String, org.wpilib.command3.Command> eventCommands = new HashMap<>();
-  private final Map<String, org.wpilib.command2.Command> eventCommandsV2 = new HashMap<>();
 
   private PathLibrary(Map<String, Path> paths, RobotConfig robot, double buildMillis) {
     this.paths = Collections.unmodifiableMap(paths);
@@ -391,15 +390,9 @@ public final class PathLibrary {
     return robot;
   }
 
-  /** Runs {@code command} (Commands v3) whenever a path followed with {@code withEvents(this)} fires {@code eventName}. */
+  /** Runs {@code command} whenever a path followed with {@code withEvents(this)} fires {@code eventName}. */
   public PathLibrary bindEvent(String eventName, org.wpilib.command3.Command command) {
     eventCommands.put(eventName, command);
-    return this;
-  }
-
-  /** The same for Commands v2 ({@link FollowPathCommandV2}). */
-  public PathLibrary bindEvent(String eventName, org.wpilib.command2.Command command) {
-    eventCommandsV2.put(eventName, command);
     return this;
   }
 
@@ -408,19 +401,9 @@ public final class PathLibrary {
     return bindEvent(event.eventName(), command);
   }
 
-  /** {@link #bindEvent(String, org.wpilib.command2.Command)} by the event's generated name ({@code Events.X}). */
-  public PathLibrary bindEvent(EventId event, org.wpilib.command2.Command command) {
-    return bindEvent(event.eventName(), command);
-  }
-
-  /** The Commands v3 command bound to an event name, if any. */
+  /** The command bound to an event name, if any. */
   public Optional<org.wpilib.command3.Command> eventCommand(String eventName) {
     return Optional.ofNullable(eventCommands.get(eventName));
-  }
-
-  /** The Commands v2 command bound to an event name, if any. */
-  public Optional<org.wpilib.command2.Command> eventCommandV2(String eventName) {
-    return Optional.ofNullable(eventCommandsV2.get(eventName));
   }
 
   /** Every event name the loaded path files use, sorted. */
@@ -434,11 +417,10 @@ public final class PathLibrary {
     return names;
   }
 
-  /** Event names in the path files with no command bound in either framework, sorted. */
+  /** Event names in the path files with no command bound, sorted. */
   public Set<String> unboundEventNames() {
     Set<String> names = eventNames();
     names.removeAll(eventCommands.keySet());
-    names.removeAll(eventCommandsV2.keySet());
     return names;
   }
 

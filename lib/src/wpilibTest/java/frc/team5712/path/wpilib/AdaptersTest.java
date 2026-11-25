@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.wpilib.command2.Subsystem;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.command3.Scheduler;
 import org.wpilib.math.geometry.Pose2d;
@@ -83,38 +82,6 @@ class AdaptersTest {
     PathFile.write(FixturePaths.sCurve().withStartFootprint("armUp"), dir.toPath().resolve("Bad.path.json"));
     IllegalStateException e = assertThrows(IllegalStateException.class, () -> PathLibrary.loadAll(dir));
     assertTrue(e.getMessage().contains("Bad starts with \"armUp\""), e.getMessage());
-  }
-
-  /** The v2 adapter's lifecycle by hand (no scheduler): it drives a kinematic robot to the goal. */
-  @Test
-  void commandV2DrivesThePath() {
-    Path path = Path.build(FixturePaths.sCurve(), RobotConfig.DEFAULT);
-    PathFollower follower = new PathFollower(path, FollowerConfig.defaults(RobotConfig.DEFAULT));
-    double[] t = {0.0};
-    Pose2d[] pose = {new Pose2d(-4.0, -1.0, new Rotation2d(0.0))};
-    ChassisVelocities[] vel = {new ChassisVelocities()};
-    List<ChassisVelocities> outputs = new ArrayList<>();
-    Subsystem drive = new Subsystem() {};
-    FollowPathCommandV2 cmd = new FollowPathCommandV2("SCurve", drive, follower,
-        () -> pose[0], () -> vel[0], outputs::add, FieldFrame.RED_HALF_TURN)
-        .withClock(() -> t[0])
-        .withFrame(() -> FieldFrame.BLUE);
-    cmd.initialize();
-    while (!cmd.isFinished() && t[0] < 10) {
-      t[0] += 0.02;
-      ChassisVelocities last = vel[0];
-      cmd.execute();
-      // the robot does what it was asked one loop late
-      pose[0] = new Pose2d(pose[0].getX() + last.vx * 0.02, pose[0].getY() + last.vy * 0.02,
-          new Rotation2d(pose[0].getRotation().getRadians() + last.omega * 0.02));
-      vel[0] = outputs.get(outputs.size() - 1);
-    }
-    cmd.end(false);
-    assertTrue(cmd.isFinished());
-    assertEquals(4.0, pose[0].getX(), 0.02);
-    assertEquals(1.0, pose[0].getY(), 0.02);
-    ChassisVelocities stop = outputs.get(outputs.size() - 1);
-    assertEquals(0.0, Math.hypot(stop.vx, stop.vy), 0.0, "ends by sending zero");
   }
 
   /** The v3 adapter under an independent scheduler: runs, forks its event, finishes on the goal. */
