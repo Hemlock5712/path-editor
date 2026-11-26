@@ -446,7 +446,9 @@ and in the editor:
 | `.pathproject.json` (named points) | `"schema": 2` | schema 1 |
 
 The installed WPILib the build uses (2027.0.0-alpha-7) and alpha-8 still have the old corner origin: a robot on
-either has to convert its pose before giving it to the follower, until a WPILib release has PR 9590.
+either has to convert what crosses between it and the follower, until a WPILib release has PR 9590: poses in
+(the measured pose, moving goals) as `(L/2 - x, W/2 - y, heading + 180°)`, and velocities, in and out, as
+`(-vx, -vy, omega)`.
 
 **Boot.**
 - Each obstacle is grown by the bumpers' half-diagonal plus `marginMeters` (default 5 cm), so the result is safe
