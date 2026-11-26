@@ -142,7 +142,7 @@ class PathFileTest {
     assertThrows(IllegalArgumentException.class, () -> PathFile.read("{ \"waypoints\": [] }"));
     assertThrows(
         IllegalArgumentException.class,
-        () -> PathFile.read("{ \"schema\": 4, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
+        () -> PathFile.read("{ \"schema\": 5, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
     assertThrows(
         IllegalArgumentException.class,
         () -> PathFile.read("{ \"schema\": 1.5, \"waypoints\": [ { \"x\": 0, \"y\": 0 }, { \"x\": 1, \"y\": 0 } ] }"));
@@ -164,12 +164,28 @@ class PathFileTest {
   @Test
   void schemaOneFilesStillRead() throws IOException {
     PathSpec v1 = PathFile.read(exampleV1());
-    PathSpec v2 = PathFile.read(example());
+    PathSpec now = PathFile.read(example());
     assertTrue(v1.events().isEmpty());
-    assertEquals(v2.waypoints(), v1.waypoints());
-    assertEquals(v2.rotationTargets(), v1.rotationTargets());
+    // schema 1 to 3 had +X towards red: the same numbers, read from an old file, are turned half a turn about
+    // the centre into the WPILib 2027 frame (+X towards blue)
+    assertEquals(now.waypoints().size(), v1.waypoints().size());
+    for (int i = 0; i < now.waypoints().size(); i++) {
+      Waypoint a = now.waypoints().get(i);
+      Waypoint b = v1.waypoints().get(i);
+      assertEquals(-a.xMeters(), b.xMeters(), 0.0);
+      assertEquals(-a.yMeters(), b.yMeters(), 0.0);
+      assertEquals(a.hasTangent(), b.hasTangent());
+      if (a.hasTangent()) {
+        assertEquals(0.0, Angles.wrap(b.tangentRadians() - a.tangentRadians() - Math.PI), 1e-12);
+      }
+    }
+    assertEquals(now.rotationTargets().size(), v1.rotationTargets().size());
+    for (int i = 0; i < now.rotationTargets().size(); i++) {
+      assertEquals(0.0, Angles.wrap(v1.rotationTargets().get(i).headingRadians()
+          - now.rotationTargets().get(i).headingRadians() - Math.PI), 1e-12);
+    }
     String written = PathFile.write(v1);
-    assertTrue(written.startsWith("{\n  \"schema\": 3,\n  \"headingMode\": \"faceTravel\","), "writes the current schema");
+    assertTrue(written.startsWith("{\n  \"schema\": 4,\n  \"headingMode\": \"faceTravel\","), "writes the current schema");
     assertTrue(written.contains("\"events\": []"), written);
   }
 
@@ -240,6 +256,27 @@ class PathFileTest {
     assertEquals(50.0, partial.massKg(), 0.0);
     assertEquals(400.0, partial.driveMotor().stallCurrentAmps(), 0.0);
     assertEquals(Motor.KRAKEN_X60_FOC.stallTorqueNewtonMeters(), partial.driveMotor().stallTorqueNewtonMeters(), 0.0);
+  }
+
+  @Test
+  void olderFilesAreTurnedIntoThe2027Frame() {
+    String body = "\"waypoints\": [ { \"x\": -6, \"y\": -2, \"tangentDegrees\": 0, \"headingDegrees\": 90 },"
+        + " { \"x\": -3, \"y\": 0, \"headingDegrees\": -135 } ],"
+        + " \"rotationTargets\": [ { \"meters\": 1, \"degrees\": 180 } ],"
+        + " \"facePointZones\": [ { \"fromWaypoint\": 0, \"toWaypoint\": 1, \"x\": -3.645, \"y\": 0 } ] }";
+    PathSpec old = PathFile.read("{ \"schema\": 3, " + body);
+    assertEquals(6.0, old.waypoints().get(0).xMeters(), 0.0);
+    assertEquals(2.0, old.waypoints().get(0).yMeters(), 0.0);
+    assertEquals(Math.PI, old.waypoints().get(0).tangentRadians(), 1e-12);
+    assertEquals(-Math.PI / 2, old.waypoints().get(0).headingRadians(), 1e-12);
+    assertEquals(Math.toRadians(45.0), old.waypoints().get(1).headingRadians(), 1e-12);
+    assertEquals(0.0, old.rotationTargets().get(0).headingRadians(), 0.0);
+    assertEquals(new Vec2(3.645, 0.0), old.facePointZones().get(0).point());
+    // a schema 4 file is already in that frame, and what an old file is written back as reads the same
+    PathSpec current = PathFile.read("{ \"schema\": 4, " + body);
+    assertEquals(-6.0, current.waypoints().get(0).xMeters(), 0.0);
+    assertEquals(0.0, current.waypoints().get(0).tangentRadians(), 0.0);
+    assertEquals(PathFile.write(old), PathFile.write(PathFile.read(PathFile.write(old))));
   }
 
   static String exampleV2() throws IOException {

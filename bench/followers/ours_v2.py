@@ -121,7 +121,9 @@ def robot_json(mu):
 
 
 def to_ours(course):
-    """The neutral course as our path file's JSON tree."""
+    """The neutral course as our path file's JSON tree. Schema 4 so the reader takes the course's coordinates as
+    they are (it turns older files half a turn, into the WPILib 2027 field frame); faceTravel is what the schema 1
+    files this used to send did."""
     w = course.waypoints
     n = len(w) - 1
     wps = []
@@ -135,7 +137,7 @@ def to_ours(course):
         wps.append(m)
     targets = [{"waypoint": pos, "degrees": math.degrees(h)} for pos, h in course.headings()]
     lim = course.limits
-    return {"schema": 1, "waypoints": wps, "rotationTargets": targets, "facePointZones": [],
+    return {"schema": 4, "headingMode": "faceTravel", "waypoints": wps, "rotationTargets": targets, "facePointZones": [],
             "constraintZones": [], "maxMetersPerSecond": lim.max_speed,
             "maxMetersPerSecondSquared": lim.max_accel, "startMetersPerSecond": course.plan_start_speed,
             "endMetersPerSecond": course.end_speed}

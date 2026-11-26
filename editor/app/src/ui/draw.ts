@@ -190,9 +190,7 @@ function scaledField(image: HTMLImageElement, w: number, h: number): HTMLCanvasE
   canvas.height = h;
   const c = canvas.getContext("2d");
   if (!c) return null;
-  c.translate(w / 2, h / 2);
-  c.rotate(Math.PI);
-  c.drawImage(image, IMAGE_FIELD.x, IMAGE_FIELD.y, IMAGE_FIELD.w, IMAGE_FIELD.h, -w / 2, -h / 2, w, h);
+  c.drawImage(image, IMAGE_FIELD.x, IMAGE_FIELD.y, IMAGE_FIELD.w, IMAGE_FIELD.h, 0, 0, w, h);
   fieldCache = { image, w, h, canvas };
   return canvas;
 }
@@ -206,7 +204,7 @@ export function drawFieldImage(ctx: CanvasRenderingContext2D, m: FieldBackdrop):
   const w = L * view.scale;
   const h = W * view.scale;
   if (m.image) {
-    // The image has red on the left; turned half a turn, blue's wall is at -x as in WPILib. Scaling the big
+    // The image has red on the left and blue on the right: blue's wall is at +x, as in WPILib 2027. Scaling the big
     // image is the costliest thing on a frame, so it's done once per size and the copy is drawn after.
     const backdrop = scaledField(m.image, Math.round(w), Math.round(h));
     ctx.globalAlpha = 0.85;
@@ -220,11 +218,11 @@ export function drawFieldImage(ctx: CanvasRenderingContext2D, m: FieldBackdrop):
   ctx.lineWidth = 1;
   ctx.strokeRect(x0, y0, w, h);
   ctx.font = "600 11px system-ui, sans-serif";
-  ctx.fillStyle = "#93c5fd";
-  ctx.fillText("BLUE", x0 + 6, y0 - 6);
   ctx.fillStyle = "#fca5a5";
+  ctx.fillText("RED", x0 + 6, y0 - 6);
+  ctx.fillStyle = "#93c5fd";
   ctx.textAlign = "right";
-  ctx.fillText("RED", x0 + w - 6, y0 - 6);
+  ctx.fillText("BLUE", x0 + w - 6, y0 - 6);
   ctx.textAlign = "left";
 }
 

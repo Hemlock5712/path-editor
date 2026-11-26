@@ -66,6 +66,8 @@ public final class PathLibrary {
 
   public static final String FIELD_FILE = "field.json";
   public static final String PROJECT_FILE = ".pathproject.json";
+  /** The .pathproject.json schema whose named points are in the WPILib 2027 frame (+X towards blue). */
+  public static final int PROJECT_SCHEMA = 2;
   /** The 2026 field's size (the editor's default), for a deploy folder without field.json. */
   public static final double DEFAULT_FIELD_LENGTH = 16.54;
   public static final double DEFAULT_FIELD_WIDTH = 8.07;
@@ -256,12 +258,16 @@ public final class PathLibrary {
       if (project.get("settings") instanceof Map<?, ?> settings && settings.get("javaPackage") instanceof String pkg) {
         namesPackage = pkg;
       }
+      // schema 2 is the WPILib 2027 frame (+X towards blue); an older project's points are turned half a turn
+      boolean old = PathFile.number(project, "schema", 1.0) < PROJECT_SCHEMA;
       Object list = project.get("namedPoints");
       if (list instanceof List<?> l) {
         for (Object o : l) {
           Map<String, Object> m = PathFile.asMap(o, "named point");
-          points.put(String.valueOf(m.get("name")), new double[] {
-              PathFile.number(m, "x", Double.NaN), PathFile.number(m, "y", Double.NaN)});
+          double x = PathFile.number(m, "x", Double.NaN);
+          double y = PathFile.number(m, "y", Double.NaN);
+          points.put(String.valueOf(m.get("name")),
+              old ? new double[] {PathFile.turnedMeters(x), PathFile.turnedMeters(y)} : new double[] {x, y});
         }
       }
     } catch (RuntimeException e) {

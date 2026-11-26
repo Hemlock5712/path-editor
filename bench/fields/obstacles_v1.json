@@ -1,5 +1,6 @@
 {
- "description": "Pathfinding course v1: about 8 m across a field with six convex obstacles. Polygons in metres, counter-clockwise, WPILib 2027 field coordinates (origin at the field centre, +x toward the red wall).",
+ "schema": 2,
+ "description": "Pathfinding course v1: about 8 m across a field with six convex obstacles. Polygons in metres, counter-clockwise, origin at the field centre. A made-up course, not a real field.",
  "field": {
   "length_m": 16.54,
   "width_m": 8.02,

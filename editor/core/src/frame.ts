@@ -1,4 +1,5 @@
-// Blue/red frame maps about the centre origin. Port of lib's FieldFrame.java: paths are authored for
+// Blue/red frame maps about the centre origin (WPILib 2027's frame: +X towards the blue alliance wall, so blue's
+// half is x > 0). Port of lib's FieldFrame.java: paths are authored for
 // blue, and on red each pose goes into the blue frame and each output speed comes back. Each map is
 // its own inverse, and neither changes arc length, |κ| or the profile.
 

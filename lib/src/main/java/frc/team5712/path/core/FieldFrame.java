@@ -3,8 +3,9 @@ package frc.team5712.path.core;
 /**
  * The frame a path is followed in. Paths are authored for blue. On red, nothing is rebuilt: each
  * loop converts the measured pose into the blue frame, follows the blue path, and converts the
- * output speeds back. With the field origin at the centre (WPILib 2027), both flips are linear maps
- * that fix the origin, and each is its own inverse:
+ * output speeds back. The frame is WPILib 2027's: the origin at the field centre and +X towards the blue
+ * alliance wall, so blue's half is x &gt; 0. Both flips are linear maps that fix the origin, and each is its
+ * own inverse:
  *
  * <ul>
  *   <li>{@link #RED_HALF_TURN}: rotationally symmetric fields. (x, y) → (−x, −y), θ → θ + π,

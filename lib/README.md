@@ -430,8 +430,23 @@ shares. See the notes below for what that means for the boot budget.
 goal)` returns a `PlanResult` whose `path()` is an ordinary `Path` for the `PathFollower`.
 
 **Field file** (`deploy/paths/field.json`; `bench/fields/obstacles_v1.json` is the example and the test resource):
-`{"field": {"length_m", "width_m"}, "obstacles": [{"name", "polygon": [[x, y], ...]}]}`. Metres, origin at the
-field centre. Each polygon is replaced by its convex hull. `FieldMap.read(file)` loads it.
+`{"schema": 2, "field": {"length_m", "width_m"}, "obstacles": [{"name", "polygon": [[x, y], ...]}]}`. Metres, in the
+WPILib 2027 field frame: origin at the field centre, +X towards the blue alliance wall. Each polygon is replaced by
+its convex hull. `FieldMap.read(file)` loads it.
+
+**The field frame and older files.** Until 2026-11-26 the editor and this library put blue at x < 0 (+X towards
+red). WPILib 2027 (allwpilib PR 9590) points +X at the blue wall, which is that frame turned half a turn. Files
+say which they are in, and an older one is turned `(x, y, heading)` to `(-x, -y, heading + 180°)` when read, here
+and in the editor:
+
+| File | In the 2027 frame | Turned when read |
+|---|---|---|
+| `*.path.json` | `"schema": 4` | schema 1 to 3 |
+| `field.json` | `"schema": 2` | no `schema` |
+| `.pathproject.json` (named points) | `"schema": 2` | schema 1 |
+
+The installed WPILib the build uses (2027.0.0-alpha-7) and alpha-8 still have the old corner origin: a robot on
+either has to convert its pose before giving it to the follower, until a WPILib release has PR 9590.
 
 **Boot.**
 - Each obstacle is grown by the bumpers' half-diagonal plus `marginMeters` (default 5 cm), so the result is safe
@@ -501,7 +516,7 @@ been measured.
 
 `PathLibrary.loadAll()` also loads, from `deploy/paths`:
 
-- `field.json`, the editor's format (`{"field": {"length_m", "width_m"}, "obstacles": [{"name", "polygon"}]}`).
+- `field.json`, the editor's format (`{"schema": 2, "field": {"length_m", "width_m"}, "obstacles": [{"name", "polygon"}]}`).
   It builds the `Pathfinder` (grown obstacles and visibility graph) once, then warms it up with 40 throwaway plans so
   the JIT has compiled it before the first real one. On the desktop that's about 100 ms at boot on the 2026 field, 80 ms of it the
   warm-up. A bad file throws at boot, naming the file. With no field.json the field is empty (walls only) at the

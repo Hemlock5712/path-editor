@@ -1,7 +1,7 @@
 // field.json and robot.json: parsing and writing, keeping keys the editor doesn't edit. No editor state
 // here, so the headless tools (tools/optimise.mjs) can load it under Node.
 
-import { extensionsFromJson, fixed5, robotFromJson, robotToJson, writeJson, type JsonValue } from "../../../core/src/index.ts";
+import { extensionsFromJson, fixed5, robotFromJson, robotToJson, turnedMeters, writeJson, type JsonValue } from "../../../core/src/index.ts";
 import {
   DEFAULT_FIELD,
   DEFAULT_ROBOT_SETTINGS,
@@ -17,8 +17,14 @@ type JsonObject = { [key: string]: JsonValue };
 
 // ------------------------------------------------------------------------------ field.json
 
+/** The field.json schema in the WPILib 2027 frame: centre origin, +X towards the blue alliance wall. */
+export const FIELD_SCHEMA = 2;
+
 export function parseField(text: string): FieldDoc {
   const root = JSON.parse(text) as JsonObject;
+  // a file without the schema is in the old frame (+X towards red): its obstacles go half a turn
+  const old = !(typeof root.schema === "number" && root.schema >= FIELD_SCHEMA);
+  const at = (v: number) => (old ? turnedMeters(v) : v);
   const field = (root.field ?? {}) as JsonObject;
   const obstacles = Array.isArray(root.obstacles) ? root.obstacles : [];
   return {
@@ -34,7 +40,7 @@ export function parseField(text: string): FieldDoc {
           if (!Array.isArray(xy) || typeof xy[0] !== "number" || typeof xy[1] !== "number") {
             throw new RangeError("polygon points must be [x, y]");
           }
-          return [xy[0], xy[1]] as const;
+          return [at(xy[0]), at(xy[1])] as const;
         }),
       };
     }),
@@ -45,7 +51,8 @@ export function parseField(text: string): FieldDoc {
 
 /** The file text: unknown keys kept in their places, then field size and obstacles. */
 export function writeField(doc: FieldDoc): string {
-  const root: JsonObject = { ...(doc.extra as JsonObject) };
+  const root: JsonObject = { schema: FIELD_SCHEMA, ...(doc.extra as JsonObject) };
+  root.schema = FIELD_SCHEMA;
   root.field = { ...(doc.fieldExtra as JsonObject), length_m: doc.lengthMeters, width_m: doc.widthMeters };
   root.obstacles = doc.obstacles.map((o) => ({ name: o.name, polygon: o.polygon.map(([x, y]) => [x, y]) }));
   return writeJson(root, fixed5);

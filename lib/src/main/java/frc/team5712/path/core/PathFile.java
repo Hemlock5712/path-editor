@@ -15,16 +15,16 @@ import java.util.Map;
  *
  * <pre>
  * {
- *   "schema": 3,
+ *   "schema": 4,
  *   "headingMode": "hold",
  *   "waypoints": [
- *     { "x": -6, "y": -2, "tangentDegrees": 0, "headingDegrees": 0 },
- *     { "x": -3, "y": -1, "tangentScale": 1.2 },
- *     { "x": 0, "y": -1, "headingDegrees": 90 }
+ *     { "x": 6, "y": 2, "tangentDegrees": 180, "headingDegrees": 180 },
+ *     { "x": 3, "y": 1, "tangentScale": 1.2 },
+ *     { "x": 0, "y": 1, "headingDegrees": -90 }
  *   ],
  *   "rotationTargets": [
- *     { "waypoint": 0, "degrees": 0 },
- *     { "meters": 2.5, "degrees": 90 }
+ *     { "waypoint": 0, "degrees": 180 },
+ *     { "meters": 2.5, "degrees": -90 }
  *   ],
  *   "facePointZones": [
  *     { "fromWaypoint": 1, "toWaypoint": 2, "x": 0, "y": 0, "blendMeters": 0.5 }
@@ -56,10 +56,17 @@ import java.util.Map;
  * holds and blends the set headings, {@code "faceTravel"} faces the direction of travel when none are
  * set. Schema 1 and 2 files still read, as {@code faceTravel}, which is what they did; writing always
  * gives the current schema.
+ *
+ * <p>Schema 4 is the WPILib 2027 field frame: origin at the field centre, +X towards the blue alliance
+ * wall, +Y to the left facing +X. Schema 1 to 3 files had +X towards red (blue at x &lt; 0), so reading one
+ * turns every point and direction half a turn about the centre.
  */
 public final class PathFile {
   /** The schema this code writes. */
-  public static final int SCHEMA = 3;
+  public static final int SCHEMA = 4;
+
+  /** The first schema in the WPILib 2027 frame (+X towards blue); older files are turned half a turn when read. */
+  public static final int FRAME_2027_SCHEMA = 4;
 
   /** The oldest schema this code still reads. */
   public static final int OLDEST_SCHEMA = 1;
@@ -190,15 +197,18 @@ public final class PathFile {
               : "path file schema " + schema + " (this code reads " + OLDEST_SCHEMA + " to " + SCHEMA + ")");
     }
 
+    // an older file is in the old frame: every point and direction goes half a turn about the centre
+    boolean old = schema < FRAME_2027_SCHEMA;
+
     List<Waypoint> waypoints = new ArrayList<>();
     for (Object o : list(root, "waypoints")) {
       Map<String, Object> m = asMap(o, "waypoint");
-      double tangent = number(m, "tangentDegrees", Double.NaN);
-      double heading = number(m, "headingDegrees", Double.NaN);
+      double tangent = degrees(number(m, "tangentDegrees", Double.NaN), old);
+      double heading = degrees(number(m, "headingDegrees", Double.NaN), old);
       waypoints.add(
           new Waypoint(
-              required(m, "x"),
-              required(m, "y"),
+              meters(required(m, "x"), old),
+              meters(required(m, "y"), old),
               Double.isNaN(tangent) ? Double.NaN : tangent * DEGREES,
               number(m, "tangentScale", 1.0),
               Double.isNaN(heading) ? Double.NaN : heading * DEGREES));
@@ -211,7 +221,7 @@ public final class PathFile {
           new RotationTarget(
               number(m, "waypoint", Double.NaN),
               number(m, "meters", Double.NaN),
-              required(m, "degrees") * DEGREES));
+              degrees(required(m, "degrees"), old) * DEGREES));
     }
 
     List<FacePointZone> faces = new ArrayList<>();
@@ -221,7 +231,7 @@ public final class PathFile {
           new FacePointZone(
               required(m, "fromWaypoint"),
               required(m, "toWaypoint"),
-              new Vec2(required(m, "x"), required(m, "y")),
+              new Vec2(meters(required(m, "x"), old), meters(required(m, "y"), old)),
               number(m, "blendMeters", FacePointZone.DEFAULT_BLEND_METERS)));
     }
 
@@ -258,6 +268,25 @@ public final class PathFile {
         events,
         headingMode(root, (int) schema),
         string(root, "startFootprint", Footprint.BUMPERS));
+  }
+
+  private static double meters(double v, boolean old) {
+    return old ? turnedMeters(v) : v;
+  }
+
+  private static double degrees(double v, boolean old) {
+    return old ? turnedDegrees(v) : v;
+  }
+
+  /** A coordinate turned half a turn about the centre (+ 0: a turned 0 is 0, not -0). */
+  public static double turnedMeters(double v) {
+    return -v + 0.0;
+  }
+
+  /** A direction in degrees turned half a turn, in (-180, 180]. NaN (not set) stays NaN. */
+  public static double turnedDegrees(double v) {
+    double t = v + 180.0;
+    return t > 180.0 ? t - 360.0 : t;
   }
 
   private static String string(Map<String, Object> m, String key, String fallback) {

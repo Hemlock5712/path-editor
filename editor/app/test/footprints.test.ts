@@ -172,7 +172,7 @@ describe("Route around with the intake facing an obstacle", () => {
       obstacles: DEFAULT_FIELD.obstacles,
     };
     const before = ok(i);
-    expect(hits(before).map((c) => c.message)).toEqual([expect.stringMatching(/^With intakeOut, the robot hits blue hub/)]);
+    expect(hits(before).map((c) => c.message)).toEqual([expect.stringMatching(/^With intakeOut, the robot hits red hub/)]);
     const r = routeAround(makeEditorPath("P", s, 0), before, { field: DEFAULT_FIELD, robot: DEFAULT_ROBOT, bumperLengthMeters: 0.85, bumperWidthMeters: 0.85 });
     if (!r.ok) throw new Error(r.reason);
     // the corners sit below the straight line, down the gap, and the intake no longer touches anything

@@ -50,8 +50,8 @@ Open the robot project's root folder (the one with `build.gradle`). The editor w
 
 | File | What | Read by |
 | --- | --- | --- |
-| `src/main/deploy/paths/<name>.path.json` | one per path tab, written by `core`'s `writePath` (schema 3; schemas 1 and 2 still read) | `PathLibrary.loadAll()` |
-| `src/main/deploy/paths/field.json` | field size and obstacle polygons | `FieldMap.read` |
+| `src/main/deploy/paths/<name>.path.json` | one per path tab, written by `core`'s `writePath` (schema 4; schemas 1 to 3 still read, turned half a turn into the WPILib 2027 frame) | `PathLibrary.loadAll()` |
+| `src/main/deploy/paths/field.json` | field size and obstacle polygons (`"schema": 2`; a file without it is read turned half a turn) | `FieldMap.read` |
 | `src/main/deploy/paths/robot.json` | the robot (`RobotConfig`'s keys) plus `bumperLengthMeters` / `bumperWidthMeters` | `RobotFile`, `PlannerConfig.fromRobotFile` |
 | `src/main/deploy/paths/.pathproject.json` | editor-only: tab order and colours, named points (with their headings and twins) and which waypoints follow them, locked waypoints, linked copies, the red-frame and enum settings, the view | the editor only |
 | `src/main/java/<package>/PathEditorNames.java` | the project's names as constants: `Paths` (every path file), `Events` (every event name the paths use) and `Points` (the named points), implementing lib's `PathId`, `EventId` and `PointId`; package set in Settings > Project (`frc.robot` by default). It replaces the old `PathName.java`, which saving deletes | robot code (checked against deploy by `PathLibrary.loadAll()` at boot) |
@@ -107,7 +107,9 @@ after PathPlanner's.
 ## Features
 
 **Field.**
-- The 2026 field image, with grid lines every metre and the origin at the centre (WPILib 2027).
+- The 2026 field image, with grid lines every metre, in the WPILib 2027 field frame: the origin at the centre and
+  +X towards the blue alliance wall, so blue is on the right. A project saved before that (blue on the left) is
+  turned half a turn when it opens, and saved in the new frame.
 - Wheel to zoom about the pointer. Drag the empty field, or right- or middle-drag anywhere, to pan.
   **Fit** (F) resets the view.
 - **Blue/red view** (A). Paths are always stored for blue. The red view draws them through the
@@ -234,7 +236,7 @@ optionally, a heading.
   (on the field, or in **Settings → Field**).
 - Each polygon is used as its convex hull, as `FieldMap` does. The editor always writes `field.json`, in
   `FieldMap`'s format, so the robot loads the same obstacles. A project's own `field.json` keeps its own.
-- **The 2026 field (REBUILT) by default**, origin at the centre. The positions come from WPILib's
+- **The 2026 field (REBUILT) by default**, origin at the centre, blue at x > 0. The positions come from WPILib's
   2026 AprilTag layout (`2026-rebuilt-welded`), the sizes from the game manual:
   - **Hubs** (47 in square at x = ±3.645 m). Solid.
   - **Towers** (49.25 in by 45 in, against each alliance wall). Solid.

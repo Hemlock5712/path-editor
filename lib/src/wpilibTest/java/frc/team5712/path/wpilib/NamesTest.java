@@ -23,7 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** The editor's generated names: overloads that take them, and the boot check against deploy. */
 class NamesTest {
-  private static final String PROJECT = "{ \"schema\": 1, \"paths\": [], \"namedPoints\": [{ \"id\": \"pt-1\", \"name\": \"Score L\", \"x\": 1.5, \"y\": -2 }], "
+  private static final String PROJECT = "{ \"schema\": 2, \"paths\": [], \"namedPoints\": [{ \"id\": \"pt-1\", \"name\": \"Score L\", \"x\": 1.5, \"y\": -2 }], "
       + "\"settings\": { \"javaPackage\": \"%s\" }, \"view\": {} }";
 
   /** A deploy folder matching names.PathEditorNames: SCurve with intakeDown and shoot, and the point Score L. */
@@ -45,6 +45,14 @@ class NamesTest {
     assertEquals(Set.of(), lib.unboundEventNames());
     assertSame(lib, lib.requireAllEventsBound());
     assertTrue(lib.eventCommand("intakeDown").isPresent());
+  }
+
+  @Test
+  void anOlderProjectsNamedPointsAreTurnedIntoThe2027Frame(@TempDir File dir) throws IOException {
+    deploy(dir, "frc.robot.nothing.here", "intakeDown");
+    Files.writeString(dir.toPath().resolve(PathLibrary.PROJECT_FILE),
+        String.format(PROJECT, "frc.robot.nothing.here").replace("\"schema\": 2", "\"schema\": 1"));
+    assertArrayEquals(new double[] {-1.5, 2}, PathLibrary.loadAll(dir).namedPoint("Score L"), 0.0);
   }
 
   @Test

@@ -43,7 +43,7 @@ Where the two repos do the same job, each difference was checked on the bench (1
 
 | Same job | Precision-Drive | This library | Which is right |
 |---|---|---|---|
-| Field origin and red flip | blue corner; `(L - x, W - y, heading + 180)` | centre; `(-x, -y, heading + 180)` | **The library's origin, for WPILib 2027** (allwpilib PR 9590, merged 2026-11-07: centre origin). But see the first item below |
+| Field origin and red flip | blue corner; `(L - x, W - y, heading + 180)` | centre; `(-x, -y, heading + 180)` | **The library's origin, for WPILib 2027** (allwpilib PR 9590, merged 2026-11-07: centre origin, +X towards blue, which the library and editor now use) |
 | Motor limit when speeding up | scales the whole acceleration vector | caps only the part along the travel | **The library's.** Precision-Drive's rule: 2 % slower, cross-track 5.6 cm against 4.1 |
 | Sharing grip between driving and spin | `hypot(a, alpha x base radius)` | `a + alpha x I / (m r)` | **Either.** No measurable difference (31.72 s against 31.83 s, same slip). Keep the library's: it is the worst wheel's case and the planner uses the same one |
 | Finish: brake and ease-in | 6 m/s² and 6 /s | the traction limit and 12 /s | **The library's on a path planned to the limit** (Precision-Drive's is 14 % slower to settle on the straight and no more accurate). On a move planned at 6 m/s², as `DriveToPose` always is, Precision-Drive's has no overshoot and a third of the wheel slip: set the path's acceleration, not the finish law |
@@ -53,24 +53,15 @@ Where the two repos do the same job, each difference was checked on the bench (1
 
 What to do:
 
-- [ ] **Field direction, before anything drives.** Checked 2026-11-25; the fix is proposed, not made.
-      - The installed WPILib (2027.0.0-alpha-7, built 2026-09-01) still has the old frame: origin at the blue
-        wall's right corner, +X towards red (`Field.java` in `fields-java`; `2026-rebuilt-welded.json` has tag 1
-        at x 11.878, y 7.425). Alpha-8 (2026-10-30) is the same. allwpilib `main` after PR 9590 has the centre
-        origin with +X towards blue (tag 1 at x -3.607, y -3.390). No release has it yet.
-      - The editor and `fixtures/plan/field_2026.json` (centre origin, blue at x < 0) match neither: alpha-7's
-        frame shifted by (8.27, 4.03), and the new frame turned half a turn.
-      - Proposed: turn the editor's data half a turn, `(x, y, heading)` to `(-x, -y, heading + 180°)`, so its
-        numbers are the robot's: the obstacles and default named points in `editor/app/src/model/project.ts`,
-        the default start pose, `fixtures/plan/field_2026.json`, the points and seeds in the e2e and plan tests,
-        and a schema bump that turns saved paths and named points on load. `FieldFrame` and
-        `Conversions.allianceFrame` stay as they are. Draw blue on the right, as WPILib's field images now are.
-        Move the build to the first WPILib release with PR 9590 at the same time, and until then don't drive
-        on alpha-7 or alpha-8 without shifting the pose by half the field.
-      - Not proposed: swapping which alliance `allianceFrame` calls `BLUE`. It leaves every number in the editor
-        and in the library's telemetry a half-turn from the robot's pose, and the mirror flip would need a
-        fourth frame (a flip in y).
+- [ ] **Field direction: the robot's side.** The editor, the fixtures and the library are in the WPILib 2027
+      frame (centre origin, +X towards blue) since 2026-11-26, and older files are turned when read (lib/README.md,
+      "The field frame and older files"). Still to do:
+      - The build is on 2027.0.0-alpha-7, which has the old corner origin, as does alpha-8. Move `lib/build.gradle`
+        to the first WPILib release with allwpilib PR 9590, and until then don't drive without converting the
+        pose: `(L/2 - x, W/2 - y, heading + 180°)` from the old corner frame.
       - Precision-Drive's `AllianceFlip` and its "blue corner" comments need the same update.
+      - The end-to-end authoring spec (`editor/app/e2e-author/author.spec.ts`) and the editor's UI tests still
+        draw their paths at x < 0, now red's half. They don't depend on the side; move them if that confuses.
 - [ ] **One limiter.** Make the library's `OutputLimiter` public (it is package-private) with a
       `limit(current, wanted, dt)` for `TeleopDrive`, built from `robot.json`. Retire `AccelerationLimiter`.
       Its `MODEL_CURRENT` (150 A) becomes `statorCurrentLimitAmps`; its hand-calibration notes for mu and the

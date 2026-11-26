@@ -101,7 +101,7 @@ describe("path files", () => {
 
   it("rejects a wrong schema and missing fields", () => {
     expect(() => readPath('{ "waypoints": [] }')).toThrow(/schema/);
-    expect(() => readPath('{ "schema": 4, "waypoints": [] }')).toThrow(/schema 4/);
+    expect(() => readPath('{ "schema": 5, "waypoints": [] }')).toThrow(/schema 5/);
     expect(() => readPath('{ "schema": 1.5, "waypoints": [] }')).toThrow(/schema 1.5/);
     expect(() => readPath('{ "schema": 1, "waypoints": [ { "x": 0 }, { "x": 1, "y": 0 } ] }')).toThrow(/'y'/);
     expect(() => readPath('{ "schema": 1, "waypoints": [ { "x": "0", "y": 0 } ] }')).toThrow(/number/);
@@ -138,12 +138,38 @@ describe("path files", () => {
 describe("events (schema 2)", () => {
   it("still reads schema 1 files, and writes the current schema", () => {
     const v1 = readPath(exampleV1());
-    const v2 = readPath(example());
+    const now = readPath(example());
     expect(v1.events).toEqual([]);
-    expect(v1.waypoints).toEqual(v2.waypoints);
+    // schema 1 to 3 had +X towards red: the same numbers, read from an old file, are turned half a turn about
+    // the centre into the WPILib 2027 frame (+X towards blue)
+    expect(v1.waypoints.map((w) => [w.xMeters, w.yMeters])).toEqual(now.waypoints.map((w) => [-w.xMeters + 0, -w.yMeters + 0]));
+    v1.waypoints.forEach((w, i) => {
+      const t = now.waypoints[i]!.tangentRadians;
+      if (Number.isNaN(t)) expect(w.tangentRadians).toBeNaN();
+      else expect(Math.abs(Math.cos(w.tangentRadians) + Math.cos(t)) + Math.abs(Math.sin(w.tangentRadians) + Math.sin(t))).toBeLessThan(1e-12);
+    });
     const written = writePath(v1);
-    expect(written.startsWith('{\n  "schema": 3,\n  "headingMode": "faceTravel",')).toBe(true);
+    expect(written.startsWith('{\n  "schema": 4,\n  "headingMode": "faceTravel",')).toBe(true);
     expect(written).toContain('"events": []');
+  });
+
+  it("turns files older than schema 4 half a turn, into the WPILib 2027 frame", () => {
+    const body =
+      '"waypoints": [ { "x": -6, "y": -2, "tangentDegrees": 0, "headingDegrees": 90 }, { "x": -3, "y": 0, "headingDegrees": -135 } ],' +
+      ' "rotationTargets": [ { "meters": 1, "degrees": 180 } ],' +
+      ' "facePointZones": [ { "fromWaypoint": 0, "toWaypoint": 1, "x": -3.645, "y": 0 } ] }';
+    const old = readPath('{ "schema": 3, ' + body);
+    expect([old.waypoints[0]!.xMeters, old.waypoints[0]!.yMeters]).toEqual([6, 2]);
+    expect(old.waypoints[0]!.tangentRadians).toBeCloseTo(Math.PI, 12);
+    expect(old.waypoints[0]!.headingRadians).toBeCloseTo(-Math.PI / 2, 12);
+    expect(old.waypoints[1]!.headingRadians).toBeCloseTo(Math.PI / 4, 12);
+    expect(old.rotationTargets[0]!.headingRadians).toBe(0);
+    expect(old.facePointZones[0]!.point).toEqual({ x: 3.645, y: 0 });
+    // a schema 4 file is already in that frame, and what an old file is written back as reads the same
+    const current = readPath('{ "schema": 4, ' + body);
+    expect(current.waypoints[0]!.xMeters).toBe(-6);
+    expect(current.waypoints[0]!.tangentRadians).toBe(0);
+    expect(writePath(readPath(writePath(old)))).toBe(writePath(old));
   });
 
   it("reads events in file order, with positions along the path", () => {

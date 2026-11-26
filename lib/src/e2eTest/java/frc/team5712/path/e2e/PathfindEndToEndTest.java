@@ -78,12 +78,12 @@ class PathfindEndToEndTest {
     Path dir = Files.createTempDirectory("otf-deploy");
     Files.copy(FIELD, dir.resolve(PathLibrary.FIELD_FILE));
     Files.writeString(dir.resolve(PathLibrary.PROJECT_FILE),
-        "{\"schema\": 1, \"paths\": [], \"namedPoints\": [{\"id\": \"p1\", \"name\": \"Depot\", \"x\": -7.3, \"y\": 2.2}],"
+        "{\"schema\": 2, \"paths\": [], \"namedPoints\": [{\"id\": \"p1\", \"name\": \"Depot\", \"x\": 7.3, \"y\": -2.2}],"
             + " \"settings\": {}, \"view\": {}}", StandardCharsets.UTF_8);
     // a sweep through the neutral zone that starts moving: the on-the-fly path hands over at 1.5 m/s
-    PathSpec sweep = PathSpec.of(List.of(Waypoint.at(-1.4, -2.2, Math.PI / 2), Waypoint.at(-1.4, 0.0),
-            Waypoint.at(-1.4, 2.2, Math.PI / 2)))
-        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, Math.PI / 2), RotationTarget.atWaypoint(2, Math.PI / 2)))
+    PathSpec sweep = PathSpec.of(List.of(Waypoint.at(1.4, 2.2, -Math.PI / 2), Waypoint.at(1.4, 0.0),
+            Waypoint.at(1.4, -2.2, -Math.PI / 2)))
+        .withRotationTargets(List.of(RotationTarget.atWaypoint(0, -Math.PI / 2), RotationTarget.atWaypoint(2, -Math.PI / 2)))
         .withLimits(4.0, 6.0)
         .withEndSpeeds(1.5, 0.0);
     Files.writeString(dir.resolve("Sweep" + PathLibrary.SUFFIX), PathFile.write(sweep), StandardCharsets.UTF_8);
@@ -295,7 +295,7 @@ class PathfindEndToEndTest {
     var sweep = library.get("Sweep");
     var end = sweep.sample(sweep.lengthMeters());
     Pose endBlue = new Pose(end.xMeters(), end.yMeters(), end.headingRadians());
-    Pose[] starts = {new Pose(-6.0, 2.5, 0.0), new Pose(-6.5, -2.8, Math.PI / 2), new Pose(1.5, -3.0, Math.PI)};
+    Pose[] starts = {new Pose(6.0, -2.5, Math.PI), new Pose(6.5, 2.8, -Math.PI / 2), new Pose(-1.5, 3.0, 0.0)};
     for (FieldFrame frame : new FieldFrame[] {FieldFrame.BLUE, FieldFrame.RED_HALF_TURN}) {
       for (int i = 0; i < starts.length; i++) {
         Result r = check(run("thenFollow", i, frame, frame.fromBlue(starts[i]), frame.fromBlue(endBlue),
@@ -320,7 +320,7 @@ class PathfindEndToEndTest {
     var end = sweep.sample(sweep.lengthMeters());
     var start = sweep.sample(0.0);
     Pose startBlue = new Pose(start.xMeters(), start.yMeters(), start.headingRadians());
-    Pose movedBlue = new Pose(end.xMeters() + 0.08, end.yMeters(), end.headingRadians() + Math.toRadians(3.0));
+    Pose movedBlue = new Pose(end.xMeters() - 0.08, end.yMeters(), end.headingRadians() + Math.toRadians(3.0));
     for (FieldFrame frame : new FieldFrame[] {FieldFrame.BLUE, FieldFrame.RED_HALF_TURN}) {
       Pose endReal = frame.fromBlue(new Pose(end.xMeters(), end.yMeters(), end.headingRadians()));
       Pose movedReal = frame.fromBlue(movedBlue);
@@ -343,10 +343,10 @@ class PathfindEndToEndTest {
     List<String> failed = new ArrayList<>();
     double[] depot = library.namedPoint("Depot");
     // the goal is seen 25 cm further along the wall after a second (a moving game piece, in the real frame)
-    Pose moved = new Pose(depot[0], depot[1] - 0.25, Math.PI);
+    Pose moved = new Pose(depot[0], depot[1] + 0.25, 0.0);
     Supplier<Optional<Pose2d>> seen = () -> Optional.of(Conversions.toPose2d(moved));
-    Result r = check(run("movingGoal", 0, FieldFrame.BLUE, new Pose(-2.0, 3.2, 0.0), moved,
-        (pf, m) -> pf.toPoint(m, "Depot", Rotation2d.k180deg).withMovingGoal(seen), null, 99));
+    Result r = check(run("movingGoal", 0, FieldFrame.BLUE, new Pose(2.0, -3.2, Math.PI), moved,
+        (pf, m) -> pf.toPoint(m, "Depot", Rotation2d.ZERO).withMovingGoal(seen), null, 99));
     if (!r.pass()) {
       failed.add("movingGoal: " + r.failures());
     }

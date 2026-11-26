@@ -21,7 +21,7 @@ const planned = (spec: PathSpec) => {
   return a;
 };
 
-// from the blue start area across the blue hub: waypoint 2 sits in it
+// from the red start area (x < 0) across the red hub: waypoint 2 sits in it
 const throughHub = makePathSpec({
   waypoints: [makeWaypoint(-6.5, -1.5, Number.NaN, 1, 0), makeWaypoint(-4, -1.5), makeWaypoint(-3.65, 0.3), makeWaypoint(-0.5, 0, Number.NaN, 1, 0)],
   maxMetersPerSecond: 4,
@@ -77,6 +77,6 @@ describe("route around, when a waypoint itself is in an obstacle", () => {
       maxMetersPerSecond: 4,
     });
     const r = routeAround(makeEditorPath("P", inHub, 0), planned(inHub), setup);
-    expect(r).toEqual({ ok: false, reason: "Waypoint 1's bumpers are inside the blue hub. Move it out first: Route around goes between your waypoints and doesn't move them." });
+    expect(r).toEqual({ ok: false, reason: "Waypoint 1's bumpers are inside the red hub. Move it out first: Route around goes between your waypoints and doesn't move them." });
   });
 });

@@ -11,6 +11,8 @@
 import {
   exact,
   readPath,
+  turnedMeters,
+  wrap,
   writeJson,
   writePath,
   type JsonValue,
@@ -38,7 +40,8 @@ export const PATH_SUFFIX = ".path.json";
 export const FIELD_FILE = `${PATHS_DIR}/field.json`;
 export const ROBOT_FILE = `${PATHS_DIR}/robot.json`;
 export const SIDECAR_FILE = `${PATHS_DIR}/.pathproject.json`;
-export const SIDECAR_SCHEMA = 1;
+/** Schema 2 is the WPILib 2027 frame (+X towards blue); a schema 1 file's points and view are turned half a turn. */
+export const SIDECAR_SCHEMA = 2;
 
 type JsonObject = { [key: string]: JsonValue };
 
@@ -136,13 +139,29 @@ export function writeSidecar(project: Project, view: ViewState): string {
 
 function parseSidecar(text: string): Sidecar {
   const root = JSON.parse(text) as Partial<Sidecar>;
-  if (root.schema !== SIDECAR_SCHEMA) throw new RangeError(`sidecar schema ${String(root.schema)}`);
+  if (root.schema !== SIDECAR_SCHEMA && root.schema !== 1) throw new RangeError(`sidecar schema ${String(root.schema)}`);
+  const old = root.schema === 1;
+  const namedPoints: readonly NamedPoint[] = Array.isArray(root.namedPoints) ? root.namedPoints : [];
+  const view = root.view ?? {};
   return {
     schema: SIDECAR_SCHEMA,
     paths: Array.isArray(root.paths) ? root.paths : [],
-    namedPoints: Array.isArray(root.namedPoints) ? root.namedPoints : [],
+    namedPoints: old
+      ? namedPoints.map((p) => ({
+          ...p,
+          x: turnedMeters(p.x),
+          y: turnedMeters(p.y),
+          ...(typeof p.heading === "number" ? { heading: wrap(p.heading + Math.PI) } : {}),
+        }))
+      : namedPoints,
     settings: root.settings ?? {},
-    view: root.view ?? {},
+    view: old
+      ? {
+          ...view,
+          ...(typeof view.centerX === "number" ? { centerX: turnedMeters(view.centerX) } : {}),
+          ...(typeof view.centerY === "number" ? { centerY: turnedMeters(view.centerY) } : {}),
+        }
+      : view,
   };
 }
 

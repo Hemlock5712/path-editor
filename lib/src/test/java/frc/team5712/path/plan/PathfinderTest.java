@@ -299,6 +299,20 @@ class PathfinderTest {
   }
 
   @Test
+  void aFieldFileWithoutTheSchemaIsTurnedIntoThe2027Frame() {
+    String body = "\"field\": {\"length_m\": 16.54, \"width_m\": 8.07},"
+        + " \"obstacles\": [{\"name\": \"blue hub\", \"polygon\": [[-4, -1], [-3, -1], [-3, 1], [-4, 1]]}] }";
+    // no schema: written when +X pointed towards red, so the blue hub goes half a turn, to x > 0
+    FieldMap old = FieldMap.fromJson(PathFile.asMap(Json.parse("{ " + body), "f"));
+    assertTrue(old.obstacles().get(0).containsStrictly(3.5, 0.0));
+    assertTrue(!old.obstacles().get(0).containsStrictly(-3.5, 0.0));
+    assertEquals("blue hub", old.names().get(0));
+    // schema 2 is already in the 2027 frame
+    FieldMap now = FieldMap.fromJson(PathFile.asMap(Json.parse("{ \"schema\": 2, " + body), "f"));
+    assertTrue(now.obstacles().get(0).containsStrictly(-3.5, 0.0));
+  }
+
+  @Test
   void fieldFileErrorsAreClear() {
     Map<String, Object> bad = PathFile.asMap(Json.parse("{\"field\": {\"length_m\": 16}}"), "f");
     try {

@@ -61,7 +61,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("checks offer fixes: Route around for a hit, Snap for an event off the path", async ({ page }) => {
-  // across the blue hub
+  // across the red hub (x < 0)
   await draw(page, [
     [-6.5, -1.5],
     [-4, -1.5],
@@ -71,7 +71,7 @@ test("checks offer fixes: Route around for a hit, Snap for an event off the path
   await page.keyboard.press("Escape");
   await page.getByTestId("checks-badge").click();
   const checks = page.getByTestId("checks");
-  await expect(checks).toContainText("Bumpers hit blue hub");
+  await expect(checks).toContainText("Bumpers hit red hub");
   await page.screenshot({ path: "test-results/fixes.png" });
   await checks.getByRole("button", { name: "Route around" }).first().click();
   await expect(page.getByTestId("optimise-apply")).toBeVisible({ timeout: 30_000 });
@@ -157,7 +157,7 @@ test("Measure, Face next, copy and paste, and the pose offered beside the hub", 
   await dblField(page, -3.6, -1.0, false);
   const offer = page.getByTestId("toast-action");
   await expect(offer).toBeVisible();
-  await expect(page.locator(".toast", { has: offer })).toContainText("in front of the blue hub, facing it");
+  await expect(page.locator(".toast", { has: offer })).toContainText("in front of the red hub, facing it");
   await offer.click();
   const end = (await doc(page)).file!.waypoints.at(-1)!;
   expect(end.y).toBeCloseTo(-0.5969 - 0.425 - 0.45, 3);

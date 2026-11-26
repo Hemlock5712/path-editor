@@ -72,15 +72,51 @@ describe("project files", () => {
     // a new project's field is the 2026 field, obstacles and all, in the format the Java FieldMap reads
     const field = parseField(files.get(FIELD_FILE)!);
     expect(field.obstacles.map((o) => o.name)).toEqual(expect.arrayContaining(["blue hub", "red hub", "blue tower", "red tower"]));
+    // WPILib 2027 frame: +X towards the blue alliance wall, so blue's hub is at x > 0
     expect(field.obstacles.find((o) => o.name === "blue hub")!.polygon).toEqual([
-      [-4.2419, -0.5969],
-      [-3.0481, -0.5969],
-      [-3.0481, 0.5969],
-      [-4.2419, 0.5969],
+      [3.0481, -0.5969],
+      [4.2419, -0.5969],
+      [4.2419, 0.5969],
+      [3.0481, 0.5969],
     ]);
+    expect(JSON.parse(files.get(FIELD_FILE)!).schema).toBe(2);
     expect(files.has(ROBOT_FILE)).toBe(false);
     expect(files.has(SIDECAR_FILE)).toBe(true);
     expect(files.has(javaPath("frc.robot"))).toBe(true);
+  });
+
+  it("turns a project saved in the old frame (+X towards red) half a turn when it loads", () => {
+    const old = new Map<string, string>([
+      [
+        `${PATHS_DIR}/Old.path.json`,
+        '{ "schema": 3, "waypoints": [ { "x": -6, "y": -2, "headingDegrees": 0 }, { "x": -3, "y": -1, "headingDegrees": 90 } ] }',
+      ],
+      [FIELD_FILE, '{ "field": { "length_m": 16.54, "width_m": 8.07 }, "obstacles": [ { "name": "blue hub", "polygon": [[-4, -1], [-3, -1], [-3, 1]] } ] }'],
+      [
+        SIDECAR_FILE,
+        '{ "schema": 1, "paths": [], "namedPoints": [ { "id": "p1", "name": "Depot", "x": -7.3, "y": 2.2, "heading": 0 } ], "settings": {}, "view": { "centerX": -2, "centerY": 1 } }',
+      ],
+    ]);
+    const loaded = fromFiles(old)!;
+    expect(loaded.problems).toEqual([]);
+    const w = loaded.project.paths[0]!.spec.waypoints;
+    expect(w.map((p) => [p.xMeters, p.yMeters])).toEqual([[6, 2], [3, 1]]);
+    expect(w[0]!.headingRadians).toBeCloseTo(Math.PI, 12);
+    expect(w[1]!.headingRadians).toBeCloseTo(-Math.PI / 2, 12);
+    expect(loaded.project.field.obstacles[0]!.polygon).toEqual([[4, 1], [3, 1], [3, -1]]);
+    const depot = loaded.project.namedPoints[0]!;
+    expect([depot.x, depot.y]).toEqual([7.3, -2.2]);
+    expect(Math.abs(depot.heading!)).toBeCloseTo(Math.PI, 12);
+    expect([loaded.view.centerX, loaded.view.centerY]).toEqual([2, -1]);
+    // saved again it is in the new frame, marked so, and loads the same
+    const saved = toFiles(loaded.project, loaded.view, { hadField: true });
+    expect(JSON.parse(saved.get(`${PATHS_DIR}/Old.path.json`)!).schema).toBe(4);
+    expect(JSON.parse(saved.get(FIELD_FILE)!).schema).toBe(2);
+    expect(JSON.parse(saved.get(SIDECAR_FILE)!).schema).toBe(2);
+    const again = fromFiles(saved)!;
+    expect(again.project.paths[0]!.spec.waypoints.map((p) => [p.xMeters, p.yMeters])).toEqual([[6, 2], [3, 1]]);
+    expect(again.project.field.obstacles[0]!.polygon).toEqual([[4, 1], [3, 1], [3, -1]]);
+    expect([again.project.namedPoints[0]!.x, again.project.namedPoints[0]!.y]).toEqual([7.3, -2.2]);
   });
 
   it("keeps pins and the drawing view settings in the sidecar", () => {
@@ -151,6 +187,7 @@ describe("field.json", () => {
     const text = writeField(field);
     const tree = JSON.parse(text);
     expect(Object.keys(tree)).toEqual(Object.keys(JSON.parse(BENCH_FIELD)));
+    expect(tree.schema).toBe(2);
     expect(tree.route).toEqual(JSON.parse(BENCH_FIELD).route);
     expect(tree.field.origin).toBe("centre");
     expect(tree.obstacles[0].polygon[0]).toEqual(field.obstacles[0]!.polygon[0]);

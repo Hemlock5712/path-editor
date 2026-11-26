@@ -4,7 +4,7 @@
 //   node tools/optimise.mjs <path.json> --robot <robot.json> --field <field.json> --budget-ms N --seed S
 //        [--out <file>] [--move-waypoints] [--corridor M] [--lock 2,5] [--segment 1,4] [--no-scales]
 //
-// Writes the optimised path file (schema 3, the core's writer) to --out, or to stdout; a one-line summary
+// Writes the optimised path file (schema 4, the core's writer) to --out, or to stdout; a one-line summary
 // goes to stderr. The budget is turned into a number of plans to try (500 per second of budget), so a run
 // is deterministic for a path, budget and seed on any machine; there is no wall-clock cut here.
 //

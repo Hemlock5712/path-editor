@@ -110,13 +110,14 @@ export interface Project {
 }
 
 /**
- * The 2026 field's (REBUILT) solid elements, as obstacles: centre origin, metres, blue at x < 0. Positions
+ * The 2026 field's (REBUILT) solid elements, as obstacles, in the WPILib 2027 field frame: centre origin, metres,
+ * +X towards the blue alliance wall (blue at x > 0). Positions
  * from WPILib's 2026-rebuilt-welded AprilTag layout (allwpilib fields/.../2026-rebuilt-welded.csv,
  * c610ffd17f); sizes from the game manual's nominal dimensions.
  *
  *   - HUB: a 47 in square, its centre where its four faces' tags put it (x ±3.645, y 0).
- *   - TOWER: 49.25 in wide by 45 in deep against the alliance wall, centred on its two tags (y -0.073 blue,
- *     +0.073 red): the uprights and supports can't be driven through.
+ *   - TOWER: 49.25 in wide by 45 in deep against the alliance wall, centred on its two tags (y +0.073 blue,
+ *     -0.073 red): the uprights and supports can't be driven through.
  *   - TRENCH: robots up to 22.25 in tall drive under each arm (a 50.34 in lane along the guardrail), so the
  *     lane is free; the rest of the 65.65 in trench, beside the BUMP, is the arm's solid support, 47 in deep
  *     like the hub. (Taller robots: add the lanes as obstacles.)
@@ -147,14 +148,14 @@ const TRENCH_SUPPORT_Y0 = HUB_HALF + 73 * IN; // the bump's outer edge
 const TRENCH_SUPPORT_Y1 = 8.07 / 2 - 50.34 * IN; // where the lane under the arm begins
 
 export const FIELD_2026_OBSTACLES: readonly Obstacle[] = [
-  rect("blue hub", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, -HUB_HALF, HUB_HALF),
-  rect("red hub", HUB_X - HUB_HALF, HUB_X + HUB_HALF, -HUB_HALF, HUB_HALF),
-  rect("blue tower", -FIELD_HALF_X, -FIELD_HALF_X + TOWER_DEPTH, -TOWER_Y - TOWER_HALF_W, -TOWER_Y + TOWER_HALF_W),
-  rect("red tower", FIELD_HALF_X - TOWER_DEPTH, FIELD_HALF_X, TOWER_Y - TOWER_HALF_W, TOWER_Y + TOWER_HALF_W),
-  rect("blue trench, upper support", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, TRENCH_SUPPORT_Y0, TRENCH_SUPPORT_Y1),
-  rect("blue trench, lower support", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, -TRENCH_SUPPORT_Y1, -TRENCH_SUPPORT_Y0),
-  rect("red trench, upper support", HUB_X - HUB_HALF, HUB_X + HUB_HALF, TRENCH_SUPPORT_Y0, TRENCH_SUPPORT_Y1),
-  rect("red trench, lower support", HUB_X - HUB_HALF, HUB_X + HUB_HALF, -TRENCH_SUPPORT_Y1, -TRENCH_SUPPORT_Y0),
+  rect("blue hub", HUB_X - HUB_HALF, HUB_X + HUB_HALF, -HUB_HALF, HUB_HALF),
+  rect("red hub", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, -HUB_HALF, HUB_HALF),
+  rect("blue tower", FIELD_HALF_X - TOWER_DEPTH, FIELD_HALF_X, TOWER_Y - TOWER_HALF_W, TOWER_Y + TOWER_HALF_W),
+  rect("red tower", -FIELD_HALF_X, -FIELD_HALF_X + TOWER_DEPTH, -TOWER_Y - TOWER_HALF_W, -TOWER_Y + TOWER_HALF_W),
+  rect("blue trench, upper support", HUB_X - HUB_HALF, HUB_X + HUB_HALF, TRENCH_SUPPORT_Y0, TRENCH_SUPPORT_Y1),
+  rect("blue trench, lower support", HUB_X - HUB_HALF, HUB_X + HUB_HALF, -TRENCH_SUPPORT_Y1, -TRENCH_SUPPORT_Y0),
+  rect("red trench, upper support", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, TRENCH_SUPPORT_Y0, TRENCH_SUPPORT_Y1),
+  rect("red trench, lower support", -HUB_X - HUB_HALF, -HUB_X + HUB_HALF, -TRENCH_SUPPORT_Y1, -TRENCH_SUPPORT_Y0),
 ];
 
 export const DEFAULT_FIELD: FieldDoc = {
@@ -292,7 +293,7 @@ const STARTER_LENGTH = 2.5;
  * first and last waypoints always have one). By default it starts on the blue side, facing the field,
  * clear of the hub.
  */
-export function starterSpec(x = -6.5, y = -1.5, headingRadians = 0, defaults: PathDefaults = DEFAULT_PATH_DEFAULTS): PathSpec {
+export function starterSpec(x = 6.5, y = 1.5, headingRadians = Math.PI, defaults: PathDefaults = DEFAULT_PATH_DEFAULTS): PathSpec {
   const ex = Math.round((x + STARTER_LENGTH * Math.cos(headingRadians)) * 1e5) / 1e5;
   const ey = Math.round((y + STARTER_LENGTH * Math.sin(headingRadians)) * 1e5) / 1e5;
   return makePathSpec({

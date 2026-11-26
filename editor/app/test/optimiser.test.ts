@@ -54,7 +54,7 @@ const DEG = Math.PI / 180;
 const poses = (spec: PathSpec) =>
   JSON.parse(writePath(spec)).waypoints.map((w: { x: number; y: number; headingDegrees?: number }) => [w.x, w.y, w.headingDegrees ?? null]);
 
-// straight across the blue hub (2026 field), with one free waypoint over its middle
+// straight across the red hub (2026 field, x < 0), with one free waypoint over its middle
 const throughHub = makePathSpec({
   waypoints: [makeWaypoint(-6.5, 0, 0, 1, 0), makeWaypoint(-3.645, 0.3), makeWaypoint(-0.5, 0, 0, 1, 0)],
   maxMetersPerSecond: 4,
@@ -216,7 +216,7 @@ describe("optimiser", () => {
     // a hit the curve can't clear: exit code 3, the path unchanged, and where
     const c = run(throughHub);
     expect(c.status).toBe(3);
-    expect(c.stderr).toContain("Can't clear the blue hub by reshaping the curve between waypoints 0 and 1: add a waypoint or move one.");
+    expect(c.stderr).toContain("Can't clear the red hub by reshaping the curve between waypoints 0 and 1: add a waypoint or move one.");
     expect(c.out).toBe(writePath(throughHub));
   }, 60_000);
 });
@@ -242,11 +242,11 @@ describe("the optimiser and the 2026 field's obstacles", () => {
     expect(bumperChecks(throughHub)!.some((c) => c.severity === "error")).toBe(true);
     const r = optimise(input(throughHub, field), { ...quick, maxEvaluations: 600 });
     expect(r.clear).toBe(false);
-    expect(r.blockedBy).toBe("blue hub");
+    expect(r.blockedBy).toBe("red hub");
     expect(r.spec).toBe(throughHub);
     expect(r.afterSeconds).toBe(r.beforeSeconds);
     expect(blockedMessage(r, { moveWaypoints: false, corridorMeters: 0.5 })).toBe(
-      "Can't clear the blue hub by reshaping the curve between waypoints 0 and 1: add a waypoint or move one.",
+      "Can't clear the red hub by reshaping the curve between waypoints 0 and 1: add a waypoint or move one.",
     );
     // the suggestion is out of the hub, on the side the path was nearer
     const at = r.blockedAt!;
@@ -269,7 +269,7 @@ describe("the optimiser and the 2026 field's obstacles", () => {
     expect(r.clear).toBe(false);
     expect(r.spec).toBe(throughHub);
     expect(blockedMessage(r, options)).toMatch(
-      /^Can't clear the blue hub between waypoints [01] and [12] within 0.2 m: widen the corridor, add a waypoint, or use Route around obstacles\.$/,
+      /^Can't clear the red hub between waypoints [01] and [12] within 0.2 m: widen the corridor, add a waypoint, or use Route around obstacles\.$/,
     );
   }, 30_000);
 

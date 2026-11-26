@@ -242,7 +242,7 @@ test("add waypoints and an event, save, reload, and get the same file back", asy
   await page.getByTestId("save").click();
   await expect(page.getByTestId("status")).toContainText("Saved to robot-project");
   const saved = (await folderFile(page, PATH_FILE))!;
-  expect(saved).toContain('"schema": 3');
+  expect(saved).toContain('"schema": 4');
   expect(saved).toContain('"headingMode": "hold"');
   expect(saved).toContain('{ "name": "intakeDown", "atWaypoint": 0.5 }');
   expect(saved.match(/"x":/g)).toHaveLength(4);
@@ -291,8 +291,9 @@ test("Joe's auto: the cusp at its end is an error on the field, and resetting th
   // the sim: the robot runs past the end and comes back
   type Sim = { finishSeconds: number; x: number[]; y: number[] } | null;
   const sim = (): Promise<Sim> => page.evaluate(() => (window as unknown as { pathEditorTest: { doc(): { sim: Sim } } }).pathEditorTest.doc().sim);
-  const goal = [-3.91553, 3.39881];
-  const along = [-1, 0.022]; // the way it arrives (from waypoint 3), near enough -x
+  // (the file is schema 3, in the old frame: it loads turned half a turn, so its end and the way in are too)
+  const goal = [3.91553, -3.39881];
+  const along = [1, -0.022]; // the way it arrives (from waypoint 3), near enough +x
   const overshoot = (r: NonNullable<Sim>) => Math.max(...r.x.map((x, i) => (x - goal[0]!) * along[0]! + (r.y[i]! - goal[1]!) * along[1]!));
   await page.getByTestId("sim-toggle").click();
   await expect.poll(async () => (await sim()) !== null, { timeout: 30_000 }).toBe(true);
@@ -399,13 +400,13 @@ test("a path through the hub turns red; the curve alone can't clear it, so it sa
   await page.goto("/");
   await drawStarter(page);
   await expect(page.getByTestId("checks-badge")).toContainText("No issues"); // the starter clears the hub
-  // across the blue hub (2026 field): the new middle point sits over the hub's centre
+  // across the red hub (2026 field, x < 0): the new middle point sits over the hub's centre
   await dblField(page, -3.645, 0.3);
   await dblField(page, -0.5, 0);
   await page.keyboard.press("Escape");
   let p = await poses(page);
   expect(p.collisions.length).toBeGreaterThan(0);
-  expect(p.collisions[0]!.message).toContain("blue hub");
+  expect(p.collisions[0]!.message).toContain("red hub");
   await expect(page.getByTestId("checks-badge")).toHaveClass(/error/);
   await expect(page.getByTestId("optimise-clearance")).toContainText("hit an obstacle");
   // the colliding stretch is drawn red on the path
@@ -420,7 +421,7 @@ test("a path through the hub turns red; the curve alone can't clear it, so it sa
   await page.getByTestId("optimise-path").click();
   await expect(page.getByTestId("optimise-discard")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("optimise-status")).toContainText(
-    /Can't clear the blue hub by reshaping the curve between waypoints \d and \d: add a waypoint or move one\./,
+    /Can't clear the red hub by reshaping the curve between waypoints \d and \d: add a waypoint or move one\./,
   );
   await expect(page.getByTestId("optimise-apply")).toHaveCount(0);
   await page.screenshot({ path: "test-results/obstacles-blocked.png" });
@@ -449,7 +450,7 @@ test("a path through the hub turns red; the curve alone can't clear it, so it sa
   await page.screenshot({ path: "test-results/obstacles-after.png" });
 });
 
-test("Route around obstacles plans round the blue hub with the robot's pathfinder, shows it dashed, and applies as one undo step", async ({ page }) => {
+test("Route around obstacles plans round the red hub with the robot's pathfinder, shows it dashed, and applies as one undo step", async ({ page }) => {
   await page.goto("/");
   await drawStarter(page);
   await page.keyboard.press("Escape");

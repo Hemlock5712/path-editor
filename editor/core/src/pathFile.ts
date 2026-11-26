@@ -3,6 +3,8 @@
 // Schema 2 added events; schema 3 added waypoint headings and headingMode. Schema 1 and 2 files still
 // read, as "faceTravel" (what they did); writing always gives the current schema. An event's footprint and
 // startFootprint need no new schema: they don't change how the path is followed, so older libraries read it the same.
+// Schema 4 is the WPILib 2027 field frame: origin at the field centre, +X towards the blue alliance wall. Schema
+// 1 to 3 files had +X towards red (blue at x < 0), so reading one turns it half a turn about the centre.
 
 import { fixed5, writeJson, type JsonValue } from "./json.ts";
 import { BUMPERS } from "./footprint.ts";
@@ -24,7 +26,10 @@ import {
 } from "./spec.ts";
 
 /** The schema this code writes. */
-export const SCHEMA = 3;
+export const SCHEMA = 4;
+
+/** The first schema in the WPILib 2027 frame (+X towards blue); older files are turned half a turn when read. */
+export const FRAME_2027_SCHEMA = 4;
 
 /** The oldest schema this code still reads. */
 export const OLDEST_SCHEMA = 1;
@@ -96,13 +101,17 @@ export function pathFromJson(root: JsonObject): PathSpec {
         : `path file schema ${schema} (this code reads ${OLDEST_SCHEMA} to ${SCHEMA})`,
     );
   }
+  // an older file is in the old frame: every point and direction goes half a turn about the centre
+  const old = schema < FRAME_2027_SCHEMA;
+  const xy = (v: number) => (old ? turnedMeters(v) : v);
+  const deg = (v: number) => (old ? turnedDegrees(v) : v);
   const waypoints = list(root, "waypoints").map((o) => {
     const m = asObject(o, "waypoint");
-    const tangent = num(m, "tangentDegrees", Number.NaN);
-    const heading = num(m, "headingDegrees", Number.NaN);
+    const tangent = deg(num(m, "tangentDegrees", Number.NaN));
+    const heading = deg(num(m, "headingDegrees", Number.NaN));
     return makeWaypoint(
-      required(m, "x"),
-      required(m, "y"),
+      xy(required(m, "x")),
+      xy(required(m, "y")),
       Number.isNaN(tangent) ? Number.NaN : tangent * DEGREES,
       num(m, "tangentScale", 1.0),
       Number.isNaN(heading) ? Number.NaN : heading * DEGREES,
@@ -110,14 +119,14 @@ export function pathFromJson(root: JsonObject): PathSpec {
   });
   const rotationTargets = list(root, "rotationTargets").map((o) => {
     const m = asObject(o, "rotation target");
-    return makeRotationTarget(num(m, "waypoint", Number.NaN), num(m, "meters", Number.NaN), required(m, "degrees") * DEGREES);
+    return makeRotationTarget(num(m, "waypoint", Number.NaN), num(m, "meters", Number.NaN), deg(required(m, "degrees")) * DEGREES);
   });
   const facePointZones = list(root, "facePointZones").map((o) => {
     const m = asObject(o, "face-point zone");
     return makeFacePointZone(
       required(m, "fromWaypoint"),
       required(m, "toWaypoint"),
-      { x: required(m, "x"), y: required(m, "y") },
+      { x: xy(required(m, "x")), y: xy(required(m, "y")) },
       num(m, "blendMeters", DEFAULT_BLEND_METERS),
     );
   });
@@ -148,6 +157,17 @@ export function pathFromJson(root: JsonObject): PathSpec {
     headingMode: headingModeOf(root, schema),
     startFootprint: str(root, "startFootprint") ?? BUMPERS,
   });
+}
+
+/** A coordinate turned half a turn about the centre (+ 0: a turned 0 is 0, not -0). */
+export function turnedMeters(v: number): number {
+  return -v + 0;
+}
+
+/** A direction in degrees turned half a turn, in (-180, 180]. NaN (not set) stays NaN. */
+export function turnedDegrees(v: number): number {
+  const t = v + 180.0;
+  return t > 180.0 ? t - 360.0 : t;
 }
 
 /** An optional string key. */

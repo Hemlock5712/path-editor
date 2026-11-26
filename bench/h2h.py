@@ -49,14 +49,15 @@ def rect(x0, y0, x1, y1):
 
 
 def mk(polys):
-    return {"field": {"length_m": L, "width_m": W, "origin": "centre"}, "robot": ROBOT,
+    # schema 2: the reader takes the polygons as they are (it turns a field file without one half a turn)
+    return {"schema": 2, "field": {"length_m": L, "width_m": W, "origin": "centre"}, "robot": ROBOT,
             "obstacles": [{"name": f"o{i}", "polygon": p} for i, p in enumerate(polys)]}
 
 
 def fields():
     out = {}
     f26 = json.load(open(os.path.join(HERE, "..", "fixtures", "plan", "field_2026.json")))
-    out["real2026"] = {"field": {"length_m": f26["field"]["length_m"], "width_m": f26["field"]["width_m"]},
+    out["real2026"] = {"schema": f26["schema"], "field": {"length_m": f26["field"]["length_m"], "width_m": f26["field"]["width_m"]},
                        "robot": ROBOT, "obstacles": [{"name": o["name"], "polygon": o["polygon"]} for o in f26["obstacles"]]}
     # an open field, a few big obstacles
     out["open"] = mk([rect(-5.0, -2.5, -3.0, -0.5), rect(-1.0, 0.5, 1.5, 3.0), rect(2.5, -3.0, 4.0, -1.0),
