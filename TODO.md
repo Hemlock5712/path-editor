@@ -53,13 +53,24 @@ Where the two repos do the same job, each difference was checked on the bench (1
 
 What to do:
 
-- [ ] **Field direction, before anything drives.** WPILib 2027 puts +X towards the **blue** wall. The editor and
-      `fixtures/plan/field_2026.json` put blue at x < 0 (`editor/app/src/model/project.ts`), which is that frame
-      turned half a turn. On a robot using the new frame, a blue path would be followed on the red half. Confirm
-      on the WPILib version the robot uses (the library builds against alpha-7, which may predate the change), then
-      either turn the editor's field, obstacles, named points and saved paths half a turn, or swap which alliance
-      `Conversions.allianceFrame` calls `BLUE`. Precision-Drive's `AllianceFlip` and its "blue corner" comments
-      need the same update.
+- [ ] **Field direction, before anything drives.** Checked 2026-11-25; the fix is proposed, not made.
+      - The installed WPILib (2027.0.0-alpha-7, built 2026-09-01) still has the old frame: origin at the blue
+        wall's right corner, +X towards red (`Field.java` in `fields-java`; `2026-rebuilt-welded.json` has tag 1
+        at x 11.878, y 7.425). Alpha-8 (2026-10-30) is the same. allwpilib `main` after PR 9590 has the centre
+        origin with +X towards blue (tag 1 at x -3.607, y -3.390). No release has it yet.
+      - The editor and `fixtures/plan/field_2026.json` (centre origin, blue at x < 0) match neither: alpha-7's
+        frame shifted by (8.27, 4.03), and the new frame turned half a turn.
+      - Proposed: turn the editor's data half a turn, `(x, y, heading)` to `(-x, -y, heading + 180°)`, so its
+        numbers are the robot's: the obstacles and default named points in `editor/app/src/model/project.ts`,
+        the default start pose, `fixtures/plan/field_2026.json`, the points and seeds in the e2e and plan tests,
+        and a schema bump that turns saved paths and named points on load. `FieldFrame` and
+        `Conversions.allianceFrame` stay as they are. Draw blue on the right, as WPILib's field images now are.
+        Move the build to the first WPILib release with PR 9590 at the same time, and until then don't drive
+        on alpha-7 or alpha-8 without shifting the pose by half the field.
+      - Not proposed: swapping which alliance `allianceFrame` calls `BLUE`. It leaves every number in the editor
+        and in the library's telemetry a half-turn from the robot's pose, and the mirror flip would need a
+        fourth frame (a flip in y).
+      - Precision-Drive's `AllianceFlip` and its "blue corner" comments need the same update.
 - [ ] **One limiter.** Make the library's `OutputLimiter` public (it is package-private) with a
       `limit(current, wanted, dt)` for `TeleopDrive`, built from `robot.json`. Retire `AccelerationLimiter`.
       Its `MODEL_CURRENT` (150 A) becomes `statorCurrentLimitAmps`; its hand-calibration notes for mu and the
