@@ -8,7 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
-/** e2e/RESULTS.md: the table of every path × framework × alliance, with the worst errors. */
+/** e2e/RESULTS.md: the table of every path × alliance, with the worst errors. */
 final class Report {
   private Report() {}
 
@@ -60,7 +60,7 @@ final class Report {
         double peakGap = Math.abs(s.peakSpeed - peak) / Math.max(peak, 1e-9);
         if (peak > 0.5 && peakGap > worstPeak) {
           worstPeak = peakGap;
-          worstPeakWhere = s.name + ", " + r.framework() + ", " + alliance(r.frame());
+          worstPeakWhere = s.name + ", " + alliance(r.frame());
         }
       }
     }
@@ -125,9 +125,9 @@ final class Report {
         + "  slower than 5 cm/s, inside 2 cm and 1°, held for 0.1 s, after taking up any centimetre of overshoot from\n"
         + "  the drivetrain's delay.\n\n");
 
-    out.append("## Every path × framework × alliance\n\n");
-    out.append("| Path | Framework | Alliance | Result | Events | Worst event position | Worst event time | Arrival robot / plan | Settle | Peak robot / preview | Interrupt |\n");
-    out.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
+    out.append("## Every path × alliance\n\n");
+    out.append("| Path | Alliance | Result | Events | Worst event position | Worst event time | Arrival robot / plan | Settle | Peak robot / preview | Interrupt |\n");
+    out.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
     for (Row r : rows) {
       EndToEndRun run = r.full();
       double arrival = 0;
@@ -142,8 +142,8 @@ final class Report {
         peak = Math.max(peak, s.peakSpeed);
         previewPeak = Math.max(previewPeak, s.preview.peakMetersPerSecond());
       }
-      out.append(f("| %s | %s | %s | %s | %d | %.1f cm | %.3f s | %.2f / %.2f s | %.2f s | %.2f / %.2f m/s | %s |\n",
-          r.scenario(), r.framework(), alliance(r.frame()), r.pass() ? "pass" : "**FAIL**", run.events.size(),
+      out.append(f("| %s | %s | %s | %d | %.1f cm | %.3f s | %.2f / %.2f s | %.2f s | %.2f / %.2f m/s | %s |\n",
+          r.scenario(), alliance(r.frame()), r.pass() ? "pass" : "**FAIL**", run.events.size(),
           PathEndToEndTest.worst(run, EventResult::positionError) * 100, PathEndToEndTest.worst(run, EventResult::timeError),
           arrival, previewTime, settle, peak, previewPeak,
           r.interrupted().failures.isEmpty() ? f("pass (%d fired)", r.interrupted().fired.size()) : "**FAIL**"));
@@ -152,7 +152,7 @@ final class Report {
     if (!failed.isEmpty()) {
       out.append("\n## Failures\n\n");
       for (Row r : failed) {
-        out.append(f("- %s, %s, %s:\n", r.scenario(), r.framework(), alliance(r.frame())));
+        out.append(f("- %s, %s:\n", r.scenario(), alliance(r.frame())));
         r.full().failures.forEach(m -> out.append("  - ").append(m).append('\n'));
         r.interrupted().failures.forEach(m -> out.append("  - interrupted: ").append(m).append('\n'));
       }

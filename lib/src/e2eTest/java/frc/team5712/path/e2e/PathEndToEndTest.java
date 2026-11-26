@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.e2e.EndToEndRun.EventResult;
-import frc.team5712.path.e2e.EndToEndRun.Framework;
 import frc.team5712.path.wpilib.PathLibrary;
 import java.io.File;
 import java.io.IOException;
@@ -23,8 +22,6 @@ import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.wpilib.command3.Command;
-import org.wpilib.hardware.hal.HAL;
-import org.wpilib.simulation.DriverStationSim;
 
 /**
  * Phase 6: every path authored in the editor, start to finish on the "robot".
@@ -51,7 +48,7 @@ class PathEndToEndTest {
   private static EndToEndRun current;
   private static final List<Row> rows = new ArrayList<>();
 
-  record Row(String scenario, Framework framework, FieldFrame frame, EndToEndRun full, EndToEndRun interrupted) {
+  record Row(String scenario, FieldFrame frame, EndToEndRun full, EndToEndRun interrupted) {
     boolean pass() {
       return full.failures.isEmpty() && interrupted.failures.isEmpty();
     }
@@ -66,11 +63,6 @@ class PathEndToEndTest {
     for (String name : library.eventNames()) {
       library.bindEvent(name, Command.noRequirements(co -> current.record(name)).named("record " + name));
     }
-    // as on a robot: the driver station attached and enabled
-    HAL.initialize();
-    DriverStationSim.setDsAttached(true);
-    DriverStationSim.setEnabled(true);
-    DriverStationSim.notifyNewData();
   }
 
   @Test
@@ -101,19 +93,17 @@ class PathEndToEndTest {
   Stream<DynamicTest> everyPathStartToFinish() {
     List<DynamicTest> tests = new ArrayList<>();
     for (List<String> chain : scenarios()) {
-      for (Framework framework : Framework.values()) {
-        for (FieldFrame frame : FRAMES) {
-          String name = String.join(" → ", chain) + ", " + framework + ", " + frame;
-          tests.add(DynamicTest.dynamicTest(name, () -> {
-            long seed = name.hashCode();
-            EndToEndRun full = start(new EndToEndRun(library, preview, chain, framework, frame, Double.NaN)).run(seed);
-            EndToEndRun cut = start(new EndToEndRun(library, preview, chain, framework, frame, 0.5)).run(seed + 1);
-            rows.add(new Row(String.join(" → ", chain), framework, frame, full, cut));
-            List<String> failures = new ArrayList<>(full.failures);
-            cut.failures.forEach(f -> failures.add("interrupted: " + f));
-            assertTrue(failures.isEmpty(), String.join("\n", failures));
-          }));
-        }
+      for (FieldFrame frame : FRAMES) {
+        String name = String.join(" → ", chain) + ", " + frame;
+        tests.add(DynamicTest.dynamicTest(name, () -> {
+          long seed = name.hashCode();
+          EndToEndRun full = start(new EndToEndRun(library, preview, chain, frame, Double.NaN)).run(seed);
+          EndToEndRun cut = start(new EndToEndRun(library, preview, chain, frame, 0.5)).run(seed + 1);
+          rows.add(new Row(String.join(" → ", chain), frame, full, cut));
+          List<String> failures = new ArrayList<>(full.failures);
+          cut.failures.forEach(f -> failures.add("interrupted: " + f));
+          assertTrue(failures.isEmpty(), String.join("\n", failures));
+        }));
       }
     }
     return tests.stream();

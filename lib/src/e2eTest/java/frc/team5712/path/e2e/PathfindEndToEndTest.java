@@ -32,10 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.command3.Scheduler;
-import org.wpilib.hardware.hal.HAL;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
-import org.wpilib.simulation.DriverStationSim;
 
 /**
  * On-the-fly paths on the 2026 field, through the WPILib adapters, on {@link SimDrive} at 50 Hz.
@@ -67,11 +65,7 @@ class PathfindEndToEndTest {
   private static Pathfinder planner;
   private static final List<Result> results = new ArrayList<>();
 
-  enum Framework {
-    V3
-  }
-
-  record Result(String kind, Framework framework, FieldFrame frame, int pair, boolean arrived, double endError,
+  record Result(String kind, FieldFrame frame, int pair, boolean arrived, double endError,
       double endHeadingDeg, double minClearance, double firstPlanMicros, double maxPlanMicros, int replans,
       double seconds, List<String> failures) {
     boolean pass() {
@@ -95,10 +89,6 @@ class PathfindEndToEndTest {
     Files.writeString(dir.resolve("Sweep" + PathLibrary.SUFFIX), PathFile.write(sweep), StandardCharsets.UTF_8);
     library = PathLibrary.loadAll(dir.toFile());
     planner = library.pathfinder();
-    HAL.initialize();
-    DriverStationSim.setDsAttached(true);
-    DriverStationSim.setEnabled(true);
-    DriverStationSim.notifyNewData();
   }
 
   static FollowerConfig config() {
@@ -142,7 +132,7 @@ class PathfindEndToEndTest {
   }
 
   /** One run from {@code start} (real frame, at rest); the robot must end at {@code end} (real frame). */
-  static Result run(String kind, int pair, Framework fw, FieldFrame frame, Pose start, Pose end, Maker maker,
+  static Result run(String kind, int pair, FieldFrame frame, Pose start, Pose end, Maker maker,
       Supplier<Push> push, long seed) {
     SimDrive drive = new SimDrive(start, new FieldSpeeds(0, 0, 0), seed);
     currentDrive = drive;
@@ -216,7 +206,7 @@ class PathfindEndToEndTest {
     if (!(minClear > 0)) {
       failures.add(String.format(Locale.ROOT, "bumper contact (clearance %.3f m, %s)", minClear, worstAt));
     }
-    return new Result(kind, fw, frame, pair, !Double.isNaN(endT), err, head, minClear, firstPlan,
+    return new Result(kind, frame, pair, !Double.isNaN(endT), err, head, minClear, firstPlan,
         o == null ? Double.NaN : o.maxPlanMicros(), o == null ? 0 : o.replans(), endT, failures);
   }
 
@@ -230,16 +220,14 @@ class PathfindEndToEndTest {
     List<Pose[]> pairs = pairs();
     List<String> failed = new ArrayList<>();
     for (FieldFrame frame : new FieldFrame[] {FieldFrame.BLUE, FieldFrame.RED_HALF_TURN}) {
-      for (Framework fw : Framework.values()) {
-        for (int i = 0; i < pairs.size(); i++) {
-          Pose s = pairs.get(i)[0];
-          Pose g = pairs.get(i)[1];
-          Pose2d blueGoal = Conversions.toPose2d(g);
-          Result r = check(run("route", i, fw, frame, frame.fromBlue(s), frame.fromBlue(g),
-              (pf, m) -> pf.to(m, blueGoal), null, 1000L * i + 7));
-          if (!r.pass()) {
-            failed.add(r.kind() + " " + i + " " + fw + " " + frame + ": " + r.failures());
-          }
+      for (int i = 0; i < pairs.size(); i++) {
+        Pose s = pairs.get(i)[0];
+        Pose g = pairs.get(i)[1];
+        Pose2d blueGoal = Conversions.toPose2d(g);
+        Result r = check(run("route", i, frame, frame.fromBlue(s), frame.fromBlue(g),
+            (pf, m) -> pf.to(m, blueGoal), null, 1000L * i + 7));
+        if (!r.pass()) {
+          failed.add(r.kind() + " " + i + " " + frame + ": " + r.failures());
         }
       }
     }
@@ -260,17 +248,15 @@ class PathfindEndToEndTest {
       }
       done++;
       Pose2d blueGoal = Conversions.toPose2d(g);
-      for (Framework fw : Framework.values()) {
-        // push across the path, towards the side with more room, for 0.3 s
-        Result r = check(run("shove", i, fw, FieldFrame.BLUE, s, g,
-            (pf, m) -> pf.to(m, blueGoal), () -> shove, 77L * i));
-        List<String> f = new ArrayList<>(r.failures());
-        if (r.replans() < 1) {
-          f.add("the shove didn't make it plan again");
-        }
-        if (!f.isEmpty()) {
-          failed.add("shove " + i + " " + fw + ": " + f + " " + r);
-        }
+      // push across the path, towards the side with more room, for 0.3 s
+      Result r = check(run("shove", i, FieldFrame.BLUE, s, g,
+          (pf, m) -> pf.to(m, blueGoal), () -> shove, 77L * i));
+      List<String> f = new ArrayList<>(r.failures());
+      if (r.replans() < 1) {
+        f.add("the shove didn't make it plan again");
+      }
+      if (!f.isEmpty()) {
+        failed.add("shove " + i + ": " + f + " " + r);
       }
     }
     assertEquals(SHOVES, done);
@@ -311,14 +297,12 @@ class PathfindEndToEndTest {
     Pose endBlue = new Pose(end.xMeters(), end.yMeters(), end.headingRadians());
     Pose[] starts = {new Pose(-6.0, 2.5, 0.0), new Pose(-6.5, -2.8, Math.PI / 2), new Pose(1.5, -3.0, Math.PI)};
     for (FieldFrame frame : new FieldFrame[] {FieldFrame.BLUE, FieldFrame.RED_HALF_TURN}) {
-      for (Framework fw : Framework.values()) {
-        for (int i = 0; i < starts.length; i++) {
-          Result r = check(run("thenFollow", i, fw, frame, frame.fromBlue(starts[i]), frame.fromBlue(endBlue),
-              (pf, m) -> pf.thenFollow(m, "Sweep"), null,
-              31L * i));
-          if (!r.pass()) {
-            failed.add("thenFollow " + i + " " + fw + " " + frame + ": " + r.failures());
-          }
+      for (int i = 0; i < starts.length; i++) {
+        Result r = check(run("thenFollow", i, frame, frame.fromBlue(starts[i]), frame.fromBlue(endBlue),
+            (pf, m) -> pf.thenFollow(m, "Sweep"), null,
+            31L * i));
+        if (!r.pass()) {
+          failed.add("thenFollow " + i + " " + frame + ": " + r.failures());
         }
       }
     }
@@ -340,17 +324,15 @@ class PathfindEndToEndTest {
     for (FieldFrame frame : new FieldFrame[] {FieldFrame.BLUE, FieldFrame.RED_HALF_TURN}) {
       Pose endReal = frame.fromBlue(new Pose(end.xMeters(), end.yMeters(), end.headingRadians()));
       Pose movedReal = frame.fromBlue(movedBlue);
-      for (Framework fw : Framework.values()) {
-        Supplier<Optional<Pose2d>> seen = () -> {
-          Pose q = currentDrive.truePose();
-          return Math.hypot(q.xMeters() - endReal.xMeters(), q.yMeters() - endReal.yMeters()) < 1.5
-              ? Optional.of(Conversions.toPose2d(movedReal)) : Optional.empty();
-        };
-        Result r = check(run("followMovingGoal", 0, fw, frame, frame.fromBlue(startBlue), movedReal,
-            (pf, m) -> pf.follow(m, "Sweep").withMovingGoal(seen), null, 41L));
-        if (!r.pass()) {
-          failed.add("followMovingGoal " + fw + " " + frame + ": " + r.failures());
-        }
+      Supplier<Optional<Pose2d>> seen = () -> {
+        Pose q = currentDrive.truePose();
+        return Math.hypot(q.xMeters() - endReal.xMeters(), q.yMeters() - endReal.yMeters()) < 1.5
+            ? Optional.of(Conversions.toPose2d(movedReal)) : Optional.empty();
+      };
+      Result r = check(run("followMovingGoal", 0, frame, frame.fromBlue(startBlue), movedReal,
+          (pf, m) -> pf.follow(m, "Sweep").withMovingGoal(seen), null, 41L));
+      if (!r.pass()) {
+        failed.add("followMovingGoal " + frame + ": " + r.failures());
       }
     }
     assertEquals(List.of(), failed);
@@ -360,15 +342,13 @@ class PathfindEndToEndTest {
   void toANamedPointThatMoves() {
     List<String> failed = new ArrayList<>();
     double[] depot = library.namedPoint("Depot");
-    for (Framework fw : Framework.values()) {
-      // the goal is seen 25 cm further along the wall after a second (a moving game piece, in the real frame)
-      Pose moved = new Pose(depot[0], depot[1] - 0.25, Math.PI);
-      Supplier<Optional<Pose2d>> seen = () -> Optional.of(Conversions.toPose2d(moved));
-      Result r = check(run("movingGoal", 0, fw, FieldFrame.BLUE, new Pose(-2.0, 3.2, 0.0), moved,
-          (pf, m) -> pf.toPoint(m, "Depot", Rotation2d.k180deg).withMovingGoal(seen), null, 99));
-      if (!r.pass()) {
-        failed.add("movingGoal " + fw + ": " + r.failures());
-      }
+    // the goal is seen 25 cm further along the wall after a second (a moving game piece, in the real frame)
+    Pose moved = new Pose(depot[0], depot[1] - 0.25, Math.PI);
+    Supplier<Optional<Pose2d>> seen = () -> Optional.of(Conversions.toPose2d(moved));
+    Result r = check(run("movingGoal", 0, FieldFrame.BLUE, new Pose(-2.0, 3.2, 0.0), moved,
+        (pf, m) -> pf.toPoint(m, "Depot", Rotation2d.k180deg).withMovingGoal(seen), null, 99));
+    if (!r.pass()) {
+      failed.add("movingGoal: " + r.failures());
     }
     assertEquals(List.of(), failed);
   }
@@ -392,27 +372,25 @@ class PathfindEndToEndTest {
     md.append("| runs | pass | worst clearance cm | first plan ms median / p95 / max | re-plans | slowest plan in a run ms |\n");
     md.append("|---|---|---|---|---|---|\n");
     for (String kind : List.of("route", "shove", "thenFollow", "movingGoal", "followMovingGoal")) {
-      for (Framework fw : Framework.values()) {
-        for (FieldFrame frame : new FieldFrame[] {FieldFrame.BLUE, FieldFrame.RED_HALF_TURN}) {
-          List<Result> rs = results.stream().filter(r -> r.kind().equals(kind) && r.framework() == fw && r.frame() == frame)
-              .toList();
-          if (rs.isEmpty()) {
-            continue;
-          }
-          double[] first = rs.stream().mapToDouble(r -> r.firstPlanMicros() / 1000).filter(Double::isFinite).sorted()
-              .toArray();
-          // a library path followed on its own plans nothing
-          String plans = first.length == 0 ? "- | - | -" : String.format(Locale.ROOT, "%.2f / %.2f / %.2f | %d | %.2f",
-              pct(first, 0.5), pct(first, 0.95), first[first.length - 1], rs.stream().mapToInt(Result::replans).sum(),
-              rs.stream().mapToDouble(r -> r.maxPlanMicros() / 1000).max().orElse(Double.NaN));
-          md.append(String.format(Locale.ROOT, "| %s, %s, %s: %d | %d | %.1f | %s |%n", kind, fw, frame, rs.size(),
-              rs.stream().filter(Result::pass).count(),
-              100 * rs.stream().mapToDouble(Result::minClearance).min().orElse(Double.NaN), plans));
+      for (FieldFrame frame : new FieldFrame[] {FieldFrame.BLUE, FieldFrame.RED_HALF_TURN}) {
+        List<Result> rs = results.stream().filter(r -> r.kind().equals(kind) && r.frame() == frame)
+            .toList();
+        if (rs.isEmpty()) {
+          continue;
         }
+        double[] first = rs.stream().mapToDouble(r -> r.firstPlanMicros() / 1000).filter(Double::isFinite).sorted()
+            .toArray();
+        // a library path followed on its own plans nothing
+        String plans = first.length == 0 ? "- | - | -" : String.format(Locale.ROOT, "%.2f / %.2f / %.2f | %d | %.2f",
+            pct(first, 0.5), pct(first, 0.95), first[first.length - 1], rs.stream().mapToInt(Result::replans).sum(),
+            rs.stream().mapToDouble(r -> r.maxPlanMicros() / 1000).max().orElse(Double.NaN));
+        md.append(String.format(Locale.ROOT, "| %s, %s: %d | %d | %.1f | %s |%n", kind, frame, rs.size(),
+            rs.stream().filter(Result::pass).count(),
+            100 * rs.stream().mapToDouble(Result::minClearance).min().orElse(Double.NaN), plans));
       }
     }
     List<String> unshoved = results.stream().filter(r -> !r.kind().equals("shove") && r.replans() > 0)
-        .map(r -> r.kind() + " " + r.pair() + " " + r.framework() + " " + r.frame()).toList();
+        .map(r -> r.kind() + " " + r.pair() + " " + r.frame()).toList();
     if (!unshoved.isEmpty()) {
       md.append("\nRuns that planned again without being shoved (more than 20 cm off their plan): ")
           .append(String.join(", ", unshoved)).append(".\n");

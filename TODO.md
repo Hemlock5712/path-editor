@@ -6,11 +6,6 @@ pass). Delete each item when it is done, and this file when it is empty.
 
 ## Finish the Commands v2 removal
 
-- [ ] Remove the `Framework` enum, now one value (`V3`), from `EndToEndRun`, `PathfindEndToEndTest`,
-      `PathEndToEndTest` and `Report` (about 40 uses: constructor arguments, `for (Framework fw : ...)` loops, the
-      report's "Framework" column and labels). Left in because it could not be compiled.
-- [ ] `PathEndToEndTest.load()` still initialises the HAL and enables the driver station, which only Commands v2
-      needed. Remove it if the v3 suite passes without.
 - [ ] Decide whether `Pathfinding` (the factory) and `PathfindCommand` should be one file. `OnTheFly` has to stay
       separate: the bench runs it without WPILib.
 

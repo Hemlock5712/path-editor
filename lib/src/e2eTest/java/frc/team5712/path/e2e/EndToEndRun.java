@@ -24,10 +24,6 @@ import org.wpilib.command3.Scheduler;
  * Events go to the commands bound in the library, which record the true pose when they run.
  */
 final class EndToEndRun {
-  enum Framework {
-    V3
-  }
-
   /** One fired event: which segment of the chain, its name, the sim time and the true pose then. */
   record Fired(int segment, String name, double t, Pose truePose) {}
 
@@ -68,7 +64,6 @@ final class EndToEndRun {
   long geometryBuilds;
   long profileBuilds;
 
-  private final Framework framework;
   private final FieldFrame frame;
   private final double interruptFraction;
   private final PathLibrary library;
@@ -80,10 +75,8 @@ final class EndToEndRun {
    * @param interruptFraction NaN to run to the end, else cancel the command this far through the
    *     first path's previewed time
    */
-  EndToEndRun(PathLibrary library, Preview preview, List<String> chain, Framework framework, FieldFrame frame,
-      double interruptFraction) {
+  EndToEndRun(PathLibrary library, Preview preview, List<String> chain, FieldFrame frame, double interruptFraction) {
     this.library = library;
-    this.framework = framework;
     this.frame = frame;
     this.interruptFraction = interruptFraction;
     for (String name : chain) {
@@ -380,7 +373,7 @@ final class EndToEndRun {
     }
   }
 
-  // ------------------------------------------------------------------------------ the two frameworks
+  // ---------------------------------------------------------------------------- the command framework
 
   private interface Driver {
     void schedule();
