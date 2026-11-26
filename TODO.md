@@ -1,22 +1,8 @@
 # To do
 
-Written 2026-11-25 from a cloud session that had no WPILib 2027 install, no JDK 25 and a restricted network. The
-items under "Check" are things that session changed but could not compile or run; do those first, on a machine
-with the full toolchain. Delete each item when it is done, and this file when it is empty.
-
-## Check (changed, not compiled or run)
-
-- [ ] `lib/gradlew -p lib check`. The WPILib adapters (`lib/src/wpilib`), their tests (`lib/src/wpilibTest`) and
-      the end-to-end suites (`lib/src/e2eTest`) were edited by hand when Commands v2 was removed: the two `...V2`
-      command classes deleted, the `V2` factories cut from `Pathfinding`, the v2 event bindings cut from
-      `PathLibrary`, the `V2` branches cut from `EndToEndRun` and `PathfindEndToEndTest`, and
-      `PathfindCommand.handOverCommand()` removed. The build uses `-Xlint:all -Werror`, so a stray unused variable
-      there (for example `fw` or `sub` in a lambda) may fail it.
-- [ ] `node tools/e2e.mjs`, then commit the regenerated `e2e/RESULTS.md` and `e2e/PATHFIND.md`. Both still show
-      V2 rows. Check the counts in `lib/README.md` ("End-to-end" table, "65 of 66") against the new reports.
-- [ ] `PerformanceTest.coldStartInAFreshJvm` and `PlannerPerformanceTest.coldInAFreshJvm` on JDK 25. They failed
-      in the cloud session only because its JVM prints a "Picked up JAVA_TOOL_OPTIONS" line they try to parse; the
-      other 188 core tests passed there on JDK 21.
+Written 2026-11-25 from a cloud session that had no WPILib 2027 install, no JDK 25 and a restricted network. Its
+changes were compiled and run on 2026-11-25 with WPILib 2027 alpha-7 and JDK 25 (`check` and the end-to-end suite
+pass). Delete each item when it is done, and this file when it is empty.
 
 ## Finish the Commands v2 removal
 

@@ -597,10 +597,13 @@ the WPILib adapters on the e2e `SimDrive`, with contact checked against the true
 
 | Scenario | Runs | Passed | Worst clearance |
 |---|---|---|---|
-| 50 seeded random routes, blue and red (run on Commands v3 and v2 before v2 was removed) | 200 | 200 | 5.7 cm |
-| Sideways shove a third of the way in; every run planned again | 20 | 20 | 5.9 cm |
-| Path hand-overs | 12 | 12 | 7.8 cm |
-| Moving named-point goal | 2 | 2 | 6.8 cm |
+| 50 seeded random routes, blue and red | 100 | 100 | 13.1 cm |
+| Sideways shove a third of the way in; every run planned again | 10 | 10 | 14.7 cm |
+| Path hand-overs, blue and red | 6 | 6 | 18.2 cm |
+| Moving named-point goal | 1 | 1 | 16.9 cm |
+| A library path whose end moves 8 cm and 3° when the robot is 1.5 m out, blue and red | 2 | 2 | 122.3 cm |
+
+119 of 119 runs.
 
 The shoves are placed where the robot has room to be pushed: a push into an obstacle is contact by the pusher,
 which no planner can prevent.
@@ -643,7 +646,8 @@ halfway through. The results table is `e2e/RESULTS.md`, and the pass marks are i
 `-Pe2eTrace=<path>` prints one path's run loop by loop.
 
 **Open at the robot's full limits.** The suite authors its paths at 4 m/s and 6 m/s². Planned to the
-default robot's own limits (4.1 m/s, 12.8 m/s²) it is 65 of 66: Slalom (Commands v3, blue) settles 0.52 s
+default robot's own limits (4.1 m/s, 12.8 m/s²) it was 65 of 66 when the suite still ran Commands v2 as
+well (66 rows; it is 33 now, and this has not been re-run on them): Slalom (Commands v3, blue) settles 0.52 s
 after arriving, against 0.50 s; the other five Slalom runs take 0.36 to 0.40 s. Traced (`-Pe2eTrace=Slalom`),
 every hard arrival does the same two things:
 - **A ~2 cm overshoot.** Braking at the plan's 12.8 m/s² into a drivetrain that answers in about 70 ms (20 ms
