@@ -5,20 +5,42 @@ sidebar:
   order: 9
 ---
 
-`PathTelemetry` publishes what a path follower is doing: where it is on the path, how far off, how fast, which events have fired, and the planned path itself. The editor's live view reads these entries, and so can AdvantageScope or any NetworkTables viewer.
+`PathTelemetry` publishes what a path follower is doing to NetworkTables each loop: where it is on the path, how far off, how fast, which events have fired, and the planned path itself.
 
-You do not have to use this class. [`FollowPathCommand`](/reference/wpilib/followpathcommand/) and [`PathfindCommand`](/reference/wpilib/pathfindcommand/) each own one and call it for you. This page is mostly for reading the entries. Construct one yourself only if you drive a [`PathFollower`](/reference/follow/pathfollower/) from your own loop. [Telemetry](/guides/telemetry/) is the guide.
+[`FollowPathCommand`](/reference/wpilib/followpathcommand/) and [`PathfindCommand`](/reference/wpilib/pathfindcommand/) each own one and call it for you, so this page is mostly for reading the entries. [Telemetry](/guides/telemetry/) is the guide.
 
-## Where the entries are
+## Example
 
-WPILib publishes its `Telemetry` tables under `/Telemetry` in NetworkTables. This class uses two tables:
+```java
+// Only for code that drives a PathFollower from its own loop
+PathTelemetry telemetry = new PathTelemetry("ToReef");   // robot init
 
-- `/Telemetry/Path/<name>/` for one path, where `<name>` is the command's name. For a drawn path that is the path's name, such as `ToReef`. For an on-the-fly command it is `Pathfind`, `Pathfind <point>` or `Pathfind to <path>`.
-- `/Telemetry/PathFollower/`, shared by every follow command, which says which path is running now.
+telemetry.begin(follower);    // after follower.start(...)
+telemetry.log(follower);      // after each follower.step(...)
+telemetry.event(name);        // as each event fires, with its name
+telemetry.end();              // at the finish or on a cancel
+```
 
-## Frames
+## Constructor and methods
 
-Poses in telemetry are in the frame the robot runs the path in, which is the real field frame: the frame the robot's own pose is in. On red, the plan and the reference are the flipped ones, so they can be drawn straight over the robot's pose. Scalar errors and rates are worked out in the blue frame, the frame the path was drawn in, with the origin at the field center and +X toward the blue alliance wall. For a `RED_MIRROR` flip that reverses the sign of the turn rates and of left and right.
+None of these throw.
+
+| Member | What it does |
+| --- | --- |
+| `PathTelemetry(String pathName)` | Telemetry for one path, under `Path/<pathName>`. Build it in robot init. |
+| `begin(PathFollower f)` | Publishes the entries in "Once per start", then calls `begin()`. Call it after the follower has started, because the plan is published in the frame the follower was started with. |
+| `begin()` | Makes this path the active one and empties both `EventsFired` lists. |
+| `log(PathFollower f)` | Publishes the entries in "Every loop". |
+| `event(String name)` | Records that an event fired: adds it to both `EventsFired` lists and sets `LastEvent`. |
+| `end()` | Sets `Active` to an empty string. |
+| `plan(PlanResult r, int replans)` | Publishes the entries in "Planning figures" from a [`PlanResult`](/reference/plan/planresult/). |
+
+## Tables
+
+| Table | Holds |
+| --- | --- |
+| `/Telemetry/Path/<name>/` | One path. `<name>` is the command's name: the path's name for a drawn path, such as `ToReef`, or `Pathfind`, `Pathfind <point>` or `Pathfind to <path>` for an on-the-fly command. |
+| `/Telemetry/PathFollower/` | Shared by every follow command. Says which path is running now. |
 
 ## Every loop
 
@@ -46,13 +68,15 @@ Written under `/Telemetry/Path/<name>/` when the path starts. An on-the-fly comm
 
 | Entry | Type | Unit | Meaning |
 | --- | --- | --- | --- |
-| `Plan` | double array | see below | The planned path, sampled every 0.05 m, plus its end. |
+| `Plan` | double array | see below | The planned path, sampled every 0.05 m, plus its end. Sent once, not every loop. |
 | `PlanEvents` | string array | | The names of the path's events, in the order they fire. |
 | `PlanEventMeters` | double array | m | Each event's distance along the path, in the same order. |
 | `PlanSeconds` | double | s | The planned time for the whole path. |
 | `EventsFired` | string array | | Reset to an empty array. |
 
-`Plan` is flattened: six numbers per sample, one sample after another.
+### The Plan array
+
+Six numbers per sample, one sample after another. A 5 m path is 101 samples, so about 600 numbers.
 
 | Position in each six | Value | Unit |
 | --- | --- | --- |
@@ -62,8 +86,6 @@ Written under `/Telemetry/Path/<name>/` when the path starts. An on-the-fly comm
 | 3 | heading, real field frame | rad |
 | 4 | planned time at this point | s |
 | 5 | planned speed at this point | m/s |
-
-A 5 m path is 101 samples, so about 600 numbers. It is sent once, not every loop.
 
 ## When an event fires
 
@@ -99,18 +121,13 @@ Written under `/Telemetry/Path/<name>/` by an on-the-fly command, each time it p
 A `PlanOk` of `true` with a `PlanClear` of `false` means the robot is driving a route that comes closer to something than the margin asks for. Look at `MinClearance` to see how close.
 :::
 
-## Constructor and methods
+## Good to know
 
-For code that runs its own follower. Call them in this order: `begin` after the follower's `start`, `log` after each `step`, `event` as events fire, `end` at the finish or on a cancel.
+- **Poses are in the real field frame**, the frame the robot's own pose is in. On red, the plan and the reference are the flipped ones, so they can be drawn straight over the robot's pose.
+- **Scalar errors and rates are worked out in the blue frame**, the frame the path was drawn in. For a `RED_MIRROR` flip that reverses the sign of the turn rates and of left and right.
+- **`begin(PathFollower)` samples the plan.** That is the only path work these methods do.
 
-| Member | Meaning |
-| --- | --- |
-| `PathTelemetry(String pathName)` | Telemetry for one path, under `Path/<pathName>`. Build it in robot init. |
-| `begin(PathFollower f)` | Publishes the entries in "Once per start", then calls `begin()`. Call it after the follower has started, because the plan is published in the frame the follower was started with. |
-| `begin()` | Makes this path the active one and empties both `EventsFired` lists. |
-| `log(PathFollower f)` | Publishes the entries in "Every loop". |
-| `event(String name)` | Records that an event fired: adds it to both `EventsFired` lists and sets `LastEvent`. |
-| `end()` | Sets `Active` to an empty string. |
-| `plan(PlanResult r, int replans)` | Publishes the entries in "Planning figures" from a [`PlanResult`](/reference/plan/planresult/). |
+## More
 
-None of these throw. They do no path work beyond sampling the plan in `begin(PathFollower)`.
+- [Telemetry](/guides/telemetry/): viewing the entries in the editor or AdvantageScope.
+- [`PathFollower`](/reference/follow/pathfollower/): the methods these entries come from.

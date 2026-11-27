@@ -9,11 +9,14 @@ import { Steps } from '@astrojs/starlight/components';
 import Clip from '../../../components/Clip.astro';
 import Scene from '../../../components/Scene.astro';
 
-This page takes one path from the editor to a moving robot. It assumes the vendordep is
-[installed](/start/install/) and the drivetrain has the three methods from
-[What your drivetrain provides](/start/drivetrain/). Run it in the simulator first.
+This page takes one path from the editor to a moving robot. Run it in the simulator first.
 
-<Scene name="speed" caption="Where this page ends up: a path drawn in the editor, planned at boot and followed by the library. The line is colored by planned speed, orange where it is fast. This run is the real follower on a simulated drivetrain." />
+<Scene name="speed" caption="Where this page ends up. The line is colored by planned speed, orange where it is fast. Real follower, simulated drivetrain." />
+
+:::note
+You need the vendordep [installed](/start/install/) and the three methods from
+[What your drivetrain provides](/start/drivetrain/).
+:::
 
 ## Draw and save
 
@@ -26,8 +29,8 @@ This page takes one path from the editor to a moving robot. It assumes the vendo
 
 3. Rename the path to `FirstPath`.
 
-4. Fill in the robot on the **Settings** page: at least the mass, the bumper size and the distance from the center to a wheel. The
-   plan is only as good as these numbers.
+4. Fill in the robot on the **Settings** page: at least the mass, the bumper size and the distance from the
+   center to a wheel.
 
 5. Save. You should see these files appear in the robot project:
 
@@ -39,12 +42,11 @@ This page takes one path from the editor to a moving robot. It assumes the vendo
 
 </Steps>
 
-<Clip name="draw-path" caption="Drawing the path in the editor: five double-clicks, then the sim preview drives it. Recorded from the editor itself." />
+<Clip name="draw-path" caption="Drawing the path in the editor, then the sim preview drives it. Recorded from the editor itself." />
 
 ## Load the library
 
-Do this once, where the drivetrain is built, so it runs in robot init. Building the library is where every path
-is planned.
+Do this once, where the drivetrain is built, so it runs in robot init.
 
 ```java title="DriveMechanism.java"
 import frc.team5712.path.core.FieldFrame;
@@ -52,41 +54,34 @@ import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.wpilib.PathLibrary;
 import frc.team5712.path.wpilib.Pathfinding;
 
+// Reads deploy/paths and plans every path. A bad file stops the robot here, with a message naming the file.
 public final PathLibrary paths = PathLibrary.loadAll();
 
+// The factory for every driving command. otf is short for "on the fly".
 public final Pathfinding otf = new Pathfinding(
     paths,
-    FollowerConfig.defaults(paths.robot()),
-    () -> getPose(),
-    () -> getFieldVelocity(),
-    velocity -> driveFieldVelocity(velocity),
-    FieldFrame.RED_HALF_TURN);
+    FollowerConfig.defaults(paths.robot()),    // the follower's default settings for this robot
+    () -> getPose(),                           // where the robot is
+    () -> getFieldVelocity(),                  // how fast, field-relative
+    velocity -> driveFieldVelocity(velocity),  // how to drive
+    FieldFrame.RED_HALF_TURN);                 // the flip on red. A mirrored field uses RED_MIRROR.
 ```
 
-| Line | What it does |
-| --- | --- |
-| `PathLibrary.loadAll()` | Reads `deploy/paths`, builds every path, the pathfinder and the named points. A bad file stops the robot here, at boot, with a message naming the file. |
-| `FollowerConfig.defaults(...)` | The follower's settings, at their defaults for this robot. [Tuning](/guides/tuning/) changes them. |
-| The three lambdas | The pose, the field velocity, and the way to drive. On WPILib alpha-7 each one goes through the frame conversion. |
-| `FieldFrame.RED_HALF_TURN` | How a path drawn for blue is turned into red's. A half turn about the center suits a field that is the same after a half turn. A mirrored field uses `RED_MIRROR`. |
-
-`Pathfinding` is the factory for every driving command, not only pathfinding ones. The name `otf` is short for
-"on the fly".
+:::caution
+On WPILib alpha-7 each of the three lambdas goes through the frame conversion. See
+[The field frame](/start/drivetrain/#the-field-frame).
+:::
 
 ## Make the command
 
 ```java
 import static frc.robot.PathEditorNames.*;
 
+// Requires the drivetrain. The follower is built now, so nothing is planned when the command starts.
 Command firstPath = otf.follow(drive, Paths.FIRST_PATH);
 ```
 
-`follow` returns a `FollowPathCommand` that requires the drivetrain. It builds the follower now, in robot init.
-Nothing is planned when the command starts.
-
 ## Run it in an autonomous
-
-An op mode schedules the command when autonomous starts and cancels it when autonomous ends.
 
 ```java title="FirstPathAuto.java"
 @Autonomous(name = "First Path")
@@ -99,12 +94,12 @@ public class FirstPathAuto extends PeriodicOpMode {
 
   @Override
   public void start() {
-    Scheduler.getDefault().schedule(routine);
+    Scheduler.getDefault().schedule(routine);   // when autonomous starts
   }
 
   @Override
   public void end() {
-    Scheduler.getDefault().cancel(routine);
+    Scheduler.getDefault().cancel(routine);     // when autonomous ends
   }
 }
 ```
@@ -113,8 +108,7 @@ public class FirstPathAuto extends PeriodicOpMode {
 
 <Steps>
 
-1. Start the simulator and set the robot's pose to the start of the path. A path does not have to start exactly
-   where the robot is, but the first run is easier to read if it does.
+1. Start the simulator and set the robot's pose to the start of the path.
 
 2. Select **First Path** and enable autonomous.
 
@@ -131,10 +125,10 @@ public class FirstPathAuto extends PeriodicOpMode {
 
 </Steps>
 
-The command finishes when the robot is within 2 cm and 1° of the end and has been slower than 5 cm/s for a tenth
-of a second. Then it sends a zero velocity.
+The command finishes within 2 cm and 1° of the end, slower than 5 cm/s, held for a tenth of a second. Then it
+sends a zero velocity.
 
-## When it does not work
+## Fix a first run
 
 | What happens | Likely cause |
 | --- | --- |
@@ -146,8 +140,8 @@ of a second. Then it sends a zero velocity.
 
 [Troubleshooting](/guides/troubleshooting/) has the full list.
 
-## Next
+## More
 
-- [Follow a path](/guides/follow-a-path/) covers the command's options.
-- [Events](/guides/events/) runs a mechanism command at a point along the path.
-- [Drive to a pose](/guides/drive-to-pose/) drives somewhere with no drawn path at all.
+- [Follow a path](/guides/follow-a-path/): the command's options.
+- [Events](/guides/events/): run a mechanism command at a point along the path.
+- [Drive to a pose](/guides/drive-to-pose/): drive somewhere with no drawn path.

@@ -5,13 +5,11 @@ sidebar:
   order: 18
 ---
 
-`FieldFrame` is an enum that names the frame a path is followed in. Paths are authored for blue. On red nothing is rebuilt: each loop the follower converts the measured pose into the blue frame, follows the blue path, and converts the commanded speeds back. `FieldFrame` holds that conversion. [The field frame](/concepts/field-frame/) explains the idea.
+`FieldFrame` is an enum that names the frame a path is followed in, and converts poses and speeds between red and blue.
+
+You pass one when you set up the library's commands, to say which kind of symmetry the field has. The follower calls the conversion methods for you. See [Alliances](/guides/alliances/).
 
 Package: `frc.team5712.path.core`.
-
-## Where you meet it
-
-You pass a `FieldFrame` when you set up the library's commands, to say which kind of symmetry the field has. `Conversions.allianceFrame(FieldFrame.RED_HALF_TURN)` returns `BLUE` on the blue alliance and the value you gave it on red. See [Alliances](/guides/alliances/). You seldom call the conversion methods yourself, because the follower does it.
 
 ## Example
 
@@ -27,23 +25,17 @@ FieldSpeeds onRed = frame.fromBlue(command);     // (-1.0, -0.5, 0.2)
 
 ## Values
 
-The frame is WPILib 2027's: the origin at the center of the field and +X toward the blue alliance wall, so blue's half is `x > 0`.
-
 | Value | Use | Position | Heading | Velocity | Spin |
 | --- | --- | --- | --- | --- | --- |
 | `BLUE` | The blue alliance | unchanged | unchanged | unchanged | unchanged |
 | `RED_HALF_TURN` | Red on a rotationally symmetric field | `(-x, -y)` | `θ + π` | `(-vx, -vy)` | `ω` |
 | `RED_MIRROR` | Red on a mirror-symmetric field, mirrored across `x = 0` | `(-x, y)` | `π - θ` | `(-vx, vy)` | `-ω` |
 
-Both red conversions keep the origin where it is, and each is its own inverse. For that reason every `fromBlue` method does the same arithmetic as the matching `toBlue` method. Use whichever name says what you mean.
-
-Neither conversion changes distance along the path, the size of the curvature, the size of the heading's rate of change, or the speed plan. The blue plan is the red plan.
-
 ## Methods
 
 Positions are in meters, headings in radians, velocities in m/s and spin in rad/s.
 
-| Method | Description |
+| Method | What it does |
 | --- | --- |
 | `Vec2 toBlue(Vec2 p)` | A point from this frame into blue. |
 | `Vec2 fromBlue(Vec2 p)` | A point from blue into this frame. |
@@ -54,11 +46,21 @@ Positions are in meters, headings in radians, velocities in m/s and spin in rad/
 | `FieldSpeeds toBlue(FieldSpeeds v)` | A field-relative velocity from this frame into blue. |
 | `FieldSpeeds fromBlue(FieldSpeeds v)` | A field-relative velocity from blue into this frame. |
 | `boolean mirrors()` | True for `RED_MIRROR` only. A mirror reverses handedness: left turns become right turns and curvature changes sign. |
+| `values()`, `valueOf(String)` | The methods every Java enum has. |
 
-For `BLUE`, the `Vec2`, `Pose` and `FieldSpeeds` methods return the object they were given.
+## Good to know
 
-[Pose, FieldSpeeds and Vec2](/reference/core/small-types/) are the library's own types. Like every Java enum, `FieldFrame` also has `values()` and `valueOf(String)`.
+- **The frame is WPILib 2027's.** The origin is at the center of the field and +X points toward the blue alliance wall, so blue's half is `x > 0`.
+- **`Conversions.allianceFrame(FieldFrame.RED_HALF_TURN)`** returns `BLUE` on the blue alliance and the value you gave it on red.
+- **Each red conversion is its own inverse** and keeps the origin where it is, so every `fromBlue` does the same arithmetic as the matching `toBlue`. For `BLUE`, the `Vec2`, `Pose` and `FieldSpeeds` methods return the object they were given.
+- **The blue plan is the red plan.** Paths are authored for blue and nothing is rebuilt on red. Neither conversion changes distance along the path, the size of the curvature, the size of the heading's rate of change, or the speed plan.
 
 :::caution
 `FieldFrame` converts between alliances. It does not convert between the library's frame and the corner-origin frame that WPILib 2027 alpha-7 and alpha-8 still use. That conversion is separate. See [The field frame](/concepts/field-frame/).
 :::
+
+## More
+
+- [The field frame](/concepts/field-frame/): what the follower converts each loop.
+- [Alliances](/guides/alliances/): setting the frame up.
+- [Pose, FieldSpeeds and Vec2](/reference/core/small-types/): the library's own types.

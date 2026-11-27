@@ -10,8 +10,7 @@ import { Image } from 'astro:assets';
 import Clip from '../../../components/Clip.astro';
 import editor from '../../../assets/editor-drawn-path.png';
 
-Everything the library knows about your robot, your field and your paths comes from one folder in the robot
-project. The editor writes it. The library reads it once, in robot init, and never again.
+The editor writes one folder in the robot project. The library reads it once, in robot init.
 
 <FileTree>
 
@@ -27,7 +26,7 @@ project. The editor writes it. The library reads it once, in robot init, and nev
 
 </FileTree>
 
-## What each file is
+## Know each file
 
 | File | What it holds | Who writes it | Details |
 | --- | --- | --- | --- |
@@ -37,68 +36,65 @@ project. The editor writes it. The library reads it once, in robot init, and nev
 | `.pathproject.json` | The editor's tab order, colors and view, plus the **named points** the library also reads | The editor | [Project file](/files/project-file/) |
 | `PathEditorNames.java` | Three enums, `Paths`, `Events` and `Points`, so a name is checked by the compiler | The editor, on every save | [Generated names](/files/generated-names/) |
 
-Every file is optional. The table says what the library does without each one.
+Every file is optional.
 
 | Missing | What the library uses instead |
 | --- | --- |
 | Every `*.path.json` | An empty library. Driving to a pose still works. |
 | `robot.json` | The built-in default robot, `RobotConfig.DEFAULT`. It is not your robot. |
-| `field.json` | An open floor 1,000 m across with no walls and no obstacles, so a robot in a shop drives straight to its goal. |
+| `field.json` | An open floor 1,000 m across with no walls and no obstacles. |
 | `.pathproject.json` | No named points. |
 | `PathEditorNames.java` | Nothing is checked. Use the names as plain strings. |
 
 :::caution
-Without `robot.json` the library plans for a robot that is not yours: its mass, its grip and its motors. Paths
-will still run, but the speed plan is wrong. Fill in [the robot file](/files/robot-file/) before trusting a time
-or driving near a limit.
+Without `robot.json` the speed plan is for a robot that is not yours. Fill in
+[the robot file](/files/robot-file/) before trusting a time or driving near a limit.
 :::
 
-## The editor
+## Open the project in the editor
 
-Open the editor at [paths.frc5712.com](https://paths.frc5712.com) in Chrome or Edge, and open the robot project's
-root folder, the one that has `build.gradle` in it. The editor then works in the folders above directly.
+Open [paths.frc5712.com](https://paths.frc5712.com) in Chrome or Edge. Then open the robot project's root folder,
+the one with `build.gradle` in it.
 
 <Image src={editor} alt="The path editor with a path drawn across the field, colored by planned speed." />
 
-<Clip name="draw-path" caption="A path being drawn and previewed. The line is colored by planned speed as soon as there are two points." />
+<Clip name="draw-path" caption="A path being drawn and previewed. The line is colored by planned speed." />
 
-Three things about how it saves matter to robot code.
-
-- **Only changed files are written.** `robot.json` and `field.json` appear the first time you edit them.
-- **What you see is what the robot plans.** The editor runs a line-for-line port of the library's path maths, and
-  rounds your edits to what the file holds. The time and the speeds it shows are the ones the robot will compute
-  from the saved file.
-- **Paths are always stored for the blue alliance.** The library flips them on red when the path starts. See
-  [Alliances](/guides/alliances/).
-
-In a browser without folder access, the editor's **Upload** loads a folder and **Save** downloads a zip to unpack
-over the robot project.
+In a browser without folder access, **Upload** loads a folder and **Save** downloads a zip to unpack over the
+robot project.
 
 ## Deploy
 
-The files reach the robot the usual way. `src/main/deploy` is copied to the robot when you deploy the code, and
-`PathLibrary.loadAll()` reads it from there.
+Build and deploy again after every change in the editor.
 
 ```bash
-./gradlew deploy
+./gradlew deploy   # copies src/main/deploy to the robot, where PathLibrary.loadAll() reads it
 ```
 
-After you change a path in the editor you must build and deploy again. If the generated names and the deployed
-files disagree, because one was updated and the other was not, the library stops at boot and names what is
-missing. That check is described in [Generated names](/files/generated-names/).
-
-## The names
-
-`PathEditorNames.java` is what makes the rest of these pages' examples look the way they do.
+## Use the names
 
 ```java
 import static frc.robot.PathEditorNames.*;
 
-paths.get(Paths.TO_REEF);                         // a path file
+paths.get(Paths.TO_REEF);                            // a path file. ToReef becomes Paths.TO_REEF
 paths.bindEvent(Events.INTAKE_DOWN, intake.lower()); // an event name the paths use
-otf.toPoint(drive, Points.DEPOT, Rotation2d.PI); // a named point
+otf.toPoint(drive, Points.DEPOT, Rotation2d.PI);     // a named point
 ```
 
-A path called `ToReef` becomes `Paths.TO_REEF`. If you rename or delete the path in the editor, the constant
-disappears and every line that used it stops compiling, which is the point. Every method that takes one of these
-constants also takes a plain `String`, for the cases where you want one.
+Rename or delete a path in the editor and its constant disappears, so every line that used it stops compiling.
+
+## Good to know
+
+- **Only changed files are written.** `robot.json` and `field.json` appear the first time you edit them.
+- **The editor shows what the robot plans.** Its times and speeds are the ones the robot computes from the saved
+  file.
+- **Paths are stored for the blue alliance.** The library flips them on red. See
+  [Alliances](/guides/alliances/).
+- **Names and files must match.** If one was updated and the other was not, the library stops at boot and names
+  what is missing.
+- **A plain `String` works too**, wherever a method takes one of these constants.
+
+## More
+
+- [Generated names](/files/generated-names/): the boot check.
+- [The first path](/start/first-path/): draw one and follow it.

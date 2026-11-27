@@ -5,11 +5,11 @@ sidebar:
   order: 6
 ---
 
-`frc.team5712.path.plan.ConvexPolygon` is one obstacle: a **convex** polygon, meaning one with no dents, stored with its corners in counter-clockwise order. It cannot be changed once made. It carries the geometry the pathfinder is built on: growing the shape by a distance, testing whether a point is inside, whether a line passes through, and how far away something is.
+`ConvexPolygon` is one obstacle: a **convex** polygon, meaning one with no dents, with the geometry tests the pathfinder is built on.
 
-Robot code does not normally use it. Obstacles come from `field.json` through `FieldMap`, and `PathLibrary` loads that at boot. You meet this class when building a `FieldMap` in code for a test, or when reading `Pathfinder.grownObstacles()` to draw what the planner sees. See [Pathfinding](/guides/pathfinding/) for the robot code and [Pathfinder](/concepts/pathfinder/) for how the shapes are used.
+Robot code does not normally use it. Obstacles come from `field.json` through `FieldMap`, which `PathLibrary` loads at boot. You meet it when building a `FieldMap` in code for a test, or when reading `Pathfinder.grownObstacles()` to draw what the planner sees. See [Pathfinding](/guides/pathfinding/).
 
-All coordinates and distances are in meters.
+Package: `frc.team5712.path.plan`. All coordinates and distances are in meters.
 
 ## Example
 
@@ -22,74 +22,60 @@ System.out.println(shape.size());                        // 5 corners, not 6
 System.out.println(shape.containsStrictly(1.4, 1.4));    // true: inside the filled dent
 System.out.println(shape.distanceTo(3.0, 0.5));          // 1.0
 
+// 0.651 m bigger on every side, round corners drawn in 30 degree steps
 ConvexPolygon grown = shape.grow(0.651, Math.toRadians(30));
 ```
 
-## Creating one
+## Static factories
 
 There is no public constructor.
 
-### of(points)
-
-```java
-public static ConvexPolygon of(double[][] points)
-```
-
-Returns the **convex hull** of the points: the smallest convex polygon that contains them all, the shape of a rubber band stretched around them. Each point is `{x, y}` in meters. The points can be in any order, and points inside the hull or along its edges are dropped. A shape with a dent is therefore planned around as its hull, which is on the safe side.
-
-Throws `IllegalArgumentException` with `"a polygon needs at least three distinct corners"` when the hull has fewer than three corners, for example when all the points are on one line.
+| Method | What it does |
+| --- | --- |
+| `public static ConvexPolygon of(double[][] points)` | The **convex hull** of the points: the smallest convex polygon that contains them all, like a rubber band stretched around them. Each point is `{x, y}` in meters, in any order. Points inside the hull or along its edges are dropped. Throws `IllegalArgumentException` with `"a polygon needs at least three distinct corners"` when the hull has fewer than three corners, for example when all the points are on one line. |
 
 ## Corners
 
-| Method | Returns | Description |
-| --- | --- | --- |
-| `size()` | `int` | The number of corners |
-| `x(int i)` | `double` | The X of corner `i`, in meters. Corners are numbered from 0, counter-clockwise. |
-| `y(int i)` | `double` | The Y of corner `i`, in meters |
-
-`x` and `y` throw `ArrayIndexOutOfBoundsException` for an index outside `0` to `size() - 1`.
+| Method | What it does |
+| --- | --- |
+| `int size()` | The number of corners. |
+| `double x(int i)` | The X of corner `i`, in meters. Corners are numbered from 0, counter-clockwise. Throws `ArrayIndexOutOfBoundsException` for an index outside `0` to `size() - 1`. |
+| `double y(int i)` | The Y of corner `i`, in meters. Throws the same as `x`. |
 
 ## Growing
 
-### grow(r, maxStepRadians)
-
-```java
-public ConvexPolygon grow(double r, double maxStepRadians)
-```
-
-Returns the polygon grown outward by `r` meters on every side. The exact grown shape has round corners. This method draws each round corner as straight pieces that each turn at most `maxStepRadians`, and places their points slightly outside the true arc:
-
-```text
-corner point distance = r / cos(step / 2)
-```
-
-That keeps every straight piece at least `r` from the original corner, so the result always contains the exact grown shape. With 30 degree steps the overshoot is at most 3.5 percent of `r`, which is 2.3 cm for the default robot's 0.651 m.
+| Method | What it does |
+| --- | --- |
+| `public ConvexPolygon grow(double r, double maxStepRadians)` | The polygon grown outward by `r` meters on every side. Each round corner is drawn as straight pieces that each turn at most `maxStepRadians`, with their points at `r / cos(step / 2)` from the corner, slightly outside the true arc. |
 
 ## Tests
 
-| Method | Returns | Description |
-| --- | --- | --- |
-| `containsStrictly(double x, double y)` | `boolean` | True when the point is inside the polygon and more than 0.0000001 m from every edge. A point on the boundary is not inside. |
-| `blocksSegment(double x0, double y0, double x1, double y1)` | `boolean` | True when the straight segment between the two points passes through the inside of the polygon. Touching a corner or running along an edge does not count. |
-
-Because a point or line on the boundary does not count as blocked, a route may run exactly along the edge of a grown obstacle. That is what lets the shortest route hug the corners.
+| Method | What it does |
+| --- | --- |
+| `boolean containsStrictly(double x, double y)` | True when the point is inside the polygon and more than 0.0000001 m from every edge. A point on the boundary is not inside. |
+| `boolean blocksSegment(double x0, double y0, double x1, double y1)` | True when the straight segment between the two points passes through the inside of the polygon. Touching a corner or running along an edge does not count. |
 
 ## Distances
 
-| Method | Returns | Description |
-| --- | --- | --- |
-| `distanceTo(double x, double y)` | `double` | The distance in meters from the point to the polygon. 0 when the point is inside or on the boundary. |
-| `nearestBoundaryPoint(double x, double y)` | `double[]` | The closest point on the boundary as `{x, y}`, whether the given point is inside or outside |
-| `distanceToPolygon(double[] qx, double[] qy)` | `double` | The distance in meters between this polygon and another convex polygon. 0 when they touch or overlap. |
+| Method | What it does |
+| --- | --- |
+| `double distanceTo(double x, double y)` | The distance in meters from the point to the polygon. 0 when the point is inside or on the boundary. |
+| `double[] nearestBoundaryPoint(double x, double y)` | The closest point on the boundary as `{x, y}`, whether the given point is inside or outside. |
+| `double distanceToPolygon(double[] qx, double[] qy)` | The distance in meters between this polygon and another convex polygon, given as the X and the Y of its corners in counter-clockwise order. 0 when they touch or overlap. Corners given clockwise make the overlap test wrong. |
 
-For `distanceToPolygon`, the other polygon is given as two arrays, the X and the Y of its corners, in counter-clockwise order. The pathfinder passes the four corners of the robot's outline. Corners given clockwise make the overlap test wrong.
+## Good to know
+
+- **A dented shape is planned around as its hull**, which is on the safe side. The corners are stored in counter-clockwise order, and a polygon cannot be changed once made.
+- **A grown shape always contains the exact one.** Every straight piece stays at least `r` from the original corner. With 30 degree steps the overshoot is at most 3.5 percent of `r`, which is 2.3 cm for the default robot's 0.651 m.
+- **A route may run exactly along the edge of a grown obstacle**, because a point or line on the boundary does not count as blocked. That is what lets the shortest route hug the corners.
+- **The pathfinder passes `distanceToPolygon`** the four corners of the robot's outline.
 
 :::note
 `ConvexPolygon` has no `equals` of its own. Two polygons with the same corners are different objects and do not compare equal.
 :::
 
-## Related
+## More
 
-- [FieldMap](/reference/plan/fieldmap/)
-- [Pathfinder](/reference/plan/pathfinder/)
-- [Field file](/files/field-file/)
+- [Pathfinder](/concepts/pathfinder/): how the shapes are used.
+- [FieldMap](/reference/plan/fieldmap/) and [Pathfinder](/reference/plan/pathfinder/): the classes that hold them.
+- [Field file](/files/field-file/): where obstacles are written.

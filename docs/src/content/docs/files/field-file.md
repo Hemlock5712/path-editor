@@ -5,11 +5,9 @@ sidebar:
   order: 3
 ---
 
-`field.json` describes the field for the [pathfinder](/concepts/pathfinder/): how big it is and where the obstacles are. The path editor at https://paths.frc5712.com writes it into the robot project at `src/main/deploy/paths/field.json`, and `PathLibrary.loadAll()` reads it once at boot. Drawn paths do not need it. Only on-the-fly paths use it.
+`field.json` gives the [pathfinder](/concepts/pathfinder/) the field's size and obstacles. The editor writes it to `src/main/deploy/paths/field.json`, and only on-the-fly paths use it.
 
-You edit this file by hand when you want to add an obstacle the editor's default field does not have, or to check what the robot will plan around.
-
-## A complete example
+## An example
 
 ```json
 {
@@ -33,7 +31,15 @@ You edit this file by hand when you want to add an obstacle the editor's default
 }
 ```
 
+Coordinates are in meters in the [field frame](/concepts/field-frame/): the origin is the center of the field and +X points toward the blue alliance wall.
+
+:::caution
+If you write a `field.json` by hand, include `"schema": 2`. Without it your obstacles are loaded on the opposite side of the field.
+:::
+
 ## Keys
+
+All of these are read by `FieldMap.fromJson`. Any other key is ignored.
 
 | Key | Type | Unit | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -45,41 +51,21 @@ You edit this file by hand when you want to add an obstacle the editor's default
 | `obstacles[].name` | string | | `obstacle 1`, `obstacle 2`, ... | A label, used in messages and by the editor |
 | `obstacles[].polygon` | list of `[x, y]` | meters | required | The obstacle's corners |
 
-All of these are read by `FieldMap.fromJson`. Any other key is ignored by the library, and the editor keeps keys it does not edit when it saves.
+## Good to know
 
-Both sizes must be numbers greater than zero. The walls are the rectangle of that size centered on the origin, so the 2026 field's walls are at x = ±8.27 m and y = ±4.035 m.
-
-## The field frame
-
-Coordinates are in meters in the WPILib 2027 field frame: the origin is the center of the field and +X points toward the blue alliance wall. `"schema": 2` says the file is in this frame. See [The field frame](/concepts/field-frame/).
-
-A file with no `schema` key, or a `schema` below 2, was written when +X pointed toward the red wall. The library still reads it. It turns every obstacle half a turn about the center as it loads, so each corner `(x, y)` becomes `(-x, -y)`.
-
-:::caution
-If you write a `field.json` by hand, include `"schema": 2`. Without it your obstacles are loaded on the opposite side of the field.
-:::
-
-## Obstacles
-
-Each obstacle is a polygon, a list of corners, each corner a two-number list `[x, y]`. The corners can be listed in either direction.
-
-The library replaces every polygon with its **convex hull**: the shape a rubber band would make if stretched around the corners. A shape with a dent, such as an L, is planned around as if the dent were filled in. This is always on the safe side, but it can close a gap the real shape leaves open. To keep such a gap, split the shape into two convex obstacles.
-
-A polygon needs at least three corners that are not all on one line.
-
-Obstacles are where things physically are. They are not flipped for the red alliance, which is why a symmetric field lists both alliances' elements.
+- **The walls** are the rectangle of the field's size centered on the origin. Both sizes must be greater than zero.
+- **A `schema` below 2, or none,** is read as the old frame: every corner `(x, y)` becomes `(-x, -y)`.
+- **A polygon** needs at least three corners that are not all on one line, listed in either direction.
+- **A dent is filled in.** The library replaces every polygon with its **convex hull**. To keep a gap, split the shape into two convex obstacles.
+- **Obstacles are not flipped for red.** A symmetric field lists both alliances' elements.
 
 ## With no field file
 
-When `src/main/deploy/paths` has no `field.json`, the library plans on an open floor: no obstacles and no walls. The floor is a square 1,000 m across, `PathLibrary.OPEN_FLOOR_METERS`, centered on the origin. Every on-the-fly path is then a straight drive to its goal.
-
-This is on purpose. A robot being tested in a shop, with its pose zeroed wherever it happens to be standing, is not stopped by walls that are not there. The field's walls arrive with its `field.json`. `paths.hasFieldFile()` tells you which case you are in.
-
-In practice the editor always writes `field.json` when it saves, using the 2026 field by default, so a project saved from the editor has one.
+The library plans on an open floor with no obstacles and no walls, so every on-the-fly path is a straight drive to its goal. `paths.hasFieldFile()` tells you which case you are in.
 
 ## Errors
 
-A bad file stops the robot program at boot. `PathLibrary` throws `IllegalStateException` with the file's path and one of these reasons:
+A bad file stops the robot program at boot, with an `IllegalStateException` that gives the file's path and one of these reasons.
 
 | Message | Cause |
 | --- | --- |
@@ -93,7 +79,7 @@ A bad file stops the robot program at boot. `PathLibrary` throws `IllegalStateEx
 
 ## The 2026 field
 
-The editor's default `field.json` is the 2026 field, 16.54 m by 8.07 m, with eight obstacles:
+The editor's default `field.json` is the 2026 field, 16.54 m by 8.07 m, with eight obstacles.
 
 | Obstacles | Size |
 | --- | --- |
@@ -101,13 +87,10 @@ The editor's default `field.json` is the 2026 field, 16.54 m by 8.07 m, with eig
 | The blue tower and the red tower | 45 in deep and 49.25 in wide, against each alliance wall |
 | Four trench supports, two per alliance | The solid part of each trench, between the bump and the lane |
 
-The bumps are not obstacles, because they are ramps a robot can drive over. The trench lanes are not obstacles either. They are open to robots up to 22.25 in tall. If your robot avoids the bumps, or is too tall for the trench, add those areas as obstacles in the editor.
+The bumps and the trench lanes are not obstacles. If your robot avoids the bumps, or is taller than the 22.25 in the trench allows, add those areas as obstacles in the editor.
 
-The library's tests and the editor use this same file, so the robot, the editor and the tests plan around one set of obstacles.
+## More
 
-## Related
-
-- [FieldMap](/reference/plan/fieldmap/), the class this file becomes
-- [ConvexPolygon](/reference/plan/convexpolygon/)
-- [PathLibrary](/reference/wpilib/pathlibrary/), which loads it
+- [FieldMap](/reference/plan/fieldmap/) and [ConvexPolygon](/reference/plan/convexpolygon/): the classes this file becomes.
+- [PathLibrary](/reference/wpilib/pathlibrary/): loads it.
 - [Project files](/start/project-files/)

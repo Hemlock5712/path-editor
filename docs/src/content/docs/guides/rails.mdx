@@ -6,13 +6,10 @@ sidebar:
 ---
 import Scene from '../../../components/Scene.astro';
 
+A **rail** is a line on the field the robot is held to while the driver drives along it. It runs while a button
+is held, and letting go of the button is how the driver gets off it.
 
-A **rail** is a line on the field the robot is held to, like a train on a track. The driver still drives. Along
-the line, the stick works as usual. Across it, the robot is pulled onto the line and kept there. It is for
-places where being a few centimeters off sideways costs something: under a trench, along a scoring platform.
-
-A rail is a driver assist. It runs while a button is held, and letting go of the button is how the driver gets
-off it.
+<Scene name="rail" caption="The driver holds the stick straight along the field at 3 m/s. The faint robot is the driver alone. Change the pull-in to see how hard the rail takes the robot sideways. Java library, simulated drivetrain; no value here has been set with a driver." />
 
 ## Define a rail
 
@@ -31,14 +28,7 @@ Rail rail = RailDrive.rail(new Translation2d(3.0, 1.2), Rotation2d.ZERO)
 | `between(start, end)` | The rail's ends, as distances along it from the point, meters | The rail is endless |
 | `withPullIn(share)` | How fast the robot is pulled onto the line | It is pulled on as fast as the robot can go |
 
-A rail knows nothing about alliances. Its frame is whichever frame the pose is in. If you write it for blue,
-flip it yourself when the command starts, once the alliance is known.
-
-<Scene name="rail" caption="The driver holds the stick straight along the field at 3 m/s. The faint robot is the driver alone. Change the pull-in to see how hard the rail takes the robot sideways. Run by the Java library on a simulated drivetrain; no value here has been set with a driver." />
-
 ## Drive on it
-
-Build one `RailDrive` in robot init. In the command, reset it at the start and call it every loop.
 
 ```java
 RailDrive assist = new RailDrive(FollowerConfig.defaults(paths.robot()));   // robot init
@@ -60,9 +50,6 @@ drive.driveFieldVelocity(commanded, forces[0], forces[1]);
 | `maxSpeed` | The top speed, m/s |
 | `dt` | Seconds since the last loop |
 
-The result has already been through the limiter that teleop and the paths use. `assist.wanted()` gives what the
-rail asked for before limiting, for a log.
-
 ## What the driver feels
 
 | Stick | On the rail |
@@ -75,15 +62,12 @@ rail asked for before limiting, for a log.
 
 At the ends set by `between`, the robot stops.
 
-## The pull-in
+## Pick a pull-in
 
-`withPullIn` is the number a driver will have an opinion about. It is a share of the driver's speed along the
-rail. At 0.5, a driver moving at 4 m/s along the rail is pulled sideways at 2 m/s at most. The robot slides on
-at a fixed angle and joins the line further along, so the driver picks where it joins by when they press the
-button.
+`withPullIn` is a share of the driver's speed along the rail. At 0.5, a driver moving at 4 m/s along the rail is
+pulled sideways at 2 m/s at most.
 
-These figures are for a robot that starts 1.2 m off the line, driven at 3 m/s along it. They come from the
-library's own test, in simulation.
+This table is the library's own simulated test: a robot that starts 1.2 m off the line, driven at 3 m/s along it.
 
 | pullIn | Peak speed across | Travel turned by | Time to the line | Joins after | Driver's speed kept |
 | --- | --- | --- | --- | --- | --- |
@@ -94,12 +78,18 @@ library's own test, in simulation.
 | 0.2 | 0.60 m/s | 11° | 2.02 s | 6.1 m | 100 % |
 
 :::caution
-Which pull-in is right is a feel number. Nothing here measures it, and no value has been set with a driver on a
-real robot. Try the rail at low speed first, with the driver ready to let go of the button.
+The right pull-in is a feel number. No value has been set with a driver on a real robot. Try the rail at low
+speed first, with the driver ready to let go of the button.
 :::
 
-## Related
+## Good to know
 
-- [The rail law](/concepts/rail-law/) explains the across and along parts and their limits.
-- [RailDrive](/reference/wpilib/raildrive/) and [Rail](/reference/follow/rail/).
-- [Intake assist](/guides/intake-assist/) is the other assist `RailDrive` provides.
+- **A rail knows nothing about alliances.** If you write it for blue, flip it yourself when the command starts.
+- **The result is already limited**, by the limiter that teleop and the paths use.
+- **`assist.wanted()`** gives what the rail asked for before limiting, for a log.
+
+## More
+
+- [The rail law](/concepts/rail-law/): the across and along parts and their limits.
+- [RailDrive](/reference/wpilib/raildrive/) and [Rail](/reference/follow/rail/): every method.
+- [Intake assist](/guides/intake-assist/): the other assist `RailDrive` provides.

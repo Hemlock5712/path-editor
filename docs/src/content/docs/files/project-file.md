@@ -5,48 +5,11 @@ sidebar:
   order: 4
 ---
 
-`.pathproject.json` is the path editor's own file. It holds what the editor needs to reopen your project the way you left it. The editor at https://paths.frc5712.com writes it to `src/main/deploy/paths/.pathproject.json` on every save.
-
-The library reads three things from it and ignores the rest. This page documents those three. You should not need to edit this file by hand: change named points and the Java package in the editor and save.
-
-## What the library reads
-
-`PathLibrary.loadAll()` reads the file once at boot.
-
-| Key | Type | Unit | Default | What the library does with it |
-| --- | --- | --- | --- | --- |
-| `schema` | number | | 1 when absent | Decides which field frame the named points are in. `2` is the current one. |
-| `namedPoints` | list | | no named points | The points you can plan to by name |
-| `namedPoints[].name` | string | | | The point's name, as the editor shows it |
-| `namedPoints[].x` | number | meters | | The point's X, in the blue frame |
-| `namedPoints[].y` | number | meters | | The point's Y, in the blue frame |
-| `settings.javaPackage` | string | | none | The Java package to look for `PathEditorNames` in |
-
-### Named points
-
-A **named point** is a spot on the field you gave a name in the editor, such as a scoring position. The library loads each one's name and position so robot code can plan to it:
-
-```java
-Command toDepot = otf.toPoint(drive, Points.DEPOT, Rotation2d.PI);
-```
-
-`paths.namedPoint(Points.DEPOT)` returns the position as `{x, y}` in meters, and `paths.namedPoints()` returns all of them by name.
-
-Positions are stored in the blue frame, as you placed them in the editor. `toPoint` flips the point for the red alliance when the command starts. See [Alliances](/guides/alliances/).
-
-The library reads only the position. The heading the robot should arrive with is the argument you pass to `toPoint`, not something taken from the file.
-
-### The schema and the field frame
-
-`"schema": 2` says the named points are in the WPILib 2027 field frame: origin at the field's center, +X toward the blue alliance wall. A file with `"schema": 1`, or none, was written when +X pointed toward red. The library turns those points half a turn as it loads them, so `(x, y)` becomes `(-x, -y)`. Opening and saving the project in the editor rewrites the file at schema 2. See [The field frame](/concepts/field-frame/).
-
-### The Java package
-
-`settings.javaPackage` is the package the editor generates `PathEditorNames.java` into. It is `frc.robot` unless you change it in the editor under Settings, Project. At boot the library looks for a class called `PathEditorNames` in that package and, if it finds one, checks its constants against the files it loaded. See [Generated names](/files/generated-names/).
+`.pathproject.json` is the editor's own file, written to `src/main/deploy/paths/.pathproject.json` on every save. The library reads three things from it and ignores the rest.
 
 ## An example
 
-This is trimmed to the keys the library reads. A real file has more in it.
+Trimmed to the keys the library reads. A real file has more in it.
 
 ```json
 {
@@ -61,19 +24,42 @@ This is trimmed to the keys the library reads. A real file has more in it.
 }
 ```
 
-## What belongs to the editor
+## What the library reads
 
-Everything else in the file is for the editor only, and the library never looks at it:
+`PathLibrary.loadAll()` reads the file once at boot.
 
-- each path tab's order and color;
-- which waypoints follow a named point, and which are locked;
-- linked copies of a path;
-- a named point's heading and its twin on the other side of the field;
-- the red-alliance flip setting and the defaults for new paths;
-- the sim preview's drivetrain settings;
-- the editor's view of the field.
+| Key | Type | Unit | Default | What the library does with it |
+| --- | --- | --- | --- | --- |
+| `schema` | number | | 1 when absent | Decides which field frame the named points are in. `2` is the current one. |
+| `namedPoints` | list | | no named points | The points you can plan to by name |
+| `namedPoints[].name` | string | | | The point's name, as the editor shows it |
+| `namedPoints[].x` | number | meters | | The point's X, in the blue frame |
+| `namedPoints[].y` | number | meters | | The point's Y, in the blue frame |
+| `settings.javaPackage` | string | | none | The Java package to look for `PathEditorNames` in |
 
-These keys can change between editor versions. Robot code should not depend on them.
+## Use a named point
+
+A **named point** is a spot on the field you gave a name in the editor.
+
+```java
+// The heading is your argument. The file gives only the position.
+// toPoint flips the point for the red alliance when the command starts.
+Command toDepot = otf.toPoint(drive, Points.DEPOT, Rotation2d.PI);
+
+paths.namedPoint(Points.DEPOT);   // the position as {x, y}, meters
+paths.namedPoints();              // all of them, by name
+```
+
+## Good to know
+
+- **`"schema": 2`** means the [field frame](/concepts/field-frame/) with +X toward the blue alliance wall. An older file's points are turned half a turn as they load, so `(x, y)` becomes `(-x, -y)`.
+- **`settings.javaPackage`** is `frc.robot` unless you change it in the editor under Settings, Project. See [Generated names](/files/generated-names/).
+- **Everything else belongs to the editor** and can change between editor versions. Robot code should not depend on it.
+- **Do not edit this file by hand.** Change named points and the Java package in the editor and save.
+
+:::note
+The file name starts with a dot, and some file browsers hide such files. It still has to be deployed with the rest of `src/main/deploy/paths`, or the robot has no named points.
+:::
 
 ## When the file is missing or wrong
 
@@ -86,13 +72,8 @@ These keys can change between editor versions. Robot code should not depend on t
 | The file is not a JSON object | Boot fails with `IllegalStateException`, naming the file |
 | Robot code asks for a point that is not in the file | `namedPoint` throws `NoSuchElementException`, listing the points that exist |
 
-:::note
-The file name starts with a dot. Some file browsers hide such files. It still has to be deployed with the rest of `src/main/deploy/paths`, or the robot has no named points.
-:::
+## More
 
-## Related
-
-- [PathLibrary](/reference/wpilib/pathlibrary/), which reads it
-- [Pathfinding](/reference/wpilib/pathfinding/), for `toPoint`
-- [Name IDs](/reference/wpilib/name-ids/), for `PointId`
-- [Project files](/start/project-files/)
+- [PathLibrary](/reference/wpilib/pathlibrary/): reads it.
+- [Pathfinding](/reference/wpilib/pathfinding/): `toPoint`.
+- [Alliances](/guides/alliances/): the flip on red.

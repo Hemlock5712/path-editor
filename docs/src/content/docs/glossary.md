@@ -25,7 +25,7 @@ Each entry links to the page that explains it in full.
 | **Path** | A curve, a heading for every point on it, and a speed for every point on it. |
 | **Waypoint** | A point you clicked. The path passes through it. [The curve](/concepts/the-curve/) |
 | **Tangent** | The direction the path is going at a point. |
-| **Curvature** | How sharply the path is turning, in 1/m. A circle of radius 2 m has curvature 0.5. Written κ. |
+| **Curvature** | How sharply the path is turning, in 1/m, written κ. A circle of radius 2 m has curvature 0.5. |
 | **s** | Distance along the path from its start, in meters. Nearly everything in the library is indexed by it. |
 | **Quintic spline** | The kind of curve used between waypoints: a polynomial of degree five, which leaves enough freedom to match curvature at each end. |
 | **Rotation target** | A heading the robot should have reached at a point on the path. |

@@ -5,33 +5,28 @@ sidebar:
   order: 1
 ---
 
-`frc.team5712.path.follow.PathFollower` is one controller from path to pose. It takes a [`Path`](/reference/core/path/) built in robot init and, each loop, turns the measured pose and velocity into a field-relative velocity to command. It knows nothing about WPILib or the command framework. [The follower](/concepts/the-follower/) explains how it works.
+`frc.team5712.path.follow.PathFollower` takes a [`Path`](/reference/core/path/) built in robot init and, each loop, turns the measured pose and velocity into a field-relative velocity to command, with no WPILib in it.
 
-## Where you meet it
-
-Most robot code never calls it. [`FollowPathCommand`](/reference/wpilib/followpathcommand/) and [`PathfindCommand`](/reference/wpilib/pathfindcommand/) wrap a `PathFollower`, convert WPILib's types and call `step()` each loop. See [Follow a path](/guides/follow-a-path/). A `FollowPathCommand` built by hand takes a `PathFollower` in its constructor, and `follower()` on the command returns it for telemetry.
-
-Use the class directly when the code cannot use the commands, for example in a simulator or a test.
+Most robot code never calls it: [`FollowPathCommand`](/reference/wpilib/followpathcommand/) and [`PathfindCommand`](/reference/wpilib/pathfindcommand/) wrap one. You build one for a hand-built `FollowPathCommand`, or use it directly in a simulator or a test. See [Follow a path](/guides/follow-a-path/).
 
 ## Example
 
 ```java
-// robot init
+// Robot init
 Path toReef = paths.get("ToReef");
 PathFollower follower = new PathFollower(toReef, FollowerConfig.defaults(paths.robot()));
 
-// when the path begins
+// When the path begins. now is a clock in seconds, pose is a Pose in meters and radians,
+// velocity is a FieldSpeeds in m/s and rad/s, field-relative.
 follower.start(now, pose, velocity, FieldFrame.BLUE);
 
-// every loop, until follower.isFinished()
+// Every loop, until follower.isFinished()
 FieldSpeeds command = follower.step(now, pose, velocity);
 ```
 
-`pose` is a [`Pose`](/reference/core/small-types/) in meters and radians, and `velocity` and `command` are `FieldSpeeds` in m/s and rad/s, field-relative. `now` is a clock in seconds.
-
 ## Constructor
 
-| Constructor | Description |
+| Constructor | What it does |
 | --- | --- |
 | `PathFollower(Path path, FollowerConfig config)` | A follower for a path built in robot init. Nothing about the path is copied. The path file's events are registered, with no action. |
 
@@ -39,7 +34,7 @@ FieldSpeeds command = follower.step(now, pose, velocity);
 
 Call these in robot init, before the first `start()`. Each returns the follower, so they chain.
 
-| Method | Description |
+| Method | What it does |
 | --- | --- |
 | `addEvent(String name, double sMeters, Runnable action)` | Runs `action` when the robot passes `sMeters` along the path. A position outside the path is moved to its start or end. |
 | `addEventAtWaypoint(String name, double waypoint, Runnable action)` | The same at a waypoint-relative position. 1.5 is halfway along the arc from waypoint 1 to waypoint 2. |
@@ -48,40 +43,27 @@ Call these in robot init, before the first `start()`. Each returns the follower,
 | `bindGoal(Supplier<Optional<Pose>> goal, double smoothingSeconds)` | The same, averaging the estimates first over `smoothingSeconds`. For estimates that arrive raw from a camera. 0 means no averaging. |
 | `finishWhen(BooleanSupplier ready)` | Holds the finish until `ready` is true. The robot still drives to the goal and holds it. A path with a rolling end ignores it. |
 
-Events are covered in [Path events](/concepts/path-events/). `bindGoal` and `finishWhen` are covered in [Moving goals](/concepts/moving-goals/).
-
 :::caution
 If the condition given to `finishWhen` never becomes true, the path never finishes. Give the command a timeout.
 :::
 
 ## Running methods
 
-| Method | Returns | Description |
+| Method | Returns | What it does |
 | --- | --- | --- |
-| `start(double timeSeconds, Pose measuredPose, FieldSpeeds measuredVelocity, FieldFrame frame)` | `void` | Starts the path from the measured velocity. Does no path work. |
+| `start(double timeSeconds, Pose measuredPose, FieldSpeeds measuredVelocity, FieldFrame frame)` | `void` | Starts the path from the measured velocity. Does no path work. `frame` is a [`FieldFrame`](/reference/core/fieldframe/): `BLUE`, or the flip the red alliance uses. |
 | `start(double timeSeconds, Pose measuredPose, FieldSpeeds measuredVelocity, FieldFrame frame, FieldSpeeds handedCommand)` | `void` | Starts with the limiter's command set to `handedCommand`: the previous follower's `endCommand()` on a rolling chain. |
-| `step(double timeSeconds, Pose measuredPose, FieldSpeeds measuredVelocity)` | `FieldSpeeds` | One loop. Measured pose and field velocity in, the velocity to command out, both in the robot's frame. |
+| `step(double timeSeconds, Pose measuredPose, FieldSpeeds measuredVelocity)` | `FieldSpeeds` | One loop. Measured pose and field velocity in, the velocity to command out, both in the robot's frame. Throws `IllegalStateException` if it is called before `start()`. |
 | `cancel()` | `void` | Stops tracking. Events that have not fired are dropped. Has no effect unless the path is running. |
 | `isFinished()` | `boolean` | True once the path has finished normally. False after a cancel. |
 | `endCommand()` | `FieldSpeeds` | The last command, in the robot's frame. On a rolling end, the velocity to hand to the next follower. |
-| `commandedAcceleration()` | `FieldSpeeds` | The acceleration the plan calls for now: m/s² along x and y and rad/s² of spin, field-relative. Zero when the path is not running. For [`WheelForces`](/reference/follow/wheelforces/). |
-
-Details of `start` and `step`:
-
-- `frame` is a [`FieldFrame`](/reference/core/fieldframe/): `BLUE`, or the flip the red alliance uses. The pose, velocities and goal are given in the robot's own frame and converted inside.
-- `step()` throws `IllegalStateException` if it is called before `start()`.
-- After a normal finish, `step()` returns zero velocity, or `endCommand()` on a rolling end. After a cancel it returns zero.
-- The time between steps is held between 0.001 s and 0.1 s. A step with the same time as the one before, or as `start()`, is treated as one 0.02 s loop.
-- A pose with a NaN in it does not throw. The robot is braked within its limits for that loop.
-- `start()` may be called again to run the same path again. It clears the record of fired events and any moved goal.
-
-`commandedAcceleration()` comes from the plan, not from the difference between commands. [Feed-forward](/concepts/feed-forward/) explains why.
+| `commandedAcceleration()` | `FieldSpeeds` | The acceleration the plan calls for now: m/s² along x and y and rad/s² of spin, field-relative. Zero when the path is not running. From the plan, not from the difference between commands. For [`WheelForces`](/reference/follow/wheelforces/). |
 
 ## Telemetry methods
 
 All distances are meters, speeds m/s, angles radians and spin rates rad/s.
 
-| Method | Returns | Description |
+| Method | Returns | What it gives |
 | --- | --- | --- |
 | `phase()` | `Phase` | What the follower is doing. |
 | `progressMeters()` | `double` | Progress along the path being followed. |
@@ -103,8 +85,6 @@ All distances are meters, speeds m/s, angles radians and spin rates rad/s.
 | `eventNames()` | `List<String>` | Every event's name, the file's and the code's, in firing order. A copy. |
 | `eventMeters()` | `double[]` | Each event's position along the built path, in the order of `eventNames()`. A copy. |
 
-[`PathTelemetry`](/reference/wpilib/pathtelemetry/) publishes most of these to NetworkTables. See [Telemetry](/guides/telemetry/).
-
 ## PathFollower.Phase
 
 A nested enum: what the follower is doing.
@@ -119,4 +99,19 @@ A nested enum: what the follower is doing.
 
 ## Constants
 
-`PathFollower` has no public constants or fields. The numbers it uses that are not settings, such as the 0.5 m search window and the 0.3 m finish radius, are listed in [The follower](/concepts/the-follower/#named-constants). The settings are in [`FollowerConfig`](/reference/follow/followerconfig/).
+| Constants | Where the numbers are |
+| --- | --- |
+| None public, and no public fields | Fixed numbers such as the 0.5 m search window and the 0.3 m finish radius are in [The follower](/concepts/the-follower/). The settings are in [`FollowerConfig`](/reference/follow/followerconfig/). |
+
+## Good to know
+
+- **Frames are converted inside.** The pose, velocities and goal are given in the robot's own frame.
+- **After a normal finish, `step()` returns zero velocity**, or `endCommand()` on a rolling end. After a cancel it returns zero.
+- **The time between steps is held between 0.001 s and 0.1 s.** A step with the same time as the one before, or as `start()`, is treated as one 0.02 s loop. A pose with a NaN in it does not throw: the robot is braked within its limits for that loop.
+- **`start()` may be called again** to run the same path again. It clears the record of fired events and any moved goal.
+
+## More
+
+- [The follower](/concepts/the-follower/), [Path events](/concepts/path-events/) and [Moving goals](/concepts/moving-goals/): how it works.
+- [Feed-forward](/concepts/feed-forward/): why the acceleration comes from the plan.
+- [`PathTelemetry`](/reference/wpilib/pathtelemetry/) and [Telemetry](/guides/telemetry/): where the telemetry methods are published.

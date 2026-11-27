@@ -5,21 +5,21 @@ sidebar:
   order: 11
 ---
 
-`WheelForceDrive` is the shape of a drivetrain output that takes two things each loop: the velocity to drive at, and the force each wheel should push with. The force is the [feed-forward](/concepts/feed-forward/). It tells the wheels about the acceleration the plan calls for, so the wheels' own velocity loops only have the error left to correct.
+`WheelForceDrive` is a drivetrain output that takes two things each loop: the velocity to drive at, and the force each wheel should push with, which is the [feed-forward](/concepts/feed-forward/).
 
-You meet it when you turn the feed-forward on, with `withWheelForces` on [`Pathfinding`](/reference/wpilib/pathfinding/) or on a [`FollowPathCommand`](/reference/wpilib/followpathcommand/). It is an interface with one method, so a lambda that calls your drivetrain is enough. [Wheel forces](/guides/wheel-forces/) is the guide.
+You meet it when you call `withWheelForces` on [`Pathfinding`](/reference/wpilib/pathfinding/) or on a [`FollowPathCommand`](/reference/wpilib/followpathcommand/). [Wheel forces](/guides/wheel-forces/) is the guide.
 
 ## Example
 
 ```java
+// One method, so a lambda that calls your drivetrain is enough
 otf.withWheelForces(
-    drive.getModuleLocations(),
+    drive.getModuleLocations(),   // in your drivetrain's own module order
     (velocity, forcesX, forcesY) -> drive.driveFieldVelocity(velocity, forcesX, forcesY));
 ```
 
-`getModuleLocations` and the three-argument `driveFieldVelocity` are methods of your own drivetrain class, not of the library. See [The drivetrain](/start/drivetrain/). With CTRE's swerve, the source's own example of the drivetrain's side is one method:
-
 ```java
+// The drivetrain's side with CTRE's swerve, from the source's own example
 private final SwerveRequest.ApplyFieldVelocity follow =
     new SwerveRequest.ApplyFieldVelocity().withDriveRequestType(DriveRequestType.Velocity);
 
@@ -32,9 +32,9 @@ public void driveFieldVelocity(ChassisVelocities velocity, double[] forcesX, dou
 
 ## Method
 
-```java
-void drive(ChassisVelocities fieldVelocity, double[] forcesXNewtons, double[] forcesYNewtons)
-```
+| Method | What it does |
+| --- | --- |
+| `void drive(ChassisVelocities fieldVelocity, double[] forcesXNewtons, double[] forcesYNewtons)` | Called once every loop while a command runs. At a finish or on a cancel it is called with zero velocity and zero forces. |
 
 | Argument | Unit | Meaning |
 | --- | --- | --- |
@@ -42,20 +42,18 @@ void drive(ChassisVelocities fieldVelocity, double[] forcesXNewtons, double[] fo
 | `forcesXNewtons` | N | Each wheel's force along the field's x axis, one value per module. |
 | `forcesYNewtons` | N | Each wheel's force along the field's y axis, in the same order. |
 
-The arrays are in the order of the module locations you gave to `withWheelForces`, so give those in your drivetrain's own module order. The forces are field-relative, like the velocity, not robot-relative.
+## Good to know
 
-The commands call `drive` once every loop while they run. When a command stops the robot, at a finish or on a cancel, it calls `drive` with zero velocity and zero forces.
-
-## What the forces are
-
-The forces are the robot's mass times the planned acceleration, plus its moment of inertia times the planned spin acceleration, shared between the wheels. Each wheel takes the share of the push that it carries of the robot's weight, because a robot that is speeding up leans back and its front wheels can push less. [`WheelForces`](/reference/follow/wheelforces/) does the sum.
-
-Friction is not included. It is left to the drive motors' static gain, kS, and their velocity loops.
-
-:::note
-The forces are worked out from the module locations as if they were measured from the robot's center of mass. On a robot whose weight sits well off-center, the shares will be off by that much.
-:::
+- **The arrays are in the order of the module locations** you gave to `withWheelForces`. The forces are field-relative, like the velocity, not robot-relative.
+- **Friction is not included.** It is left to the drive motors' static gain, kS, and their velocity loops.
+- **The module locations are treated as measured from the center of mass.** On a robot whose weight sits well off-center, each wheel's share will be off by that much.
 
 :::caution
 The bench simulator measured less wheel slip with the feed-forward on. It has not run on a real robot. Check the sign and the module order on blocks before driving with it.
 :::
+
+## More
+
+- [Feed-forward](/concepts/feed-forward/): what the forces are.
+- [`WheelForces`](/reference/follow/wheelforces/): the class that does the sum.
+- [The drivetrain](/start/drivetrain/): `getModuleLocations` and the three-argument `driveFieldVelocity`.

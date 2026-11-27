@@ -5,15 +5,13 @@ sidebar:
   order: 2
 ---
 
-`frc.team5712.path.plan.OnTheFly` is one run of an on-the-fly path. `start` plans from the robot's measured pose to the goal with a `Pathfinder` and starts a `PathFollower` on the result. `step` runs the follower each loop and plans again when the robot is knocked off the path, the goal moves, or you ask. [On-the-fly paths](/concepts/on-the-fly/) explains the behavior.
+`OnTheFly` is one run of an on-the-fly path: it plans from the robot's measured pose to the goal, follows the result, and plans again when needed.
 
-Robot code does not usually build one. `Pathfinding` builds `PathfindCommand`s, and each command creates an `OnTheFly` when it starts and sets it up for you. See [Pathfinding](/guides/pathfinding/). You meet this class through `PathfindCommand.onTheFly()`, to read how a run went, or when you drive the library without WPILib commands, as its own tests do.
+Robot code does not usually build one. `Pathfinding` builds `PathfindCommand`s, and each command creates an `OnTheFly` when it starts. You meet it through `PathfindCommand.onTheFly()`, to read how a run went. See [Pathfinding](/guides/pathfinding/).
 
-Everything is in the real field frame: the pose, the velocity, the goal. A goal authored in the blue frame has to be flipped for the red alliance before it is handed in. The `Pathfinding` commands do that.
+Package: `frc.team5712.path.plan`.
 
 ## Example
-
-Reading the current run from a command:
 
 ```java
 PathfindCommand toDepot = otf.toPoint(drive, Points.DEPOT, Rotation2d.PI);
@@ -24,35 +22,31 @@ if (run != null && run.lastPlan() != null) {
   System.out.println("re-plans " + run.replans() + ", slowest plan "
       + run.maxPlanMicros() + " us, wide margin " + run.lastPlanWide());
 }
-```
 
-Driving one by hand, with no commands:
-
-```java
-OnTheFly run = new OnTheFly(paths.pathfinder(), FollowerConfig.defaults(paths.robot()), () -> goal)
+// Driving one by hand, with no commands. pose, velocity and goal are the library's
+// Pose and FieldSpeeds, and now is the time in seconds.
+OnTheFly byHand = new OnTheFly(paths.pathfinder(), FollowerConfig.defaults(paths.robot()), () -> goal)
     .preferring(paths.widePathfinder());
 
-if (run.start(now, pose, velocity)) {
-  // every loop, until run.isFinished()
-  FieldSpeeds command = run.step(now, pose, velocity);
+if (byHand.start(now, pose, velocity)) {
+  // every loop, until byHand.isFinished()
+  FieldSpeeds command = byHand.step(now, pose, velocity);
 }
 ```
 
-`pose`, `velocity` and `goal` are the library's `Pose` and `FieldSpeeds`, and `now` is the time in seconds.
-
 ## Constants
 
-| Constant | Value | Unit | Description |
-| --- | --- | --- | --- |
-| `DEFAULT_REPLAN_METERS` | `0.20` | meters | The default for `replanAbove`: re-plan when further than this off the path |
-| `REPLAN_COOLDOWN_SECONDS` | `0.5` | seconds | At most one off-the-path re-plan per this long |
-| `WIDE_DETOUR_RATIO` | `1.15` | | The wider-margin route is used only when it is at most this many times as long as the main one |
-| `GOAL_REPLAN_METERS` | `0.10` | meters | A moving goal further than this from the goal the path was planned to causes a re-plan |
-| `GOAL_REPLAN_COOLDOWN_SECONDS` | `0.2` | seconds | At most one moving-goal re-plan per this long |
+| Constant | What it is |
+| --- | --- |
+| `DEFAULT_REPLAN_METERS` | `0.20` meters. The default for `replanAbove`: re-plan when further than this off the path |
+| `REPLAN_COOLDOWN_SECONDS` | `0.5` seconds. At most one off-the-path re-plan per this long |
+| `WIDE_DETOUR_RATIO` | `1.15`. The wider-margin route is used only when it is at most this many times as long as the main one |
+| `GOAL_REPLAN_METERS` | `0.10` meters. A moving goal further than this from the goal the path was planned to causes a re-plan |
+| `GOAL_REPLAN_COOLDOWN_SECONDS` | `0.2` seconds. At most one moving-goal re-plan per this long |
 
-## Constructor
+## Constructors
 
-| Constructor | Description |
+| Constructor | What it does |
 | --- | --- |
 | `OnTheFly(Pathfinder pathfinder, FollowerConfig config, Supplier<Pose> goal)` | A run that plans with `pathfinder` and follows with `config`. `goal` is read when the run starts and again at each re-plan, in the real field frame. |
 
@@ -60,7 +54,7 @@ if (run.start(now, pose, velocity)) {
 
 Call these before `start`. Each returns the same object, so they chain.
 
-| Method | Description |
+| Method | What it does |
 | --- | --- |
 | `preferring(Pathfinder widerMargin)` | Tries `widerMargin` first: a pathfinder for the same field with a wider margin, such as `PlannerConfig.WIDE_MARGIN_METERS`. Its plan is used when its route is at most `WIDE_DETOUR_RATIO` times as long as the main pathfinder's. `null` means the main pathfinder only, which is the default. |
 | `arriving(double metersPerSecond, double tangentRadians)` | Arrives at this speed, in m/s, traveling in this direction, in radians. Used for a hand-over into a drawn path. The default is to arrive at rest from any direction. |
@@ -72,60 +66,52 @@ Call these before `start`. Each returns the same object, so they chain.
 
 ## Running
 
-### start(t, pose, velocity)
+`t` is the time in seconds, `pose` the measured pose in meters and radians, `velocity` the measured field velocity in m/s and rad/s.
 
-```java
-public boolean start(double t, Pose pose, FieldSpeeds velocity)
-```
+| Method | What it does |
+| --- | --- |
+| `public boolean start(double t, Pose pose, FieldSpeeds velocity)` | Plans and starts following. Also resets the re-plan count, the failure and the slowest-plan time. Returns true when a path was found. Returns false when there is no route: then `failure()` says why, `follower()` is null and `isFinished()` is true. |
+| `public FieldSpeeds step(double t, Pose pose, FieldSpeeds velocity)` | One loop. Re-plans if needed, steps the follower, and returns the field speeds to command, in m/s and rad/s. Returns zero speeds when there is no plan, or when a re-plan finds no route. |
+| `void requestReplan()` | Plans again on the next `step`, from wherever the robot is then. No cooldown applies. |
+| `boolean isFinished()` | True when the follower has finished, by arriving or by handing over on a rolling end, or when no route was found. |
+| `void cancel()` | Cancels the follower, if there is one. |
 
-Plans and starts following. `t` is the time in seconds, `pose` the measured pose in meters and radians, `velocity` the measured field velocity in m/s and rad/s. It also resets the re-plan count, the failure and the slowest-plan time.
+## When step plans again
 
-Returns true when a path was found. Returns false when there is no route. Then `failure()` says why, `follower()` is null and `isFinished()` is true.
+Before stepping the follower, `step` re-plans if the run has not finished and any row is true.
 
-### step(t, pose, velocity)
-
-```java
-public FieldSpeeds step(double t, Pose pose, FieldSpeeds velocity)
-```
-
-One loop. Takes the measured pose and field velocity and returns the field speeds to command, in m/s and rad/s. Before stepping the follower it re-plans if any of these is true and the run has not finished:
-
-- the follower is tracking, the cross-track error is above the `replanAbove` distance, and `REPLAN_COOLDOWN_SECONDS` have passed since the last plan;
-- there is a moving goal, the follower is tracking, the goal is more than `GOAL_REPLAN_METERS` from the goal the path was planned to, and `GOAL_REPLAN_COOLDOWN_SECONDS` have passed since the last plan;
-- `requestReplan()` was called.
-
-Returns zero speeds when there is no plan, or when a re-plan finds no route.
-
-### Other run methods
-
-| Method | Returns | Description |
-| --- | --- | --- |
-| `requestReplan()` | `void` | Plans again on the next `step`, from wherever the robot is then. No cooldown applies. |
-| `isFinished()` | `boolean` | True when the follower has finished, by arriving or by handing over on a rolling end, or when no route was found |
-| `cancel()` | `void` | Cancels the follower, if there is one |
+| Cause | All of these hold |
+| --- | --- |
+| Off the path | The follower is tracking, the cross-track error is above the `replanAbove` distance, and `REPLAN_COOLDOWN_SECONDS` have passed since the last plan |
+| The goal moved | There is a moving goal, the follower is tracking, the goal is more than `GOAL_REPLAN_METERS` from the goal the path was planned to, and `GOAL_REPLAN_COOLDOWN_SECONDS` have passed since the last plan |
+| You asked | `requestReplan()` was called |
 
 ## Reading the run
 
-| Method | Returns | Description |
-| --- | --- | --- |
-| `follower()` | `PathFollower` | The follower on the current plan. Null before a plan and when there is no route. |
-| `lastPlan()` | `PlanResult` | The most recent plan. Null before `start`. |
-| `lastPlanWide()` | `boolean` | True when the last plan came from the wider-margin pathfinder |
-| `replans()` | `int` | Re-plans so far this run, automatic and requested |
-| `maxPlanMicros()` | `double` | The slowest plan this run, in microseconds |
-| `failure()` | `String` | Why there is no route, or null |
-| `pathfinder()` | `Pathfinder` | The main pathfinder |
-| `endCommand()` | `FieldSpeeds` | The speed to hand to the next path on a rolling end. Zero with no plan. |
-| `commandedAcceleration()` | `FieldSpeeds` | The acceleration the last command asks for, for feed-forward. Zero with no plan. |
-| `rollingEnd()` | `boolean` | True when the current plan ends moving. False with no plan. |
+| Method | What it does |
+| --- | --- |
+| `PathFollower follower()` | The follower on the current plan. Null before a plan and when there is no route. |
+| `PlanResult lastPlan()` | The most recent plan. Null before `start`. |
+| `boolean lastPlanWide()` | True when the last plan came from the wider-margin pathfinder. |
+| `int replans()` | Re-plans so far this run, automatic and requested. |
+| `double maxPlanMicros()` | The slowest plan this run, in microseconds. |
+| `String failure()` | Why there is no route, or null. |
+| `Pathfinder pathfinder()` | The main pathfinder. |
+| `FieldSpeeds endCommand()` | The speed to hand to the next path on a rolling end. Zero with no plan. |
+| `FieldSpeeds commandedAcceleration()` | The acceleration the last command asks for, for feed-forward. Zero with no plan. |
+| `boolean rollingEnd()` | True when the current plan ends moving. False with no plan. |
+
+## Good to know
+
+- **Everything is in the real field frame**: the pose, the velocity, the goal. A goal authored in the blue frame has to be flipped for the red alliance before it is handed in. The `Pathfinding` commands do that.
+- **The commands set a run up for you.** Build one yourself only when you drive the library without WPILib commands, as its own tests do.
 
 :::note
 `maxPlanMicros()` counts only the plan that was used at each planning step. When both pathfinders were tried, the time of the one not used is not included.
 :::
 
-## Related
+## More
 
-- [Pathfinder](/reference/plan/pathfinder/) and [PlanResult](/reference/plan/planresult/)
-- [PathFollower](/reference/follow/pathfollower/) and [FollowerConfig](/reference/follow/followerconfig/)
-- [PathfindCommand](/reference/wpilib/pathfindcommand/) and [Pathfinding](/reference/wpilib/pathfinding/)
-- [Moving goals](/concepts/moving-goals/)
+- [On-the-fly paths](/concepts/on-the-fly/) and [Moving goals](/concepts/moving-goals/): the behavior.
+- [Pathfinder](/reference/plan/pathfinder/) and [PlanResult](/reference/plan/planresult/): the planner and what it returns.
+- [PathfindCommand](/reference/wpilib/pathfindcommand/) and [Pathfinding](/reference/wpilib/pathfinding/): the commands that build a run.

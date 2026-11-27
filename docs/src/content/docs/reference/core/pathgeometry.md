@@ -5,13 +5,11 @@ sidebar:
   order: 12
 ---
 
-`PathGeometry` is the path's shape, indexed by distance along it in meters. The spline from [QuinticSpline](/reference/core/quinticspline/) does not know how long it is. This class measures it, so that the rest of the library can ask for the point 2.4 m along the path, the direction of travel there, and how sharply the path bends. It also finds the point on the path closest to the robot. [The curve](/concepts/the-curve/) explains how.
+`PathGeometry` is the path's shape, indexed by distance along it in meters, and it finds the point on the path closest to the robot.
+
+Robot code built on the library's commands does not call it. `Path.build` makes the geometry and `Path.geometry()` returns it, which is useful to draw a path or to find how far along a path a field position is.
 
 Package: `frc.team5712.path.core`.
-
-## Where you meet it
-
-`Path.build` makes the geometry, and `Path.geometry()` returns it. The follower uses its projection methods every loop. Robot code built on the library's commands does not call it. It is useful when you want to draw a path, or to find how far along a path a field position is.
 
 ## Example
 
@@ -28,17 +26,15 @@ double metersOff = nearest.crossTrackMeters();             // positive is left o
 
 ## Constants
 
-| Constant | Value | Meaning |
-| --- | --- | --- |
-| `LOOKUP_TOLERANCE_METERS` | `1e-5` | The worst position error of a lookup by distance, measured at the middle of each table piece while building. This is 0.01 mm |
-| `CUSP_SCAN` | `64` | The number of samples per spline piece when looking for cusps |
-| `CUSP_ARC_METERS` | `0.02` | A cusp turns the tangent by more than 120 degrees between this far before it and this far after it |
+| Constant | What it is |
+| --- | --- |
+| `LOOKUP_TOLERANCE_METERS` | `1e-5`. The worst position error of a lookup by distance, measured at the middle of each table piece while building. This is 0.01 mm |
+| `CUSP_SCAN` | `64`. The number of samples per spline piece when looking for cusps |
+| `CUSP_ARC_METERS` | `0.02`. A cusp turns the tangent by more than 120 degrees between this far before it and this far after it |
 
-## Building
+## Static builders
 
-All three are static.
-
-| Method | Description |
+| Method | What it does |
 | --- | --- |
 | `PathGeometry build(List<Waypoint> waypoints)` | Builds the spline through the waypoints and its arc length table. |
 | `PathGeometry build(List<Waypoint> waypoints, double startCurvature)` | The same with the curvature at the first waypoint fixed, in 1/m. `NaN` leaves it free. |
@@ -48,7 +44,7 @@ The two that take waypoints throw `IllegalArgumentException` for the same reason
 
 ## Size and waypoints
 
-| Method | Returns |
+| Method | What it does |
 | --- | --- |
 | `QuinticSpline spline()` | The spline under the table. |
 | `double lengthMeters()` | The total length, in meters. |
@@ -59,17 +55,17 @@ The two that take waypoints throw `IllegalArgumentException` for the same reason
 
 ## Sampling
 
-| Method | Returns |
+`s` is clamped to the path in all three.
+
+| Method | What it does |
 | --- | --- |
 | `GeometrySample sample(double s)` | The path at `s` meters along it: point, unit tangent, curvature and its rate of change. |
 | `Vec2 pointAt(double s)` | The point at `s`. |
 | `double curvatureAt(double s)` | The signed curvature at `s`, in 1/m. Positive is turning left. |
 
-`s` is clamped to the path in all three. [GeometrySample](/reference/core/samples/) is described on the Sample records page.
-
 ## Projection
 
-Each method returns a [Projection](/reference/core/samples/): the closest point on a stretch of the path to the field point `(xMeters, yMeters)`. The stretches differ.
+Each returns a [Projection](/reference/core/samples/): the closest point on a stretch of the path to the field point `(xMeters, yMeters)`. The stretch is clamped to the path, and the answer never leaves it.
 
 | Method | Searches | Coarse scan step |
 | --- | --- | --- |
@@ -78,15 +74,11 @@ Each method returns a [Projection](/reference/core/samples/): the closest point 
 | `Projection projectGlobalWithin(double xMeters, double yMeters, double lo, double hi)` | From `lo` to `hi` | 0.10 m |
 | `Projection projectGlobal(double xMeters, double yMeters)` | The whole path | 0.10 m |
 
-All four clamp the stretch to the path. A coarse scan finds the nearest sample, and Newton's method with a bisection safeguard then refines it. The answer never leaves the stretch.
-
-Use `project` to track progress from one loop to the next. A path that passes near itself cannot make the answer jump to the other branch, because the search stays near the last known distance. If `sGuess` is so far off the path that the window misses it, the nearer end of the path is returned. Use `projectGlobal` when starting up or after losing track. `projectWithin` and `projectGlobalWithin` are for a window that must stop at a cusp.
-
 ## Cusps
 
 A cusp is a place where the path stops and doubles back. They are found once, at build.
 
-| Method | Returns |
+| Method | What it does |
 | --- | --- |
 | `double[] cusps()` | The cusps and near-cusps, in meters along the path, ascending. Empty for most paths. The array is a copy. |
 | `boolean hasCusps()` | True when the path has one or more cusps. |
@@ -95,6 +87,19 @@ A cusp is a place where the path stops and doubles back. They are found once, at
 
 ## Diagnostics
 
-| Method | Returns |
+| Method | What it does |
 | --- | --- |
 | `static long buildCount()` | How many geometries this JVM has built. Read it before and after starting a path to confirm that starting does no path work. |
+
+## Good to know
+
+- **Use `project` to track progress from one loop to the next.** The search stays near the last known distance, so a path that passes near itself cannot make the answer jump to the other branch. If `sGuess` is so far off the path that the window misses it, the nearer end of the path is returned.
+- **Use `projectGlobal` when starting up or after losing track.**
+- **`projectWithin` and `projectGlobalWithin`** are for a window that must stop at a cusp.
+- **How a projection is found.** A coarse scan finds the nearest sample, and Newton's method with a bisection safeguard then refines it.
+
+## More
+
+- [The curve](/concepts/the-curve/): how the length is measured and the closest point found.
+- [GeometrySample and Projection](/reference/core/samples/): the records these methods return.
+- [QuinticSpline](/reference/core/quinticspline/): the spline under the table.

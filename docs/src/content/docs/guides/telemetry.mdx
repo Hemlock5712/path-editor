@@ -10,11 +10,12 @@ import Scene from '../../../components/Scene.astro';
 import { Image } from 'astro:assets';
 import telemetry from '../../../assets/editor-telemetry.png';
 
-Every follow command logs what the follower is doing, without any code from you. The entries go out through
-WPILib's `Telemetry`, which publishes under `/Telemetry` in NetworkTables. Record NetworkTables to a log and
-they are in the log too.
+Every follow command logs what the follower is doing, with no code from you. The entries publish under
+`/Telemetry` in NetworkTables.
 
-## Where to look
+<Scene name="speed" caption="The Speed and PlannedSpeed entries for one run, as the chart under the field. The driven speed trails the plan by the drivetrain's response time. Real follower, simulated drivetrain." />
+
+## Find the entries
 
 For a path named `ToReef`, everything is under `/Telemetry/Path/ToReef/`. An on-the-fly command uses its own
 name in place of the path's.
@@ -66,8 +67,6 @@ Under `/Telemetry/PathFollower/`:
 | `LastEvent` | The most recent event fired |
 | `EventsFired` | The events fired by the active path |
 
-<Scene name="speed" caption="The Speed and PlannedSpeed entries for one run, as the chart under the field. The driven speed trails the plan by the drivetrain's response time. The run is the real follower on a simulated drivetrain." />
-
 ## Read a run
 
 Three plots answer most questions.
@@ -78,25 +77,20 @@ Three plots answer most questions.
 | `CrossTrack` | Within a few centimeters, widest in the tight turns | Growing through a turn: the plan corners harder than the tires hold. Check `frictionCoefficient`. |
 | `AlongTrack` | Near zero | Steadily negative: the robot cannot keep the plan's schedule. |
 
-## In the editor
+:::caution[The poses are in the library's frame]
+`Reference`, `Goal` and `Plan` are written from the center of the field. On WPILib 2027 alpha-7 and alpha-8
+they appear mirrored against the robot in AdvantageScope. Convert them when you log, or compare the scalar
+entries instead.
+:::
+
+## Watch it in the editor
 
 The editor's **Telemetry** page connects to the robot over NetworkTables and draws the live robot, the reference
-and the plan on the field. A switch shows the live robot on the editor page too, over the path you are editing.
+and the plan on the field.
 
 <Image src={telemetry} alt="The editor's Telemetry page showing a connection panel and the live values of a path run." />
 
-On the deployed site, the browser asks for permission before it connects to a robot on the local network.
-
-:::caution[The poses are in the library's frame]
-`Reference`, `Goal` and `Plan` are written from the center of the field. On WPILib 2027 alpha-7 and alpha-8,
-where the robot's own pose is measured from the blue corner, they appear mirrored against the robot in
-AdvantageScope. Convert them when you log, or compare the scalar entries instead. `Plan` is also a plain list of
-numbers, which AdvantageScope does not draw as a path.
-:::
-
-## Log your own
-
-`PathTelemetry` is public, so a follower you run by hand can log the same entries.
+## Log a follower you run by hand
 
 ```java
 PathTelemetry telemetry = new PathTelemetry("MyPath");
@@ -106,7 +100,14 @@ telemetry.log(follower);     // every loop
 telemetry.end();             // when it finishes or is canceled
 ```
 
-## Related
+## Good to know
 
-- [PathTelemetry](/reference/wpilib/pathtelemetry/) lists every entry with its type.
-- [Tuning](/guides/tuning/) uses these plots.
+- **Record NetworkTables to a log** and the entries are in the log too.
+- **`Plan` is a plain list of numbers.** AdvantageScope does not draw it as a path.
+- **A switch shows the live robot on the editor page too**, over the path you are editing.
+- **On the deployed site**, the browser asks for permission before it connects to a robot on the local network.
+
+## More
+
+- [PathTelemetry](/reference/wpilib/pathtelemetry/): every entry with its type.
+- [Tuning](/guides/tuning/): uses these plots.

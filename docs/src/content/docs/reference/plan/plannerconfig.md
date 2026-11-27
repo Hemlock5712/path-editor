@@ -5,18 +5,22 @@ sidebar:
   order: 4
 ---
 
-`frc.team5712.path.plan.PlannerConfig` is the record of settings a `Pathfinder` is built with: how big the robot is, how much room to leave, how carefully to check, and how fast the planned paths may go.
+`PlannerConfig` is the record of settings a `Pathfinder` is built with: how big the robot is, how much room to leave, how carefully to check, and how fast the planned paths may go.
 
-Most teams never write one in code. `PathLibrary.loadAll()` builds it from `robot.json` with `fromRobotFile`, so you change the bumper size and the on-the-fly speed caps by editing the [robot file](/files/robot-file/) in the editor. You meet the class directly when building a `Pathfinder` yourself, for a test or a tool. See [Pathfinding](/guides/pathfinding/) for the usual route.
+Most teams never write one in code. `PathLibrary.loadAll()` builds it from `robot.json` with `fromRobotFile`, so you change the bumper size and the on-the-fly speed caps by editing the [robot file](/files/robot-file/) in the editor. See [Pathfinding](/guides/pathfinding/).
+
+Package: `frc.team5712.path.plan`.
 
 ## Example
 
 ```java
 // what PathLibrary does: the defaults with the robot file's bumpers and speed caps
+// text is the contents of robot.json as a string
 Map<String, Object> robotJson = PathFile.asMap(Json.parse(text), "robot.json");
 PlannerConfig config = PlannerConfig.fromRobotFile(robotJson);
 
 // by hand: the defaults with a wider margin and gentler limits
+// these numbers show the methods. They are not recommended settings.
 PlannerConfig gentle = PlannerConfig.DEFAULT
     .withMargin(PlannerConfig.WIDE_MARGIN_METERS)
     .withLimits(2.5, 4.0);
@@ -24,98 +28,83 @@ PlannerConfig gentle = PlannerConfig.DEFAULT
 Pathfinder pathfinder = new Pathfinder(field, RobotConfig.DEFAULT, gentle);
 ```
 
-`text` is the contents of `robot.json` as a string. The numbers in the second half show the methods. They are not recommended settings.
-
 ## Components
 
-| Component | Type | Unit | `DEFAULT` | Description |
-| --- | --- | --- | --- | --- |
-| `bumperLengthMeters` | `double` | meters | 0.85 | Robot length with bumpers, along its heading |
-| `bumperWidthMeters` | `double` | meters | 0.85 | Robot width with bumpers |
-| `marginMeters` | `double` | meters | 0.05 | Extra clearance added when obstacles are grown, and the clearance the sweep demands of the finished path |
-| `arcStepRadians` | `double` | radians | 30 degrees, `Math.toRadians(30)` | The largest step of the short straight pieces that round the grown corners |
-| `maxRefits` | `int` | | 8 | How many times the smoother may add waypoints and fit again before giving up |
-| `checkStepMeters` | `double` | meters | 0.02 | The spacing of the swept-outline check along the path |
-| `maxMetersPerSecond` | `double` | m/s | 4.0 | The speed cap of planned paths |
-| `maxMetersPerSecondSquared` | `double` | m/s² | 6.0 | The cap on both speeding up and slowing down |
-| `footprint` | `Footprint` | | the bumpers | The outline planned with: the bumpers, or the bumpers with a mechanism out |
-
-The speed caps are caps. The speed plan still applies the robot's own traction and motor limits from its `RobotConfig`, so a value above what the robot can do changes nothing.
+| Component | `DEFAULT` | What it is |
+| --- | --- | --- |
+| `double bumperLengthMeters` | 0.85 | Robot length with bumpers, along its heading, in meters |
+| `double bumperWidthMeters` | 0.85 | Robot width with bumpers, in meters |
+| `double marginMeters` | 0.05 | Extra clearance added when obstacles are grown, and the clearance the sweep demands of the finished path, in meters |
+| `double arcStepRadians` | 30 degrees, `Math.toRadians(30)` | The largest step of the short straight pieces that round the grown corners, in radians |
+| `int maxRefits` | 8 | How many times the smoother may add waypoints and fit again before giving up |
+| `double checkStepMeters` | 0.02 | The spacing of the swept-outline check along the path, in meters |
+| `double maxMetersPerSecond` | 4.0 | The speed cap of planned paths, in m/s |
+| `double maxMetersPerSecondSquared` | 6.0 | The cap on both speeding up and slowing down, in m/s² |
+| `Footprint footprint` | the bumpers | The outline planned with: the bumpers, or the bumpers with a mechanism out |
 
 ## Constants
 
-| Constant | Value | Description |
-| --- | --- | --- |
-| `DEFAULT` | see the table above | 0.85 m square bumpers, 5 cm margin, 30 degree arcs, 8 refits, 2 cm checks, 4 m/s and 6 m/s², planning with the bumpers alone |
-| `WIDE_MARGIN_METERS` | `0.15` | Meters. The margin on-the-fly paths try first. Wheel odometry can drift by more than the default 5 cm, so where the field has room the robot keeps 15 cm away. |
-
-With the 0.85 m robot, the 0.15 m margin closes any gap under 1.5 m. The 0.05 m plan still gets through gaps down to 1.3 m. See [On-the-fly paths](/concepts/on-the-fly/) for how the two are chosen between.
+| Constant | What it is |
+| --- | --- |
+| `DEFAULT` | 0.85 m square bumpers, 5 cm margin, 30 degree arcs, 8 refits, 2 cm checks, 4 m/s and 6 m/s², planning with the bumpers alone |
+| `WIDE_MARGIN_METERS` | `0.15` meters. The margin on-the-fly paths try first. Wheel odometry can drift by more than the default 5 cm, so where the field has room the robot keeps 15 cm away. |
 
 ## Constructors
 
-| Constructor | Description |
+| Constructor | What it does |
 | --- | --- |
-| `PlannerConfig(bumperLengthMeters, bumperWidthMeters, marginMeters, arcStepRadians, maxRefits, checkStepMeters, maxMetersPerSecond, maxMetersPerSecondSquared, footprint)` | Every component, in the order of the table |
+| `PlannerConfig(bumperLengthMeters, bumperWidthMeters, marginMeters, arcStepRadians, maxRefits, checkStepMeters, maxMetersPerSecond, maxMetersPerSecondSquared, footprint)` | Every component, in the order of the table. A null `footprint` throws `IllegalArgumentException` with a message that says to use `Footprint.bumpers` for the bumpers alone. |
 | `PlannerConfig(bumperLengthMeters, bumperWidthMeters, marginMeters, arcStepRadians, maxRefits, checkStepMeters, maxMetersPerSecond, maxMetersPerSecondSquared)` | The same without a footprint. It plans with the bumpers alone, `Footprint.bumpers(bumperLengthMeters, bumperWidthMeters)`. |
 
 Both throw `IllegalArgumentException` with `"bad planner settings"` unless all of these hold:
 
-- `bumperLengthMeters` and `bumperWidthMeters` are above 0;
-- `marginMeters` is 0 or more;
-- `arcStepRadians` is above 0 and at most `Math.PI / 2`;
-- `maxRefits` is 0 or more;
-- `checkStepMeters`, `maxMetersPerSecond` and `maxMetersPerSecondSquared` are above 0.
-
-A null `footprint` throws `IllegalArgumentException` with a message that says to use `Footprint.bumpers` for the bumpers alone.
+| Component | Must be |
+| --- | --- |
+| `bumperLengthMeters`, `bumperWidthMeters` | Above 0 |
+| `marginMeters` | 0 or more |
+| `arcStepRadians` | Above 0 and at most `Math.PI / 2` |
+| `maxRefits` | 0 or more |
+| `checkStepMeters`, `maxMetersPerSecond`, `maxMetersPerSecondSquared` | Above 0 |
 
 ## Static methods
 
-### fromRobotFile(robot)
+| Method | What it does |
+| --- | --- |
+| `public static PlannerConfig fromRobotFile(Map<String, Object> robot)` | `DEFAULT` with four values taken from a parsed `robot.json`. The margin, arc step, refits and check step are always `DEFAULT`'s, and the footprint is the bumpers. Throws `IllegalArgumentException` when a key is present but is not a number, or when the values fail the constructor's checks. |
 
-```java
-public static PlannerConfig fromRobotFile(Map<String, Object> robot)
-```
+Every key is optional.
 
-`DEFAULT` with four values taken from a parsed `robot.json`. Every key is optional.
-
-| Key in `robot.json` | Unit | Used when absent | Sets |
-| --- | --- | --- | --- |
-| `bumperLengthMeters` | meters | 0.85 | `bumperLengthMeters` |
-| `bumperWidthMeters` | meters | 0.85 | `bumperWidthMeters` |
-| `onTheFlyMaxMetersPerSecond` | m/s | 4 | `maxMetersPerSecond` |
-| `onTheFlyMaxMetersPerSecondSquared` | m/s² | 6 | `maxMetersPerSecondSquared` |
-
-The margin, arc step, refits and check step are always `DEFAULT`'s, and the footprint is the bumpers. Throws `IllegalArgumentException` when a key is present but is not a number, or when the values fail the constructor's checks.
-
-It does not read the `footprints` list. `Footprint.fromRobotFile` does that, and `PathLibrary` combines the two with `withFootprint`.
+| Key in `robot.json` | Used when absent | What it sets |
+| --- | --- | --- |
+| `bumperLengthMeters` | 0.85 | `bumperLengthMeters`, in meters |
+| `bumperWidthMeters` | 0.85 | `bumperWidthMeters`, in meters |
+| `onTheFlyMaxMetersPerSecond` | 4 | `maxMetersPerSecond`, in m/s |
+| `onTheFlyMaxMetersPerSecondSquared` | 6 | `maxMetersPerSecondSquared`, in m/s² |
 
 ## Methods
 
-| Method | Returns | Description |
-| --- | --- | --- |
-| `halfDiagonalMeters()` | `double` | The robot's reach in any heading, in meters: the bumpers' half-diagonal, or the far corner of the footprint when a mechanism is out. The same as `footprint().reachMeters()`. |
-| `growMeters()` | `double` | How far obstacles are grown, in meters: `halfDiagonalMeters() + marginMeters` |
-| `bumperGrowMeters()` | `double` | `growMeters()` for the bumpers alone, whatever the footprint: `hypot(bumperLengthMeters, bumperWidthMeters) / 2 + marginMeters` |
-| `withMargin(double margin)` | `PlannerConfig` | A copy with a different margin, in meters |
-| `withLimits(double maxSpeed, double maxAccel)` | `PlannerConfig` | A copy with different caps, in m/s and m/s² |
-| `withFootprint(Footprint outline)` | `PlannerConfig` | A copy that plans with `outline`, one of the footprints from `Footprint.fromRobotFile` |
+| Method | What it does |
+| --- | --- |
+| `double halfDiagonalMeters()` | The robot's reach in any heading, in meters: the bumpers' half-diagonal, or the far corner of the footprint when a mechanism is out. The same as `footprint().reachMeters()`. 0.601 m for `DEFAULT`. |
+| `double growMeters()` | How far obstacles are grown, in meters: `halfDiagonalMeters() + marginMeters`. 0.651 m for `DEFAULT`. |
+| `double bumperGrowMeters()` | `growMeters()` for the bumpers alone, whatever the footprint: `hypot(bumperLengthMeters, bumperWidthMeters) / 2 + marginMeters`. |
+| `PlannerConfig withMargin(double margin)` | A copy with a different margin, in meters. |
+| `PlannerConfig withLimits(double maxSpeed, double maxAccel)` | A copy with different caps, in m/s and m/s². |
+| `PlannerConfig withFootprint(Footprint outline)` | A copy that plans with `outline`, one of the footprints from `Footprint.fromRobotFile`. |
 
-The `with` methods go through the constructor, so they throw the same `IllegalArgumentException` for a bad value.
+## Good to know
 
-For `DEFAULT`:
-
-```text
-halfDiagonalMeters = sqrt(0.85^2 + 0.85^2) / 2 = 0.601 m
-growMeters         = 0.601 + 0.05              = 0.651 m
-```
+- **The speed caps are caps.** The speed plan still applies the robot's own traction and motor limits from its `RobotConfig`, so a value above what the robot can do changes nothing.
+- **A wider margin closes gaps.** With the 0.85 m robot, the 0.15 m margin closes any gap under 1.5 m. The 0.05 m plan still gets through gaps down to 1.3 m.
+- **The `with` methods go through the constructor**, so they throw the same `IllegalArgumentException` for a bad value.
+- **`fromRobotFile` does not read the `footprints` list.** `Footprint.fromRobotFile` does that, and `PathLibrary` combines the two with `withFootprint`.
 
 :::note
 `withFootprint` does not change `bumperLengthMeters` or `bumperWidthMeters`. The pathfinder uses the footprint for growing and sweeping, and the bumper size only for the fallback graph of a footprint that reaches further than the bumpers. See [Footprints](/concepts/footprints/).
 :::
 
-## Related
+## More
 
-- [Pathfinder](/reference/plan/pathfinder/)
-- [Footprint](/reference/core/footprint/)
-- [Robot file](/files/robot-file/)
-- [PathLibrary](/reference/wpilib/pathlibrary/)
+- [On-the-fly paths](/concepts/on-the-fly/): how the two margins are chosen between.
+- [Pathfinder](/reference/plan/pathfinder/) and [Footprint](/reference/core/footprint/): what the settings feed.
+- [Robot file](/files/robot-file/) and [PathLibrary](/reference/wpilib/pathlibrary/): where the settings come from.

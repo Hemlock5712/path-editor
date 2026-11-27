@@ -5,13 +5,11 @@ sidebar:
   order: 2
 ---
 
-`robot.json` describes the robot to the library: how heavy it is, where its wheels are, what its motors can do, and how big its bumpers are. Every path is planned with these numbers, and the commands that drive the robot are limited by them. The file lives in `deploy/paths/` next to the path files. `PathLibrary.loadAll()` reads it once at boot.
-
-Every key is optional. A key that is missing keeps its default, and if there is no `robot.json` at all, every default applies. The defaults describe the bench robot the library was developed against. They are a starting point, not a measurement of your robot.
+`robot.json` describes the robot to the library. It lives in `deploy/paths/`, and `PathLibrary.loadAll()` reads it once at boot.
 
 ## An example
 
-This example sets every key the library reads. The values shown are the defaults, apart from the three optional caps and the footprint, which have no default value to show.
+Every key is optional, and a missing key keeps its default. The values here are the defaults, apart from the three optional caps and the footprint, which have none.
 
 ```json
 {
@@ -45,9 +43,13 @@ This example sets every key the library reads. The values shown are the defaults
 }
 ```
 
-## Three readers
+:::caution
+The library has not run on a real robot, and the defaults describe the bench robot it was developed against. Treat every default as a number to check, and follow the order in [Tuning](/guides/tuning/) when you first drive.
+:::
 
-Three parts of the library read this one file, each taking the keys it knows and ignoring the rest.
+## Who reads it
+
+Each reader takes the keys it knows and ignores the rest.
 
 | Reader | Keys | Produces |
 | --- | --- | --- |
@@ -72,13 +74,13 @@ Read by `RobotFile`.
 | `maxAngularRadPerSec` | rad/s | no cap | Spin rate cap for the planned heading |
 | `maxAngularRadPerSecSquared` | rad/s² | no cap | Spin acceleration cap |
 
-The default `moduleRadiusMeters` is the diagonal of modules at 0.29 m from the center on each axis. With the default motor, gearing and wheel, the free speed at the wheel is 4.56 m/s.
-
-The two spin caps need a note. When they are not set, the speed plan has no spin cap of its own, and only the wheel-speed, traction and motor limits hold the planned spin. The follower still applies caps of 540 degrees per second and 720 degrees per second squared to what it commands. When `maxAngularRadPerSecSquared` is set, the plan turns at `tractionShare` of it and the follower is held to the full value.
+- **With no spin caps set**, the plan has no spin cap of its own. The follower still applies 540 degrees per second and 720 degrees per second squared to what it commands.
+- **With `maxAngularRadPerSecSquared` set**, the plan turns at `tractionShare` of it and the follower is held to the full value.
+- **The default free speed at the wheel** is 4.56 m/s, with the default motor, gearing and wheel.
 
 ## Traction
 
-Read by `RobotFile`. These four keys set the traction limit, `tractionShare * min(μ * g, g * x / h)`. The [Traction](/concepts/traction/) page explains the formula.
+Read by `RobotFile`. These four keys set the traction limit, `tractionShare * min(μ * g, g * x / h)`, which is 12.8 m/s² with the defaults. See [Traction](/concepts/traction/).
 
 | Key | Unit | Default | Meaning |
 | --- | --- | --- | --- |
@@ -87,13 +89,11 @@ Read by `RobotFile`. These four keys set the traction limit, `tractionShare * mi
 | `tipDistanceMeters` | m | `moduleRadiusMeters / √2` | Distance `x` from the center to the nearest tipping edge: the smaller of the modules' x and y distances |
 | `tractionShare` | none | 0.9 | The share of grip or tipping that the robot uses. Above 0, at most 1 |
 
-With the defaults the limit is 12.8 m/s².
-
 An older file may contain a `tractionRule` key. It is ignored.
 
 ## motor
 
-Read by `RobotFile`. The `motor` object describes one drive motor as a [Motor](/reference/core/motor/). Each key inside it is optional too. The defaults are the Kraken X60 with FOC.
+Read by `RobotFile`. The `motor` object describes one drive motor as a [Motor](/reference/core/motor/), and the defaults are the Kraken X60 with FOC.
 
 | Key | Unit | Default | Meaning |
 | --- | --- | --- | --- |
@@ -113,13 +113,13 @@ Read by `PlannerConfig.fromRobotFile`. The bumper keys are also read by `Footpri
 | `onTheFlyMaxMetersPerSecond` | m/s | 4 | Speed cap for paths planned during a match |
 | `onTheFlyMaxMetersPerSecondSquared` | m/s² | 6 | Acceleration and braking cap for those paths |
 
-The pathfinder grows every obstacle by the bumpers' half-diagonal plus a margin, so the bumper size decides which gaps the robot is allowed through. See [The pathfinder](/concepts/pathfinder/).
-
-The two `onTheFly` keys apply to drive-to-pose and pathfinding commands, not to drawn paths. A drawn path carries its own maxima in its [path file](/files/path-file/). The robot's traction limit still applies to both, so an `onTheFlyMaxMetersPerSecondSquared` above the traction limit changes nothing.
+- **The bumper size decides which gaps the robot is allowed through.** See [The pathfinder](/concepts/pathfinder/).
+- **The `onTheFly` keys do not apply to drawn paths.** A drawn path carries its own maxima in its [path file](/files/path-file/).
+- **The traction limit still applies to both.** An `onTheFlyMaxMetersPerSecondSquared` above it changes nothing.
 
 ## footprints
 
-Read by `Footprint.fromRobotFile`. A [Footprint](/reference/core/footprint/) is the robot's outline seen from above, as a rectangle. The list always starts with one called `"bumpers"`, built from the two bumper keys. Each entry in `footprints` adds another: the bumpers plus how much further a mechanism reaches on each side.
+Read by `Footprint.fromRobotFile`. Each entry adds a [Footprint](/reference/core/footprint/) to the list, which always starts with `"bumpers"`: the bumpers plus how much further a mechanism reaches on each side. See [Footprints](/concepts/footprints/).
 
 | Key | Unit | Default | Meaning |
 | --- | --- | --- | --- |
@@ -130,26 +130,22 @@ Read by `Footprint.fromRobotFile`. A [Footprint](/reference/core/footprint/) is 
 | `rightMeters` | m | 0 | Reach past the right bumper |
 | `retractSeconds` | s | 0 | How long the mechanism takes to come back in |
 
-Names must be different from each other, and none may be `"bumpers"`. Every extension must be zero or more. A path that names a footprint this list does not have fails at boot. See [Footprints](/concepts/footprints/).
+Names must be different from each other, and none may be `"bumpers"`. Every extension must be zero or more.
 
 ## What to measure
 
-The defaults will run in simulation. On a real robot, these are the numbers that differ from robot to robot:
+These numbers differ from robot to robot. [Tuning](/guides/tuning/) has ways to measure some of them.
 
-1. **`massKg`.** Weigh the robot with its battery and bumpers on.
-2. **`moduleRadiusMeters` and `tipDistanceMeters`.** Measure from the center of the robot to the center of a wheel. For a base that is not square, also set `tipDistanceMeters` to the smaller of the two axis distances.
-3. **`centerOfMassHeightMeters`.** The default of 0.2 m is a guess, and with the default geometry it is the number that sets the traction limit.
-4. **`wheelRadiusMeters`.** Treads wear, and the radius shrinks with them.
-5. **`driveGearRatio`, `driveMotorCount` and `statorCurrentLimitAmps`.** Copy these from the swerve modules and from the drive motor configuration in your robot code.
-6. **`bumperLengthMeters` and `bumperWidthMeters`.** Measure the outside of the bumpers.
-7. **`frictionCoefficient`.** Use the value for your tread on carpet.
-
-`momentOfInertiaKgM2` is hard to measure directly. The source does not give a procedure for it, so this page does not either.
-
-:::caution
-The library has not run on a real robot. Treat every default as a number to check, and follow the order in [Tuning](/guides/tuning/) when you first drive.
-:::
+| Key | Note |
+| --- | --- |
+| `massKg` | With battery and bumpers on |
+| `moduleRadiusMeters`, `tipDistanceMeters` | From the center of the robot to the center of a wheel. For a base that is not square, also set `tipDistanceMeters` to the smaller of the two axis distances. |
+| `centerOfMassHeightMeters` | The default of 0.2 m is a guess, and with the default geometry it is the number that sets the traction limit. |
+| `wheelRadiusMeters` | Treads wear, and the radius shrinks with them. |
+| `driveGearRatio`, `driveMotorCount`, `statorCurrentLimitAmps` | Copy from the swerve modules and the drive motor configuration in your robot code. |
+| `bumperLengthMeters`, `bumperWidthMeters` | The outside of the bumpers |
+| `frictionCoefficient` | The value for your tread on carpet |
 
 ## Errors
 
-Unknown keys are ignored. A value of the wrong type, or a number outside its allowed range, throws an `IllegalArgumentException` when the file is read, which stops the robot code at boot. Every size, ratio, count and limit in the robot section must be above zero.
+Unknown keys are ignored. A value of the wrong type, or a number outside its allowed range, throws an `IllegalArgumentException` when the file is read, which stops the robot code at boot.

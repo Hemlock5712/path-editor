@@ -1,52 +1,37 @@
 ---
 title: What Myelin is
-description: The editor, the files it saves, and the library that drives them, in one page.
+description: The editor, the files it saves, and the library that drives them.
 sidebar:
   order: 1
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-Myelin is team 5712's way of getting a swerve robot from one place on the field to another. It has two halves. The
-**editor** is a web app where you draw paths on a picture of the field. The **library** is Java code that runs on
-the robot, reads what the editor saved, and drives it. These pages document the library.
-
-The library is installed as a **vendordep**, a library a robot project pulls in by dropping one JSON file into
-its `vendordeps` folder, the same way a project gets Phoenix or the Limelight library.
+Myelin gets a swerve robot from one place on the field to another. You draw paths in the **editor**, and the
+**library** drives them on the robot. These pages document the library.
 
 ## The three parts
 
 | Part | What it is | Where it lives |
 | --- | --- | --- |
 | The editor | A web app. You draw paths, set the robot's numbers and mark the field's obstacles. | [paths.frc5712.com](https://paths.frc5712.com) |
-| The files | What the editor saves into the robot project: one file per path, plus the robot, the field and a class of names. | `src/main/deploy/paths/` in the robot project |
+| The files | What the editor saves: one file per path, plus the robot, the field and a class of names. | `src/main/deploy/paths/` in the robot project |
 | The library | Java, on the robot. It reads the files at boot and gives robot code commands that drive. | `vendordeps/Myelin.json` |
 
-The files are the only connection between the editor and the robot. The editor never talks to the robot to send a
-path. You save, you deploy, and the robot reads the folder when it starts. [Project files](/start/project-files/)
-lists each one.
+The files are the only connection between the editor and the robot. See [Project files](/start/project-files/).
 
 ## What the library does
 
-It does three jobs. Each has its own section under **How it works**.
+1. **It plans.** At boot, every path file becomes a curve, a heading and a top speed for every point. Starting a
+   path later does no planning.
+2. **It follows.** Every loop, the follower finds the robot on the path and outputs a velocity for the drivetrain.
+3. **It plans on the field.** With no drawn path, the pathfinder finds a route round the obstacles and the same
+   follower drives it.
 
-1. **It plans.** When the robot boots, every path file becomes a smooth curve, a heading for every point along
-   it, and the fastest speed at every point that the robot can hold without slipping, tipping or asking the
-   motors for more than they have. This happens once. Starting a path later does no planning.
-2. **It follows.** Every loop, the follower works out where the robot is on the path, reads the plan a little
-   ahead of that, corrects for being off the line or turned wrong, and limits the result to what the wheels can
-   do. The output is a velocity for the drivetrain.
-3. **It plans on the field.** When there is no drawn path, for example "drive to that scoring spot from wherever
-   you are", the pathfinder finds the shortest route round the field's obstacles, smooths it into an ordinary
-   path, and the same follower drives it. That takes about a millisecond on a desktop PC.
+It also has a limiter for driving by hand, a goal that follows an AprilTag, a **rail** that holds the robot to a
+line, and an intake assist.
 
-On top of those it has pieces that reuse the same limits: a limiter for driving by hand, a goal that follows an
-AprilTag, a **rail** that holds the robot to a line while the driver drives along it, and an intake assist that
-nudges the robot onto a game piece.
-
-## Which pages you need
-
-The guides are grouped by what you are writing. Each group stands on its own once the library is installed.
+## Find your page
 
 | You are writing | Read | It covers |
 | --- | --- | --- |
@@ -55,13 +40,11 @@ The guides are grouped by what you are writing. Each group stands on its own onc
 | Driver control | [Teleop](/guides/teleop-limiter/) | The limiter, rails, the intake assist |
 | Anything, and it is time to run it | [On the robot](/guides/telemetry/) | Telemetry, tuning, wheel forces, troubleshooting |
 
-The teleop pieces do not need a single path. A team can use only the limiter, or only drive to a pose, and never
-open the editor.
+The teleop pieces do not need a path. A team can use only the limiter and never open the editor.
 
 ## Who does what
 
-The rule the library is built on: **the library does everything about moving the robot, and robot code keeps the
-hardware, the cameras and the driver.**
+The library moves the robot. Robot code keeps the hardware, the cameras and the driver.
 
 | The library | Your robot code |
 | --- | --- |
@@ -71,8 +54,7 @@ hardware, the cameras and the driver.**
 | Filters a tag or game piece once it has been seen | Reads the cameras and turns a detection into a position |
 | Fires events by name | Decides what command each event runs |
 
-So the library never touches a motor controller and never reads a camera. It asks your drivetrain for three
-things and gives one back. [What your drivetrain provides](/start/drivetrain/) spells them out.
+[What your drivetrain provides](/start/drivetrain/) lists what the library asks for.
 
 ## The five packages
 
@@ -86,24 +68,20 @@ Everything is under `frc.team5712.path`. Robot code imports almost entirely from
 | `core` | The path maths, with no dependencies: the curve, the heading, the speed plan, the file readers | [core](/reference/core/path/) |
 | `sim` | A small simulated drivetrain for trying a follower without a robot | [sim](/reference/sim/followersim/) |
 
-`core`, `follow` and `plan` do not use WPILib at all. They take and return the library's own small types (`Pose`,
-`FieldSpeeds`). The `wpilib` package wraps them in Commands v3 and WPILib's `Pose2d` and `ChassisVelocities`.
-
 ## Where it stands
 
-The current version is **2027.0.0-alpha-2**, built against WPILib 2027 alpha-7 and Commands v3.
+The current version is **2027.0.0-alpha-2**, built against WPILib 2027 alpha-7 and Commands v3. Its tests pass,
+and the team's robot project drives it in the CTRE simulator.
 
-- Its unit tests and its end-to-end tests pass. The end-to-end tests draw paths in the editor, load them through
-  the library, and drive them on a simulated drivetrain on both alliances.
-- The team's robot project builds against the published vendordep and drives in the CTRE simulator.
-- **It has not run on a real robot.** Treat every default as a starting point, and read
-  [Tuning](/guides/tuning/) before the first run on carpet.
+:::caution[Not yet on a real robot]
+The library has not run on a real robot. Treat every default as a starting point, and read
+[Tuning](/guides/tuning/) before the first run on carpet.
+:::
 
 :::caution[The field origin]
-The library uses the WPILib 2027 field frame: the origin is the center of the field and +X points at the blue
-alliance wall. WPILib 2027 alpha-7 and alpha-8 still report poses from the blue corner. Until WPILib changes,
-robot code must convert every pose and velocity that crosses between the two.
-[What your drivetrain provides](/start/drivetrain/#the-field-frame) has the conversion.
+The library's origin is the center of the field, with +X toward the blue alliance wall. WPILib 2027 alpha-7 and
+alpha-8 still report poses from the blue corner, so robot code must convert every pose and velocity. See
+[What your drivetrain provides](/start/drivetrain/#the-field-frame).
 :::
 
 ## Next

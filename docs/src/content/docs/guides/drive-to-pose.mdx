@@ -7,79 +7,33 @@ sidebar:
 import Scene from '../../../components/Scene.astro';
 
 
-Sometimes there is no path to draw, because you do not know where the robot will start. "Go to the scoring spot"
-from anywhere on the field is that case. `otf.to` plans a short path from the robot's pose to the goal when the
-command starts, then follows it like any other path.
+`otf.to` drives to a spot from wherever the robot is. It plans a short path when the command starts, then follows
+it like any other path.
 
-## The command
+<Scene name="driveToPose" caption="otf.to from three starting places on an open floor. Each plan is made when the command starts. Real follower, simulated drivetrain." />
+
+## Drive to a pose
 
 ```java
+// Meters, and the heading to arrive at. Write it for the blue alliance: it is flipped on red.
 Command toSpot = otf.to(drive, new Pose2d(5.2, 1.4, Rotation2d.PI));
 ```
 
-The pose is a position in meters and the heading to arrive at. **Write it for the blue alliance.** On red the
-library flips it with the frame you gave `Pathfinding`, read when the command starts.
+## Drive to a named point
 
-It works from any distance: several meters away, a few centimeters away, or already on the goal. With no
-`field.json` the field is an open floor and the plan is a straight run. With one, the route goes round the
-obstacles. See [Pathfinding](/guides/pathfinding/).
-
-<Scene name="driveToPose" caption="otf.to from three starting places on an open floor. Each plan is made when the command starts. Watch the speed chart: the robot brakes on the stopping law and eases onto the goal. The run is the real follower on a simulated drivetrain." />
-
-## What it does
-
-1. **Plans**, once, when the command starts, from the measured pose and velocity. This is the only path work the
-   library does at go. On a desktop PC it takes about a millisecond.
-2. **Follows** the plan at the fastest speed the robot can still stop from.
-3. **Drives straight at the goal** for the last 30 cm and eases in.
-4. **Limits** every command to what the wheels can grip, with the limiter teleop uses.
-
-It finishes when the robot is inside the tolerance, slower than 5 cm/s, and has held that for 0.1 s. Then it
-sends zero.
-
-## Set what finished means
-
-The default tolerance is 2 cm and 1°. Loosen it for a spot that does not need to be exact, or for a robot that
-cannot hold 2 cm.
+A **named point** is a spot you marked in the editor's **Points** tab.
 
 ```java
-Command toSpot = otf.to(drive, goal)
-    .withTolerance(0.05, Rotation2d.fromDegrees(2));
+// The heading is the one to arrive at, in the blue frame
+Command toDepot = otf.toPoint(drive, Points.DEPOT, Rotation2d.PI);
 ```
 
-`setTolerance(meters, heading)` does the same on a command you already hold. It returns nothing, so it can stand
-on a line of its own.
-
-## How hard it drives
-
-A path drawn in the editor carries its own speed limits. An on-the-fly path takes them from two keys in
-`robot.json`.
-
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `onTheFlyMaxMetersPerSecond` | 4 | Top speed, m/s |
-| `onTheFlyMaxMetersPerSecondSquared` | 6 | One limit for speeding up and for slowing down, m/s² |
-
-The team's robot project sets the second to 9 after bench runs. A higher number arrives sooner and asks more of
-the tires. Lower it if the robot arrives off target.
-
-:::note
-The acceleration is the lever to pull, not the finish law. A move planned at 6 m/s² has no overshoot and about a
-third of the wheel slip of one planned at the traction limit. If a drive-to-pose overshoots, lower this number
-before touching anything in [Tuning](/guides/tuning/).
-:::
-
-## A goal that is only known later
-
-`otf.to` fixes its goal when you write the line. For a goal worked out at run time, give a supplier.
+## Drive to a goal known later
 
 ```java
+// Read when the command starts and at each re-plan. Real field frame: not flipped on red.
 Command toTarget = otf.toTarget(drive, () -> vision.scoringPose());
 ```
-
-The supplier is read when the command starts and at each re-plan. Its pose is in the **real field frame**, the
-frame the robot's own pose is in. It is used as given and is not flipped on red, because a pose that comes from
-the field is already where it physically is.
 
 | Method | Goal is written in | Flipped on red |
 | --- | --- | --- |
@@ -87,26 +41,46 @@ the field is already where it physically is.
 | `otf.toPoint(drive, Points.X, heading)` | The blue frame | Yes |
 | `otf.toTarget(drive, supplier)` | The real field frame | No |
 
-## A named point
-
-A **named point** is a spot you marked in the editor's **Points** tab. Robot code can drive to it by name, so the
-coordinates live in one place.
+## Set what finished means
 
 ```java
-Command toDepot = otf.toPoint(drive, Points.DEPOT, Rotation2d.PI);
+// The default is 2 cm and 1°. Loosen it for a spot that does not need to be exact.
+Command toSpot = otf.to(drive, goal)
+    .withTolerance(0.05, Rotation2d.fromDegrees(2));
 ```
 
-The heading is the one to arrive at, in the blue frame. An unknown name throws `NoSuchElementException` listing
-the points that exist.
+`setTolerance(meters, heading)` does the same on a command you already hold, and returns nothing.
 
-## When the plan fails
+## Set how hard it drives
 
-If the pathfinder cannot find a route, the command sends zero and ends at once. The reason is published as
-`/Telemetry/Path/<name>/PlanFailure`, and `PlanOk` is false. Put a timeout on any drive in an autonomous so a
-goal that is never reached cannot hold up the routine.
+An on-the-fly path takes its limits from two keys in `robot.json`.
 
-## Related
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `onTheFlyMaxMetersPerSecond` | 4 | Top speed, m/s |
+| `onTheFlyMaxMetersPerSecondSquared` | 6 | One limit for speeding up and for slowing down, m/s² |
 
-- [On-the-fly paths](/concepts/on-the-fly/) explains planning and re-planning.
-- [The stopping law](/concepts/stopping-law/) explains the last 30 cm.
-- [PathfindCommand](/reference/wpilib/pathfindcommand/) lists every option.
+:::note
+If a drive-to-pose overshoots or arrives off target, lower the acceleration before touching anything in
+[Tuning](/guides/tuning/).
+:::
+
+## Good to know
+
+- **It works from any distance**, including already on the goal.
+- **It finishes** inside the tolerance, slower than 5 cm/s, held for 0.1 s. Then it sends zero.
+- **With a `field.json`** the route goes round the obstacles. Without one it is a straight run. See
+  [Pathfinding](/guides/pathfinding/).
+- **A failed plan** sends zero and ends at once. The reason is in `/Telemetry/Path/<name>/PlanFailure`, and
+  `PlanOk` is false.
+- **An unknown point name** throws `NoSuchElementException` listing the points that exist.
+
+:::caution
+Put a timeout on any drive in an autonomous, so a goal that is never reached cannot hold up the routine.
+:::
+
+## More
+
+- [On-the-fly paths](/concepts/on-the-fly/): planning and re-planning.
+- [The stopping law](/concepts/stopping-law/): the last 30 cm.
+- [PathfindCommand](/reference/wpilib/pathfindcommand/): every option.

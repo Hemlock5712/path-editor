@@ -5,13 +5,12 @@ sidebar:
   order: 15
 ---
 
-The library is built to fail at boot, not in a match. Most problems show up as an exception in robot init with a
-message that names the file or the name at fault. The rest show up as a robot that drives, but wrongly. This
-page covers both.
+Most problems show up as an exception in robot init, with a message that names the file or the name at fault.
+The rest show up as a robot that drives, but wrongly.
 
 ## Errors at boot
 
-These are thrown by `PathLibrary.loadAll()` or by the lines right after it.
+Thrown by `PathLibrary.loadAll()` or by the lines right after it.
 
 | Message | Cause | Fix |
 | --- | --- | --- |
@@ -24,7 +23,7 @@ These are thrown by `PathLibrary.loadAll()` or by the lines right after it.
 
 ## Errors when building commands
 
-These are thrown in robot init too, by the line that asks for the name.
+Thrown in robot init too, by the line that asks for the name. Each lists what does exist.
 
 | Message | Thrown by |
 | --- | --- |
@@ -32,9 +31,10 @@ These are thrown in robot init too, by the line that asks for the name.
 | `no named point X (have [...])` | `paths.namedPoint`, `otf.toPoint` |
 | `no footprint named X (have [...]; robot.json's footprints)` | `paths.pathfinder(name)`, and a command starting with that footprint |
 
-Each lists what does exist. With the generated names you rarely see these, because a wrong name does not compile.
-
 ## The robot drives the wrong way
+
+[What your drivetrain provides](/start/drivetrain/#check-it-before-driving-a-path) has a four-step check for
+these.
 
 | What you see | Cause |
 | --- | --- |
@@ -43,9 +43,6 @@ Each lists what does exist. With the generated names you rarely see these, becau
 | Correct on blue, backward on red | The drive method applies the operator perspective to the library's field velocity. |
 | Correct on blue, a wrong but sensible path on red | The red frame is wrong for this field: `RED_HALF_TURN` where it should be `RED_MIRROR`, or the reverse. |
 | It spins as it drives | `getFieldVelocity` returns a robot-relative velocity. |
-
-[What your drivetrain provides](/start/drivetrain/#check-it-before-driving-a-path) has a four-step check for
-these.
 
 ## The robot follows the path badly
 
@@ -86,6 +83,5 @@ these.
 
 ## Still stuck
 
-Read the source. The sources jar ships with the vendordep, so Ctrl-click any library class in VS Code. Start at
-`PathFollower.step()`. The team's simulation tests in the library's repository drive every one of these cases,
-and a failing case can usually be reproduced there without a robot.
+Read the source: the sources jar ships with the vendordep, so Ctrl-click any library class in VS Code. Start at
+`PathFollower.step()`.

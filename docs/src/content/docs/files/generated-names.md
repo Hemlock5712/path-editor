@@ -5,31 +5,9 @@ sidebar:
   order: 5
 ---
 
-`PathEditorNames.java` is a Java class the path editor writes into your robot project every time you save. It turns the names in your project into constants: one for every path, one for every event name, one for every named point. Robot code uses the constants in place of strings, so a misspelled or renamed name is a compile error on your laptop, not a crash on the field.
+`PathEditorNames.java` is a class the editor writes on every save, with a constant for every path, event name and named point. A misspelled or renamed name is then a compile error, not a crash on the field.
 
-It is the only Java the editor generates. Do not edit it. Change the names in the editor at https://paths.frc5712.com and save.
-
-## Where it goes
-
-```text
-src/main/java/<package>/PathEditorNames.java
-```
-
-The package is `frc.robot` unless you change it in the editor under Settings, Project. With the default, the file is `src/main/java/frc/robot/PathEditorNames.java`. The editor writes the file only when the package setting is a valid Java package name. The package is also saved in the [project file](/files/project-file/) as `settings.javaPackage`, which is how the library finds the class at boot.
-
-An older version of the editor generated a class called `PathName`. Saving deletes that file if the editor wrote it.
-
-## What is in it
-
-The class holds three nested enums.
-
-| Enum | One constant for | Implements | Its method |
-| --- | --- | --- | --- |
-| `Paths` | every path file, `<name>.path.json` | `PathId` | `fileName()` |
-| `Events` | every event name any path uses | `EventId` | `eventName()` |
-| `Points` | every named point | `PointId` | `pointName()` |
-
-Each constant carries the exact name, spelled the way the files spell it. The method returns that name. Every library method that takes a name as a `String` also takes the matching interface, so the constants work anywhere a name does. See [Name IDs](/reference/wpilib/name-ids/).
+## An example
 
 A project with two paths, two events and one named point produces this class. The class comment is left out here.
 
@@ -96,9 +74,43 @@ public final class PathEditorNames {
 }
 ```
 
-## How a name becomes a constant
+| Enum | One constant for | Implements | Its method |
+| --- | --- | --- | --- |
+| `Paths` | every path file, `<name>.path.json` | `PathId` | `fileName()` |
+| `Events` | every event name any path uses | `EventId` | `eventName()` |
+| `Points` | every named point | `PointId` | `pointName()` |
 
-The editor converts each name to upper case with underscores, in these steps:
+## Where it goes
+
+```text
+src/main/java/<package>/PathEditorNames.java
+```
+
+The package is `frc.robot` unless you change it in the editor under Settings, Project. It is also saved in the [project file](/files/project-file/) as `settings.javaPackage`.
+
+## Use the names
+
+```java
+import static frc.robot.PathEditorNames.*;   // all three enums
+
+PathLibrary paths = PathLibrary.loadAll();
+
+// intake.lower() and shooter.shoot() stand for your own commands
+paths.bindEvent(Events.INTAKE_DOWN, intake.lower())
+    .bindEvent(Events.SHOOT, shooter.shoot())
+    .requireAllEventsBound();
+
+Pathfinding otf = new Pathfinding(paths, FollowerConfig.defaults(paths.robot()),
+    () -> drive.getPose(), () -> drive.getFieldVelocity(),
+    v -> drive.driveFieldVelocity(v), FieldFrame.RED_HALF_TURN);
+
+Command auto = otf.follow(drive, Paths.TO_REEF);
+Command score = otf.toPoint(drive, Points.SCORE_L, Rotation2d.PI);
+```
+
+Every library method that takes a name as a `String` also takes the matching interface. See [Name IDs](/reference/wpilib/name-ids/).
+
+## How a name becomes a constant
 
 1. Put an underscore at each change from lower case or a digit to upper case, and before the last capital of a run of capitals that is followed by lower case.
 2. Replace every run of characters that are not letters or digits with one underscore.
@@ -114,44 +126,11 @@ The editor converts each name to upper case with underscores, in these steps:
 | `Point 1` | `POINT_1` |
 | `2Piece` | `N_2_PIECE` |
 
-Within each enum the names are sorted and duplicates are removed. If two different names produce the same constant, the second gets `_2` on the end, the third `_3`, and so on. Renaming one of them in the editor is clearer.
-
-## Using the names in robot code
-
-Import all three enums with one static import, then use the constants wherever the library takes a name.
-
-```java
-import static frc.robot.PathEditorNames.*;
-
-PathLibrary paths = PathLibrary.loadAll();
-
-paths.bindEvent(Events.INTAKE_DOWN, intake.lower())
-    .bindEvent(Events.SHOOT, shooter.shoot())
-    .requireAllEventsBound();
-
-Pathfinding otf = new Pathfinding(paths, FollowerConfig.defaults(paths.robot()),
-    () -> drive.getPose(), () -> drive.getFieldVelocity(),
-    v -> drive.driveFieldVelocity(v), FieldFrame.RED_HALF_TURN);
-
-Command auto = otf.follow(drive, Paths.TO_REEF);
-Command score = otf.toPoint(drive, Points.SCORE_L, Rotation2d.PI);
-```
-
-`intake.lower()` and `shooter.shoot()` stand for your own commands. See [Follow a path](/guides/follow-a-path/), [Events](/guides/events/) and [Pathfinding](/guides/pathfinding/).
-
-When you rename a path in the editor and save, the old constant disappears from the class. Every line of robot code that used it stops compiling, which shows you each place to update.
+Within each enum the names are sorted and duplicates are removed. If two different names produce the same constant, the second gets `_2` on the end, the third `_3`, and so on.
 
 ## The boot check
 
-A compile error only catches a mismatch between your code and the class. The class can also be out of step with the deployed files, for example when someone deletes a path file by hand, or deploys paths from a different save than the code was built against. The library checks for that at boot.
-
-`PathLibrary.loadAll()` does this after loading the files:
-
-1. It reads `settings.javaPackage` from `.pathproject.json`.
-2. It looks for the class `<package>.PathEditorNames` in the robot program.
-3. If the class is there, it calls `requireNames` on it.
-
-`requireNames` goes through every constant of every nested enum:
+`PathLibrary.loadAll()` finds the class through `settings.javaPackage` and checks every constant against the files it loaded.
 
 | Constant type | Must match |
 | --- | --- |
@@ -159,31 +138,32 @@ A compile error only catches a mismatch between your code and the class. The cla
 | an `EventId` | an event name used by at least one loaded path |
 | a `PointId` | a named point in `.pathproject.json` |
 
-If any constant has nothing behind it, `requireNames` throws `IllegalStateException` and the robot program stops in robot init. The message names each missing constant and what it was looking for:
+A constant with nothing behind it throws `IllegalStateException` in robot init. The fix is the one the message gives.
 
 ```text
 frc.robot.PathEditorNames doesn't match deploy/paths: Paths.TO_REEF (no path file ToReef.path.json). Save the project in Myelin, then build and deploy again.
 ```
 
-The fix is the one the message gives: save in the editor so the class and the files agree, then build and deploy.
-
-:::note
-The check is skipped, with no message, when there is no `.pathproject.json`, when it has no `javaPackage`, or when the class is not in the robot program. Names passed as plain strings are not checked at boot either. A string that matches no path fails when `paths.get` is called.
-:::
-
-The check runs one way. A path file with no constant is not an error, since nothing in your code can be referring to it through the class.
-
-You can run the same check yourself on any class whose nested enums implement the three interfaces:
-
 ```java
+// Run the same check yourself, on any class whose nested enums implement the three interfaces
 paths.requireNames(PathEditorNames.class);
 ```
 
-`loadAll()` and `loadAll(File dir)` run the check on their own. The two-argument `loadAll(File dir, RobotConfig robot)` loads only the paths, so it does not.
+:::note
+The check is skipped, with no message, when there is no `.pathproject.json`, when it has no `javaPackage`, or when the class is not in the robot program. Names passed as plain strings are not checked at boot either.
+:::
 
-## Related
+## Good to know
 
-- [PathLibrary](/reference/wpilib/pathlibrary/), for `loadAll` and `requireNames`
-- [Name IDs](/reference/wpilib/name-ids/), for `PathId`, `EventId` and `PointId`
-- [Project file](/files/project-file/)
+- **Do not edit the class.** Change the names in the editor and save.
+- **A rename removes the old constant.** Every line that used it stops compiling, which shows you each place to update.
+- **The check runs one way.** A path file with no constant is not an error.
+- **`loadAll(File dir, RobotConfig robot)` does not run the check.** `loadAll()` and `loadAll(File dir)` do.
+- **The file is written only** when the package setting is a valid Java package name.
+- **An older editor generated `PathName`.** Saving deletes that file if the editor wrote it.
+
+## More
+
+- [PathLibrary](/reference/wpilib/pathlibrary/): `loadAll` and `requireNames`.
+- [Name IDs](/reference/wpilib/name-ids/): `PathId`, `EventId` and `PointId`.
 - [Troubleshooting](/guides/troubleshooting/)

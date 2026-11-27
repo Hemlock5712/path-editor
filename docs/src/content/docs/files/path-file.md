@@ -5,9 +5,7 @@ sidebar:
   order: 1
 ---
 
-A path file holds one drawn path: its waypoints, what the heading does, where it slows down, and the events along it. The file name ends in `.path.json`, and the name before that suffix is the path's name in robot code. The editor writes these files into `deploy/paths/`, and `PathLibrary.loadAll()` reads every one at boot.
-
-You normally change a path in the editor. This page is for reading a file in a git diff, or editing one by hand. The reader and writer are [PathFile](/reference/core/pathfile/), and the result of reading is a [PathSpec](/reference/core/pathspec/).
+A path file holds one drawn path. The editor writes `<name>.path.json` into `deploy/paths/`, and `PathLibrary.loadAll()` reads every one at boot.
 
 ## An example
 
@@ -40,14 +38,14 @@ You normally change a path in the editor. This page is for reading a file in a g
 }
 ```
 
-Positions are in meters in the [field frame](/concepts/field-frame/): the origin at the center of the field, +X toward the blue alliance wall. Angles are in degrees in the file. The library converts them to radians when it reads.
+Positions are in meters in the [field frame](/concepts/field-frame/): the origin at the center of the field, +X toward the blue alliance wall. Angles are in degrees.
 
 ## Places along the path
 
-Several keys name a place on the path. There are two ways to write one:
-
-- **Waypoint-relative.** A number where the whole part is a waypoint index, counted from 0, and the fraction is how far along the arc to the next waypoint. `1.5` is halfway from waypoint 1 to waypoint 2. This keeps its meaning when waypoints are moved.
-- **Meters.** The distance from the first waypoint along the curve.
+| Way to write a place | Meaning |
+| --- | --- |
+| Waypoint-relative | The whole part is a waypoint index, counted from 0. The fraction is how far along the arc to the next waypoint: `1.5` is halfway from waypoint 1 to waypoint 2. |
+| Meters | The distance from the first waypoint along the curve |
 
 ## Top-level keys
 
@@ -66,7 +64,8 @@ Several keys name a place on the path. There are two ways to write one:
 | `startMetersPerSecond` | number | m/s | 0 | The speed plan |
 | `endMetersPerSecond` | number | m/s | 0 | The speed plan and the follower |
 
-The two maxima must be above zero if present. The start and end speeds must be zero or more. An `endMetersPerSecond` above zero makes a rolling end, where the path finishes with the robot still moving. See [Chaining paths](/guides/chaining-paths/).
+- The two maxima must be above zero if present. The start and end speeds must be zero or more.
+- An `endMetersPerSecond` above zero makes a rolling end. See [Chaining paths](/guides/chaining-paths/).
 
 ## waypoints
 
@@ -80,7 +79,7 @@ Each entry is a point the path passes through. See [The curve](/concepts/the-cur
 | `tangentScale` | number | | 1 | How long the curve keeps to the tangent. Must be above 0 |
 | `headingDegrees` | number | degrees | none | The robot's heading at this waypoint |
 
-Two neighboring waypoints may not be at the same place. The one exception is a path of exactly two waypoints at the same place, which is a turn on the spot.
+Two neighboring waypoints may not be at the same place, except a path of exactly two waypoints at the same place, which is a turn on the spot.
 
 ## rotationTargets
 
@@ -117,7 +116,7 @@ Each entry is a stretch with lower limits. See [The speed plan](/concepts/speed-
 
 ## events
 
-Each entry is a named event the follower fires once as the robot passes. Robot code binds the name to a command. See [Events](/guides/events/).
+Each entry is a named event the follower fires once as the robot passes. See [Events](/guides/events/).
 
 | Key | Type | Unit | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -126,13 +125,14 @@ Each entry is a named event the follower fires once as the robot passes. Robot c
 | `atMeters` | number | m | | Where, as a distance along the path |
 | `footprint` | string | | no change | The robot's outline from this event on |
 
-### footprint and startFootprint
+## footprint and startFootprint
 
-A **footprint** is the robot's outline seen from above: the bumpers, or the bumpers plus a mechanism that sticks out. Footprints are named in [robot.json](/files/robot-file/). The name `"bumpers"` always exists and means the bumpers alone.
+A **footprint** is the robot's outline seen from above, named in [robot.json](/files/robot-file/). See [Footprints](/concepts/footprints/).
 
-An event's `footprint` says the outline changes at that event. In the example, `intakeDown` switches to `intakeOut`. `startFootprint` is the outline at the start of the path, for a path that begins with a mechanism already out.
-
-These two keys do not change how the path is followed. The editor uses them to check clearance with the right outline. `PathLibrary.loadAll()` does check the names, and fails at boot if a path names a footprint that robot.json does not have. See [Footprints](/concepts/footprints/).
+- **`"bumpers"` always exists** and means the bumpers alone.
+- **`startFootprint`** is the outline at the start of the path. An event's `footprint` changes it from that event on.
+- **They do not change how the path is followed.** The editor uses them to check clearance.
+- **A name that robot.json does not have** fails at boot, in `PathLibrary.loadAll()`.
 
 ## Schema versions
 
@@ -145,27 +145,28 @@ The reader accepts schema 1 to 4. The writer always writes 4.
 | 3 | Added `headingDegrees` on waypoints and `headingMode` | Schema 1 and 2 files read as `faceTravel`, which is what they did |
 | 4 | The WPILib 2027 field frame, +X toward the blue wall | Schema 1 to 3 files are turned half a turn about the field center |
 
-The half turn for an older file negates every `x` and `y`, and adds 180 degrees to every `tangentDegrees`, `headingDegrees` and rotation target `degrees`. The result is kept between -180 and 180 degrees.
-
-The footprint keys were added without a new schema number, because a library that ignores them follows the path the same way.
+The half turn negates every `x` and `y`, and adds 180 degrees to every `tangentDegrees`, `headingDegrees` and rotation target `degrees`.
 
 ## How it is written
 
 The writer is deterministic, so a small edit in the editor makes a small git diff.
 
-- Numbers are rounded to 5 decimal places, and trailing zeros are dropped. `1.50000` is written `1.5` and `3.00000` is written `3`.
+- Numbers are rounded to 5 decimal places, and trailing zeros are dropped: `1.50000` is written `1.5`.
 - Keys are always in the order shown in the example.
 - Each waypoint, target, zone and event is on one line.
-- Optional values that are not set are left out: an automatic tangent, a `tangentScale` of 1, a waypoint with no heading, an event with no footprint, a `startFootprint` of `"bumpers"`, and any maximum with no cap.
+- Optional values that are not set are left out.
 
-## Unknown keys and errors
+## Errors
 
-Keys the reader does not know are ignored. The editor can store its own data in a path file without breaking the robot.
+Unknown keys are ignored. A file that cannot be used stops the robot code at boot, with an `IllegalStateException` that names the file.
 
-A file that cannot be used makes `PathFile.read` throw an `IllegalArgumentException` with a message that says what is wrong. `PathLibrary.loadAll()` reads every file in robot init and rethrows the problem as an `IllegalStateException` that names the file. A bad file therefore stops the robot code at boot, not in the middle of a match.
-
-Typical messages are `not a path file: no schema`, `missing 'x'` for a required key, `'tangentScale' must be a number` for a value of the wrong type, and `a path needs at least two waypoints`. The full list is on the [PathFile](/reference/core/pathfile/) page.
+Typical messages are `not a path file: no schema`, `missing 'x'` for a required key, `'tangentScale' must be a number` for a value of the wrong type, and `a path needs at least two waypoints`.
 
 :::caution
-A hand-edited file is not checked until something reads it. After editing by hand, open the path in the editor or run the robot code in simulation before you deploy.
+A hand-edited file is not checked until something reads it. Open the path in the editor or run the robot code in simulation before you deploy.
 :::
+
+## More
+
+- [PathFile](/reference/core/pathfile/): the reader and writer, and the full list of messages.
+- [PathSpec](/reference/core/pathspec/): what a file becomes when read.

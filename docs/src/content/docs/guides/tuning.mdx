@@ -8,19 +8,19 @@ import TractionBars from '../../../components/TractionBars.astro';
 
 import Scene from '../../../components/Scene.astro';
 
+Tuning starts with measuring. The library plans from `robot.json`, and no follower setting fixes a plan made
+for a different robot.
 
-Most of what makes a path run well is not a gain. It is the robot file being true. The library plans from the
-numbers in `robot.json`, and a plan made for a different robot cannot be followed well however the follower is
-set. So tuning starts with measuring.
+<Scene name="limits" caption="One path at three acceleration limits. A higher limit is a faster plan that asks more of the tires, and the driven time gains less than the planned time. Real follower, simulated drivetrain." />
 
 :::caution
-The library has not run on a real robot. Every default below came from simulation and the team's bench. Treat
-them as starting points, and run the first paths slowly, with room around the robot.
+The library has not run on a real robot. Every default below came from simulation and the team's bench. Run the
+first paths slowly, with room around the robot.
 :::
 
-## First, the robot file
+## Measure the robot file first
 
-Measure these before changing anything else. [Robot file](/files/robot-file/) lists every key.
+[Robot file](/files/robot-file/) lists every key.
 
 | Key | How to get it |
 | --- | --- |
@@ -30,12 +30,11 @@ Measure these before changing anything else. [Robot file](/files/robot-file/) li
 | `bumperLengthMeters`, `bumperWidthMeters` | A tape measure, outside edge to outside edge. |
 | `moduleRadiusMeters`, `wheelRadiusMeters`, `driveGearRatio` | The drivetrain's constants. |
 
-Grip and the center of mass height decide the traction limit, which decides how hard every path accelerates,
-brakes and corners. [Traction](/concepts/traction/) has the rule.
+Grip and the center of mass height decide the traction limit. [Traction](/concepts/traction/) has the rule.
 
 <TractionBars />
 
-## The follower's settings
+## Change the follower's settings
 
 `FollowerConfig` holds the eight settings a team may change.
 
@@ -50,34 +49,28 @@ brakes and corners. [Traction](/concepts/traction/) has the rule.
 | `positionToleranceMeters` | 0.02 | m | How close counts as finished |
 | `headingToleranceRadians` | 1° | rad | How well turned counts as finished |
 
-Change them with the builder, and give the result to `Pathfinding`.
-
 ```java
+// Start from the defaults, change what you need, and give the result to Pathfinding
 FollowerConfig config = FollowerConfig.defaults(paths.robot()).toBuilder()
     .latencySeconds(0.06)
     .easeInPerSecond(8)
     .build();
 ```
 
-The spin limits are not here. They are `maxAngularRadPerSec` and `maxAngularRadPerSecSquared` in the robot file,
-or 540°/s and 720°/s² when the file leaves them out.
-
-## An order to work in
+## Work in this order
 
 Change one thing, run the same path, and compare the plots in [Telemetry](/guides/telemetry/).
 
-1. **Run a straight path at low limits.** Set the path's maximum speed and acceleration low in the editor. Check
-   that it goes the right way, on both alliances.
-2. **Set `latencySeconds`.** On a straight path, compare `Speed` with `PlannedSpeed`. If the robot's speed trails
-   the plan by a steady time, that time is the latency. Measure it on the robot.
-3. **Raise the path's limits to the robot's.** Watch `CrossTrack` in the turns. If it grows in every fast turn,
-   the tires are not holding what the file says. Lower `frictionCoefficient`.
-4. **Look at the finish.** See the table below.
+1. **Run a straight path at low limits.** Set the path's maximum speed and acceleration low in the editor, and
+   check that it goes the right way on both alliances.
+2. **Set `latencySeconds`.** If `Speed` trails `PlannedSpeed` by a steady time on a straight path, that time is
+   the latency.
+3. **Raise the path's limits to the robot's.** If `CrossTrack` grows in every fast turn, lower
+   `frictionCoefficient`.
+4. **Fix the finish.** See the table below.
 5. **Leave the P gains for last.** The bench sweeps settled on 5 for both and never needed a derivative term.
 
-<Scene name="limits" caption="One path at three acceleration limits. A higher limit is a faster plan that asks more of the tires, and the driven time gains less than the planned time. The run is the real follower on a simulated drivetrain." />
-
-## The finish
+## Fix the finish
 
 | What you see | Try |
 | --- | --- |
@@ -87,21 +80,19 @@ Change one thing, run the same path, and compare the plots in [Telemetry](/guide
 | It never reports finished | Loosen the tolerances. A robot that cannot hold 2 cm will not finish at 2 cm. |
 | A drive-to-pose overshoots | Lower `onTheFlyMaxMetersPerSecondSquared` in the robot file |
 
-## A slippery floor
+## Good to know
 
-The follower has no slip detection. On a floor with less grip than the file says, it does nothing special. If
-the robot slips on its paths, lower `frictionCoefficient` to the floor's real value, or lower `tractionShare`.
+- **The spin limits are in the robot file:** `maxAngularRadPerSec` and `maxAngularRadPerSecSquared`, or 540°/s
+  and 720°/s² when the file leaves them out.
+- **The follower has no slip detection.** If the robot slips on its paths, lower `frictionCoefficient` to the
+  floor's real value, or lower `tractionShare`.
+- **Grip matters this much, on the bench:** on a floor with a grip of 0.91 under a plan made for 1.5, wheel
+  odometry alone ended 31 cm off. Told the floor's real grip, 10.6 cm.
+- **Everything else is a named constant, not a setting:** the 0.5 m search window, the 30 cm finish hand-over,
+  the 5 cm/s settle speed and its 0.1 s hold.
 
-The size of the effect, from the bench: on a floor with a grip of 0.91 under a plan made for 1.5, wheel odometry
-alone ended 31 cm off. Told the floor's real grip, 10.6 cm. A camera corrects the pose either way.
+## More
 
-## What not to tune
-
-Everything else in the follower is a named constant: the 0.5 m search window, the 30 cm finish hand-over, the
-5 cm/s settle speed and its 0.1 s hold. They are not settings. [The follower](/concepts/the-follower/) lists
-them.
-
-## Related
-
-- [FollowerConfig](/reference/follow/followerconfig/) documents each setting.
-- [The stopping law](/concepts/stopping-law/) explains braking and the ease-in.
+- [FollowerConfig](/reference/follow/followerconfig/): each setting.
+- [The stopping law](/concepts/stopping-law/): braking and the ease-in.
+- [The follower](/concepts/the-follower/): the named constants.

@@ -5,110 +5,93 @@ sidebar:
   order: 3
 ---
 
-A swerve robot can face one way while it travels another. The **heading** is the direction the robot faces. The direction of travel is the path's tangent. They are separate, and a path has to say what the heading does along its whole length. A robot that must point its intake at a game piece while sliding sideways past an obstacle depends on that.
+A swerve robot can face one way while it travels another. The **heading** is the direction the robot faces, and
+[HeadingProfile](/reference/core/headingprofile/) gives the planned heading at every distance `s` along the path.
 
-[HeadingProfile](/reference/core/headingprofile/) holds the answer. It gives the planned heading at every distance `s` along the path, together with how fast the heading changes per meter. It is built at boot as part of `Path.build`. You shape it in the editor; robot code does not call it directly.
+It is built at boot as part of `Path.build`. You shape it in the editor.
 
 ## The inputs
 
-Four things in a [path file](/files/path-file/) feed the heading:
-
-| Input | What it says |
+| Input in the [path file](/files/path-file/) | What it says |
 | --- | --- |
 | `headingMode` | What the heading does when nothing else is set: `hold` or `faceTravel` |
 | `headingDegrees` on a waypoint | The robot's heading at that waypoint |
 | `rotationTargets` | A heading to reach at a place on the path |
 | `facePointZones` | A stretch of path where the robot faces a point on the field |
 
-A heading on a waypoint is shorthand. When the path is built, each one becomes a rotation target at that waypoint, placed ahead of the targets you wrote yourself. From then on the profile only sees rotation targets.
+## What it does
 
-## With no targets
+1. Each waypoint `headingDegrees` becomes a [RotationTarget](/reference/core/rotationtarget/) at that waypoint.
+2. With no targets, the [HeadingMode](/reference/core/headingmode/) decides. **Hold**, the default, keeps the
+   direction the path starts out in. **Face travel** makes the heading equal the tangent angle, so its rate of
+   change per meter is the curvature `κ`.
+3. With one target or more, the targets set the heading in both modes. They are sorted by distance. A distance
+   past either end of the path is moved to that end.
+4. Before the first target the robot holds the first target's heading. After the last it holds the last.
+5. Between two targets it turns the short way around, spread over the whole stretch, along the minimum-jerk
+   blend.
 
-If a path has no rotation targets and no waypoint headings, the [HeadingMode](/reference/core/headingmode/) decides:
+   ```text
+   blend(τ) = 10τ³ - 15τ⁴ + 6τ⁵        τ runs from 0 to 1 along the stretch
+   ```
 
-- **Hold** is the default. The robot keeps the direction the path starts out in for the whole path. If the path leaves its first waypoint pointing at 30 degrees, the robot faces 30 degrees from start to end.
-- **Face travel** turns the robot to face along the tangent everywhere. The heading equals the tangent angle, so its rate of change per meter is the curvature `κ`.
+6. At the first and last target, and where the turn reverses or one side does not turn, the spin stops at the
+   target.
+7. Where the turn carries on the same way, the robot passes the target still turning. The rate, in radians per
+   meter, is the harmonic mean of the average rates on the two sides.
 
-The mode only matters when there are no targets. Once a path has one target or more, the targets set the heading in both modes.
+   ```text
+   rate = 2 * δa * δb / (δa + δb)
 
-## Rotation targets
+   δa = turn before the target / length of that stretch
+   δb = turn after the target  / length of that stretch
+   ```
 
-A [RotationTarget](/reference/core/rotationtarget/) is a heading and a place. The place is either waypoint-relative, where `1.5` means halfway along the arc from waypoint 1 to waypoint 2, or a distance in meters from the start. A distance past either end of the path is moved to that end.
+8. Inside a [FacePointZone](/reference/core/facepointzone/) the robot faces a fixed point on the field. A weight
+   `w` rises from 0 to 1 over the first `blendMeters`, along the same blend, and falls back over the last.
 
-The profile sorts the targets by distance and then walks along the path:
+   ```text
+   heading = base + w * (direction to the point - base)
+   ```
 
-1. **Before the first target** the robot holds the first target's heading.
-2. **Between two targets** it turns from one heading to the next, the short way around.
-3. **After the last target** it holds the last target's heading.
+   `base` is the heading from the layer below. Several zones are applied in file order, each on top of the one
+   before.
+9. The [speed plan](/concepts/speed-plan/) turns heading per meter into spin. `v` is the speed and `a` the
+   acceleration along the path.
 
-So a path with a single target holds that heading from start to end. To make the robot start at one heading and finish at another, put a target at the first waypoint and another at the last.
+   ```text
+   spin rate          ω = v * dθ/ds
+   spin acceleration  α = a * dθ/ds + v² * d²θ/ds²
+   ```
 
-### The turn between two targets
-
-The turn is spread over the whole stretch between the two targets. The basic shape is the minimum-jerk blend:
-
-```text
-blend(τ) = 10τ³ - 15τ⁴ + 6τ⁵        τ runs from 0 to 1 along the stretch
-```
-
-It starts flat, turns fastest in the middle, and ends flat. Both its slope and its bend are zero at each end, so the spin starts and stops without a jolt.
-
-### What happens at a target
-
-Stopping the spin at every target would waste time when the robot is turning the same way on both sides. The profile handles each target by what its neighbors do:
-
-- At the **first and last target** the spin stops. The heading is being held on the other side, so there is nothing to carry on into.
-- Where the turn **reverses**, or where one side does not turn at all, the spin stops at the target.
-- Where the turn **carries on the same way**, the robot passes the target still turning.
-
-The rate it passes at, in radians per meter, is the harmonic mean of the average rates on the two sides:
-
-```text
-rate = 2 * δa * δb / (δa + δb)
-
-δa = turn before the target / length of that stretch
-δb = turn after the target  / length of that stretch
-```
-
-The harmonic mean is never more than twice the smaller of the two rates. That bound is what guarantees each stretch turns one way only, so the heading never swings past a target and comes back.
-
-The second derivative of the heading is zero at every target. The spin rate and the spin acceleration are therefore continuous along the whole path, which the [speed plan](/concepts/speed-plan/) relies on.
+A big turn in a short distance makes the plan drive slower. If a path crawls through a zone, lengthen the blend
+or start the zone earlier.
 
 :::caution
-Two targets at the same place make the heading jump there. A rotation target placed on a waypoint that also has `headingDegrees` is the usual way this happens. The editor does not create one, but a hand-edited file can.
+Two targets at the same place make the heading jump there. A hand-edited file can do this by putting a rotation
+target on a waypoint that also has `headingDegrees`. The editor does not.
 :::
 
-## Face-point zones
+## The numbers
 
-A [FacePointZone](/reference/core/facepointzone/) covers a stretch of path, from one waypoint-relative place to another. Inside it the robot faces a fixed point on the field, such as a goal, instead of following the rotation targets.
+| Name | Value | Unit | What it is |
+| --- | --- | --- | --- |
+| `headingMode` | `hold` | | The default mode |
+| `blendMeters` | 0.5 | m | Ease in and ease out of a face-point zone. Cut to half the zone if longer. |
+| Waypoint-relative place | `1.5` | | Halfway along the arc from waypoint 1 to waypoint 2 |
+| Harmonic mean bound | 2 | times the smaller rate | Keeps each stretch turning one way only |
+| Second derivative at a target | 0 | | Keeps spin rate and spin acceleration continuous |
+| Example zone | about 0.9 | m/s | The planned speed in the library's 16 m example path, where a default zone turns the robot more than 100 degrees |
 
-Switching straight from the targets' heading to the facing direction would be a jump, so the zone eases in and out. Over the first `blendMeters` of the zone a weight `w` rises from 0 to 1 along the same minimum-jerk blend. Over the last `blendMeters` it falls back to 0. In between it is 1.
+## What it does not do
 
-```text
-heading = base + w * (direction to the point - base)
-```
+- **It does not correct anything.** Holding the real robot to the planned heading is the job of
+  [the follower](/concepts/the-follower/).
+- **It does not choose headings for you.** With no targets it holds or faces travel, and nothing more.
+- **It does not check that the robot fits.** That is the editor's [footprint](/concepts/footprints/) checks.
 
-`base` is the heading from the layer below, and the difference is taken the short way around. The default `blendMeters` is 0.5 m. A blend longer than half the zone is cut to half the zone, so the ease in and the ease out never overlap.
+## More
 
-If a path has several zones, they are applied in the order they appear in the file, each on top of the result of the one before.
-
-## Heading is tied to distance
-
-The profile gives the heading as a function of `s`, not of time. The speed plan turns that into motion. With the robot at speed `v` and acceleration `a` along the path:
-
-```text
-spin rate          ω = v * dθ/ds
-spin acceleration  α = a * dθ/ds + v² * d²θ/ds²
-```
-
-A consequence follows. A large turn packed into a short distance means a large `dθ/ds`, and the only way to keep the spin within the robot's limits is to drive slower. The plan does exactly that. In the library's 16 m example path, a face-point zone with the default 0.5 m blend turns the robot by more than 100 degrees, and the plan slows to about 0.9 m/s for it. If a path crawls through a zone, lengthen the blend or start the zone earlier.
-
-A path whose two waypoints are at the same place is a turn on the spot. See [The speed plan](/concepts/speed-plan/) for how that is planned.
-
-## What this piece does not do
-
-- It does not correct anything. It is a plan. Holding the real robot to the planned heading is the job of [the follower](/concepts/the-follower/).
-- It does not choose headings for you. With no targets it holds or faces travel, and nothing more.
-- It does not check that the robot fits. A heading that swings a long intake into a wall is caught by the editor's [footprint](/concepts/footprints/) checks, not here.
-
-The sample type it returns is described on [Sample records](/reference/core/samples/).
+- [The speed plan](/concepts/speed-plan/): how spin limits and turns on the spot are planned.
+- [HeadingProfile](/reference/core/headingprofile/)
+- [Sample records](/reference/core/samples/): the sample type it returns.

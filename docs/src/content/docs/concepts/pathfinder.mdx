@@ -7,71 +7,52 @@ sidebar:
 import Scene from '../../../components/Scene.astro';
 
 
-A drawn path starts where you drew it. During a match the robot is rarely there. The **pathfinder** is the piece that plans a path from wherever the robot is to a goal, around the obstacles in `field.json`, in a few milliseconds. The result is an ordinary path, followed by the same follower as a path drawn in the editor.
+During a match the robot is rarely where a drawn path starts. The **pathfinder** plans a path from wherever the
+robot is to a goal, around the obstacles in `field.json`, in a few milliseconds.
 
-Robot code does not call it directly. `PathLibrary` builds it at boot and `Pathfinding` makes the commands that use it. See [Pathfinding](/guides/pathfinding/) for the robot code and [On-the-fly paths](/concepts/on-the-fly/) for what happens around each plan.
+<Scene name="pathfind" caption="The planner on the 2026 field: the obstacles, the same shapes grown by the bumpers, the shortest route round them, and the smoothed path. Real follower, simulated drivetrain." />
 
-<Scene name="pathfind" caption="The planner on the 2026 field: the obstacles, the same shapes grown by the bumpers, the shortest route round them, and the smoothed path. The run is the real follower on a simulated drivetrain." />
+## What it does at boot
 
-## The idea in plain words
+`PathLibrary.loadAll()` runs this once, in robot init.
 
-A robot is a rectangle, and checking a rectangle against every obstacle at every heading is slow. So the pathfinder makes the problem simpler. It makes every obstacle fatter by the robot's size, then treats the robot as a single point. If the point stays out of the fat obstacles, the real robot stays off the real ones.
+1. **Grow the obstacles.** Each one is grown by the robot's **reach**, the distance from its center to a bumper
+   corner, plus a **margin**. The robot can then be treated as a point, at any heading.
 
-Once the robot is a point, the shortest way around a set of polygons is always a chain of straight lines from corner to corner. The pathfinder works out which corners can see each other once, at boot. At go it only has to pick the shortest chain.
+   ```text
+   reach = sqrt(length^2 + width^2) / 2
+   grow  = reach + margin
 
-## At boot
+   0.85 m square bumpers:  reach = 0.601 m
+   margin 0.05 m:          grow  = 0.651 m
+   ```
 
-This happens once, when `PathLibrary.loadAll()` runs in robot init.
+2. **Round the corners** with short straight pieces, placed slightly outside the true arc.
+3. **Move the walls in** by the same grow distance.
+4. **Build the visibility graph.** Every free corner of a grown shape is a node. Two nodes are joined when the
+   straight line between them does not pass through the inside of any grown shape.
 
-### 1. Grow the obstacles
-
-Each obstacle is grown by the **reach** of the robot plus a **margin**. The reach is the bumpers' half-diagonal: the distance from the robot's center to a bumper corner.
-
-```text
-reach = sqrt(length^2 + width^2) / 2
-grow  = reach + margin
-
-0.85 m square bumpers:  reach = 0.601 m
-margin 0.05 m:          grow  = 0.651 m
-```
-
-No part of the robot is further from its center than the reach, whichever way it is turned. That is why growing by the half-diagonal is safe at any heading: the planner does not need to know the heading to know the center is far enough away.
-
-Growing a shape by a distance rounds its corners. The pathfinder draws each rounded corner as short straight pieces, each turning at most 30 degrees, and places the points slightly outside the true arc so the grown shape always contains the exact one. For the default robot the grown shape is at most 2.3 cm larger than the exact one.
-
-### 2. Move the walls in
-
-The field's walls move in by the same grow distance. The robot's center has to stay inside this smaller rectangle.
-
-### 3. Build the visibility graph
-
-Every corner of every grown shape that is in free space becomes a node. Two nodes are joined when the straight line between them does not pass through the inside of any grown shape. Touching a corner or running along an edge is allowed. This set of nodes and lines is the **visibility graph**. On the bench's six-obstacle test field it has 83 nodes.
-
-## At go
+## What it does at go
 
 `Pathfinder.plan` takes the robot's pose, its field velocity and the goal pose.
 
-### 1. Snap the start and the goal
+1. **Snap.** A start or goal inside a grown obstacle, or too close to a wall, is moved to the nearest free point.
+   The path still starts at the robot and ends at the real goal.
+2. **Search.** If the start can see the goal, the route is one straight line. Otherwise **A\***, a shortest-path
+   search, finds the route through the graph. The same inputs always give the same route.
+3. **Make waypoints.** The route's corners become waypoints of the same [curve](/concepts/the-curve/) a drawn
+   path uses. A moving robot's first waypoint points along its direction of travel.
+4. **Sweep.** The real bumper rectangle is placed along the path, at the planned heading, and the gap to every
+   obstacle and wall is measured.
+5. **Refit.** Each stretch closer than the margin gets a new waypoint from the straight route. Then the spline is
+   fitted and swept again. Stretches next to a snapped start or goal are not checked.
+6. **Plan the speed** with the same [speed plan](/concepts/speed-plan/) as a drawn path, from the robot's
+   current speed to rest.
 
-A start or goal inside a grown obstacle, or too close to a wall, has no route by the rules above. The pathfinder moves it to the nearest free point and plans from there. The path still starts at the robot and ends at the real goal, passing through the snapped points, and the result reports how far each one was moved.
-
-### 2. Find the shortest route
-
-If the start can see the goal, the route is one straight line. Otherwise the start and the goal are joined to every node they can see, and **A\*** searches the graph. A\* is a shortest-path search that tries the most promising node first, judged by the distance traveled so far plus the straight-line distance still to go. Ties go to the lowest node number, so the same inputs always give the same route.
-
-### 3. Turn the route into waypoints
-
-The route's corners become the waypoints of the same quintic spline a drawn path uses. See [The curve](/concepts/the-curve/). If the robot is moving faster than 0.1 m/s, the first waypoint's direction is the direction it is already traveling, so the path leaves along the robot's motion. The other directions are chosen automatically. The heading turns from the robot's current heading to the goal's heading along the way.
-
-### 4. Sweep the bumpers and refit
-
-A spline through corner points cuts inside them a little, so the smooth path can come closer to an obstacle than the corner-to-corner route did. The pathfinder checks. It places the real bumper rectangle on the path every 2 cm, at the heading planned for that spot, and measures the gap to every obstacle and wall.
-
-Each stretch closer than the margin gets a new waypoint: the point of the straight route under the stretch's worst spot. The spline is fitted again through the longer list and swept again, up to 8 times. Because the straight route itself keeps the margin, pulling the spline toward it fixes the problem. Stretches next to a snapped start or goal are not checked, since they begin inside the margin.
-
-### 5. Build the speed plan
-
-The finished spline goes through the same [speed plan](/concepts/speed-plan/) as a drawn path. It starts at the robot's current speed, ends at rest, and is capped at 4 m/s and 6 m/s² unless the robot file says otherwise. The robot's own traction and motor limits still apply.
+:::caution
+`PlanResult.clear()` is false when 8 refits were not enough and the bumpers still come inside the margin. The
+plan is returned anyway. Check `clear()` if you call the pathfinder yourself.
+:::
 
 ## The numbers
 
@@ -85,12 +66,12 @@ The finished spline goes through the same [speed plan](/concepts/speed-plan/) as
 | Acceleration cap | 6 m/s² | `PlannerConfig.maxMetersPerSecondSquared` |
 | Moving-start threshold | 0.1 m/s | fixed in `Pathfinder` |
 | Hand-over approach | 0.5 m | `Pathfinder.APPROACH_METERS` |
-
-A gap between two obstacles has a route through it only when it is wider than twice the grow distance: 1.30 m for the default robot at the 0.05 m margin.
+| Narrowest gap with a route | 1.30 m | twice the grow distance, default robot at the 0.05 m margin |
+| Grown shape oversize | at most 2.3 cm | default robot, from the 30 degree arc step |
 
 ## Timings
 
-These were measured on a desktop PC with other work running, not on a roboRIO or a Systemcore. The robot controller has not been measured.
+Measured on a desktop PC with other work running, not on a roboRIO or a Systemcore.
 
 | What | Time |
 | --- | --- |
@@ -100,34 +81,30 @@ These were measured on a desktop PC with other work running, not on a roboRIO or
 | First plan in a fresh JVM | 17 to 35 ms |
 | Boot, growing and graph | 32 to 135 ms |
 
-The first plan is slow because Java has not compiled the code yet. `PathLibrary` removes that cost from the match by making 40 throwaway plans at boot on each of the two bumper pathfinders, the 0.05 m one and the 0.15 m one described in [On-the-fly paths](/concepts/on-the-fly/).
+`PathLibrary` makes 40 throwaway plans at boot on each of the two bumper pathfinders, so the slow first plan does
+not happen in a match. The six-obstacle test field's graph has 83 nodes.
 
-## How it is tested
+In simulation, 300 random plans with random headings all kept the margin. 34 needed refits and the closest was
+5.1 cm.
 
-The library's `PathfinderTest` checks:
-
-- route lengths against a separate geometric calculation, on 60 random single-obstacle cases;
-- 300 random start and goal pairs whose routes never enter a grown obstacle;
-- 300 random pairs, with random headings and a third of them starting in motion, whose swept bumpers keep the margin on the finished path. In that run 34 needed refits, none failed, and the closest was 5.1 cm;
-- that the same inputs give the same path, plus snapping, a moving start, the end heading and bad field files.
-
-These are simulator and bench results. The library has not run on a real robot.
+:::note
+The library has not run on a real robot, and the robot controller has not been timed.
+:::
 
 ## What it does not do
 
-- **Moving obstacles.** The field is fixed. Another robot in the way is not seen. A goal that moves is supported, see [Moving goals](/concepts/moving-goals/).
-- **Concave shapes.** Each obstacle is replaced by its **convex hull**, the shape a rubber band makes when stretched around it. An L-shaped obstacle is planned around as if its notch were filled in.
-- **Tight squeezes by turning.** Growing by the half-diagonal closes gaps that a long robot could pass through nose first. Only a robot with a named [footprint](/concepts/footprints/) gets a second try at those.
-- **Tuning the curve.** Smoothing only adds waypoints. It does not adjust how strongly the spline bends at each one.
+- **Moving obstacles.** Another robot in the way is not seen. A goal that moves is supported. See
+  [Moving goals](/concepts/moving-goals/).
+- **Concave shapes.** Each obstacle is replaced by its **convex hull**, the shape a rubber band makes around it.
+- **Tight squeezes by turning.** Only a robot with a named [footprint](/concepts/footprints/) gets a second try
+  at a gap it could pass nose first.
+- **Tuning the curve.** Smoothing only adds waypoints.
 
-:::caution
-`PlanResult.clear()` is false when 8 refits were not enough and the bumpers still come inside the margin somewhere. The plan is returned anyway. Check `clear()` if you call the pathfinder yourself.
-:::
+## More
 
-## Reference
-
-- [Pathfinder](/reference/plan/pathfinder/)
-- [PlanResult](/reference/plan/planresult/)
-- [PlannerConfig](/reference/plan/plannerconfig/)
-- [FieldMap](/reference/plan/fieldmap/) and the [field file](/files/field-file/)
-- [ConvexPolygon](/reference/plan/convexpolygon/)
+- [Pathfinding](/guides/pathfinding/): the robot code.
+- [On-the-fly paths](/concepts/on-the-fly/): what happens around each plan.
+- [Pathfinder](/reference/plan/pathfinder/), [PlanResult](/reference/plan/planresult/) and
+  [PlannerConfig](/reference/plan/plannerconfig/)
+- [FieldMap](/reference/plan/fieldmap/), [ConvexPolygon](/reference/plan/convexpolygon/) and the
+  [field file](/files/field-file/)
