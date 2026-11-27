@@ -100,6 +100,11 @@ numbers from `AccelerationLimiter`), `CenterFrame` (the pose conversion until WP
 - [ ] **On the robot, in this order:** the forces do something with the voltage drive gains (Start flips them;
       compare the drive motors' output); wheel slip and odometry drift with them on and off; a lower drive kP with
       them on (bench/RESULTS.md, "A softer drive velocity loop").
+- [ ] **The library's telemetry is in its own frame.** `Path/<name>/Reference`, `Goal` and `Plan` are written from
+      the middle of the field. On alpha-7, where the robot's pose is from the blue corner, they land mirrored
+      against it in AdvantageScope, so a student can't overlay the plan on the robot. Convert them on the way out
+      while `CenterFrame` exists, or leave it until WPILib moves the origin. `Plan` is also a plain list of
+      numbers, which AdvantageScope doesn't draw. (Found reviewing lesson 2's script, 2026-11-27.)
 - [ ] **Teleop on red.** `TeleopDrive` now turns the sticks into field directions itself and sends
       `ApplyFieldVelocity`; it was `FieldCentric` with CTRE's operator perspective. Checked by reading, not run
       as red in the simulator.
