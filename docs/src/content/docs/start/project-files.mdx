@@ -1,0 +1,101 @@
+---
+title: Project files
+description: The folder the library reads at boot, and what each file in it is for.
+sidebar:
+  order: 3
+---
+
+import { FileTree } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import editor from '../../../assets/editor-drawn-path.png';
+
+Everything the library knows about your robot, your field and your paths comes from one folder in the robot
+project. The editor writes it. The library reads it once, in robot init, and never again.
+
+<FileTree>
+
+- src/main/
+  - deploy/paths/
+    - ToReef.path.json one file per path
+    - ToSource.path.json
+    - robot.json the robot's physical numbers
+    - field.json the field's size and obstacles
+    - .pathproject.json the editor's own settings, and the named points
+  - java/frc/robot/
+    - PathEditorNames.java every path, event and point name as a constant
+
+</FileTree>
+
+## What each file is
+
+| File | What it holds | Who writes it | Details |
+| --- | --- | --- | --- |
+| `<name>.path.json` | One path: its waypoints, the heading along it, speed limits, slow zones and events | The editor, one per path tab | [Path file](/files/path-file/) |
+| `robot.json` | Mass, grip, the drive motors, the bumper size, how hard on-the-fly paths drive | The editor's Settings page, or by hand | [Robot file](/files/robot-file/) |
+| `field.json` | The field's length and width, and each obstacle as a polygon | The editor's Settings page | [Field file](/files/field-file/) |
+| `.pathproject.json` | The editor's tab order, colors and view, plus the **named points** the library also reads | The editor | [Project file](/files/project-file/) |
+| `PathEditorNames.java` | Three enums, `Paths`, `Events` and `Points`, so a name is checked by the compiler | The editor, on every save | [Generated names](/files/generated-names/) |
+
+Every file is optional. The table says what the library does without each one.
+
+| Missing | What the library uses instead |
+| --- | --- |
+| Every `*.path.json` | An empty library. Driving to a pose still works. |
+| `robot.json` | The built-in default robot, `RobotConfig.DEFAULT`. It is not your robot. |
+| `field.json` | An open floor 1,000 m across with no walls and no obstacles, so a robot in a shop drives straight to its goal. |
+| `.pathproject.json` | No named points. |
+| `PathEditorNames.java` | Nothing is checked. Use the names as plain strings. |
+
+:::caution
+Without `robot.json` the library plans for a robot that is not yours: its mass, its grip and its motors. Paths
+will still run, but the speed plan is wrong. Fill in [the robot file](/files/robot-file/) before trusting a time
+or driving near a limit.
+:::
+
+## The editor
+
+Open the editor at [paths.frc5712.com](https://paths.frc5712.com) in Chrome or Edge, and open the robot project's
+root folder, the one that has `build.gradle` in it. The editor then works in the folders above directly.
+
+<Image src={editor} alt="The path editor with a path drawn across the field, colored by planned speed." />
+
+Three things about how it saves matter to robot code.
+
+- **Only changed files are written.** `robot.json` and `field.json` appear the first time you edit them.
+- **What you see is what the robot plans.** The editor runs a line-for-line port of the library's path maths, and
+  rounds your edits to what the file holds. The time and the speeds it shows are the ones the robot will compute
+  from the saved file.
+- **Paths are always stored for the blue alliance.** The library flips them on red when the path starts. See
+  [Alliances](/guides/alliances/).
+
+In a browser without folder access, the editor's **Upload** loads a folder and **Save** downloads a zip to unpack
+over the robot project.
+
+## Deploy
+
+The files reach the robot the usual way. `src/main/deploy` is copied to the robot when you deploy the code, and
+`PathLibrary.loadAll()` reads it from there.
+
+```bash
+./gradlew deploy
+```
+
+After you change a path in the editor you must build and deploy again. If the generated names and the deployed
+files disagree, because one was updated and the other was not, the library stops at boot and names what is
+missing. That check is described in [Generated names](/files/generated-names/).
+
+## The names
+
+`PathEditorNames.java` is what makes the rest of these pages' examples look the way they do.
+
+```java
+import static frc.robot.PathEditorNames.*;
+
+paths.get(Paths.TO_REEF);                         // a path file
+paths.bindEvent(Events.INTAKE_DOWN, intake.lower()); // an event name the paths use
+otf.toPoint(drive, Points.DEPOT, Rotation2d.PI); // a named point
+```
+
+A path called `ToReef` becomes `Paths.TO_REEF`. If you rename or delete the path in the editor, the constant
+disappears and every line that used it stops compiling, which is the point. Every method that takes one of these
+constants also takes a plain `String`, for the cases where you want one.

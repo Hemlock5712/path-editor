@@ -33,7 +33,9 @@ loads a folder and **Save** downloads a zip to unpack over the robot project.
 
 **Deployed.** Vercel builds `editor/app` (`vercel.json`): `master` is https://paths.frc5712.com and `v2` gets
 preview deploys. A clean install builds with
-`npm ci --prefix editor/core && npm ci --prefix editor/app && npm --prefix editor/app run build`. On the
+`npm ci --prefix editor/core && npm ci --prefix editor/app && npm --prefix editor/app run build`. The same
+deployment serves the library's documentation at `/docs` (built from `docs/` and copied in by
+`tools/merge-docs.mjs`; see [docs/README.md](../docs/README.md)). The book icon in the top bar opens it. On the
 https site, connecting to a robot needs the browser's permission (see **Live robot**, below).
 
 **Install it as an app.** The deployed site is a PWA. In Edge or Chrome, use **Install app** (or the install

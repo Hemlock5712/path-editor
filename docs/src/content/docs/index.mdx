@@ -1,0 +1,93 @@
+---
+title: Myelin
+description: Team 5712's path library for WPILib 2027. Draw a path, follow it, and plan one on the field.
+template: splash
+hero:
+  title: Draw a path. <em>Drive it.</em>
+  tagline: Myelin is team 5712's path library. It plans how fast the robot can take a path you drew, follows that plan, and plans a new path on the field when there is none.
+  actions:
+    - text: Start here
+      link: /start/overview/
+      variant: primary
+    - text: Install it
+      link: /start/install/
+      variant: secondary
+    - text: Reference
+      link: /reference/wpilib/pathlibrary/
+      variant: secondary
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Pipeline from '../../components/Pipeline.astro';
+
+## What it does
+
+The library does three jobs, in this order. Robot code calls the third or the second; the first happens once,
+when the robot boots.
+
+<Pipeline />
+
+## Install
+
+Put this file in the robot project's `vendordeps` folder. The project also needs the Commands v3 vendordep and
+WPILib 2027 alpha-7.
+
+```text title="vendordeps/Myelin.json"
+https://hemlock5712.github.io/path-editor/vendordep/Myelin.json
+```
+
+Then load every path the editor saved, once, when the robot starts:
+
+```java title="Robot.java"
+import static frc.robot.PathEditorNames.*;
+
+PathLibrary paths = PathLibrary.loadAll();
+Pathfinding otf = new Pathfinding(paths, FollowerConfig.defaults(paths.robot()),
+    () -> drive.getPose(), () -> drive.getFieldVelocity(),
+    velocity -> drive.driveFieldVelocity(velocity), FieldFrame.RED_HALF_TURN);
+
+Command toReef = otf.follow(drive, Paths.TO_REEF);
+```
+
+[Install](/start/install/) has every step, and [The first path](/start/first-path/) explains each line.
+
+## Where to go
+
+<CardGrid>
+  <LinkCard
+    title="Start here"
+    description="What the library is, how to install it, what it needs from your drivetrain, and a first path."
+    href="/start/overview/"
+  />
+  <LinkCard
+    title="Guides"
+    description="One robot-code task per page: follow a path, bind events, drive to a pose, align on a tag."
+    href="/guides/follow-a-path/"
+  />
+  <LinkCard
+    title="How it works"
+    description="The curve, the speed plan, the follower and the pathfinder, with the numbers behind each."
+    href="/concepts/overview/"
+  />
+  <LinkCard
+    title="Files"
+    description="Every key of every file in deploy/paths, and the class of names the editor generates."
+    href="/files/path-file/"
+  />
+  <LinkCard
+    title="Reference"
+    description="A page for every public class in the five packages, with every method."
+    href="/reference/wpilib/pathlibrary/"
+  />
+  <LinkCard
+    title="Glossary"
+    description="The words these pages use, each in one or two sentences."
+    href="/glossary/"
+  />
+</CardGrid>
+
+## Where it stands
+
+This is version 2027.0.0-alpha-2. It passes its unit tests and its end-to-end tests in simulation, and it has been
+raced against other followers on the team's simulation bench. **It has not run on a real robot yet.** Numbers on
+these pages are the library's defaults or measurements from simulation, and each page says which.

@@ -1,11 +1,11 @@
 {
   "framework": "vite",
-  "installCommand": "npm ci --prefix editor/core && npm ci --prefix editor/app",
-  "buildCommand": "npm --prefix editor/app run build",
+  "installCommand": "npm ci --prefix editor/core && npm ci --prefix editor/app && npm ci --prefix docs",
+  "buildCommand": "npm --prefix editor/app run build && npm --prefix docs run build && node tools/merge-docs.mjs",
   "outputDirectory": "editor/app/dist",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!docs(?:/|$)).*)",
       "destination": "/index.html"
     }
   ],
@@ -35,6 +35,13 @@
           "value": "no-cache"
         }
       ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/docs",
+      "destination": "/docs/",
+      "permanent": false
     }
   ]
 }

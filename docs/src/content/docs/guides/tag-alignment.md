@@ -1,0 +1,108 @@
+---
+title: Tag alignment
+description: Stop at a spot measured from an AprilTag itself, not from where the field map says it is.
+sidebar:
+  order: 7
+---
+
+The field map says where each AprilTag should be. A real field element can be a few centimeters off, and a few
+centimeters is the difference between scoring and missing. `TagGoal` measures the stopping spot from the tag the
+camera actually sees.
+
+The split of work is fixed. **Your code reads the camera. The library filters the sightings and drives.**
+
+## One drive, two goals
+
+1. **Global.** Until the camera has locked on, drive toward where the field map says the spot is.
+2. **Local.** Once locked, the end of the drive follows the spot measured from the tag.
+
+## Make the goal
+
+Say where to stop, in the tag's own frame.
+
+```java
+// 45 cm out from the tag's face, facing it
+TagGoal reefTag = new TagGoal(new Transform2d(0.45, 0.0, Rotation2d.PI));
+```
+
+| Part of the transform | Meaning |
+| --- | --- |
+| +X | Out of the tag's face, meters |
+| +Y | To the tag's left, meters |
+| Rotation of 180° | Facing the tag |
+
+## Feed it sightings
+
+Every time a camera frame shows the tag, hand the sighting over.
+
+```java
+reefTag.add(tagInRobot, odometryAtCapture, now);
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `tagInRobot` | The tag's pose as the camera saw it, in the robot's frame, with the camera's own corrections already applied |
+| `odometryAtCapture` | The robot's pose from wheels and gyro only, at the moment the picture was taken |
+| `now` | The current time, seconds |
+
+`add` returns false when it skipped the sighting: too far away, or a jump from the current estimate.
+
+The second argument is the important one. It is the **wheel-only** pose, the one vision never corrects, at the
+time of the photo and not the time you processed it. Your drivetrain has to keep a short history of that pose.
+See [What your drivetrain provides](/start/drivetrain/#optional-extras).
+
+## Build the command
+
+```java
+Command align = otf.toTarget(drive, () -> mapGoal)
+    .withMovingGoal(() -> reefTag.fieldGoal(drive.getOdometryPose(), drive.getPose()))
+    .finishWhen(() -> reefTag.hasLock())
+    .withTolerance(0.02, Rotation2d.fromDegrees(1));
+```
+
+| Line | What it does |
+| --- | --- |
+| `toTarget(drive, () -> mapGoal)` | Sets off for the field map's spot, in the real field frame |
+| `withMovingGoal(...)` | Once the tag is locked, the end follows the measured spot. `fieldGoal` is empty until then, so the command keeps the map's spot. |
+| `finishWhen(...)` | Does not finish on the map's guess. It waits for the tag. |
+
+Use the plain `withMovingGoal`, without a smoothing time. `TagGoal` has already filtered the sightings, and
+averaging on top of a filter only adds lag.
+
+Call `reefTag.reset()` when a new approach starts, so an estimate from the last approach is not reused. In an
+autonomous, add a timeout to the command.
+
+## Why two poses go into fieldGoal
+
+`fieldGoal(odometryNow, fieldNow)` takes the wheel-only pose and the full field pose. The tag is remembered in
+the wheel-only frame, which never jumps. The goal is then placed on the field pose. When vision corrects the
+field pose, the robot and the goal move together, and the correction cancels out of the error the robot is
+driving on.
+
+## What the filter does
+
+| Behavior | Detail |
+| --- | --- |
+| Smooths | A Kalman filter on each axis. Sightings from further away count for less, because camera noise grows with distance. |
+| Ignores a stray | One sighting that disagrees with the estimate is skipped. |
+| Locks | `hasLock()` is true once three sightings agree. |
+| Reports | `secondsSinceSeen(now)` and `tagPose()` are there for logging. |
+
+[The tag filter](/concepts/tag-filter/) has the numbers.
+
+## What stays in your code
+
+- Reading the camera and choosing which tag.
+- The camera's own corrections for its mounting.
+- Rejecting a frame that is too old or too ambiguous to trust.
+- Keeping the wheel-only pose and its history.
+
+:::note
+The filter's noise numbers came from one robot's cameras. They have not been measured on yours. Watch a still
+tag in a log and compare the spread before trusting 2 cm.
+:::
+
+## Related
+
+- [Moving goals](/guides/moving-goals/) covers `withMovingGoal` and `finishWhen` on their own.
+- [TagGoal](/reference/wpilib/taggoal/) and [TagFilter](/reference/follow/tagfilter/).

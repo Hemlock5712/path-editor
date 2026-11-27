@@ -1,0 +1,108 @@
+---
+title: Drive to a pose
+description: Drive to a spot on the field from wherever the robot is, with no drawn path.
+sidebar:
+  order: 4
+---
+
+Sometimes there is no path to draw, because you do not know where the robot will start. "Go to the scoring spot"
+from anywhere on the field is that case. `otf.to` plans a short path from the robot's pose to the goal when the
+command starts, then follows it like any other path.
+
+## The command
+
+```java
+Command toSpot = otf.to(drive, new Pose2d(5.2, 1.4, Rotation2d.PI));
+```
+
+The pose is a position in meters and the heading to arrive at. **Write it for the blue alliance.** On red the
+library flips it with the frame you gave `Pathfinding`, read when the command starts.
+
+It works from any distance: several meters away, a few centimeters away, or already on the goal. With no
+`field.json` the field is an open floor and the plan is a straight run. With one, the route goes round the
+obstacles. See [Pathfinding](/guides/pathfinding/).
+
+## What it does
+
+1. **Plans**, once, when the command starts, from the measured pose and velocity. This is the only path work the
+   library does at go. On a desktop PC it takes about a millisecond.
+2. **Follows** the plan at the fastest speed the robot can still stop from.
+3. **Drives straight at the goal** for the last 30 cm and eases in.
+4. **Limits** every command to what the wheels can grip, with the limiter teleop uses.
+
+It finishes when the robot is inside the tolerance, slower than 5 cm/s, and has held that for 0.1 s. Then it
+sends zero.
+
+## Set what finished means
+
+The default tolerance is 2 cm and 1°. Loosen it for a spot that does not need to be exact, or for a robot that
+cannot hold 2 cm.
+
+```java
+Command toSpot = otf.to(drive, goal)
+    .withTolerance(0.05, Rotation2d.fromDegrees(2));
+```
+
+`setTolerance(meters, heading)` does the same on a command you already hold. It returns nothing, so it can stand
+on a line of its own.
+
+## How hard it drives
+
+A path drawn in the editor carries its own speed limits. An on-the-fly path takes them from two keys in
+`robot.json`.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `onTheFlyMaxMetersPerSecond` | 4 | Top speed, m/s |
+| `onTheFlyMaxMetersPerSecondSquared` | 6 | One limit for speeding up and for slowing down, m/s² |
+
+The team's robot project sets the second to 9 after bench runs. A higher number arrives sooner and asks more of
+the tires. Lower it if the robot arrives off target.
+
+:::note
+The acceleration is the lever to pull, not the finish law. A move planned at 6 m/s² has no overshoot and about a
+third of the wheel slip of one planned at the traction limit. If a drive-to-pose overshoots, lower this number
+before touching anything in [Tuning](/guides/tuning/).
+:::
+
+## A goal that is only known later
+
+`otf.to` fixes its goal when you write the line. For a goal worked out at run time, give a supplier.
+
+```java
+Command toTarget = otf.toTarget(drive, () -> vision.scoringPose());
+```
+
+The supplier is read when the command starts and at each re-plan. Its pose is in the **real field frame**, the
+frame the robot's own pose is in. It is used as given and is not flipped on red, because a pose that comes from
+the field is already where it physically is.
+
+| Method | Goal is written in | Flipped on red |
+| --- | --- | --- |
+| `otf.to(drive, pose)` | The blue frame | Yes |
+| `otf.toPoint(drive, Points.X, heading)` | The blue frame | Yes |
+| `otf.toTarget(drive, supplier)` | The real field frame | No |
+
+## A named point
+
+A **named point** is a spot you marked in the editor's **Points** tab. Robot code can drive to it by name, so the
+coordinates live in one place.
+
+```java
+Command toDepot = otf.toPoint(drive, Points.DEPOT, Rotation2d.PI);
+```
+
+The heading is the one to arrive at, in the blue frame. An unknown name throws `NoSuchElementException` listing
+the points that exist.
+
+## When the plan fails
+
+If the pathfinder cannot find a route, the command sends zero and ends at once. The reason is published as
+`/Telemetry/Path/<name>/PlanFailure`, and `PlanOk` is false. Put a timeout on any drive in an autonomous so a
+goal that is never reached cannot hold up the routine.
+
+## Related
+
+- [On-the-fly paths](/concepts/on-the-fly/) explains planning and re-planning.
+- [The stopping law](/concepts/stopping-law/) explains the last 30 cm.
+- [PathfindCommand](/reference/wpilib/pathfindcommand/) lists every option.

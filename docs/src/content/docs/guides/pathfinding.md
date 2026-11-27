@@ -1,0 +1,116 @@
+---
+title: Pathfinding
+description: Plan a route round the field's obstacles when a command starts, and re-plan when knocked off it.
+sidebar:
+  order: 5
+---
+
+With a `field.json` in `deploy/paths`, every on-the-fly command routes round the field's obstacles. Nothing
+changes in the call. The same `otf.to` that drove a straight line on an open floor now drives round a hub.
+
+## Give the library a field
+
+Mark the obstacles on the editor's **Settings** page, under Field, and save. The editor writes
+`deploy/paths/field.json`. The default is the 2026 field: both hubs, both towers and the four trench supports.
+
+`PathLibrary.loadAll()` reads it at boot, grows each obstacle by the robot's bumpers, and builds the graph the
+search uses. A damaged file stops the robot at boot with a message that names it. `paths.hasFieldFile()` tells
+you whether one was found.
+
+:::caution
+The obstacles are grown using `bumperLengthMeters` and `bumperWidthMeters` from `robot.json`. If those are
+missing or wrong, the clearance is wrong. Measure the bumpers.
+:::
+
+## The commands
+
+| Command | Goes to |
+| --- | --- |
+| `otf.to(drive, pose)` | A pose written for blue |
+| `otf.toPoint(drive, Points.X, heading)` | A named point from the editor |
+| `otf.toTarget(drive, supplier)` | A pose in the real field frame, read at start |
+| `otf.thenFollow(drive, Paths.X)` | The start of a drawn path, then the path |
+
+All four return a `PathfindCommand`. [Drive to a pose](/guides/drive-to-pose/) covers the first three.
+
+## Into a drawn path
+
+`thenFollow` is for an autonomous that cannot be sure where the robot starts, or a teleop button that runs a
+scoring path from anywhere.
+
+```java
+Command score = otf.thenFollow(drive, Paths.TO_REEF);
+```
+
+It plans to the path's first waypoint, arriving along the path's start direction at the path's start speed. Then
+the path's own follow command takes over, with its events bound from the library. A path that starts at rest
+gets a stop at the hand-over. A path that starts moving gets a rolling one.
+
+## Re-planning
+
+A plan is made once, at the start. Two things make the command plan again.
+
+| Trigger | Default | Change it with |
+| --- | --- | --- |
+| The robot is knocked further than this off the path | 0.2 m | `replanAbove(meters)` |
+| You ask | | `replan()` |
+
+A re-plan starts from where the robot is and the speed it is going, at most once every half second.
+`replanAbove(Double.POSITIVE_INFINITY)` turns the first trigger off, so the command only re-plans when asked.
+
+```java
+PathfindCommand toSpot = otf.to(drive, goal).replanAbove(0.3);
+```
+
+## A start or goal inside an obstacle
+
+If the robot starts pressed against an obstacle, or the goal sits inside a grown one, the planner **snaps** that
+end to the nearest free point and routes from there. The path still starts at the robot and ends at the goal.
+The distances are published as `StartSnap` and `GoalSnap`.
+
+## A mechanism that sticks out
+
+If an intake reaches past the bumpers, the robot's outline is larger while it is out. A **footprint** is a named
+outline: the bumpers plus how far a mechanism reaches on each side. Define them in `robot.json`, then tell the
+library which one applies.
+
+```java
+otf.withFootprint(() -> intake.isOut() ? "intakeOut" : "bumpers");
+```
+
+Called on `otf`, it applies to every command built afterward. Called on one command, it applies to that command.
+The supplier is read once, when a command starts, and re-plans during that run keep the same outline.
+`"bumpers"` is always available. `paths.footprintNames()` lists the rest. An unknown name throws
+`NoSuchElementException`.
+
+Following a drawn path does not use footprints. The editor checked the drawn path against the outline when you
+drew it.
+
+## What to watch
+
+Each plan publishes its figures under `/Telemetry/Path/<name>/`.
+
+| Entry | Meaning |
+| --- | --- |
+| `PlanOk` | Whether a route was found |
+| `PlanFailure` | Why not, or empty |
+| `PlanMicros` | How long planning took, microseconds |
+| `Replans` | How many times this run has planned again |
+| `StartSnap`, `GoalSnap` | Meters an end was moved out of an obstacle |
+| `MinClearance` | Meters from the bumpers to the nearest obstacle or wall along the plan |
+| `PlanClear` | Whether the outline keeps the margin along the whole plan |
+| `Plan` | The planned path, published again at every re-plan |
+
+## What it does not do
+
+- **It does not see other robots.** The field is the static map in `field.json`. A robot in the way is not an
+  obstacle to the planner.
+- **It cannot prevent a push into an obstacle.** If the robot is shoved, it re-plans from where it ends up.
+- **Concave obstacles are filled in.** Each polygon is replaced by its convex hull, which is safe but can close a
+  pocket the robot would fit in.
+
+## Related
+
+- [The pathfinder](/concepts/pathfinder/) explains growing, the graph and the smoothing.
+- [On-the-fly paths](/concepts/on-the-fly/) explains the two margins and the re-plan rules.
+- [Footprints](/concepts/footprints/) and the [field file](/files/field-file/).

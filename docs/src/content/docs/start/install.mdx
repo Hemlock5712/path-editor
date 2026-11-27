@@ -1,0 +1,121 @@
+---
+title: Install
+description: Add the Myelin vendordep to a WPILib 2027 robot project and check that it builds.
+sidebar:
+  order: 2
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+The library installs like any other vendor library. One JSON file goes in the robot project's `vendordeps`
+folder, and Gradle downloads the jar the next time it builds.
+
+## What you need first
+
+| Requirement | Why |
+| --- | --- |
+| WPILib 2027 alpha-7 | The library is compiled against it. `Myelin.json` names it as `wpilibYear: 2027_alpha7`. |
+| The Commands v3 vendordep | Every command in the library is a Commands v3 `Command`. |
+| A swerve drivetrain that reports a pose | The library drives a holonomic robot. See [What your drivetrain provides](/start/drivetrain/). |
+
+## Add the vendordep
+
+<Steps>
+
+1. Download the vendordep file from this address:
+
+   ```text
+   https://hemlock5712.github.io/path-editor/vendordep/Myelin.json
+   ```
+
+2. Put it in the robot project's `vendordeps` folder, next to the others.
+
+   ```text
+   vendordeps/
+     CommandsV3.json
+     Myelin.json
+     Phoenix6-26.70.0-alpha-2.json
+   ```
+
+3. Build the project.
+
+   ```bash
+   ./gradlew build
+   ```
+
+   Gradle downloads `frc.team5712:myelin-java` the first time. That needs a network connection once. After that
+   the jar is in Gradle's cache and the project builds offline.
+
+4. Check it. Add this import to any class in the project and build again.
+
+   ```java
+   import frc.team5712.path.wpilib.PathLibrary;
+   ```
+
+   You should see: the build passes. If the import is red, the JSON file is not in `vendordeps`, or the build
+   could not reach the address in it.
+
+</Steps>
+
+:::note
+Installing by copying the file is the method that has been checked. Installing through the WPILib VS Code
+command **Manage Vendor Libraries** with the address above has not been tried yet.
+:::
+
+## What the file contains
+
+`Myelin.json` is short. It tells Gradle where the jar is and which one to fetch.
+
+```json title="vendordeps/Myelin.json"
+{
+    "fileName": "Myelin.json",
+    "name": "Myelin",
+    "version": "2027.0.0-alpha-2",
+    "uuid": "5712a5e1-7a11-4d0e-9b2f-6d79656c696e",
+    "wpilibYear": "2027_alpha7",
+    "mavenUrls": [
+        "https://hemlock5712.github.io/path-editor/vendordep/maven/"
+    ],
+    "jsonUrl": "https://hemlock5712.github.io/path-editor/vendordep/Myelin.json",
+    "javaDependencies": [
+        {
+            "groupId": "frc.team5712",
+            "artifactId": "myelin-java",
+            "version": "2027.0.0-alpha-2"
+        }
+    ],
+    "jniDependencies": [],
+    "cppDependencies": []
+}
+```
+
+The library is Java only. There is no native code, so `jniDependencies` and `cppDependencies` are empty.
+
+## What you get
+
+One jar, `myelin-java`, holding the five packages under `frc.team5712.path`. A **sources jar** is published next
+to it, so in VS Code you can Ctrl-click any class in the library and read its code. Every file starts with a
+comment that says what it does in plain words. [The follower](/concepts/the-follower/) suggests an order to read
+them in.
+
+## Versions
+
+| Version | What changed |
+| --- | --- |
+| 2027.0.0-alpha-2 | Adds `RailDrive.towardPiece(..., eagerness)`, so a team can set how hard the intake assist turns the driver. |
+| 2027.0.0-alpha-1 | The first published version. It stays available. |
+
+A published version never changes. Robot projects cache the jar, so a fix always ships as a new version number,
+and you update by replacing `Myelin.json` with the new one.
+
+## Add the first files
+
+The library reads a folder at boot. Create it now, so the next pages have somewhere to save.
+
+```text
+src/main/deploy/paths/
+```
+
+With an empty folder the library still starts: it has no paths, the default robot, and an open floor with no
+obstacles. Driving to a pose works from there. Next, [Project files](/start/project-files/) explains what goes in
+the folder.

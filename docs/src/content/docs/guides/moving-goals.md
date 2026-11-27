@@ -1,0 +1,88 @@
+---
+title: Moving goals
+description: Let the end of a path follow a target seen by a camera, and hold the finish until it is trusted.
+sidebar:
+  order: 6
+---
+
+A path's end is a fixed spot. The thing you want to reach often is not: a game piece that rolled, or a scoring
+element that is a few centimeters from where the field map says. A **moving goal** ties the end of a path to a
+pose your code supplies each loop. When that pose moves, the library re-plans the rest of the path to it.
+
+## Bind a goal
+
+`withMovingGoal` is on both kinds of command.
+
+```java
+// A drawn path whose end follows vision
+Command score = otf.follow(drive, Paths.TO_SCORE)
+    .withMovingGoal(() -> vision.scoringPoseIfSeen());
+
+// An on-the-fly path whose end follows vision
+Command grab = otf.to(drive, guess)
+    .withMovingGoal(() -> vision.pieceIfSeen());
+```
+
+The supplier returns an `Optional<Pose2d>`.
+
+- **A pose** is the goal now, in the **real field frame**, like the robot's own pose. It is not flipped on red.
+- **Empty** means "no new estimate". The library keeps the last goal it had.
+
+## What the library does with it
+
+| When | What happens |
+| --- | --- |
+| The goal moves more than 2 cm or 2° | The rest of the path is planned again: one smooth piece from where the robot is on the path to the goal, ending at the path's end speed. |
+| The last 30 cm | The follower drives straight at the latest goal. |
+| On an on-the-fly path, the goal moves more than 10 cm from where the path was planned to | The whole route is planned again, round the obstacles, at most every 0.2 s. |
+
+The re-planned piece on a drawn path knows nothing about obstacles. A goal that might move round an obstacle
+needs an on-the-fly path, which re-plans round them.
+
+## Raw or filtered
+
+A camera's estimate jitters by a centimeter or two each frame. Fed in raw, that has the robot chasing noise. On
+the bench, a tag alignment with 2 cm of noise never settled.
+
+Give a smoothing time to have the library average the estimates.
+
+```java
+Command grab = otf.to(drive, guess)
+    .withMovingGoal(() -> vision.pieceIfSeen(), 0.5);
+```
+
+| Form | Use it for |
+| --- | --- |
+| `withMovingGoal(supplier, 0.5)` | A goal that arrives raw from a camera. The estimates are averaged over that many seconds. |
+| `withMovingGoal(supplier)` | A goal that is already filtered, such as a [TagGoal](/guides/tag-alignment/). It is followed as given. |
+
+With averaging on, an estimate more than 25 cm or 20° from the average is treated as a new goal only once three
+in a row agree. One stray estimate is ignored.
+
+:::note
+The average trails a goal that is really moving by about its speed times the smoothing time. At 0.5 s, a piece
+rolling at 1 m/s is tracked half a meter behind. A rolling target has not been tested.
+:::
+
+## Hold the finish
+
+A path can reach its end before the camera has had a good look. `finishWhen` keeps the command running until a
+condition is true. The robot drives to the goal and holds it there.
+
+```java
+Command align = otf.toTarget(drive, () -> mapGoal)
+    .withMovingGoal(() -> tagGoal.fieldGoal(drive.getOdometryPose(), drive.getPose()))
+    .finishWhen(() -> tagGoal.hasLock());
+```
+
+:::caution
+A command with `finishWhen` never finishes if the condition never comes true. Give it a timeout in the
+autonomous, so a tag that is never seen cannot stall the routine.
+:::
+
+## Related
+
+- [Tag alignment](/guides/tag-alignment/) puts these together for an AprilTag.
+- [Moving goals](/concepts/moving-goals/) explains the re-plan and the average inside the follower.
+- [PathfindCommand](/reference/wpilib/pathfindcommand/) and
+  [FollowPathCommand](/reference/wpilib/followpathcommand/).

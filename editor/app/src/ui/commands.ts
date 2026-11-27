@@ -69,7 +69,21 @@ export const COMMANDS: readonly Command[] = [
   { id: "settings-robot", label: "Settings: robot", group: "Go", run: () => openSettings("robot") },
   { id: "settings-field", label: "Settings: field and obstacles", group: "Go", run: () => openSettings("field") },
   { id: "help", label: "Quick start and keyboard shortcuts", group: "Help", shortcut: "?", run: () => ui.set({ helpOpen: true }) },
+  { id: "docs", label: "Library documentation (opens in a new tab)", group: "Help", run: openDocs },
 ];
+
+/** Where the library's documentation is: next to the deployed editor, at /docs (see vercel.json). */
+export const DOCS_URL = "https://paths.frc5712.com/docs/";
+
+/**
+ * Opens the documentation in a new tab. On a deployed site (production or a preview) it is that deployment's
+ * own /docs; in development and in the desktop app, which serve no docs, it is the published one.
+ */
+export function openDocs(): void {
+  const { protocol, hostname } = window.location;
+  const deployed = protocol === "https:" && hostname !== "localhost" && !hostname.endsWith(".localhost");
+  window.open(deployed ? "/docs/" : DOCS_URL, "_blank", "noopener");
+}
 
 export function commandById(id: string): Command | undefined {
   return COMMANDS.find((c) => c.id === id);

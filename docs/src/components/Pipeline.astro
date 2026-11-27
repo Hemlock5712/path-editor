@@ -1,0 +1,153 @@
+---
+// The library's three jobs as three panels: when each runs, what goes in, what comes out.
+const steps = [
+  {
+    num: '01',
+    when: 'Once, at boot',
+    name: 'Plan',
+    body: 'Each path file becomes a curve, a heading for every point on it, and the fastest speed at every point that breaks no limit.',
+    io: ['*.path.json + robot.json', 'a Path'],
+    href: '/concepts/speed-plan/',
+    link: 'The speed plan',
+  },
+  {
+    num: '02',
+    when: 'Every loop',
+    name: 'Follow',
+    body: 'The follower finds where the robot is on the path, reads the plan a little ahead, corrects what is off, and limits the result to what the wheels can do.',
+    io: ['pose + velocity', 'a velocity command'],
+    href: '/concepts/the-follower/',
+    link: 'The follower',
+  },
+  {
+    num: '03',
+    when: 'When a command starts',
+    name: 'On the fly',
+    body: 'With no drawn path, the pathfinder routes round the obstacles from wherever the robot is, smooths the route into a path, and follows it the same way.',
+    io: ['pose + goal + field.json', 'a Path, in about 1 ms'],
+    href: '/concepts/on-the-fly/',
+    link: 'On-the-fly paths',
+  },
+];
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<ol class="pipeline not-content">
+  {
+    steps.map((s) => (
+      <li>
+        <p class="head">
+          <span class="num">{s.num}</span>
+          <span class="when">{s.when}</span>
+        </p>
+        <h3>{s.name}</h3>
+        <p class="body">{s.body}</p>
+        <p class="io">
+          <span>{s.io[0]}</span>
+          <span class="arrow" aria-hidden="true">
+            →
+          </span>
+          <span class="out">{s.io[1]}</span>
+        </p>
+        <a href={base + s.href}>{s.link}</a>
+      </li>
+    ))
+  }
+</ol>
+
+<style>
+  .pipeline {
+    list-style: none;
+    margin: 1.6rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    background: var(--bg2);
+  }
+  li {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 1.4rem 1.4rem 1.3rem;
+    border-top: 1px solid var(--rule);
+    min-width: 0;
+  }
+  li:first-child {
+    border-top: 0;
+  }
+  @media (min-width: 56rem) {
+    .pipeline {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    li {
+      border-top: 0;
+      border-inline-start: 1px solid var(--rule);
+    }
+    li:first-child {
+      border-inline-start: 0;
+    }
+  }
+  p {
+    margin: 0;
+  }
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    font-family: var(--__sl-font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--tx3);
+  }
+  .num {
+    color: var(--accent);
+  }
+  h3 {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: 1.9rem;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--tx);
+  }
+  .body {
+    font-family: var(--font-serif);
+    font-size: 1.04rem;
+    line-height: 1.55;
+    color: var(--tx2);
+    flex: 1;
+  }
+  .io {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.5rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--rule-soft);
+    font-family: var(--__sl-font-mono);
+    font-size: 0.72rem;
+    color: var(--tx3);
+  }
+  .io .out {
+    color: var(--tx);
+  }
+  .arrow {
+    color: var(--accent);
+  }
+  a {
+    font-family: var(--__sl-font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.25em;
+  }
+</style>

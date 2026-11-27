@@ -1,0 +1,106 @@
+---
+// The landing page's hero, replacing Starlight's: the words on the left, the path drawing on the right.
+// It reads the same `hero` frontmatter Starlight's does (title, tagline, actions).
+import HeroPath from './HeroPath.astro';
+
+const { data } = Astro.locals.starlightRoute.entry;
+const { title = data.title, tagline, actions = [] } = data.hero || {};
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const withBase = (link: string) => (link.startsWith('/') ? base + link : link);
+---
+
+<div class="hero">
+  <div class="copy">
+    <p class="micro kicker">Team 5712 · WPILib 2027 vendordep · 2027.0.0-alpha-2</p>
+    <h1 id="_top" data-page-title set:html={title} />
+    {tagline && <p class="tagline" set:html={tagline} />}
+    {
+      actions.length > 0 && (
+        <div class="hero-actions">
+          {actions.map(({ link, text, variant }) => (
+            <a class:list={['action', variant]} href={withBase(link)}>
+              {text}
+            </a>
+          ))}
+        </div>
+      )
+    }
+  </div>
+  <HeroPath />
+</div>
+
+<style>
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2.4rem;
+    align-items: center;
+    padding-block: clamp(1.5rem, 5vw, 4rem) 1rem;
+  }
+  @media (min-width: 60rem) {
+    .hero {
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+      gap: 3.5rem;
+    }
+  }
+  .kicker {
+    margin: 0 0 1.2rem;
+  }
+  h1 {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-optical-sizing: auto;
+    font-size: clamp(2.6rem, 1.5rem + 4.4vw, 4.9rem);
+    line-height: 1.02;
+    letter-spacing: -0.028em;
+    color: var(--tx);
+  }
+  h1 :global(em) {
+    font-style: italic;
+    color: var(--accent);
+  }
+  .tagline {
+    margin: 1.5rem 0 0;
+    max-width: 34rem;
+    font-family: var(--font-serif);
+    font-size: clamp(1.1rem, 0.95rem + 0.6vw, 1.4rem);
+    line-height: 1.55;
+    color: var(--tx2);
+  }
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+  .action {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.8rem 1.25rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    font-family: var(--__sl-font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--tx);
+    background: var(--bg2);
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease;
+  }
+  .action:hover {
+    border-color: var(--tx3);
+    background: var(--bg3);
+  }
+  .action.primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .action.primary:hover {
+    background: color-mix(in oklch, var(--accent) 88%, var(--tx));
+  }
+</style>

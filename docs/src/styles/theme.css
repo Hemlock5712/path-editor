@@ -1,0 +1,799 @@
+/* ─────────────────────────────────────────────────────────────────
+   Myelin docs: the look
+
+   The tokens are the workshop site's (frc5712.com, src/app/globals.css):
+   dark navy as the primary state, warm paper in light mode, one orange
+   accent, hairline rules, corners of 2 to 3px. Three families with three
+   jobs: Newsreader for anything read as sentences and for headings,
+   Instrument Sans for the interface, JetBrains Mono for code and for the
+   small caps labels that mark a thing as machinery.
+
+   What differs from the workshop is the frame. A lesson is read once,
+   top to bottom, so the workshop has no sidebar. Documentation is looked
+   things up in, so this site keeps Starlight's sidebar and "on this page"
+   rail and dresses them in the same tokens.
+
+   Starlight's own CSS sits in cascade layers; everything here is
+   unlayered, so it wins without !important.
+   ───────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Surfaces: page, raised, raised further */
+  --bg: oklch(0.155 0.038 265);
+  --bg2: oklch(0.196 0.042 265);
+  --bg3: oklch(0.243 0.045 265);
+
+  /* Text: primary, secondary, tertiary */
+  --tx: oklch(0.955 0.012 85);
+  --tx2: oklch(0.795 0.016 260);
+  --tx3: oklch(0.655 0.022 260);
+
+  /* Rules: the visible hairline, and the one you barely see */
+  --rule: oklch(0.325 0.032 265);
+  --rule-soft: oklch(0.245 0.03 265);
+
+  /* One accent hue, warm. `ink` is what sits on the accent. */
+  --accent: oklch(0.755 0.155 55);
+  --accent-ink: oklch(0.19 0.06 55);
+  --accent-soft: oklch(0.755 0.155 55 / 0.14);
+
+  /* The cool second hue, for diagram strokes only */
+  --lift: oklch(0.76 0.12 262);
+
+  /* Signals: two, and only two */
+  --ok: oklch(0.78 0.13 155);
+  --err: oklch(0.71 0.17 27);
+
+  /* Code is dark in both themes, so its inks do not invert */
+  --code-bg: oklch(0.135 0.04 265);
+  --code-tx: oklch(0.9 0.012 260);
+  --code-tx2: oklch(0.7 0.018 260);
+  --code-rule: oklch(0.27 0.035 265);
+  --code-accent: oklch(0.755 0.155 55);
+
+  --r: 3px;
+  --grid-dot: var(--rule-soft);
+  --grid-size: 24px;
+
+  --font-serif: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif;
+
+  /* ── Starlight's variables, pointed at the tokens above ── */
+  --sl-font: 'Instrument Sans Variable';
+  --sl-font-mono: 'JetBrains Mono Variable';
+
+  --sl-color-white: var(--tx);
+  --sl-color-gray-1: oklch(0.9 0.012 260);
+  --sl-color-gray-2: var(--tx2);
+  --sl-color-gray-3: var(--tx3);
+  --sl-color-gray-4: oklch(0.47 0.028 262);
+  --sl-color-gray-5: var(--rule);
+  --sl-color-gray-6: var(--bg2);
+  --sl-color-black: var(--bg);
+
+  --sl-color-accent-low: oklch(0.3 0.07 55);
+  --sl-color-accent: var(--accent);
+  --sl-color-accent-high: oklch(0.86 0.1 62);
+
+  --sl-color-text: var(--tx);
+  --sl-color-text-accent: var(--accent);
+  --sl-color-text-invert: var(--accent-ink);
+  --sl-color-bg: var(--bg);
+  --sl-color-bg-nav: var(--bg);
+  --sl-color-bg-sidebar: var(--bg);
+  --sl-color-bg-inline-code: var(--bg2);
+  --sl-color-bg-accent: var(--accent);
+  --sl-color-hairline-light: var(--rule);
+  --sl-color-hairline: var(--rule-soft);
+  --sl-color-hairline-shade: var(--rule-soft);
+
+  /* The asides borrow Starlight's four hues; pull them toward the palette */
+  --sl-color-blue: var(--lift);
+  --sl-color-blue-low: oklch(0.24 0.05 262);
+  --sl-color-blue-high: oklch(0.88 0.06 262);
+  --sl-color-purple: var(--accent);
+  --sl-color-purple-low: oklch(0.25 0.05 55);
+  --sl-color-purple-high: oklch(0.88 0.08 60);
+  --sl-color-orange: oklch(0.82 0.14 85);
+  --sl-color-orange-low: oklch(0.26 0.05 85);
+  --sl-color-orange-high: oklch(0.9 0.09 88);
+  --sl-color-red: var(--err);
+  --sl-color-red-low: oklch(0.25 0.07 27);
+  --sl-color-red-high: oklch(0.87 0.08 27);
+  --sl-color-green: var(--ok);
+  --sl-color-green-low: oklch(0.25 0.05 155);
+  --sl-color-green-high: oklch(0.88 0.08 155);
+
+  --sl-shadow-sm: none;
+  --sl-shadow-md: 0 6px 18px -8px oklch(0 0 0 / 0.4);
+  --sl-shadow-lg: 0 12px 32px -14px oklch(0 0 0 / 0.5);
+
+  /* Reading size. The body is a serif at 18px, a size up from Starlight's sans default. */
+  --sl-text-body: 1.125rem;
+  --sl-line-height: 1.7;
+  --sl-line-height-headings: 1.12;
+  --sl-text-h1: clamp(2.2rem, 1.4rem + 2.6vw, 3.1rem);
+  --sl-text-h2: 1.72rem;
+  --sl-text-h3: 1.3rem;
+  --sl-text-h4: 1.1rem;
+  --sl-text-code: 0.84rem;
+
+  --sl-content-width: 47rem;
+  --sl-sidebar-width: 18.5rem;
+}
+
+/* Light: warm paper, not white. Same structure, inverted. */
+:root[data-theme='light'] {
+  --bg: oklch(0.978 0.006 85);
+  --bg2: oklch(0.995 0.003 85);
+  --bg3: oklch(1 0 0);
+
+  --tx: oklch(0.235 0.045 265);
+  --tx2: oklch(0.415 0.032 265);
+  --tx3: oklch(0.525 0.028 265);
+
+  --rule: oklch(0.875 0.012 85);
+  --rule-soft: oklch(0.935 0.008 85);
+
+  --accent: oklch(0.545 0.175 45);
+  --accent-ink: oklch(0.99 0.01 85);
+  --accent-soft: oklch(0.545 0.175 45 / 0.07);
+
+  --lift: oklch(0.4 0.14 265);
+  --ok: oklch(0.52 0.13 155);
+  --err: oklch(0.53 0.19 27);
+
+  --code-bg: oklch(0.155 0.038 265);
+
+  --sl-color-white: var(--tx);
+  --sl-color-gray-1: oklch(0.3 0.04 265);
+  --sl-color-gray-2: var(--tx2);
+  --sl-color-gray-3: var(--tx3);
+  --sl-color-gray-4: oklch(0.68 0.02 265);
+  --sl-color-gray-5: var(--rule);
+  --sl-color-gray-6: var(--rule-soft);
+  --sl-color-gray-7: var(--bg);
+  --sl-color-black: var(--bg2);
+
+  --sl-color-accent-low: oklch(0.94 0.035 60);
+  --sl-color-accent: var(--accent);
+  --sl-color-accent-high: oklch(0.4 0.13 45);
+
+  --sl-color-text-accent: var(--accent);
+  --sl-color-text-invert: var(--accent-ink);
+  --sl-color-bg: var(--bg);
+  --sl-color-bg-nav: var(--bg);
+  --sl-color-bg-sidebar: var(--bg);
+  --sl-color-bg-inline-code: var(--bg3);
+  --sl-color-bg-accent: var(--accent);
+  --sl-color-hairline-light: var(--rule);
+  --sl-color-hairline: var(--rule);
+  --sl-color-hairline-shade: var(--rule);
+
+  --sl-color-blue: var(--lift);
+  --sl-color-blue-low: oklch(0.95 0.02 262);
+  --sl-color-blue-high: oklch(0.32 0.12 265);
+  --sl-color-purple: var(--accent);
+  --sl-color-purple-low: oklch(0.955 0.025 60);
+  --sl-color-purple-high: oklch(0.4 0.13 45);
+  --sl-color-orange: oklch(0.6 0.13 76);
+  --sl-color-orange-low: oklch(0.955 0.035 88);
+  --sl-color-orange-high: oklch(0.4 0.09 76);
+  --sl-color-red: var(--err);
+  --sl-color-red-low: oklch(0.955 0.025 27);
+  --sl-color-red-high: oklch(0.4 0.15 27);
+  --sl-color-green: var(--ok);
+  --sl-color-green-low: oklch(0.955 0.03 155);
+  --sl-color-green-high: oklch(0.36 0.1 155);
+
+  --sl-shadow-md: 0 6px 18px -8px oklch(0 0 0 / 0.16);
+  --sl-shadow-lg: 0 12px 32px -14px oklch(0 0 0 / 0.22);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Base
+   ───────────────────────────────────────────────────────────────── */
+
+body {
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'kern';
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--tx3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* The mono caps label: an instrument reading, not a sentence. */
+.micro {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   The frame: header, sidebar, "on this page"
+   ───────────────────────────────────────────────────────────────── */
+
+header.header {
+  border-bottom: 1px solid var(--rule-soft);
+  background: color-mix(in oklch, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.site-title {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 1.42rem;
+  letter-spacing: -0.015em;
+  color: var(--tx);
+  gap: 0.55rem;
+}
+.site-title img {
+  height: 1.55rem;
+}
+
+/* Search: a quiet field, mono hint */
+site-search button[data-open-modal] {
+  border-radius: var(--r);
+  border-color: var(--rule);
+  background: var(--bg2);
+  color: var(--tx3);
+  font-size: 0.86rem;
+}
+site-search button[data-open-modal]:hover {
+  border-color: var(--tx3);
+  color: var(--tx);
+}
+site-search kbd {
+  border-radius: 2px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  font-family: var(--__sl-font-mono);
+  font-size: 0.62rem;
+}
+
+.sidebar-pane {
+  border-inline-end: 1px solid var(--rule-soft);
+}
+
+/* Group names are labels, pages are links. */
+.sidebar-content .top-level > li > details > summary .group-label .large,
+.sidebar-content .top-level > li > details > summary .large {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.sidebar-content .top-level > li + li {
+  margin-top: 1.1rem;
+}
+.sidebar-content details details > summary .large,
+.sidebar-content details details > summary span {
+  font-family: var(--__sl-font);
+  font-size: 0.86rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tx2);
+}
+.sidebar-content a {
+  border-radius: var(--r);
+  font-size: 0.9rem;
+  color: var(--tx2);
+}
+.sidebar-content a:hover {
+  color: var(--tx);
+  background: var(--bg2);
+}
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-content a.large {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.sidebar-content ul ul li {
+  border-inline-start-color: var(--rule-soft);
+}
+
+/* On this page */
+starlight-toc h2,
+mobile-starlight-toc .toggle {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+starlight-toc a {
+  font-size: 0.82rem;
+  color: var(--tx3);
+}
+starlight-toc a:hover {
+  color: var(--tx);
+}
+starlight-toc a[aria-current='true'] {
+  color: var(--accent);
+}
+.right-sidebar {
+  border-inline-start: 1px solid var(--rule-soft);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   The page: title, lede, prose
+   ───────────────────────────────────────────────────────────────── */
+
+.content-panel:first-of-type {
+  border-bottom: 1px solid var(--rule-soft);
+}
+.content-panel + .content-panel {
+  border-top: 0;
+}
+
+h1#_top {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-optical-sizing: auto;
+  letter-spacing: -0.022em;
+  line-height: 1.06;
+  color: var(--tx);
+}
+
+/* Headings are the same family as the body; size and tracking do the work. */
+.sl-markdown-content :is(h2, h3, h4, h5) {
+  font-family: var(--font-serif);
+  font-weight: 450;
+  font-optical-sizing: auto;
+  letter-spacing: -0.014em;
+  color: var(--tx);
+}
+.sl-markdown-content h2 {
+  margin-top: 2.6rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule-soft);
+}
+.sl-markdown-content h2:first-child,
+.sl-markdown-content .sl-heading-wrapper:first-child h2 {
+  border-top: 0;
+  padding-top: 0;
+}
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
+  display: block;
+}
+.sl-markdown-content h4 {
+  font-family: var(--__sl-font);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+/* The reading treatment. Sentences are Newsreader; anything scanned is not. */
+.sl-markdown-content :is(p, li, dd, blockquote) {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  color: var(--tx);
+}
+.sl-markdown-content li::marker {
+  color: var(--accent);
+  font-family: var(--__sl-font-mono);
+  font-size: 0.8em;
+}
+.sl-markdown-content strong {
+  font-weight: 620;
+}
+
+.sl-markdown-content a:not(.sl-link-card a, .sl-anchor-link, .hero-actions a) {
+  color: var(--accent);
+  text-decoration-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+.sl-markdown-content a:not(.sl-link-card a, .sl-anchor-link, .hero-actions a):hover {
+  text-decoration-color: var(--accent);
+}
+
+/* Inline code sits on the serif baseline, a step down in size. */
+.sl-markdown-content :not(pre) > code {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.8em;
+  color: var(--tx);
+  background: var(--bg2);
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  padding: 0.1em 0.34em;
+  overflow-wrap: anywhere;
+}
+:root[data-theme='light'] .sl-markdown-content :not(pre) > code {
+  background: var(--bg3);
+  border-color: var(--rule);
+}
+.sl-markdown-content :is(h2, h3, h4) code {
+  font-size: 0.82em;
+}
+
+.sl-markdown-content hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.sl-markdown-content blockquote {
+  border-inline-start: 2px solid var(--accent);
+  padding-inline-start: 1.1rem;
+  font-style: italic;
+  color: var(--tx2);
+}
+
+/* Tables are scanned, not read: sans, hairlines, a mono caps header. */
+.sl-markdown-content table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-family: var(--__sl-font);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.sl-markdown-content table :is(th, td) {
+  padding: 0.6rem 0.9rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+  font-family: var(--__sl-font);
+}
+.sl-markdown-content table th {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.sl-markdown-content table td {
+  color: var(--tx2);
+}
+.sl-markdown-content table td:first-child {
+  color: var(--tx);
+}
+.sl-markdown-content table tr:nth-child(2n):not(:where(.not-content *)) {
+  background: transparent;
+}
+.sl-markdown-content table code {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.sl-markdown-content table td {
+  min-width: 6.5rem;
+}
+.sl-markdown-content table td:last-child {
+  min-width: 14rem;
+}
+
+/* Images and figures */
+.sl-markdown-content img:not(.not-content img) {
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+}
+.sl-markdown-content figcaption {
+  margin-top: 0.6rem;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: var(--tx3);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Code blocks: dark in both themes
+   ───────────────────────────────────────────────────────────────── */
+
+.expressive-code {
+  margin-block: 1.4rem;
+}
+.expressive-code .frame pre {
+  border-radius: var(--r);
+}
+.expressive-code .frame.has-title .header,
+.expressive-code .frame.is-terminal .header {
+  font-family: var(--__sl-font-mono);
+  letter-spacing: 0.08em;
+}
+.expressive-code .copy button {
+  border-radius: var(--r);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Asides: a hairline box with a mono label, never a coloured slab
+   ───────────────────────────────────────────────────────────────── */
+
+.starlight-aside {
+  border: 1px solid var(--rule);
+  border-inline-start: 3px solid var(--sl-color-asides-border);
+  border-radius: var(--r);
+  background: var(--bg2);
+  padding: 1rem 1.2rem;
+  color: var(--tx);
+}
+.starlight-aside__title {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-color-asides-text-accent);
+  gap: 0.5rem;
+}
+.starlight-aside__icon {
+  font-size: 0.95rem;
+}
+.starlight-aside__content :is(p, li) {
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--tx2);
+}
+.starlight-aside--note {
+  --sl-color-asides-text-accent: var(--lift);
+  --sl-color-asides-border: var(--lift);
+}
+.starlight-aside--tip {
+  --sl-color-asides-text-accent: var(--accent);
+  --sl-color-asides-border: var(--accent);
+}
+.starlight-aside--caution {
+  --sl-color-asides-text-accent: var(--sl-color-orange);
+  --sl-color-asides-border: var(--sl-color-orange);
+}
+.starlight-aside--danger {
+  --sl-color-asides-text-accent: var(--err);
+  --sl-color-asides-border: var(--err);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Starlight's components, in the same dress
+   ───────────────────────────────────────────────────────────────── */
+
+.sl-link-card,
+.card {
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--bg2);
+  box-shadow: none;
+}
+.sl-link-card:hover {
+  background: var(--bg3);
+  border-color: var(--tx3);
+}
+:root[data-theme='light'] .sl-link-card:hover {
+  background: var(--bg3);
+  border-color: var(--accent);
+}
+.sl-link-card .title {
+  font-family: var(--font-serif);
+  font-size: 1.22rem;
+  font-weight: 450;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+.sl-link-card .description {
+  font-family: var(--__sl-font);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--tx3);
+}
+.sl-link-card svg {
+  color: var(--accent);
+}
+.card .title {
+  font-family: var(--font-serif);
+  font-weight: 450;
+}
+.card .icon {
+  border-radius: var(--r);
+}
+
+/* Numbered procedures */
+.sl-steps > li::before {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--rule);
+  border-radius: 2px;
+}
+.sl-steps > li::after {
+  background: var(--rule-soft);
+}
+
+/* File trees */
+starlight-file-tree {
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--bg2);
+  font-family: var(--__sl-font-mono);
+  font-size: 0.82rem;
+}
+starlight-file-tree .comment {
+  font-family: var(--__sl-font);
+  color: var(--tx3);
+}
+
+/* Tabs */
+starlight-tabs [role='tab'] {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+starlight-tabs [role='tab'][aria-selected='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Previous / next */
+.pagination-links a {
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  box-shadow: none;
+  background: var(--bg2);
+}
+.pagination-links a:hover {
+  border-color: var(--accent);
+}
+.pagination-links a > span {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.pagination-links .link-title {
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+
+/* Theme picker and the search dialog */
+starlight-theme-select select,
+.sl-flex select {
+  font-family: var(--__sl-font);
+}
+dialog[aria-label] {
+  border-radius: var(--r);
+  border-color: var(--rule);
+  background: var(--bg2);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Diagrams. Inline SVG that draws with the tokens, so both themes work.
+   ───────────────────────────────────────────────────────────────── */
+
+.diagram {
+  margin-block: 1.6rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--bg2);
+  overflow: hidden;
+}
+.diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.diagram figcaption {
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--rule-soft);
+  font-family: var(--__sl-font);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  letter-spacing: 0;
+  color: var(--tx3);
+}
+.diagram text {
+  font-family: var(--__sl-font-mono);
+  font-size: 11px;
+  fill: var(--tx3);
+}
+.diagram .d-label {
+  fill: var(--tx);
+  font-family: var(--__sl-font);
+  font-size: 13px;
+  font-weight: 600;
+}
+.diagram .d-rule {
+  stroke: var(--rule);
+  stroke-width: 1;
+  fill: none;
+}
+.diagram .d-soft {
+  stroke: var(--rule-soft);
+  stroke-width: 1;
+  fill: none;
+}
+.diagram .d-ink {
+  stroke: var(--tx3);
+  stroke-width: 1.5;
+  fill: none;
+}
+.diagram .d-accent {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.diagram .d-lift {
+  stroke: var(--lift);
+  stroke-width: 1.75;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.diagram .d-dash {
+  stroke-dasharray: 5 5;
+}
+.diagram .f-accent {
+  fill: var(--accent);
+}
+.diagram .f-lift {
+  fill: var(--lift);
+}
+.diagram .f-bg {
+  fill: var(--bg);
+}
+.diagram .f-panel {
+  fill: var(--bg3);
+  stroke: var(--rule);
+}
+.diagram .f-accent-soft {
+  fill: var(--accent-soft);
+}
+.diagram .t-accent {
+  fill: var(--accent);
+}
+.diagram .t-lift {
+  fill: var(--lift);
+}

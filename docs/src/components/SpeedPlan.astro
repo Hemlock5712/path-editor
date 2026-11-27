@@ -1,0 +1,41 @@
+---
+// The speed plan as a picture: the ceiling the limits set, and the plan that fits under it
+// by speeding up as hard as allowed and braking just in time.
+---
+
+<figure class="diagram not-content">
+  <svg viewBox="0 0 720 310" role="img" aria-label="Speed against distance along a path. The plan rises from rest, drops for a turn, rises again and brakes to a stop at the end.">
+    <!-- axes -->
+    <line class="d-rule" x1="60" y1="250" x2="690" y2="250"></line>
+    <line class="d-rule" x1="60" y1="250" x2="60" y2="30"></line>
+    <line class="d-soft" x1="60" y1="60" x2="690" y2="60"></line>
+    <text x="14" y="36">SPEED</text>
+    <text x="16" y="64">TOP</text>
+    <text x="38" y="254">0</text>
+    <text x="370" y="296" text-anchor="middle">DISTANCE ALONG THE PATH, s</text>
+    <text x="60" y="270">START</text>
+    <text x="664" y="270">END</text>
+
+    <!-- the ceiling: the fastest the robot may go at each point -->
+    <path class="d-ink d-dash" d="M60 60 L270 60 C320 60 330 170 370 170 C410 170 420 60 470 60 L680 60"></path>
+
+    <!-- the plan -->
+    <path class="d-accent" d="M60 250 C90 150 150 80 220 60 L250 60 C310 78 345 125 370 170 C395 125 430 78 490 60 L520 60 C590 80 650 150 680 250"></path>
+
+    <circle class="f-accent" cx="60" cy="250" r="4"></circle>
+    <circle class="f-accent" cx="680" cy="250" r="4"></circle>
+
+    <text x="118" y="200" class="t-accent">SPEED UP</text>
+    <text x="118" y="214">FORWARD PASS</text>
+    <text x="286" y="132" class="t-accent" text-anchor="end">BRAKE</text>
+    <text x="370" y="226" text-anchor="middle">THE TURN'S LIMIT</text>
+    <line class="d-ink" x1="370" y1="178" x2="370" y2="212"></line>
+    <text x="622" y="200" class="t-accent" text-anchor="end">BRAKE IN TIME</text>
+    <text x="622" y="214" text-anchor="end">BACKWARD PASS</text>
+    <text x="300" y="50" text-anchor="middle">CEILING</text>
+  </svg>
+  <figcaption>
+    The dashed line is the fastest the robot may go at each point. The plan is the fastest curve that stays under
+    it, can be reached from the start, and can still stop at the end.
+  </figcaption>
+</figure>

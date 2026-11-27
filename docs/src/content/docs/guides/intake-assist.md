@@ -1,0 +1,120 @@
+---
+title: Intake assist
+description: Nudge the robot sideways so the intake lines up on the game piece the driver is heading for.
+sidebar:
+  order: 12
+---
+
+A driver heading for a game piece is usually a little off to one side. The intake assist adds a small sideways
+slide that lines the intake's mouth up on the piece. It keeps the driver's speed. It bends their direction by
+the angle to the piece and no further.
+
+It is an assist, not an auto-grab. It never takes the direction over, and it does nothing unless the driver is
+already heading for a piece. The aim is that the driver barely notices it is on.
+
+There are two parts: a map that remembers where the pieces are, and the nudge itself.
+
+## Keep a map of the pieces
+
+`PieceMap` turns a camera's detections into steady positions on the field. Your code reads the camera and turns
+each detection into a spot on the floor in front of the robot. The map does the rest.
+
+```java
+PieceMap pieces = new PieceMap();     // robot init
+
+// for every new photo, including one that shows nothing
+pieces.add(piecesInRobot, cameraOnRobot, lensHeight - pieceHeight, odometryAtCapture, now);
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `piecesInRobot` | Every piece the photo shows, as positions on the floor in the robot's frame. Pass an empty list when it shows none. |
+| `cameraOnRobot` | Where the lens is on the robot |
+| the drop | How far the lens is above the pieces' centers, meters |
+| `odometryAtCapture` | The robot's wheel-only pose when the photo was taken |
+| `now` | The current time, seconds |
+
+Pass empty photos too. The map uses them to learn that a piece has gone.
+
+| The map | Detail |
+| --- | --- |
+| Tells pieces apart | A sighting within 15 cm of a known piece is that piece |
+| Weighs each sighting | A camera measures angles. Looking down from a low lens, an angle error is far larger in range than to the side, and both grow with distance. |
+| Ignores a one-off | A detection counts once it has been seen twice |
+| Forgets | A piece not seen for half a second is dropped |
+
+`new PieceMap(angleNoiseRadians)` sets how good the camera's angles are. The default suits a camera good to about
+0.3°. Measure yours: watch a still piece and take the spread.
+
+## Add the nudge
+
+The nudge lives on `RailDrive`, next to the rail.
+
+```java
+RailDrive assist = new RailDrive(FollowerConfig.defaults(paths.robot()));   // robot init
+
+assist.reset(drive.getFieldVelocity());                                     // when the command starts
+
+// every loop
+Pose2d pose = drive.getPose();
+List<Translation2d> seen = pieces.fieldPieces(drive.getOdometryPose(), pose, now);
+ChassisVelocities commanded =
+    assist.towardPiece(seen, pose, robotToIntake, fromTheSticks, maxSpeed, dt);
+double[][] forces = assist.wheelForces(drive.getModuleLocations(), pose.getRotation());
+drive.driveFieldVelocity(commanded, forces[0], forces[1]);
+```
+
+| Argument to `towardPiece` | Meaning |
+| --- | --- |
+| `seen` | The pieces on the field, from the map |
+| `pose` | The robot's field pose |
+| `robotToIntake` | Where the intake's mouth is on the robot, as a `Transform2d`. The assist lines up the intake, not the robot's center. |
+| `fromTheSticks` | The driver's wanted velocity, field-relative |
+| `maxSpeed` | Accepted for symmetry with `onRail`. This version does not use it. |
+| `dt` | Seconds since the last loop |
+
+With no piece in line, the result is the driver's velocity through the limiter, the same as plain teleop.
+`assist.chosenPiece()` returns the piece it was nudging toward on the last loop, for a log or a driver display.
+
+## Which piece it picks
+
+The assist only helps with a piece the driver is already heading for.
+
+| Rule | Default |
+| --- | --- |
+| The piece is within this angle of the stick's direction, seen from the intake | 30° |
+| The piece is within this distance of the intake | 3 m |
+| The driver is asking for at least this speed | 0.3 m/s |
+| It switches to another piece only if that one is this much more in line | 10° |
+
+Below 0.3 m/s there is no help at all. A driver moving that slowly is lining up by hand.
+
+## How hard it nudges
+
+The sideways slide is the driver's speed times how far the piece is to the side, divided by how far it is ahead.
+That is the slide that arrives on the piece's line exactly as the robot reaches it. Two numbers shape it.
+
+| Number | Default | Meaning |
+| --- | --- | --- |
+| Eagerness | 1.5 | Multiplies the slide. At 1 the intake lines up only on arrival. At 1.5, two thirds of the gap is gone by halfway. |
+| The cap | 0.6 | The slide is never more than this share of the driver's speed. |
+
+Set your own eagerness with the seven-argument form.
+
+```java
+assist.towardPiece(seen, pose, robotToIntake, fromTheSticks, maxSpeed, dt, 1.2);
+```
+
+For a piece 25 cm to the side, seen 2.2 m out, the default bends the robot's travel by about 9°.
+
+:::caution
+These numbers have not been reviewed with a driver on a real robot. The nudge comes on within one or two loops,
+to about 0.4 m/s for a piece 25 cm off. Ask your driver whether they feel it before changing anything, and try
+it at low speed first.
+:::
+
+## Related
+
+- [The piece assist](/concepts/piece-assist/) explains the choice, the nudge and the filter.
+- [PieceMap](/reference/wpilib/piecemap/) and [RailDrive](/reference/wpilib/raildrive/).
+- [Rails](/guides/rails/) is the other assist.

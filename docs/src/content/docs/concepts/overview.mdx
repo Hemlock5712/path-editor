@@ -1,0 +1,112 @@
+---
+title: The whole picture
+description: Plan, follow, and plan on the field, with where each idea is explained.
+sidebar:
+  order: 1
+---
+
+import Pipeline from '../../../components/Pipeline.astro';
+import SpeedPlan from '../../../components/SpeedPlan.astro';
+
+This section explains how the library works inside. You do not need it to use the library. You need it when a
+path does something you did not expect and you want to know why, or when you want to read the source.
+
+The library does three jobs. Everything else is built from pieces of these three.
+
+<Pipeline />
+
+## 1. Plan
+
+Planning happens once, in robot init. `Path.build` turns one path file into a `Path` object in three steps.
+
+**The curve.** The waypoints you clicked are joined by smooth pieces, one between each pair. The pieces meet
+with the same position, the same direction and the same **curvature**, which is how sharply the path is
+turning. A path whose curvature jumps would ask the wheels to change their sideways push in an instant. This
+one never does. Everything afterward is measured in meters along the curve, a distance called `s`.
+[The curve](/concepts/the-curve/)
+
+**The heading.** A swerve robot can face one way while it travels another. So the path carries a second plan:
+the robot's heading at every `s`. It can hold, face the way it is going, turn to targets along the way, or keep
+pointing at a spot on the field. [The heading](/concepts/heading/)
+
+**The speed.** For every point on the curve, the planner finds the fastest speed that breaks no limit.
+
+<SpeedPlan />
+
+It finds that in two sweeps. Going forward from the start it asks how fast the robot can have got here. Going
+backward from the end it asks whether the robot can still slow down in time. The plan is whichever is lower at
+each point. [The speed plan](/concepts/speed-plan/)
+
+The main limit is **traction**: how hard the tires can push before they slip, or before the robot tips.
+Speeding up, braking, cornering and spinning all draw on that one budget, so a robot in a fast turn has less
+left for braking. [Traction](/concepts/traction/)
+
+## 2. Follow
+
+Following happens every loop. The follower is one object, `PathFollower`, and one method, `step`. Each call
+takes the measured pose and velocity and returns the velocity to command.
+
+1. **Convert to blue.** On red the pose is flipped in and the answer is flipped out. The path itself is never
+   rebuilt. [The field frame](/concepts/field-frame/)
+2. **Find the robot on the path.** The closest point on the curve, searched near where it was last loop.
+3. **Pick a law.** Along the path, the follower tracks the plan. In the last 30 cm it drives straight at the
+   goal. Where the path is a turn on the spot, it turns. [The follower](/concepts/the-follower/)
+4. **Read the plan a little ahead.** A drivetrain answers a command late, by about 50 ms. So the follower asks
+   for what the plan wants 50 ms from now, which also turns the robot into a curve early.
+5. **Correct.** A push back toward the line in proportion to how far off it is, and the same for the heading.
+6. **Brake for the end.** The speed is capped by what the robot can still stop from.
+   [The stopping law](/concepts/stopping-law/)
+7. **Limit.** The result goes through one limiter that holds it to what the wheels can do.
+   [The output limiter](/concepts/output-limiter/)
+8. **Fire events** the robot has just passed. [Path events](/concepts/path-events/)
+
+Two extras sit on top. The follower reports the acceleration it just asked for, which becomes a push for each
+wheel. [Feed-forward](/concepts/feed-forward/) And the end of the path can be tied to a goal that moves.
+[Moving goals](/concepts/moving-goals/)
+
+## 3. Plan on the field
+
+With no drawn path, the library makes one when the command starts.
+
+1. **Grow the obstacles.** At boot, each obstacle in the field file is made larger by the robot's reach. The
+   robot's center then only has to stay outside the grown shapes, whichever way it faces.
+2. **Find the shortest route.** The corners of the grown shapes that can see each other are joined into a graph
+   at boot. When a command starts, the robot and the goal join the graph and a search finds the shortest way.
+3. **Smooth it.** The route's corners become waypoints of an ordinary curve. The robot's real outline is swept
+   along it, and wherever it comes too close, a waypoint is added and the curve is fitted again.
+4. **Plan the speed**, the same way as for a drawn path.
+5. **Follow it**, with the same follower. If the robot is knocked off, it plans again from where it is.
+
+[The pathfinder](/concepts/pathfinder/) covers the first three steps and
+[On-the-fly paths](/concepts/on-the-fly/) the rest. A mechanism that sticks out past the bumpers changes the
+outline. [Footprints](/concepts/footprints/)
+
+## The pieces that reuse it
+
+Four features are built from the same parts.
+
+| Feature | Built from | Explained in |
+| --- | --- | --- |
+| Driving by hand without slipping | The output limiter on its own | [The output limiter](/concepts/output-limiter/) |
+| Stopping on a spot measured from a tag | A filter on the tag's sightings, feeding a moving goal | [The tag filter](/concepts/tag-filter/) |
+| Holding a line while the driver drives | The stopping law in one dimension, across the line | [The rail law](/concepts/rail-law/) |
+| Nudging the intake onto a piece | A choice of piece, a sideways slide, and the limiter | [The piece assist](/concepts/piece-assist/) |
+
+## Reading the source
+
+About 1,500 lines carry the ideas. The sources jar comes with the vendordep, and every file starts with a
+comment that says what it does in plain words. This order works:
+
+1. `follow/PathFollower.java`: `step()` and its three laws.
+2. `follow/StoppingLaw.java`, 28 lines of law, and `follow/OutputLimiter.java`.
+3. `core/VelocityProfile.java`, for the two passes.
+4. `plan/OnTheFly.java` and `plan/Pathfinder.java`.
+
+The curve maths in `QuinticSpline`, `PathGeometry` and `HeadingProfile` can be treated as a box. A distance
+along the path goes in. A point, a direction, a curvature and a heading come out.
+
+## What these numbers are
+
+Every number in this section is either a default in the source or a measurement from the team's simulation
+bench or a desktop PC. Each page says which. None is a measurement from a real robot, because the library has
+not run on one yet.

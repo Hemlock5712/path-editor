@@ -1,0 +1,101 @@
+---
+title: Rails
+description: Hold the robot to a line on the field while the driver drives along it.
+sidebar:
+  order: 11
+---
+
+A **rail** is a line on the field the robot is held to, like a train on a track. The driver still drives. Along
+the line, the stick works as usual. Across it, the robot is pulled onto the line and kept there. It is for
+places where being a few centimeters off sideways costs something: under a trench, along a scoring platform.
+
+A rail is a driver assist. It runs while a button is held, and letting go of the button is how the driver gets
+off it.
+
+## Define a rail
+
+```java
+// Through (3.0, 1.2), running along the field's +X
+Rail rail = RailDrive.rail(new Translation2d(3.0, 1.2), Rotation2d.ZERO)
+    .withHeading(Math.toRadians(180))   // also hold this heading, radians
+    .between(-1.5, 2.0)                 // stop 1.5 m before the point and 2 m after it
+    .withPullIn(0.5);                   // how hard it pulls the robot on
+```
+
+| Method | What it sets | Without it |
+| --- | --- | --- |
+| `RailDrive.rail(point, direction)` | The line: any point on it, and which way it runs | |
+| `withHeading(radians)` | A heading to hold while on the rail | The driver turns the robot |
+| `between(start, end)` | The rail's ends, as distances along it from the point, meters | The rail is endless |
+| `withPullIn(share)` | How fast the robot is pulled onto the line | It is pulled on as fast as the robot can go |
+
+A rail knows nothing about alliances. Its frame is whichever frame the pose is in. If you write it for blue,
+flip it yourself when the command starts, once the alliance is known.
+
+## Drive on it
+
+Build one `RailDrive` in robot init. In the command, reset it at the start and call it every loop.
+
+```java
+RailDrive assist = new RailDrive(FollowerConfig.defaults(paths.robot()));   // robot init
+
+assist.reset(drive.getFieldVelocity());                                     // when the command starts
+
+// every loop
+Pose2d pose = drive.getPose();
+ChassisVelocities commanded = assist.onRail(rail, pose, fromTheSticks, maxSpeed, dt);
+double[][] forces = assist.wheelForces(drive.getModuleLocations(), pose.getRotation());
+drive.driveFieldVelocity(commanded, forces[0], forces[1]);
+```
+
+| Argument to `onRail` | Meaning |
+| --- | --- |
+| `rail` | The line |
+| `pose` | The robot's field pose |
+| `fromTheSticks` | The driver's wanted velocity, field-relative, exactly as teleop builds it |
+| `maxSpeed` | The top speed, m/s |
+| `dt` | Seconds since the last loop |
+
+The result has already been through the limiter that teleop and the paths use. `assist.wanted()` gives what the
+rail asked for before limiting, for a log.
+
+## What the driver feels
+
+| Stick | On the rail |
+| --- | --- |
+| Along the line | Drives along it, as normal |
+| Straight across the line | Nothing. The robot does not leave the line. |
+| Toward the line, when off it | Counts in full. Steering at the rail gets there sooner. |
+| Away from the line, when off it | Ignored |
+| Released, when off it | The robot still settles onto the line, at 0.5 m/s |
+
+At the ends set by `between`, the robot stops.
+
+## The pull-in
+
+`withPullIn` is the number a driver will have an opinion about. It is a share of the driver's speed along the
+rail. At 0.5, a driver moving at 4 m/s along the rail is pulled sideways at 2 m/s at most. The robot slides on
+at a fixed angle and joins the line further along, so the driver picks where it joins by when they press the
+button.
+
+These figures are for a robot that starts 1.2 m off the line, driven at 3 m/s along it. They come from the
+library's own test, in simulation.
+
+| pullIn | Peak speed across | Travel turned by | Time to the line | Joins after | Driver's speed kept |
+| --- | --- | --- | --- | --- | --- |
+| none | 3.15 m/s | 61° | 0.74 s | 1.9 m | 85 % |
+| 1.0 | 3.00 m/s | 48° | 0.72 s | 2.1 m | 97 % |
+| 0.5 | 1.50 m/s | 27° | 0.94 s | 2.8 m | 100 % |
+| 0.3 | 0.90 m/s | 17° | 1.40 s | 4.2 m | 100 % |
+| 0.2 | 0.60 m/s | 11° | 2.02 s | 6.1 m | 100 % |
+
+:::caution
+Which pull-in is right is a feel number. Nothing here measures it, and no value has been set with a driver on a
+real robot. Try the rail at low speed first, with the driver ready to let go of the button.
+:::
+
+## Related
+
+- [The rail law](/concepts/rail-law/) explains the across and along parts and their limits.
+- [RailDrive](/reference/wpilib/raildrive/) and [Rail](/reference/follow/rail/).
+- [Intake assist](/guides/intake-assist/) is the other assist `RailDrive` provides.

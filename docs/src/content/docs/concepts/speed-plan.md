@@ -1,0 +1,116 @@
+---
+title: The speed plan
+description: How the forward and backward passes find the fastest speed that breaks no limit.
+sidebar:
+  order: 4
+---
+
+The curve says where the robot goes. The heading says which way it faces. The **speed plan** says how fast it may drive at every point, and it is the last thing `Path.build` works out. The goal is simple to state: the fastest speed at each distance `s` that breaks none of the robot's limits. [VelocityProfile](/reference/core/velocityprofile/) computes it once, at boot.
+
+Read this page when a path is slower than you expect in one place and you want to know which limit is responsible.
+
+## Two passes
+
+Driving fast is easy. Stopping in time is the hard part, and it depends on what lies ahead. The plan handles this with two sweeps along the path.
+
+1. **The forward pass** starts at the first waypoint with the start speed and asks, at each step, how fast the robot can be going by here if it speeds up as hard as the limits allow.
+2. **The backward pass** starts at the last waypoint with the end speed and runs toward the start. It asks how fast the robot may be going here and still slow down in time for everything ahead.
+3. **The plan** is the lower of the two answers at every point.
+
+A tight corner shows why both are needed. The forward pass alone would arrive at the corner at full speed. The backward pass carries the corner's low speed limit back along the path as a braking ramp.
+
+## The grid
+
+The passes work on a **grid** of points spaced evenly along the path. The default spacing is 3 cm. The path is split into a whole number of equal cells, so the real spacing is slightly smaller. Every path gets at least 16 cells, however short it is. The 16 m example path in the library's tests has 547 grid points.
+
+Inside one cell the acceleration is constant. That gives exact formulas between grid points:
+
+```text
+v1² = v0² + 2 * a * ds          speed at the far end of a cell
+t   = 2 * ds / (v0 + v1)        time to cross the cell
+```
+
+On the test paths, a 3 cm grid gives a total time within 0.1 % to 0.9 % of a 1 mm grid.
+
+## The limits
+
+Two kinds of limit feed the passes. A **speed ceiling** is the most the robot may do at one grid point. An **acceleration budget** is how hard it may speed up or brake there, and it depends on the speed.
+
+### Traction
+
+The main limit is grip. The robot has one traction limit `A`, in m/s², and everything that pushes on the floor shares it:
+
+```text
+√(a² + (v²κ)²) + c * |α| ≤ A
+```
+
+`a` is the acceleration along the path, `v²κ` is the sideways acceleration that the curve demands, and `α` is the spin acceleration. `c = I / (m * r)` converts spin acceleration into the extra push each wheel needs, from the robot's moment of inertia `I`, mass `m` and module radius `r`. Where `A` comes from is on the [Traction](/concepts/traction/) page.
+
+Setting `a` to zero gives the fastest steady speed through a bend, which is the traction speed ceiling:
+
+```text
+v ≤ √(A / (|κ| + c * |θ''|))
+```
+
+`θ''` is the second derivative of the heading along the path. With the default robot, `A` is 12.8 m/s², so a bend of radius 1 m with no turning caps the speed at about 3.6 m/s.
+
+### Motors
+
+When speeding up, the wheels cannot push harder than the drive motors can turn them. A motor's push falls as it spins faster, because of back-EMF, and it is capped by the stator current limit. The plan looks up the push at the fastest wheel's speed. Only the push along the path counts here. The sideways `v²κ` comes from the tires' side grip, not from motor torque.
+
+When braking, back-EMF helps, so only the stator current limit applies.
+
+### Wheel speed
+
+No wheel may be asked to roll faster than the wheel-speed cap. That is the motor's free speed at the wheel, 4.56 m/s with the default robot, unless `maxWheelMetersPerSecond` is set in robot.json. A robot that spins while it drives has some wheels moving faster than its center. The plan works out the fastest wheel's speed for a square base, a factor between 1 and `1 + r * |θ'|` times the robot's speed, and holds that to the cap. Planned spin takes speed away from translation.
+
+### Caps
+
+| Cap | Where it is set | Effect |
+| --- | --- | --- |
+| Path speed | `maxMetersPerSecond` in the path file | Speed ceiling everywhere |
+| Path acceleration | `maxMetersPerSecondSquared` in the path file | Limit on speeding up and on braking |
+| Zone speed and acceleration | `constraintZones` in the path file | The same two caps over a stretch |
+| Spin rate | `maxAngularRadPerSec` in robot.json | `v * \|θ'\| ≤ ω_max` |
+| Spin acceleration | `maxAngularRadPerSecSquared` in robot.json | `\|a * θ' + v² * θ''\| ≤ tractionShare * α_max` |
+| Start and end speed | `startMetersPerSecond`, `endMetersPerSecond` in the path file | Where each pass starts |
+
+An end speed above zero is a rolling end: the path finishes with the robot still moving, for a hand-off to the next path. See [Chaining paths](/guides/chaining-paths/).
+
+## Constraint zones
+
+A [ConstraintZone](/reference/core/constraintzone/) lowers the speed cap, the acceleration cap, or both, over a stretch of path given in waypoint-relative places. A zone caps every grid point of every cell it touches. Because the backward pass then brakes for those points, the robot is already down to the zone's speed when it reaches the zone's start. It never starts slowing late.
+
+## One step of a pass
+
+Each step moves from one grid point to the next and must keep the limits at both ends. The budget at the far end depends on the speed there, and that speed depends on the acceleration chosen. The step solves this with two rounds of a fixed-point iteration that brackets the answer, and it keeps the lower value. Where the two rounds do not agree, it bisects inside the bracket.
+
+The library's tests check the result: the traction budget holds exactly at every grid point and within 2 % between them.
+
+## Short hops and turns on the spot
+
+The heading is tied to distance, not time. A big turn over a short hop therefore needs more time than the translation does, and the plan slows the translation down to give the spin time. The 16-cell minimum makes sure a hop of a few centimeters still has enough grid points to resolve the turn.
+
+A path whose two waypoints are at the same place is a **turn on the spot**. It is planned on a 1 mm segment that ends exactly on the point. The spin caps then set the time, and the robot moves at most 1 mm.
+
+The table shows planned times with a spin cap of 540 degrees per second and a spin acceleration cap of 720 degrees per second squared. The floor is the time a minimum-jerk turn needs under the same caps.
+
+| Hop | Planned time | Floor |
+| --- | --- | --- |
+| 0.2 m with an 80 degree turn | 0.84 s | 0.80 s |
+| 0.05 m with a 180 degree turn | 1.27 s | 1.20 s |
+| 0 m with a 90 degree turn | 0.90 s | 0.85 s |
+
+## Cusps
+
+Where the path doubles back on itself, the robot must stop. The grid gains a point at each [cusp](/concepts/the-curve/) with a speed ceiling of zero, so the plan comes to rest exactly there and sets off the other way.
+
+## What this piece does not do
+
+- It does not react to the real robot. It is computed once and only read afterward. [The follower](/concepts/the-follower/) deals with what actually happens.
+- It does not know the floor. If the carpet has less grip than robot.json says, the plan asks for too much.
+- It has not been checked on a real robot. The numbers on this page come from the library's tests and a simulator.
+
+:::tip
+A full build of the 16 m example path takes about 0.2 ms on a desktop PC once the JVM is warm, and 23 to 65 ms for the first path in a fresh JVM. Paths are built in robot init, so none of this happens when autonomous starts.
+:::

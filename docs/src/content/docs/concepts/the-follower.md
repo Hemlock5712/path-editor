@@ -1,0 +1,144 @@
+---
+title: The follower
+description: What PathFollower does on every loop, from the measured pose to the velocity it commands.
+sidebar:
+  order: 6
+---
+
+A plan says where the robot should be and how fast it should be going at every meter of a path. The **follower** is the code that makes the real robot do it. Every loop it takes the measured pose and velocity, compares them with the plan, and returns one field-relative velocity for the drivetrain. In this library that is one class, [`PathFollower`](/reference/follow/pathfollower/), and the same class drives drawn paths, on-the-fly paths and a plain drive to a pose.
+
+Robot code usually does not call it directly. [`FollowPathCommand`](/reference/wpilib/followpathcommand/) and [`PathfindCommand`](/reference/wpilib/pathfindcommand/) own a follower and call it each loop.
+
+## Build early, start cheap
+
+The path and its follower are both built in robot init. `start()` then does no path work: it does not build, flip or copy the path. It records the alliance frame, resets the limiter to the velocity it was handed, finds the robot's progress near the start of the path, and clears the list of events that have fired.
+
+After `start()`, robot code calls `step()` once per loop until `isFinished()` is true.
+
+## One step, in order
+
+Everything inside a step happens in the blue frame. The path is never rebuilt for red.
+
+1. **Frame.** The measured pose and velocity are converted into the blue frame with the [`FieldFrame`](/reference/core/fieldframe/) given to `start()`. The output is converted back at the end. A moving goal is converted the same way.
+2. **Moving goal.** If a goal is bound, its supplier is read. See [Moving goals](/concepts/moving-goals/).
+3. **Progress.** The follower finds `s`, the distance along the path of the point closest to the robot. It searches only within 0.5 m of the last `s`.
+4. **Pick a law.** One of three laws produces the velocity the follower wants. They are described below.
+5. **Limiter.** The wanted velocity goes through the [output limiter](/concepts/output-limiter/), which returns the closest velocity the robot can reach this loop without slipping.
+6. **Events.** Events the robot is passing are fired. See [Path events](/concepts/path-events/).
+7. **Finished.** The follower checks whether the path is done.
+
+## The three laws
+
+### followPath
+
+This law runs for most of a path. It has three parts.
+
+**Along the path.** The follower reads the plan a little ahead of where the robot is. It then points that speed along the path's direction at the point it read. The speed is the smaller of two numbers:
+
+```text
+speed = min( plan speed at s⁺ ,  sqrt(v_end² + 2·a·(d − v·τ)) )
+```
+
+`s⁺` is the point read ahead, `d` is the distance left on the path, `v` is the speed last commanded, `a` is the braking deceleration and `τ` is `latencySeconds`. The second number is the braking curve of the [stopping law](/concepts/stopping-law/), so a robot that is running late still brakes in time for the end.
+
+**Across the path.** The distance off the path, the **cross-track error**, is multiplied by `crossTrackKp` and pushed back toward the path along its normal. With the default of 5, a robot 10 cm off the path is asked for 0.5 m/s sideways. It is proportional only.
+
+**Heading.** The spin rate is the plan's turn rate at `s⁺`, plus `headingKp` times the error between the planned heading at `s` and the measured heading. The result is capped at the robot's spin limit.
+
+### turnOnTheSpot
+
+A path whose two waypoints are at the same place is a turn on the spot. The planner makes it 1 mm long, so position says nothing about how far through the turn the robot is. Progress comes from the heading instead: `s` is where the planned heading reaches the measured one, and it never goes backward. The follower spins at the plan's rate with the same proportional heading correction, and holds the point with `crossTrackKp`.
+
+### driveToGoal
+
+Near a stopping end the path no longer matters. What matters is the goal pose. Once the robot has less than 0.3 m to go and the plan has no more than 2° left to turn, the follower switches to the [stopping law](/concepts/stopping-law/) and drives straight at the goal. The same law, with the spin limits, turns the robot to the goal heading. The phase reported in telemetry changes from `TRACKING` to `TERMINAL`.
+
+Both `followPath` and `driveToGoal` brake on the same distance with the same deceleration, so the switch does not produce a jump in the command. A path with a rolling end never uses `driveToGoal`.
+
+## Reading the plan ahead
+
+A drivetrain does not answer a command at once. If the follower asked for the plan's speed at the place the robot is now, the robot would always be a little behind. So the plan is read one latency ahead in **plan time**: the follower looks up the time the plan reaches `s`, adds `latencySeconds`, and looks up where the plan is then.
+
+```text
+s⁺ = s_plan( t_plan(s) + τ )
+```
+
+This also gets a robot off a standing start. At rest the plan's speed where the robot stands is 0 m/s, and without a lead the robot would never move. For that reason the lead is never less than one 0.02 s loop, whatever `latencySeconds` is set to.
+
+Pointing the speed along the path direction at `s⁺` has a second effect. In a curve, the direction ahead is already turned a little, so the command starts to turn before the robot gets there. That sideways part works out to `v²κτ`, where `κ` is the curvature. It is the curvature feed-forward, and it needs no separate term.
+
+## Rolling ends and the hand-over
+
+A path whose end speed is above zero has a **rolling end**. It never stops. It is finished on the loop nearest to the moment the robot crosses the line through the path's end, as long as the robot is also within 0.5 m of the end. `endCommand()` then returns the last velocity commanded, and the next follower takes it in `start(..., handedCommand)` so its limiter carries on from the same velocity.
+
+On a path that starts moving, the read-ahead grows from zero to the full latency over the first 0.3 s. Taking the whole lead in one loop made all four wheels slip at the hand-over on the bench. Growing it over 0.3 s cut the wheel slip on a three-path chain from 600 ms to 330 ms with the same total time.
+
+## What finished means
+
+A path that stops is finished when all of these are true:
+
+- the robot is within `positionToleranceMeters` of the goal (2 cm by default),
+- its heading is within `headingToleranceRadians` (1°),
+- its measured speed is below 0.05 m/s,
+- all of that has held for 0.1 s,
+- and the condition given to `finishWhen`, if there is one, is true.
+
+At that point the command is set to zero.
+
+## A shove and a NaN pose
+
+If the closest point inside the 0.5 m search window is itself more than 0.5 m from the robot, the robot has been shoved. The follower then searches the whole path as well, and uses that answer if it is at least 5 cm nearer. After that the cross-track correction steers the robot back onto the path where it is. The follower does not plan a new path. On-the-fly commands do, which is covered in [On-the-fly paths](/concepts/on-the-fly/).
+
+If the measured pose contains a NaN, the follower does not throw. It asks the limiter for zero velocity, so the robot brakes within its limits, and it skips progress, events and the finish check for that loop.
+
+:::caution
+The follower has no slip detection. On a floor with less grip than the robot file says, it follows the same plan and slides. The fix is in the robot file, described in [Traction](/concepts/traction/).
+:::
+
+## Settings
+
+[`FollowerConfig`](/reference/follow/followerconfig/) holds the eight numbers a team may change. These are the library's defaults, not tuned values for any robot.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `latencySeconds` | 0.05 s | How far ahead the plan is read, and the reaction time in the stopping law. Measure it on the robot. |
+| `crossTrackKp` | 5 m/s per meter | Sideways speed per meter off the path. |
+| `headingKp` | 5 rad/s per radian | Spin rate per radian of heading error. |
+| `brakeMetersPerSecondSquared` | NaN | Braking deceleration. NaN means the robot's traction limit. |
+| `easeInPerSecond` | 12 m/s per meter | The slope of the ease-in line at the finish. |
+| `headingEaseInPerSecond` | 5 rad/s per radian | The same for heading. |
+| `positionToleranceMeters` | 0.02 m | Finished: this close to the goal. |
+| `headingToleranceRadians` | 1° in radians | Finished: this well turned. |
+
+The spin limits are not settings. They come from the robot file, or are 540°/s and 720°/s² when the file leaves them out.
+
+## Named constants
+
+Every other number is a constant inside `PathFollower`. They are not public and cannot be changed from robot code.
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `NOMINAL_LOOP_SECONDS` | 0.02 s | The loop time assumed when two steps share a timestamp, and the smallest read-ahead. |
+| `WINDOW_METERS` | 0.5 m | The search window for progress, and the shove threshold. |
+| `TERMINAL_RADIUS_METERS` | 0.3 m | `driveToGoal` takes over this far from a stopping end. |
+| `TERMINAL_TURN_RADIANS` | 2° | It waits until the plan has no more than this left to turn. |
+| `STOP_DEADBAND_METERS` | 0.003 m | The finish asks for no speed this close to the goal. |
+| `HEADING_DEADBAND_RADIANS` | 0.3° | The finish asks for no spin this close to the goal heading. |
+| `SETTLED_METERS_PER_SECOND` | 0.05 m/s | Finished only when measured slower than this. |
+| `DEBOUNCE_SECONDS` | 0.1 s | The finish conditions must hold this long. |
+| `ROLLING_LEAD_SECONDS` | 0.3 s | After a rolling start the read-ahead grows over this time. |
+| `MAX_PROGRESS_RATE` | 8 m/s | Progress faster than this is treated as a jump, not motion, when timing events. |
+| `CUSP_EDGE_METERS` | 0.001 m | On a path that doubles back, progress stays this far from the turning point. |
+| `GOAL_MOVE_METERS`, `GOAL_MOVE_RADIANS` | 0.02 m, 2° | A bound goal that moves this far re-plans the rest of the path. |
+| `MIN_TAIL_METERS` | 0.15 m | Within 0.3 m plus this of the goal, no re-plan: the finish handles it. |
+| `GOAL_JUMP_METERS`, `GOAL_JUMP_RADIANS` | 0.25 m, 20° | An averaged estimate this far off is a new goal, not noise. |
+| `GOAL_JUMPS_TO_RESTART` | 3 | That many in a row are needed before the average starts again. |
+
+## What it does not do
+
+- It does not avoid obstacles. It follows the path it was given.
+- It does not detect wheel slip or change its limits during a run.
+- It does not re-plan after a shove. It steers back.
+- It has not run on a real robot. The numbers on this page come from the simulator and the bench.
+
+The feed-forward the follower offers next to its velocity is covered in [Feed-forward](/concepts/feed-forward/).

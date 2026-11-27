@@ -1,0 +1,123 @@
+---
+title: On-the-fly paths
+description: How a path is planned when a command starts, followed, and planned again when needed.
+sidebar:
+  order: 14
+---
+
+An **on-the-fly path** is a path that does not exist until the command starts. The library reads where the robot is, plans a path to the goal around the field's obstacles, and follows it. If the robot is knocked off the path or the goal moves, it plans a new one from where the robot is now.
+
+The class that does this is `OnTheFly`. Robot code reaches it through `Pathfinding`, whose commands each run one `OnTheFly`. See [Pathfinding](/guides/pathfinding/) and [Drive to a pose](/guides/drive-to-pose/) for the robot code. This page explains what happens inside.
+
+## Plan, follow, re-plan
+
+1. **Plan.** When the command starts, `OnTheFly.start` takes the measured pose and velocity and asks the [pathfinder](/concepts/pathfinder/) for a path to the goal. This is the only place the library does path work at go.
+2. **Follow.** A new `PathFollower` is started on that path. Every loop, `OnTheFly.step` runs one follower step and returns the field speeds to drive. This is the same [follower](/concepts/the-follower/) that follows a drawn path.
+3. **Re-plan.** When a trigger fires, it plans again from the robot's current pose and velocity, starts a new follower on the new path, and carries on. It does not try to repair the old path.
+
+If there is no route at all, `start` returns false, the run counts as finished, and the command sends a stop.
+
+## Two margins
+
+The pathfinder keeps a **margin**, a gap between the bumpers and everything else. A small margin gets through narrow gaps. A large margin forgives a pose estimate that has drifted. One number cannot do both, so the library builds two pathfinders for the same field:
+
+| Pathfinder | Margin | Used |
+| --- | --- | --- |
+| Wide | 0.15 m | first, where the field has room |
+| Main | 0.05 m | where the wide one has no route or a long detour |
+
+At each plan, `OnTheFly` compares the length of the shortest route on each. This is the search alone, about a tenth of a millisecond on a desktop PC.
+
+```text
+use the wide plan when:  wide route length <= 1.15 x main route length
+```
+
+When the wide route is more than 1.15 times as long, the wider margin has closed a gap and sent the robot the long way around. In that case the 0.05 m plan drives through the gap.
+
+There is one more rule. If the chosen plan is not **clear**, meaning the pathfinder ran out of refits and the bumpers still come inside the margin, the other pathfinder is tried, and a clear plan wins even when it is longer. With neither clear, one is driven anyway and `PlanResult.clear()` reports it.
+
+On the bench's six test fields, with 240 starts and goals and simulated wheel odometry, adding the wide margin took the runs that touched an obstacle from 8 to 3 without losing a route. The wide route was at most 1.12 times as long, and planning took about 0.2 ms longer at the median on a desktop PC.
+
+## What triggers a re-plan
+
+| Trigger | Condition | At most once per |
+| --- | --- | --- |
+| Off the path | more than 0.20 m to the side of the path | 0.5 s |
+| The goal moved | more than 0.10 m from the goal the path was planned to | 0.2 s |
+| Asked | `requestReplan()` was called | no limit |
+
+The first two only fire while the follower is tracking the path, not during its final approach, and nothing re-plans once the run has finished.
+
+**Off the path.** The distance is the follower's cross-track error. A hard shove from another robot is the usual cause. The 0.20 m threshold is `OnTheFly.DEFAULT_REPLAN_METERS` and a command can change it with `replanAbove`. The 0.5 s wait gives the robot time to get onto the new path before it is judged again.
+
+**The goal moved.** With a moving goal, such as a tag or a game piece seen by a camera, two things work together. The follower itself bends the end of its path to small movements of the goal. That bending knows nothing about obstacles. So once the goal is more than 0.10 m from where the current path was planned to end, `OnTheFly` plans the whole path again, around the obstacles, to the goal's latest position. See [Moving goals](/concepts/moving-goals/).
+
+A re-plan starts from the speed the robot is actually going, so the new path leaves along its current motion rather than from a stop.
+
+## Hand-over into a drawn path
+
+`otf.thenFollow(drive, Paths.TO_REEF)` plans to the start of a drawn path and then follows that path. For the join to be smooth, the robot has to arrive pointing the right way at the right speed. The on-the-fly path is planned to arrive:
+
+- traveling along the drawn path's start direction;
+- at the drawn path's start speed.
+
+To make that possible, the pathfinder ends the route with a straight approach along that direction:
+
+```text
+approach length = 0.5 m + (end speed)^2 / (2 x max acceleration)
+```
+
+The second term is the braking distance from the end speed. A drawn path that starts moving gets a rolling hand-over with no stop. A drawn path that starts at rest gets a normal stop at its start.
+
+The approach is only used when it is free of obstacles and the goal is more than twice its length away. Otherwise the direction is dropped and the robot arrives however the route brings it. See [Chaining paths](/guides/chaining-paths/).
+
+## Frames
+
+`OnTheFly` works entirely in the real field frame, because the obstacles in `field.json` are where they physically are, whichever alliance you are on. The commands do the converting before they hand a goal in.
+
+| Goal | Given in | On the red alliance |
+| --- | --- | --- |
+| `otf.to(drive, pose)` | the blue frame, as authored | flipped |
+| `otf.toPoint(drive, Points.X, heading)` | the blue frame, as authored | flipped |
+| `otf.thenFollow(drive, Paths.X)` | the drawn path's start | flipped |
+| `otf.toTarget(drive, supplier)` | the real field frame | used as given |
+| `withMovingGoal(supplier)` | the real field frame | used as given |
+
+The alliance is read when the command starts. See [The field frame](/concepts/field-frame/) and [Alliances](/guides/alliances/).
+
+:::caution
+A pose from a camera is already in the real frame. Give it to `toTarget` or `withMovingGoal`. Giving it to `to` flips it on red and sends the robot to the wrong end of the field.
+:::
+
+## How fast it drives
+
+On-the-fly paths are capped at 4 m/s and 6 m/s² by default. The one acceleration number covers both speeding up and slowing down. Two optional keys in `robot.json` change them:
+
+| Key | Default | Unit |
+| --- | --- | --- |
+| `onTheFlyMaxMetersPerSecond` | 4 | m/s |
+| `onTheFlyMaxMetersPerSecondSquared` | 6 | m/s² |
+
+The robot's own traction and motor limits still apply to the speed plan, so a number above what the robot can do changes nothing. On the bench, 9 m/s² was 6 percent faster than 6 m/s² with the simulated wheel odometry no further off. Going from 9 m/s² to the traction limit gained 1 percent more and the odometry drifted 20 percent further. Those are bench figures, not advice for your robot. See the [robot file](/files/robot-file/).
+
+## Timings
+
+Measured on a desktop PC, not on a roboRIO or a Systemcore: a plan takes about 1 ms at the median and under 5 ms at the 95th percentile. `OnTheFly.maxPlanMicros()` reports the slowest plan of a run, and the commands publish it. See [Telemetry](/guides/telemetry/).
+
+## How it is tested
+
+`OnTheFlyTest` drives random routes on the 2026 field in simulation and checks that none touch an obstacle, that a hard shove is recovered by planning again, that the wide margin is used where there is room and the narrow one through a gap, and that a goal that moves behind an obstacle is planned around. The end-to-end suite ran 119 of 119 simulated runs through the WPILib commands, on blue and red, without contact. None of this has run on a real robot.
+
+## What it does not do
+
+- It does not see other robots or anything else that is not in `field.json`.
+- It does not patch a path. Every re-plan is a whole new plan.
+- It does not prevent a push into an obstacle. A robot shoved against a wall is in contact before any plan can help.
+- Without a field file there are no obstacles and no walls, so every plan is a straight drive to the goal. See the [field file](/files/field-file/).
+
+## Reference
+
+- [OnTheFly](/reference/plan/onthefly/)
+- [Pathfinder](/reference/plan/pathfinder/) and [PlanResult](/reference/plan/planresult/)
+- [PlannerConfig](/reference/plan/plannerconfig/)
+- [Pathfinding](/reference/wpilib/pathfinding/) and [PathfindCommand](/reference/wpilib/pathfindcommand/)

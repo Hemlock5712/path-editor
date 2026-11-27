@@ -1,0 +1,21 @@
+{
+  "name": "@team5712/myelin-docs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The documentation site for Myelin, team 5712's path library.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check:links": "node tools/check-links.mjs"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.40.0",
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "astro": "^6.4.8",
+    "sharp": "^0.35.5"
+  }
+}

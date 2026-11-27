@@ -1,0 +1,97 @@
+---
+title: Events
+description: Run a mechanism command at a point along a path, and catch a forgotten event at boot.
+sidebar:
+  order: 2
+---
+
+An **event** is a named mark on a path. When the robot passes it, the library runs whatever command you tied to
+that name. Events are how an autonomous lowers an intake halfway down a path or starts a shooter before the robot
+arrives.
+
+You place the event in the editor, on the path's **Events** tab, at a waypoint or at a distance in meters. In
+robot code you only deal with its name.
+
+## Bind each event once
+
+Bind events on the library, in robot init. A binding applies to every path that uses that name.
+
+```java
+import static frc.robot.PathEditorNames.*;
+
+paths.bindEvent(Events.INTAKE_DOWN, intake.lower())
+     .bindEvent(Events.SHOOT, shooter.shoot())
+     .requireAllEventsBound();
+```
+
+`Events.INTAKE_DOWN` is a constant the editor generated from the event's name, `intakeDown`. The String form is
+`paths.bindEvent("intakeDown", intake.lower())`.
+
+Commands made with `otf.follow(...)` and `otf.thenFollow(...)` use these bindings automatically. A
+`FollowPathCommand` you construct yourself needs `.withEvents(paths)`.
+
+## Fail at boot, not in a match
+
+`requireAllEventsBound()` checks every event name used by any path file against the bindings. If one has no
+command, it throws at boot:
+
+```text
+events with no command bound: shoot (bind each with bindEvent(Events.X, command))
+```
+
+Call it after the last `bindEvent`. Without it, an event nobody bound fires and does nothing, and you find out in
+the middle of an autonomous. `paths.unboundEventNames()` returns the same list without throwing, and
+`paths.eventNames()` returns every event the files use.
+
+## Override one path
+
+`onEvent` on a command binds an event for that command only. It wins over the library's binding for the same
+name.
+
+```java
+Command toReef = otf.follow(drive, Paths.TO_REEF)
+    .onEvent(Events.SHOOT, shooter.shootLow());
+```
+
+## When an event fires
+
+| Situation | When it fires |
+| --- | --- |
+| An event along the path | On the loop nearest to passing it. The error is at most half a loop of travel either side. |
+| An event at the end of a path that stops | When the robot gets inside the finish band, 2 cm and 1°, not after it has settled. |
+| An event not reached by a normal finish | At the finish. Every event fires exactly once on a path that completes. |
+| The command is canceled | Events that have not fired are dropped. |
+
+Events fire in the order they sit along the path.
+
+## How the command runs
+
+The event's command is **forked** as a child of the follow command. Two things follow from that.
+
+- It runs alongside the path. The robot does not wait for it.
+- It ends when the follow command ends, unless it finished first. A long action started near the end of a path
+  is cut off when the path finishes.
+
+For an action that must outlive the path, start it from the autonomous routine instead of from an event, or let
+the event set something a longer-running command reads.
+
+:::caution
+An event command must not require the drivetrain. The follow command already holds it, and a child that asks for
+the same mechanism interrupts its own parent.
+:::
+
+## Check which events fired
+
+The library logs events as they fire.
+
+| Entry | Meaning |
+| --- | --- |
+| `/Telemetry/Path/<name>/EventsFired` | The events fired on this run, in order |
+| `/Telemetry/PathFollower/LastEvent` | The most recent event from any path |
+| `/Telemetry/Path/<name>/PlanEvents` and `PlanEventMeters` | The path's events and where each sits, written when the path starts |
+
+## Related
+
+- [Path events](/concepts/path-events/) explains the timing inside the follower.
+- [Path file](/files/path-file/) shows how an event is stored.
+- [PathLibrary](/reference/wpilib/pathlibrary/) lists the binding methods.

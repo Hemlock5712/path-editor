@@ -1,0 +1,147 @@
+---
+title: The first path
+description: Draw one path, load it, and follow it from an autonomous op mode.
+sidebar:
+  order: 5
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+This page takes one path from the editor to a moving robot. It assumes the vendordep is
+[installed](/start/install/) and the drivetrain has the three methods from
+[What your drivetrain provides](/start/drivetrain/). Run it in the simulator first.
+
+## Draw and save
+
+<Steps>
+
+1. Open [paths.frc5712.com](https://paths.frc5712.com) and open the robot project's root folder.
+
+2. Pick the **Draw** tool and click two or three points on the blue half of the field. Each click is a
+   **waypoint**, a point the path passes through.
+
+3. Rename the path to `FirstPath`.
+
+4. Fill in the robot on the **Settings** page: at least the mass, the bumper size and the distance from the center to a wheel. The
+   plan is only as good as these numbers.
+
+5. Save. You should see these files appear in the robot project:
+
+   ```text
+   src/main/deploy/paths/FirstPath.path.json
+   src/main/deploy/paths/robot.json
+   src/main/java/frc/robot/PathEditorNames.java
+   ```
+
+</Steps>
+
+## Load the library
+
+Do this once, where the drivetrain is built, so it runs in robot init. Building the library is where every path
+is planned.
+
+```java title="DriveMechanism.java"
+import frc.team5712.path.core.FieldFrame;
+import frc.team5712.path.follow.FollowerConfig;
+import frc.team5712.path.wpilib.PathLibrary;
+import frc.team5712.path.wpilib.Pathfinding;
+
+public final PathLibrary paths = PathLibrary.loadAll();
+
+public final Pathfinding otf = new Pathfinding(
+    paths,
+    FollowerConfig.defaults(paths.robot()),
+    () -> getPose(),
+    () -> getFieldVelocity(),
+    velocity -> driveFieldVelocity(velocity),
+    FieldFrame.RED_HALF_TURN);
+```
+
+| Line | What it does |
+| --- | --- |
+| `PathLibrary.loadAll()` | Reads `deploy/paths`, builds every path, the pathfinder and the named points. A bad file stops the robot here, at boot, with a message naming the file. |
+| `FollowerConfig.defaults(...)` | The follower's settings, at their defaults for this robot. [Tuning](/guides/tuning/) changes them. |
+| The three lambdas | The pose, the field velocity, and the way to drive. On WPILib alpha-7 each one goes through the frame conversion. |
+| `FieldFrame.RED_HALF_TURN` | How a path drawn for blue is turned into red's. A half turn about the center suits a field that is the same after a half turn. A mirrored field uses `RED_MIRROR`. |
+
+`Pathfinding` is the factory for every driving command, not only pathfinding ones. The name `otf` is short for
+"on the fly".
+
+## Make the command
+
+```java
+import static frc.robot.PathEditorNames.*;
+
+Command firstPath = otf.follow(drive, Paths.FIRST_PATH);
+```
+
+`follow` returns a `FollowPathCommand` that requires the drivetrain. It builds the follower now, in robot init.
+Nothing is planned when the command starts.
+
+## Run it in an autonomous
+
+An op mode schedules the command when autonomous starts and cancels it when autonomous ends.
+
+```java title="FirstPathAuto.java"
+@Autonomous(name = "First Path")
+public class FirstPathAuto extends PeriodicOpMode {
+  private final Command routine;
+
+  public FirstPathAuto(Robot robot) {
+    routine = robot.drive.otf.follow(robot.drive, Paths.FIRST_PATH);
+  }
+
+  @Override
+  public void start() {
+    Scheduler.getDefault().schedule(routine);
+  }
+
+  @Override
+  public void end() {
+    Scheduler.getDefault().cancel(routine);
+  }
+}
+```
+
+## Try it
+
+<Steps>
+
+1. Start the simulator and set the robot's pose to the start of the path. A path does not have to start exactly
+   where the robot is, but the first run is easier to read if it does.
+
+2. Select **First Path** and enable autonomous.
+
+3. Watch the robot. You should see it leave along the path, slow for the turns, and stop on the last waypoint.
+
+4. Open AdvantageScope, or the editor's **Telemetry** page, and look under `/Telemetry/Path/FirstPath/`.
+
+   | Entry | You should see |
+   | --- | --- |
+   | `Phase` | `TRACKING` along the path, `TERMINAL` in the last 30 cm, then `FINISHED` |
+   | `Progress` | Meters along the path, rising to the path's length |
+   | `CrossTrack` | Meters off the path, staying within a few centimeters |
+   | `Reference` | A pose that runs along the path just ahead of the robot |
+
+</Steps>
+
+The command finishes when the robot is within 2 cm and 1° of the end and has been slower than 5 cm/s for a tenth
+of a second. Then it sends a zero velocity.
+
+## When it does not work
+
+| What happens | Likely cause |
+| --- | --- |
+| The robot code stops at boot with `path ...FirstPath.path.json: ...` | The file is damaged. Save it again from the editor. |
+| It stops at boot with `PathEditorNames doesn't match deploy/paths` | The names class and the deployed files are from different saves. Save, build and deploy again. |
+| The robot drives away from the path | The frame conversion is on the pose but not on the velocities, or the other way round. |
+| The robot follows the path mirrored | The pose is in the old corner frame and nothing is converted. |
+| It runs on blue but drives the wrong way on red | The drive method applies the driver's perspective on top of the library's field velocity. |
+
+[Troubleshooting](/guides/troubleshooting/) has the full list.
+
+## Next
+
+- [Follow a path](/guides/follow-a-path/) covers the command's options.
+- [Events](/guides/events/) runs a mechanism command at a point along the path.
+- [Drive to a pose](/guides/drive-to-pose/) drives somewhere with no drawn path at all.

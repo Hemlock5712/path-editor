@@ -1,0 +1,145 @@
+---
+// The landing page's picture: a drawn path round an obstacle, coloured by planned speed.
+// It draws with the theme's tokens, so it follows light and dark on its own.
+---
+
+<figure class="hero-path not-content" aria-hidden="true">
+  <svg viewBox="0 0 540 440" role="img">
+    <defs>
+      <pattern id="hp-dots" width="24" height="24" patternUnits="userSpaceOnUse">
+        <circle cx="1" cy="1" r="1" style="fill: var(--grid-dot)"></circle>
+      </pattern>
+      <linearGradient id="hp-speed" gradientUnits="userSpaceOnUse" x1="70" y1="350" x2="470" y2="80">
+        <stop offset="0" style="stop-color: var(--lift)"></stop>
+        <stop offset="0.22" style="stop-color: var(--accent)"></stop>
+        <stop offset="0.5" style="stop-color: var(--lift)"></stop>
+        <stop offset="0.78" style="stop-color: var(--accent)"></stop>
+        <stop offset="1" style="stop-color: var(--lift)"></stop>
+      </linearGradient>
+    </defs>
+
+    <rect width="540" height="440" fill="url(#hp-dots)"></rect>
+
+    <!-- the obstacle, and the same shape grown by the robot's reach -->
+    <polygon class="grown" points="322,128 396,170 396,254 322,296 248,254 248,170"></polygon>
+    <polygon class="obstacle" points="322,160 368,186 368,238 322,264 276,238 276,186"></polygon>
+    <text x="322" y="216" text-anchor="middle">OBSTACLE</text>
+    <text x="404" y="262">GROWN BY</text>
+    <text x="404" y="276">THE BUMPERS</text>
+
+    <!-- the plan -->
+    <path
+      class="path"
+      d="M72 356 C 150 360 168 300 196 232 C 222 168 250 104 330 100 C 392 97 420 120 468 84"
+    ></path>
+
+    <!-- the robot at the start and at the goal -->
+    <g transform="translate(72 356) rotate(-4)">
+      <rect class="robot" x="-27" y="-27" width="54" height="54" rx="3"></rect>
+      <line class="nose" x1="0" y1="0" x2="27" y2="0"></line>
+    </g>
+    <g transform="translate(468 84) rotate(-38)">
+      <rect class="robot" x="-27" y="-27" width="54" height="54" rx="3"></rect>
+      <line class="nose" x1="0" y1="0" x2="27" y2="0"></line>
+    </g>
+
+    <!-- waypoints -->
+    <circle class="knot" cx="72" cy="356" r="5"></circle>
+    <circle class="knot" cx="196" cy="232" r="5"></circle>
+    <circle class="knot" cx="330" cy="100" r="5"></circle>
+    <circle class="knot" cx="468" cy="84" r="5"></circle>
+
+    <!-- an event along the way -->
+    <line class="event" x1="250" y1="134" x2="222" y2="110"></line>
+    <text x="150" y="104">EVENT: INTAKE DOWN</text>
+
+    <text x="46" y="412">START · 0 M/S</text>
+    <text x="150" y="282" class="fast">FAST</text>
+    <text x="208" y="176" class="slow">SLOW IN THE TURN</text>
+    <text x="398" y="46">GOAL · 2 CM, 1°</text>
+  </svg>
+</figure>
+
+<style>
+  .hero-path {
+    margin: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    background: var(--bg2);
+    overflow: hidden;
+    position: relative;
+  }
+  .hero-path::before,
+  .hero-path::after {
+    content: '';
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    border: 1px solid var(--accent);
+    pointer-events: none;
+  }
+  .hero-path::before {
+    top: -1px;
+    left: -1px;
+    border-right: none;
+    border-bottom: none;
+  }
+  .hero-path::after {
+    bottom: -1px;
+    right: -1px;
+    border-left: none;
+    border-top: none;
+  }
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  text {
+    font-family: var(--__sl-font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    fill: var(--tx3);
+  }
+  .fast {
+    fill: var(--accent);
+  }
+  .slow {
+    fill: var(--lift);
+  }
+  .obstacle {
+    fill: var(--bg3);
+    stroke: var(--rule);
+    stroke-width: 1.5;
+  }
+  .grown {
+    fill: none;
+    stroke: var(--tx3);
+    stroke-width: 1;
+    stroke-dasharray: 4 5;
+  }
+  .path {
+    fill: none;
+    stroke: url(#hp-speed);
+    stroke-width: 4;
+    stroke-linecap: round;
+  }
+  .robot {
+    fill: color-mix(in oklch, var(--bg) 70%, transparent);
+    stroke: var(--tx2);
+    stroke-width: 1.5;
+  }
+  .nose {
+    stroke: var(--tx2);
+    stroke-width: 1.5;
+  }
+  .knot {
+    fill: var(--bg);
+    stroke: var(--accent);
+    stroke-width: 2;
+  }
+  .event {
+    stroke: var(--tx3);
+    stroke-width: 1;
+  }
+</style>

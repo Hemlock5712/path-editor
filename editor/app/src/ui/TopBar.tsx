@@ -1,7 +1,7 @@
 // The window's top bar (the app's own title bar: project, file actions, pages, the command palette,
 // help and settings) and the status bar along the bottom.
 
-import { Activity, BarChart3, CircleHelp, Download, FilePlus2, FolderOpen, PenTool, Save, Search, Settings, Upload } from "lucide-react";
+import { Activity, BarChart3, BookOpen, CircleHelp, Download, FilePlus2, FolderOpen, PenTool, Save, Search, Settings, Upload } from "lucide-react";
 import { useRef } from "react";
 import { canOpenFolders } from "../io/files.ts";
 import { isDirty } from "../state/editor.ts";
@@ -9,6 +9,7 @@ import { downloadZip, newProject, openFolder, openUpload, save, session } from "
 import { useStore } from "../state/store.ts";
 import { live } from "../state/live.ts";
 import { openSettings, setPage, ui, type Page } from "../state/ui.ts";
+import { openDocs } from "./commands.ts";
 import { IconButton } from "./controls.tsx";
 import { useEditor } from "./panels/common.tsx";
 import { AppIcon } from "./shell.tsx";
@@ -83,6 +84,9 @@ export function TopBar() {
       </button>
       <IconButton label="Quick start and shortcuts" shortcut="?" onClick={() => ui.set({ helpOpen: true })} testId="help">
         <CircleHelp size={16} />
+      </IconButton>
+      <IconButton label="Library documentation (opens in a new tab)" onClick={openDocs} testId="docs">
+        <BookOpen size={16} />
       </IconButton>
       <IconButton label="Settings" shortcut="Ctrl+," onClick={() => openSettings()} pressed={page === "settings"} testId="settings">
         <Settings size={16} />

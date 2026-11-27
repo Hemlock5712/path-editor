@@ -1,0 +1,108 @@
+---
+title: Telemetry
+description: What the library logs each loop, and how to read a path run in AdvantageScope or the editor.
+sidebar:
+  order: 13
+---
+
+import { Image } from 'astro:assets';
+import telemetry from '../../../assets/editor-telemetry.png';
+
+Every follow command logs what the follower is doing, without any code from you. The entries go out through
+WPILib's `Telemetry`, which publishes under `/Telemetry` in NetworkTables. Record NetworkTables to a log and
+they are in the log too.
+
+## Where to look
+
+For a path named `ToReef`, everything is under `/Telemetry/Path/ToReef/`. An on-the-fly command uses its own
+name in place of the path's.
+
+### Every loop
+
+| Entry | Unit | Meaning |
+| --- | --- | --- |
+| `Phase` | | `TRACKING` along the path, `TERMINAL` in the last 30 cm, `FINISHED` or `CANCELLED` at the end |
+| `Progress` | m | How far along the path the robot is |
+| `Remaining` | m | Distance left |
+| `CrossTrack` | m | How far off the path the robot is, sideways |
+| `AlongTrack` | m | How far ahead of the plan's schedule the robot is. Negative means behind. |
+| `HeadingError` | rad | Planned heading minus measured |
+| `Speed`, `PlannedSpeed` | m/s | The robot's speed, and the plan's at this point |
+| `Omega`, `PlannedOmega` | rad/s | The same for the turn rate |
+| `Elapsed` | s | Time since the path started |
+| `Reference` | Pose2d | Where the plan says the robot should be |
+| `Goal` | Pose2d | The end of the path, or the current moving goal |
+| `EventsFired` | | The events fired on this run, in order |
+
+### Once, when the path starts
+
+| Entry | Meaning |
+| --- | --- |
+| `Plan` | The planned path every 5 cm, plus its end: `s, x, y, heading, t, v` for each sample, flattened into one list |
+| `PlanEvents`, `PlanEventMeters` | The path's events and where each sits along it |
+| `PlanSeconds` | The plan's total time |
+
+### At each plan of an on-the-fly path
+
+| Entry | Meaning |
+| --- | --- |
+| `PlanOk` | Whether a route was found |
+| `PlanFailure` | The reason when it was not, otherwise empty |
+| `PlanMicros` | Planning time, microseconds |
+| `Replans` | How many re-plans this run has made |
+| `StartSnap`, `GoalSnap` | Meters an end was moved out of an obstacle |
+| `MinClearance` | Meters from the outline to the nearest obstacle or wall |
+| `PlanClear` | Whether the outline keeps the margin along the whole plan |
+
+### Shared by every follow command
+
+Under `/Telemetry/PathFollower/`:
+
+| Entry | Meaning |
+| --- | --- |
+| `Active` | The name of the running path, or an empty string |
+| `LastEvent` | The most recent event fired |
+| `EventsFired` | The events fired by the active path |
+
+## Read a run
+
+Three plots answer most questions.
+
+| Plot | A good run | What a bad one means |
+| --- | --- | --- |
+| `Speed` against `PlannedSpeed` | The two lines lie on each other | Speed lagging everywhere: raise `latencySeconds`. Speed short of the plan on the straights: the plan is faster than the robot. |
+| `CrossTrack` | Within a few centimeters, widest in the tight turns | Growing through a turn: the plan corners harder than the tires hold. Check `frictionCoefficient`. |
+| `AlongTrack` | Near zero | Steadily negative: the robot cannot keep the plan's schedule. |
+
+## In the editor
+
+The editor's **Telemetry** page connects to the robot over NetworkTables and draws the live robot, the reference
+and the plan on the field. A switch shows the live robot on the editor page too, over the path you are editing.
+
+<Image src={telemetry} alt="The editor's Telemetry page showing a connection panel and the live values of a path run." />
+
+On the deployed site, the browser asks for permission before it connects to a robot on the local network.
+
+:::caution[The poses are in the library's frame]
+`Reference`, `Goal` and `Plan` are written from the center of the field. On WPILib 2027 alpha-7 and alpha-8,
+where the robot's own pose is measured from the blue corner, they appear mirrored against the robot in
+AdvantageScope. Convert them when you log, or compare the scalar entries instead. `Plan` is also a plain list of
+numbers, which AdvantageScope does not draw as a path.
+:::
+
+## Log your own
+
+`PathTelemetry` is public, so a follower you run by hand can log the same entries.
+
+```java
+PathTelemetry telemetry = new PathTelemetry("MyPath");
+
+telemetry.begin(follower);   // after follower.start(...)
+telemetry.log(follower);     // every loop
+telemetry.end();             // when it finishes or is canceled
+```
+
+## Related
+
+- [PathTelemetry](/reference/wpilib/pathtelemetry/) lists every entry with its type.
+- [Tuning](/guides/tuning/) uses these plots.

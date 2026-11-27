@@ -1,0 +1,150 @@
+---
+title: What your drivetrain provides
+description: The three things the library asks a swerve drivetrain for, and the frame they must be in.
+sidebar:
+  order: 4
+---
+
+The library never touches a motor. It asks your drivetrain three questions each loop and hands back one answer.
+This page lists them, shows them on a CTRE swerve drivetrain, and covers the field frame, which is the part most
+likely to go wrong.
+
+## The three things
+
+| The library needs | Type | Meaning |
+| --- | --- | --- |
+| The pose | `Supplier<Pose2d>` | Where the robot is on the field, and which way it faces. Your fused estimate, vision included. |
+| The field velocity | `Supplier<ChassisVelocities>` | How fast the robot is moving, **field-relative**: `vx` and `vy` along the field's axes, `omega` in rad/s. |
+| A way to drive | `Consumer<ChassisVelocities>` | Takes a field-relative velocity and makes the robot drive at it. |
+
+And one for the scheduler: the drivetrain must be a Commands v3 `Mechanism`, so the library's commands can
+require it.
+
+You hand all of them over once, in robot init, when you build the `Pathfinding` object. Every command it makes
+after that uses them.
+
+```java
+Pathfinding otf = new Pathfinding(
+    paths,                                           // the PathLibrary
+    FollowerConfig.defaults(paths.robot()),          // the follower's settings
+    () -> drive.getPose(),                           // 1. the pose
+    () -> drive.getFieldVelocity(),                  // 2. the field velocity
+    velocity -> drive.driveFieldVelocity(velocity),  // 3. a way to drive
+    FieldFrame.RED_HALF_TURN);                       // how a blue path becomes a red one
+```
+
+`getPose`, `getFieldVelocity` and `driveFieldVelocity` are your methods, not the library's. The names are the
+ones the team's robot project uses.
+
+## On a CTRE swerve drivetrain
+
+These are the three methods as the team's robot project writes them. `drivetrain` is the class Tuner X generates.
+
+```java
+// Field-relative closed-loop velocity. Closed-loop, so slow final moves still happen.
+private final SwerveRequest.ApplyFieldVelocity fieldVelocityRequest =
+    new SwerveRequest.ApplyFieldVelocity()
+        .withForwardPerspective(SwerveRequest.ForwardPerspectiveValue.BlueAlliance)
+        .withDriveRequestType(DriveRequestType.Velocity);
+
+public Pose2d getPose() {
+  return drivetrain.getState().Pose;
+}
+
+public ChassisVelocities getFieldVelocity() {
+  var state = drivetrain.getState();
+  return state.Velocity.toFieldRelative(state.Pose.getRotation());
+}
+
+public void driveFieldVelocity(ChassisVelocities fieldVelocity) {
+  drivetrain.setControl(fieldVelocityRequest.withVelocity(fieldVelocity));
+}
+```
+
+Two details in it matter.
+
+- **The velocity is turned into field directions.** The drivetrain measures its speed relative to the robot. The
+  library wants it relative to the field, so `getFieldVelocity` rotates it by the robot's heading.
+- **The forward perspective is fixed to blue.** The library's output is a field velocity, not a driver's. It
+  must not be turned around on red a second time by the operator perspective.
+
+## The field frame
+
+The library works in the **WPILib 2027 field frame**: the origin is the center of the field, +X points at the
+blue alliance wall, and +Y is to the left when you face that wall. Paths, obstacles and named points are all
+stored that way.
+
+WPILib 2027 alpha-7 and alpha-8 do not use that frame yet. They still put the origin at the blue alliance's
+corner with +X toward the red wall. One frame is the other turned half a turn about the middle of the field.
+
+:::danger[Convert all of it, or none of it]
+On alpha-7 or alpha-8, every value that crosses between your robot and the library must be converted: the pose
+in, the velocity in, the velocity out, every goal you give, and the wheel forces if you send them. Converting
+the pose alone drives the robot away from the path, because the velocities then point the wrong way.
+:::
+
+| Crossing | Conversion |
+| --- | --- |
+| A pose, either direction | `(L/2 - x, W/2 - y, heading + 180°)` |
+| A field velocity, either direction | `(-vx, -vy, omega)` |
+| Wheel forces, field-relative | each one negated |
+
+`L` and `W` are the field's length and width. The same sums work in both directions, so one helper does both.
+This is the team's:
+
+```java
+public final class CenterFrame {
+  /** A pose in the other frame: the same spot, the same way round. */
+  public static Pose2d convert(Pose2d pose) {
+    return new Pose2d(
+        FIELD_LENGTH / 2.0 - pose.getX(),
+        FIELD_WIDTH / 2.0 - pose.getY(),
+        pose.getRotation().plus(Rotation2d.PI));
+  }
+
+  /** A field-relative velocity in the other frame: x and y point the other way, the spin is the same. */
+  public static ChassisVelocities convert(ChassisVelocities fieldVelocity) {
+    return new ChassisVelocities(-fieldVelocity.vx, -fieldVelocity.vy, fieldVelocity.omega);
+  }
+}
+```
+
+With it, the wiring converts in exactly one place:
+
+```java
+Pathfinding otf = new Pathfinding(
+    paths,
+    FollowerConfig.defaults(paths.robot()),
+    () -> CenterFrame.convert(drive.getPose()),
+    () -> CenterFrame.convert(drive.getFieldVelocity()),
+    velocity -> drive.driveFieldVelocity(CenterFrame.convert(velocity)),
+    FieldFrame.RED_HALF_TURN);
+```
+
+Goals you pass to the library need the same treatment: `otf.to(drive, CenterFrame.convert(goal))`. When WPILib
+moves its origin to the center, the two frames become the same and the helper is deleted.
+[The field frame](/concepts/field-frame/) has the background.
+
+## Optional extras
+
+Some features ask for a little more. None of these is needed to follow a path.
+
+| Feature | What the drivetrain adds | Guide |
+| --- | --- | --- |
+| Feed-forward | The module positions, and a drive method that also takes each wheel's push in newtons | [Wheel forces](/guides/wheel-forces/) |
+| Aligning on a tag | The pose from wheels and gyro only, now and at a past time | [Tag alignment](/guides/tag-alignment/) |
+| The intake assist | The same wheel-only pose, for the game piece map | [Intake assist](/guides/intake-assist/) |
+
+## Check it before driving a path
+
+A wrong sign here looks like a broken follower later. Check the three methods on their own first.
+
+1. Put the robot on the field, facing the red wall on alpha-7, and drive it by hand toward the red wall. The pose's
+   `x` should grow and `getFieldVelocity().vx` should be positive.
+2. Slide it to its left. `y` should grow and `vy` should be positive.
+3. Turn it counterclockwise seen from above. The heading should grow and `omega` should be positive.
+4. Call `driveFieldVelocity(new ChassisVelocities(0.5, 0, 0))` from a test command. The robot should move toward
+   the red wall at half a meter per second whichever way it is facing, and on either alliance.
+
+If all four hold in your robot's own frame, and the conversion is applied to everything, the library's side will
+agree with it.

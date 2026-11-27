@@ -1,0 +1,77 @@
+---
+title: Chaining paths
+description: Run paths one after another, with a stop between them or without slowing down.
+sidebar:
+  order: 3
+---
+
+An autonomous is usually several paths in a row. There are two ways for one path to hand over to the next. With
+a **stop**, the first path ends at rest and the second starts from rest. With a **rolling end**, the first path
+ends still moving and the second picks up at that speed.
+
+## With a stop
+
+Nothing special is needed. Sequence the commands.
+
+```java
+Command auto = otf.follow(drive, Paths.TO_REEF)
+    .andThen(otf.follow(drive, Paths.TO_SOURCE))
+    .named("Reef Then Source");
+```
+
+Each path finishes the usual way before the next starts: inside the tolerance, slower than 5 cm/s, held for
+0.1 s. That settle costs time. In the CTRE simulator, two stop-and-go moves in a row lost about a quarter of a
+second at the corner between them compared with a command that moved on the instant it was inside the tolerance.
+
+If the robot should not stop at a point, do not split the path there. Draw it as one path, or use a rolling end.
+
+## Without slowing down
+
+A rolling end needs three things to agree.
+
+1. **The first path ends moving.** In the editor, set its end speed above zero.
+2. **The second path starts moving.** Set its start speed to the same value, and start it where the first one
+   ends, heading the same way.
+3. **The second command is told where it is continuing from.**
+
+```java
+FollowPathCommand first = otf.follow(drive, Paths.ROLL_A);
+FollowPathCommand second = otf.follow(drive, Paths.ROLL_B).continuingFrom(first);
+
+Command auto = first.andThen(second).named("Roll A Then B");
+```
+
+What changes on a rolling end:
+
+| | A path that stops | A path that ends moving |
+| --- | --- | --- |
+| Finishes | Settled inside the tolerance | As the robot passes the end |
+| Sends zero at the end | Yes | No. The last velocity is left for the next command. |
+| The next path starts from | The measured velocity | The last path's final command, through `continuingFrom` |
+
+`continuingFrom` matters because of where the command comes from. Without it, the second follower starts from the
+robot's measured velocity, which lags the command by the drivetrain's response time. The first loop then asks for
+a jump. With it, the second path starts from exactly what the first was commanding.
+
+:::caution
+A path that ends moving does not stop the robot. If nothing follows it, the robot keeps the last velocity it was
+sent until something else commands the drivetrain. End every chain with a path that stops.
+:::
+
+## From an on-the-fly path into a drawn one
+
+`otf.thenFollow` does the whole hand-over for you. It plans a route from wherever the robot is to the path's
+start, arrives along the path's start direction at the path's start speed, and then runs the path.
+
+```java
+Command auto = otf.thenFollow(drive, Paths.TO_REEF);
+```
+
+If the path starts at rest, the robot stops at its start. If the path starts moving, the hand-over is rolling.
+[Pathfinding](/guides/pathfinding/) has the details.
+
+## Related
+
+- [The follower](/concepts/the-follower/) describes rolling ends inside the follower.
+- [Path file](/files/path-file/) has the start and end speed keys.
+- [FollowPathCommand](/reference/wpilib/followpathcommand/) documents both forms of `continuingFrom`.
