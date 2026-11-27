@@ -18,6 +18,11 @@ test.beforeEach(async ({ page, baseURL }) => {
   });
 });
 
+// a request still being answered when a test ends (the field image is 2.5 MB) is not that test's failure
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 // Waits are for state, with room for a cold, busy machine (the first run on a fresh clone builds the app
 // and compiles every module on first load).
 const SLOW = { timeout: 30_000 };

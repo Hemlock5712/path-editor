@@ -1,5 +1,6 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import { unified } from '@astrojs/markdown-remark';
 
 // The docs are served from the editor's site, under /docs (see ../vercel.json).
 const site = process.env.DOCS_SITE ?? 'https://paths.frc5712.com';
@@ -32,7 +33,7 @@ export default defineConfig({
   site,
   base,
   trailingSlash: 'always',
-  markdown: { remarkPlugins: [withBase] },
+  markdown: { processor: unified({ remarkPlugins: [withBase] }) },
   integrations: [
     starlight({
       title: 'Myelin',

@@ -11,11 +11,15 @@
     "check:links": "node tools/check-links.mjs"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.40.0",
+    "@astrojs/markdown-remark": "^7.3.10",
+    "@astrojs/starlight": "^0.43.2",
     "@fontsource-variable/instrument-sans": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/newsreader": "^5.3.0",
-    "astro": "^6.4.8",
+    "astro": "^7.3.8",
     "sharp": "^0.35.5"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

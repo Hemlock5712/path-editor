@@ -18,19 +18,19 @@
     "e2e:live": "playwright test --config playwright.live.config.ts"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.12.1",
-    "lucide-react": "0.469.0",
-    "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "@tauri-apps/api": "2.12.5",
+    "lucide-react": "1.82.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@playwright/test": "1.55.1",
-    "@types/node": "22.20.5",
-    "@types/react": "19.1.12",
-    "@types/react-dom": "19.1.9",
-    "@vitejs/plugin-react": "5.0.2",
-    "typescript": "5.9.3",
-    "vite": "7.3.7",
-    "vitest": "4.1.12"
+    "@playwright/test": "1.65.1",
+    "@types/node": "22.20.7",
+    "@types/react": "19.3.3",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.4.0",
+    "vitest": "5.1.2"
   }
 }

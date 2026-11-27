@@ -52,7 +52,6 @@ export function TopBar() {
           type="file"
           className="sr-only"
           aria-label="Upload a robot project folder"
-          // @ts-expect-error webkitdirectory isn't in React's types, but every current browser supports it
           webkitdirectory=""
           multiple
           onChange={(e) => {

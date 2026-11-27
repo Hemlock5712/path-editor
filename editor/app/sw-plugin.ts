@@ -57,12 +57,14 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname === "/docs" || url.pathname.startsWith("/docs/")) return;
   // pages: the network first (a new deploy shows at once), the cached app when offline
   if (req.mode === "navigate") {
-    event.respondWith(fetch(req).catch(() => caches.match("/").then((r) => r || caches.match("/index.html"))));
+    event.respondWith(fetch(req).catch(() => caches.match("/", { ignoreVary: true }).then((r) => r || caches.match("/index.html", { ignoreVary: true }))));
     return;
   }
-  // everything else: the cache first, then the network (and keep a copy of what it fetched)
+  // everything else: the cache first, then the network (and keep a copy of what it fetched). The files were
+  // precached without an Origin header, and a server that answers "Vary: Origin" (Vite 8's preview does)
+  // would otherwise miss on the page's crossorigin script and stylesheet: nothing here varies by origin.
   event.respondWith(
-    caches.match(req).then(
+    caches.match(req, { ignoreVary: true }).then(
       (hit) =>
         hit ||
         fetch(req).then((res) => {
