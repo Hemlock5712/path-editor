@@ -56,6 +56,105 @@ class RailFollowerTest {
     assertTrue(plant.x > 3.0, "and still got somewhere: " + plant.x);
   }
 
+  /** How a run onto the rail went. */
+  private record Capture(double peakAcross, double peakAcrossAccel, double mostTurnedDeg, double secondsToLine,
+      double metersAlongToLine, double alongKept, double pastLine) {}
+
+  /**
+   * A rail along x at y = 0. The robot starts {@code off} metres to its left, already moving along it at {@code
+   * speed}, and the driver holds {@code stick}.
+   */
+  private static Capture capture(Rail rail, double off, double speed, FieldSpeeds stick) {
+    RailFollower f = new RailFollower(CFG);
+    KinematicPlant plant = new KinematicPlant(new Pose(0.0, off, 0.0), new FieldSpeeds(speed, 0, 0));
+    f.reset(plant.velocity());
+    double peak = 0.0;
+    double peakAccel = 0.0;
+    double turned = 0.0;
+    double lastAcross = 0.0;
+    double seconds = Double.NaN;
+    double meters = Double.NaN;
+    double alongSum = 0.0;
+    int n = 0;
+    double past = 0.0;
+    for (int i = 0; i < 600; i++) {
+      FieldSpeeds cmd = f.step(rail, plant.pose(), stick, MAX, DT);
+      peak = Math.max(peak, Math.abs(cmd.vyMetersPerSecond()));
+      peakAccel = Math.max(peakAccel, Math.abs(cmd.vyMetersPerSecond() - lastAcross) / DT);
+      lastAcross = cmd.vyMetersPerSecond();
+      if (Math.abs(cmd.vxMetersPerSecond()) > 0.2) {
+        turned = Math.max(turned, Math.toDegrees(Math.abs(Math.atan2(cmd.vyMetersPerSecond(), cmd.vxMetersPerSecond()))));
+      }
+      if (Double.isNaN(seconds)) {
+        alongSum += cmd.vxMetersPerSecond();
+        n++;
+      }
+      plant.step(cmd, DT);
+      past = Math.max(past, -Math.signum(off) * plant.y);
+      if (Double.isNaN(seconds) && Math.abs(plant.y) < 0.02) {
+        seconds = (i + 1) * DT;
+        meters = plant.x;
+      }
+    }
+    double wanted = stick.vxMetersPerSecond();
+    return new Capture(peak, peakAccel, turned, seconds, meters, Math.abs(wanted) < 1e-9 ? Double.NaN : alongSum / n / wanted,
+        past);
+  }
+
+  /**
+   * The pull-in share: the rail pulls at that share of the driver's speed along it, so the robot slides on at a
+   * fixed angle and joins the line about (how far off ÷ share) further along. The driver picks where it joins.
+   */
+  @Test
+  void thePullInIsAShareOfTheDriversSpeedAlongTheRail() {
+    Rail rail = Rail.through(0.0, 0.0, 0.0).withHeading(0.0);
+    FieldSpeeds along = new FieldSpeeds(3.0, 0.0, 0.0);
+    System.out.println("    rail, 1.2 m off, cruising and holding 3 m/s along it: peak speed across m/s / hardest change across "
+        + "m/s² / most the travel is turned deg / s to the line / m along to the line / share of the driver's speed kept");
+    for (double share : new double[] {Double.POSITIVE_INFINITY, 1.0, 0.5, 0.3, 0.2}) {
+      Capture c = capture(Double.isFinite(share) ? rail.withPullIn(share) : rail, 1.2, 3.0, along);
+      System.out.printf("    pull-in %-9s %5.2f / %5.1f / %5.1f / %5.2f / %5.2f / %4.2f%n",
+          Double.isFinite(share) ? String.valueOf(share) : "no cap", c.peakAcross(), c.peakAcrossAccel(), c.mostTurnedDeg(),
+          c.secondsToLine(), c.metersAlongToLine(), c.alongKept());
+      assertTrue(c.pastLine() < 0.01, "never more than 1 cm past the line, at " + share + ": " + c.pastLine());
+      if (Double.isFinite(share)) {
+        assertTrue(c.peakAcross() <= share * 3.0 + 1e-9, "the pull never passes " + share + " of 3 m/s: " + c.peakAcross());
+        if (share <= 0.5) {
+          // (at a share of 1 and this speed the two together would pass top speed, so the along speed gives way)
+          assertEquals(Math.toDegrees(Math.atan(share)), c.mostTurnedDeg(), 0.5, "it slides on at atan(share)");
+        }
+        // the straight slide would join after 1.2 / share metres; speeding up to it and easing in add a little
+        assertTrue(c.metersAlongToLine() > 1.2 / share && c.metersAlongToLine() < 1.2 / share + 1.2,
+            "joined after " + c.metersAlongToLine() + " m at " + share);
+      }
+    }
+  }
+
+  @Test
+  void theDriversOwnPushTowardTheLineCountsInFullAndAwayFromItNotAtAll() {
+    Rail rail = Rail.through(0.0, 0.0, 0.0).withHeading(0.0).withPullIn(0.3);
+    Capture cruising = capture(rail, 1.2, 3.0, new FieldSpeeds(3.0, 0.0, 0.0));
+    // the robot is on the rail's left (+y): pushing right (-y) is toward the line
+    Capture steering = capture(rail, 1.2, 3.0, new FieldSpeeds(3.0, -2.5, 0.0));
+    assertTrue(steering.peakAcross() > 2.0, "the driver's own 2.5 m/s toward the line gets through: " + steering.peakAcross());
+    assertTrue(steering.secondsToLine() < 0.6 * cruising.secondsToLine(),
+        "so they get there sooner: " + steering.secondsToLine() + " s against " + cruising.secondsToLine());
+    assertTrue(steering.pastLine() < 0.01, "and still don't cross it: " + steering.pastLine());
+    Capture fighting = capture(rail, 1.2, 3.0, new FieldSpeeds(3.0, 2.5, 0.0));
+    assertEquals(cruising.secondsToLine(), fighting.secondsToLine(), 0.1, "pushing away changes nothing: it is a rail");
+  }
+
+  @Test
+  void withTheStickReleasedTheRobotStillSettlesOntoTheLine() {
+    Rail rail = Rail.through(0.0, 0.0, 0.0).withHeading(0.0).withPullIn(0.3);
+    Capture still = capture(rail, 0.4, 0.0, new FieldSpeeds(0.0, 0.0, 0.0));
+    assertTrue(still.peakAcross() <= RailLaw.SETTLE_METERS_PER_SECOND + 1e-9, "at the settle speed, no faster: " + still.peakAcross());
+    assertTrue(still.secondsToLine() < 1.2, "on the line in " + still.secondsToLine() + " s");
+    // on the line, a push straight across it does nothing
+    Capture across = capture(rail, 0.0, 0.0, new FieldSpeeds(0.0, MAX, 0.0));
+    assertTrue(across.peakAcross() < 0.01, "on the rail the driver cannot push across it");
+  }
+
   @Test
   void stopsAtTheEndOfTheRail() {
     RailFollower f = new RailFollower(CFG);

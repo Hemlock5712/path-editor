@@ -628,6 +628,24 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
     was 6), and the driver's speed along it may change by 0.85 of the grip left over (7.9 m/s², where it was 8).
     The reaction time, ease-in and heading limits are the `FollowerConfig`'s.
   - The command goes through the `OutputLimiter`, as teleop and the paths do.
+  - **How much the rail takes from the driver.** Across the line it is a hard rail: on it, a full stick straight
+    across moves the robot 0 m/s, and letting go of the button is the way off. How hard it pulls the robot *on*
+    is the rail's `pullIn` (`rail.withPullIn(0.5)`): a share of the driver's speed along the rail, so the robot
+    slides on at a fixed angle, `atan(pullIn)`, and joins the line about (how far off ÷ pullIn) further along.
+    The driver picks where it joins by when they press the button. Their own push toward the line counts in
+    full, so steering at it always gets there sooner; their push away is ignored; and with the stick released
+    it still settles at 0.5 m/s (`RailLaw.SETTLE_METERS_PER_SECOND`). With no `pullIn` the rail pulls as fast
+    as the robot can, as it did before. From 1.2 m off at 3 m/s along (`RailFollowerTest` prints it):
+
+    | pullIn | Peak speed across | Travel turned | To the line | Joins after | Driver's speed kept |
+    |---|---|---|---|---|---|
+    | none | 3.15 m/s | 61° | 0.74 s | 1.9 m | 85 % |
+    | 1.0 | 3.00 m/s | 48° | 0.72 s | 2.1 m | 97 % |
+    | 0.5 | 1.50 m/s | 27° | 0.94 s | 2.8 m | 100 % |
+    | 0.3 | 0.90 m/s | 17° | 1.40 s | 4.2 m | 100 % |
+    | 0.2 | 0.60 m/s | 11° | 2.02 s | 6.1 m | 100 % |
+
+    Which share is right is a feel number for a driver on the robot; nothing here measures that.
   - The feed-forward is the plan's, as for a path: across the rail only the law's own braking (the command
     there follows the measured pose), along it the driver's change. A test holds the rail with a 4 mm wobble in
     the pose and checks the feed-forward stays quiet (`RailFollowerTest`).

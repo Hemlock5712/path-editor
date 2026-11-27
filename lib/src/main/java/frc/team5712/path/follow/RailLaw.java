@@ -11,7 +11,11 @@ import frc.team5712.path.core.RobotConfig;
  * <ul>
  *   <li><b>Across the rail</b> is a position problem: get back onto the line. It is the finish's {@link
  *       StoppingLaw} in one dimension: the smallest of the top speed, the speed that can still stop on the line,
- *       and an ease-in near it.
+ *       and an ease-in near it. How hard it pulls is the rail's {@link Rail#pullIn}: a share of the driver's
+ *       speed along the rail, so the robot slides on at a fixed angle and the driver chooses where it joins.
+ *       The driver's own push toward the line counts in full (they can always get there sooner); their push
+ *       away from it is ignored (it is a rail); and with the stick released it still settles at {@link
+ *       #SETTLE_METERS_PER_SECOND}.
  *   <li><b>Along the rail</b> is the driver's: their stick velocity, keeping only the part that points along the
  *       line. Optional ends stop the robot as a goal would.
  * </ul>
@@ -42,6 +46,12 @@ public final class RailLaw {
    */
   public static final double STEER_MARGIN = 0.1;
   public static final double STEER_BLEND_METERS = 0.05;
+  /**
+   * With a {@link Rail#pullIn} share set, the rail still pulls at up to this (m/s) however slowly the driver is
+   * going along it: a robot standing off the line with the stick released settles onto it, and one bumped off
+   * comes back, instead of waiting for the driver to move.
+   */
+  public static final double SETTLE_METERS_PER_SECOND = 0.5;
   /** Sliding across the rail slower than this (m/s) counts as "on it". */
   public static final double ACROSS_SETTLED_METERS_PER_SECOND = 0.05;
 
@@ -119,11 +129,19 @@ public final class RailLaw {
     // Across: a position problem, solved as the finish does, in one dimension
     double crossNow = commanded.vxMetersPerSecond() * acrossX + commanded.vyMetersPerSecond() * acrossY;
     double approaching = Math.max(0.0, Math.copySign(1.0, cross) * crossNow);
-    double crossLaw = Math.min(maxCrossSpeed, stopSpeed(Math.abs(cross), approaching, driveSpeed));
+    // How fast the rail may pull: a share of the driver's speed along it (so the robot slides on at a fixed
+    // angle), or the driver's own push toward the line if that is more, and never less than the settle speed.
+    double pull = Double.POSITIVE_INFINITY;
+    if (Double.isFinite(rail.pullIn())) {
+      double driverAlong = driver.vxMetersPerSecond() * alongX + driver.vyMetersPerSecond() * alongY;
+      double driverToward = Math.signum(cross) * (driver.vxMetersPerSecond() * acrossX + driver.vyMetersPerSecond() * acrossY);
+      pull = Math.max(SETTLE_METERS_PER_SECOND, Math.max(rail.pullIn() * Math.abs(driverAlong), driverToward));
+    }
+    double crossTop = Math.min(Math.min(maxCrossSpeed, pull), driveSpeed);
+    double crossLaw = Math.min(crossTop, stopSpeed(Math.abs(cross), approaching, driveSpeed));
     double crossSpeed = Math.copySign(crossLaw, cross);
     acrossSlowing = -Math.signum(cross)
-        * StoppingLaw.slowing(crossLaw, approaching, acrossBrake, cfg.easeInPerSecond(),
-            Math.min(maxCrossSpeed, driveSpeed));
+        * StoppingLaw.slowing(crossLaw, approaching, acrossBrake, cfg.easeInPerSecond(), crossTop);
 
     // Along: the driver's, but it can never push past an end
     double alongNow = commanded.vxMetersPerSecond() * alongX + commanded.vyMetersPerSecond() * alongY;

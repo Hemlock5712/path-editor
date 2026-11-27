@@ -82,12 +82,11 @@ numbers from `AccelerationLimiter`), `CenterFrame` (the pose conversion until WP
       unchanged in what they ask, on the library's law with the robot file's limits and an ease-in of 8. Not
       done: run on a robot or in the CTRE simulator (it needs held buttons), and no bench course exercises a
       rail, so its wheel slip has never been measured.
-- [ ] **The rail's pull-in, to change with Joe** (reviewed 2026-11-27, not built): cap the speed toward the
-      line at a share of the driver's stick speed, so the robot slides on at a fixed angle and the driver picks
-      where it joins; the driver's own push toward the line counts in full. Open: the share (0.3 was my guess; it
-      is a feel number for a driver to set), a small floor so a robot with the stick released still settles on
-      the line, and whether pushing away from the line stays ignored. Today the rail fully overrides the driver
-      across the line and dives on at the traction limit (61° of turn from 1.2 m off at 3 m/s).
+- [ ] **Set the rail's pull-in with a driver** (built 2026-11-27; lib/README.md, "How much the rail takes from
+      the driver"). Precision-Drive's `DriveTuning.RAIL_PULL_IN` is 0.5, a starting point with nothing measured
+      behind it. Also mine and unreviewed by a driver: the 0.5 m/s it still settles at with the stick released
+      (`RailLaw.SETTLE_METERS_PER_SECOND`), and that a push away from the line is ignored. The pull still comes
+      on in one or two loops (the limiter's rate), now to a much lower speed.
 - [ ] **The piece nudge comes on in one or two loops** (the limiter's rate, 12.8 m/s², though only to about 0.4
       m/s for a piece 25 cm off). Not smoothed: ask Joe whether drivers feel it before adding anything.
 - [ ] **The piece filter's numbers are guesses to measure on the robot** (`follow/PieceFilter`, done
