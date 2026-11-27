@@ -19,6 +19,11 @@ pass). Delete each item when it is done, and this file when it is empty.
 - [ ] **250 Hz.** The follower uses the real time step, but `PathFollower.NOMINAL_LOOP_SECONDS` (0.02) is still the
       first step's length and the floor of the read-ahead, and the end-to-end `SimDrive` and its tolerances assume
       50 Hz. Run the e2e suite at 250 Hz once the robot code does.
+- [ ] **Feed-forward at the tipping limit.** Sharing the push by weight fixed the extra wheel slip on ordinary
+      paths, and on paths planned to 95 % of the tipping limit it is worth 1.4 % where equal shares gave 4 %
+      (bench/RESULTS.md, "How the push is shared"). To try: `easeInPerSecond` 24 when the feed-forward is sent
+      (a third of the gap); a limiter budget nearer the plan's share while it is sent, so a launch isn't driven
+      at 100 % of the limit; and the 250 Hz rows again.
 - [ ] **Bench, feed-forward on the fly.** The on-the-fly bench op (`otf`) doesn't take `"modules"`, so
       `bench/h2h.py` still runs ours with the velocity alone.
 - [ ] **Goal averaging across a re-plan.** `OnTheFly.withMovingGoal(goal, seconds)` starts its average again at

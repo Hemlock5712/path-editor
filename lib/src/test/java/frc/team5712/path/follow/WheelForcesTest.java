@@ -2,6 +2,7 @@ package frc.team5712.path.follow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.RobotConfig;
@@ -36,14 +37,43 @@ class WheelForcesTest {
     }
   }
 
-  /** Driving straight with no spin, every wheel pushes the same way with a quarter of the total. */
+  /** With the centre of mass on the floor the robot doesn't lean, and every wheel takes a quarter. */
   @Test
-  void drivingStraightSharesThePushEqually() {
-    double[][] f = new WheelForces(ROBOT, X, Y).forAcceleration(new FieldSpeeds(4.0, 0.0, 0.0), 1.1);
+  void aRobotThatDoesNotLeanSharesThePushEqually() {
+    RobotConfig flat = ROBOT.withCenterOfMassHeightMeters(0.0);
+    double[][] f = new WheelForces(flat, X, Y).forAcceleration(new FieldSpeeds(4.0, 0.0, 0.0), 1.1);
     for (int i = 0; i < 4; i++) {
-      assertEquals(ROBOT.massKg() * 4.0 / 4, f[0][i], 1e-9);
+      assertEquals(flat.massKg() * 4.0 / 4, f[0][i], 1e-9);
       assertEquals(0.0, f[1][i], 1e-9);
     }
+  }
+
+  /**
+   * Speeding up, the robot leans back: the back wheels carry more weight and take more of the push, so every
+   * wheel uses the same fraction of its own grip. An equal share would ask the front wheels for more than theirs.
+   */
+  @Test
+  void eachWheelPushesInProportionToTheWeightOnIt() {
+    WheelForces forces = new WheelForces(ROBOT, X, Y);
+    double a = 6.0;
+    double[][] f = forces.forAcceleration(new FieldSpeeds(a, 0.0, 0.0), 0.0);
+    double[] share = forces.weightShares(a, 0.0);
+    double weight = ROBOT.massKg() * RobotConfig.GRAVITY;
+    // the floor's push balances the lean: (weight on the back - weight on the front) x 0.30 m = mass x a x height
+    double back = (share[2] + share[3]) * weight;
+    double front = (share[0] + share[1]) * weight;
+    assertEquals(ROBOT.massKg() * a * ROBOT.centerOfMassHeightMeters(), (back - front) * 0.30, 1e-6);
+    assertTrue(f[0][2] > f[0][0], "the back wheels push harder: " + f[0][2] + " N against " + f[0][0]);
+    for (int i = 0; i < 4; i++) {
+      assertEquals(a / RobotConfig.GRAVITY, f[0][i] / (share[i] * weight), 1e-9, "the same fraction of its grip");
+    }
+    // sideways the same: accelerating to the left, the right-hand wheels (y < 0) carry more
+    double[] sideways = forces.weightShares(0.0, a);
+    assertTrue(sideways[1] > sideways[0]);
+    // and a wheel lifted clear of the floor is asked for nothing
+    double[] tipped = forces.weightShares(40.0, 0.0);
+    assertEquals(0.0, tipped[0], 0.0);
+    assertEquals(1.0, tipped[0] + tipped[1] + tipped[2] + tipped[3], 1e-12);
   }
 
   /** Spinning on the spot, each wheel pushes at right angles to its arm and the pushes cancel. */

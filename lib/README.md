@@ -56,9 +56,11 @@ has to move with the robot's own pose corrections.
 
 **Feed-forward.** `commandedAcceleration()` is the acceleration the command just asked for (the limiter's
 step, so never past the traction limit). Sent to the wheels as force next to the velocity (mass times it,
-shared between the modules; CTRE's wheel force feed-forwards take exactly this), it was 4 % faster on the bench
-at 50 Hz and 7 % at 250 Hz, with tracking unchanged (bench/RESULTS.md). `WheelForces` does that sum, and the
-follow commands send it once they are told where the modules are:
+shared between the modules; CTRE's wheel force feed-forwards take exactly this), it was 1 to 3 % faster on the
+bench with 27 to 70 % less wheel slip on paths planned at 6 m/s², and 1.4 % faster with the same slip on paths
+planned to the tipping limit (bench/RESULTS.md). `WheelForces` does that sum. Each wheel takes the share of the
+push that it carries of the weight: a robot speeding up leans back, and a quarter of the push is more than its
+front wheels' grip. The follow commands send it once they are told where the modules are:
 
 ```java
 otf.withWheelForces(drive.getModuleLocations(), drive::driveFieldVelocity);   // every command otf builds after this

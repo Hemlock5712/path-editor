@@ -51,36 +51,58 @@ Choreo + hold. The rivals' gains are in `matched.py`.
 
 Ours as drawn on the 12 courses above (the ten plus shoved and slippery), 6 seeds, the follower otherwise at its
 defaults. "250 Hz" runs the robot loop at the odometry rate (`LP.main_period = 0.004`); "feed-forward" sends
-`PathFollower.commandedAcceleration()` to the wheels as force (`OursV2(ff=True)`). Since 2026-11-26 the forces
-come from the library's own `WheelForces`, the class the follow commands use (`withWheelForces`); the two 50 Hz
-rows were run again with it and came out the same to every digit shown:
+`PathFollower.commandedAcceleration()` to the wheels as force (`OursV2(ff=True)`), worked out by the library's own
+`WheelForces`, the class the follow commands use (`withWheelForces`):
 `python bench/matched.py run --seeds 6 --methods ours,ours_ff --poses truth,odom --courses both --out out/ff.json`.
 
 The plant adds the force as volts on a voltage velocity loop. A torque-current drive loop has not been simulated.
 
+**How the push is shared between the wheels (2026-11-26).** The first version gave every wheel a quarter of
+mass x acceleration. A robot speeding up leans back: at 6 m/s² this one's front wheels carry half their share of
+the weight, and a quarter of the push is more than their grip. They spun, and the feed-forward kept pushing a
+spinning wheel where the velocity loop alone backs off. `WheelForces` now gives each wheel the share of the push
+that it carries of the weight (from the robot file's centre of mass height), so every wheel uses the same fraction
+of its grip.
+
+On paths planned at 6 m/s² (6 seeds, perfect pose; time, s / overshoot, cm / wheel slip, wheel-s):
+
+| Course | Velocity only | Equal shares | Shared by weight (as shipped) |
+|---|---|---|---|
+| `tag_align_moving_goal` (time to settle) | 2.00 / 0.9 / 1.12 | 1.95 / 0.0 / 1.44 | 1.96 / 0.0 / 0.34 |
+| `three_piece_chain` (time to settle) | 4.76 / 0.8 / 4.25 | 4.73 / 0.0 / 4.75 | 4.74 / 0.0 / 3.11 |
+| `intake_drive_through` (time to the piece; miss in place of overshoot) | 1.42 / 0.4 / 1.24 | 1.40 / 0.4 / 1.51 | 1.38 / 0.4 / 0.75 |
+
+Shared by weight keeps the time and slips 27 to 70 % less than sending no feed-forward at all.
+
+On the 12 courses planned to 95 % of the tipping limit (11.84 m/s²):
+
 | | Total time, s (perfect pose) | Cross-track rms, cm | Wheel slip, wheel-s | Odometry only: time, s / end error, cm |
 |---|---|---|---|---|
-| 50 Hz, velocity only (as shipped) | 31.83 | 4.06 | 52.2 | 28.98 / 12.1 |
-| 250 Hz | 30.86 | 4.45 | 49.2 | 28.66 / 12.2 |
-| 50 Hz + feed-forward | 30.59 | 4.10 | 52.2 | 29.20 / 13.9 |
-| 250 Hz + feed-forward | 29.70 | 4.47 | 48.9 | 28.89 / 13.4 |
+| 50 Hz, velocity only | 31.83 | 4.06 | 52.2 | 28.98 / 12.1 |
+| 50 Hz + feed-forward, equal shares | 30.59 | 4.10 | 52.2 | 29.20 / 13.9 |
+| 50 Hz + feed-forward, shared by weight (as shipped) | 31.40 | 4.14 | 52.4 | 29.34 / 12.1 |
+| 250 Hz, velocity only | 30.86 | 4.45 | 49.2 | 28.66 / 12.2 |
+| 250 Hz + feed-forward, equal shares (not run again) | 29.70 | 4.47 | 48.9 | 28.89 / 13.4 |
 
-Both together are 6.7 % faster with a perfect pose, with a little less wheel slip. Tracking is no tighter, and on
-wheel odometry alone the end error is about a centimetre worse (the harder push slips the wheels sooner). Lowering
-`latencySeconds` with either was slower: 0.05 s stays the default. Not tried: predicting the measured pose over the
-latency.
+Here the wheel slip is the same whatever is sent, and sharing by weight gives back most of the time (1.4 % faster
+than velocity only, against 4 %). What the traces show (a straight, wheel by wheel):
 
-**The harder courses** (2026-11-26; 6 seeds, perfect pose; before this the two wrappers that run them dropped the
-forces):
+- **The slip at the limit isn't the feed-forward's.** At 11.84 m/s² the wheels the robot leans off carry 7 N each
+  (of 147 at rest). The drive motors' velocity loops push every wheel by the same speed error, so those wheels are
+  asked for 50 to 150 N and slide, with or without feed-forward. Only a plan with more margin from tipping, or a
+  drivetrain that shares its own correction by weight, would stop it.
+- **The follower launches at 100 % of the limit, not the plan's 95 %.** The limiter's budget is the whole
+  grip-or-tipping limit (so feedback has room), and the first commands use all of it to catch up with the plan's
+  50 ms lead. With velocity only, the wheels' lag softens that. With feed-forward the robot really does it: 12.5
+  m/s² for the first quarter second, the loaded wheels sliding the whole time.
+- **Equal shares were faster at the finish because the robot lagged into it.** It ran 0.3 m/s behind its command
+  and braked at 10 m/s² almost to the goal; sharing by weight it follows the command, and so the ease-in, and
+  creeps the last 5 cm. A steeper ease-in (`easeInPerSecond` 24 for 12) gives a third of that back (29.14 s against
+  29.45 s over 11 of the courses, 3 seeds) for 3 % more slip. The rest is not explained.
 
-| Course | Velocity only | With feed-forward |
-|---|---|---|
-| `tag_align_moving_goal`: time to settle, s / overshoot, cm / wheel slip, wheel-s | 2.00 / 0.9 / 1.12 | 1.95 / 0.0 / 1.44 |
-| `three_piece_chain`: time to settle, s / overshoot, cm / wheel slip, wheel-s | 4.76 / 0.8 / 4.25 | 4.73 / 0.0 / 4.75 |
-| `intake_drive_through`: time to the piece, s / miss, cm / wheel slip, wheel-s | 1.42 / 0.4 / 1.24 | 1.40 / 0.4 / 1.51 |
-
-Here it is worth 1 to 3 % and costs 12 to 28 % more wheel slip: these courses are short, so less of each is spent
-speeding up. The overshoot at the finish goes away.
+Tried and no help: capping or scaling the feed-forward (0.8 x, or at the plan's 6 m/s²), averaging it over two
+loops, letting the lean follow the command late (20 to 200 ms), `latencySeconds` 0.02 to 0.04 (slower and more
+slip at the limit), and blends of the two shares (a straight trade of one set's time for the other's slip).
 
 **A noisy goal.** `tag_align_moving_goal` with the goal estimate re-sent every loop with gaussian noise, as a camera
 gives it (6 seeds, perfect pose; time to settle on the true goal, 2.00 s with no noise):
