@@ -1,116 +1,104 @@
 ---
 title: Follow a path
-description: Build a command that follows a path drawn in the editor, and set its options.
+description: Build a command that follows a path drawn in the editor.
 sidebar:
   order: 1
 ---
 import Scene from '../../../components/Scene.astro';
 
+`otf.follow` makes a command that follows a path you drew in the editor.
 
-A path drawn in the editor is followed by a `FollowPathCommand`. There are two ways to get one. The factory on
-`Pathfinding` is the short way and suits nearly every case. The constructor is the long way, for when a path
-needs its own settings.
+<Scene name="follow" caption="The line is the plan, colored by planned speed. The thin trail is where the robot went. Real follower, simulated drivetrain." />
 
-<Scene name="follow" caption="What otf.follow does with a drawn path. The line is the plan, colored by planned speed. The thin trail is where the robot actually went. The run is the real follower on a simulated drivetrain." />
-
-## The short way
+## Follow a path
 
 ```java
 import static frc.robot.PathEditorNames.*;
 
+// otf is the Pathfinding object you built in robot init
 Command toReef = otf.follow(drive, Paths.TO_REEF);
 ```
 
-`otf` is the `Pathfinding` object built in robot init, as in [The first path](/start/first-path/). `follow` gives
-the command everything that object was built with: the drivetrain's pose, velocity and output, the follower
-settings, the alliance flip, and the wheel forces if you turned them on. It also binds the path's events to the
-commands registered on the library.
-
-The String form does the same: `otf.follow(drive, "ToReef")`. An unknown name throws `NoSuchElementException`
-when the line runs, in robot init, and the message lists the paths that do exist.
-
-## What the command does
-
-| When | What happens |
-| --- | --- |
-| Robot init, at `otf.follow(...)` | The follower is built. The path itself was planned when the library loaded. |
-| The command starts | It reads the alliance and the clock. No path work. |
-| Every loop | One follower step, the velocity to the drivetrain, telemetry, and any event that fired is forked as a child command. |
-| It finishes | It sends a zero velocity, unless the path ends moving. |
-| It is canceled | It sends a zero velocity and drops the events that have not fired. |
-
-It finishes when the robot is within the position and heading tolerance of the end, measured slower than 5 cm/s,
-and has stayed that way for 0.1 s. The defaults are 2 cm and 1°.
-
-The robot does not have to start on the path. The follower finds the closest point and steers onto the line from
-wherever the robot is. A robot that starts a long way off should use `otf.thenFollow`, which plans a route to the
-path's start first. See [Pathfinding](/guides/pathfinding/).
-
-## Options
-
-Each of these returns the command, so they chain.
-
-| Method | What it does | Guide |
-| --- | --- | --- |
-| `onEvent(Events.X, command)` | Runs `command` when this path fires that event. Wins over the library's binding for the same name. | [Events](/guides/events/) |
-| `withEvents(paths)` | Uses the commands bound on the library. `otf.follow` already does this. | [Events](/guides/events/) |
-| `withMovingGoal(supplier)` | Lets the end of the path follow a goal seen on the field. | [Moving goals](/guides/moving-goals/) |
-| `finishWhen(condition)` | Holds the end until the condition is true. | [Moving goals](/guides/moving-goals/) |
-| `continuingFrom(previous)` | Starts from the last path's final command, for paths that hand over at speed. | [Chaining paths](/guides/chaining-paths/) |
-| `withWheelForces(robot, modules, drive)` | Sends each wheel's push with the velocity. | [Wheel forces](/guides/wheel-forces/) |
-| `withFrame(supplier)` | Replaces the alliance lookup. | [Alliances](/guides/alliances/) |
-| `withClock(seconds)` | Replaces the clock, for tests and replay. | |
+That is the whole thing. The command requires the drivetrain, runs the path's events, flips for red, and stops
+the robot at the end.
 
 :::note
-WPILib's compiler check refuses a command that is returned and then thrown away. Keep what a `with...` method
-returns: write `Command c = otf.follow(...).finishWhen(...)`, not the two as separate statements.
+You need `otf` first. [The first path](/start/first-path/) builds it.
 :::
 
-## The long way
-
-Build the follower yourself when one path needs different settings from the rest, for example a looser
-tolerance on a path that only has to get near its end.
+## Use it in an autonomous
 
 ```java
-Path toReef = paths.get(Paths.TO_REEF);
+@Autonomous(name = "To Reef")
+public class ToReefAuto extends PeriodicOpMode {
+  private final Command routine;
 
+  public ToReefAuto(Robot robot) {
+    // Build the command once, here. Never when autonomous starts.
+    routine = robot.drive.otf.follow(robot.drive, Paths.TO_REEF);
+  }
+
+  @Override
+  public void start() {
+    Scheduler.getDefault().schedule(routine);
+  }
+
+  @Override
+  public void end() {
+    Scheduler.getDefault().cancel(routine);
+  }
+}
+```
+
+## Change one path's settings
+
+Build the follower yourself when one path needs settings the others do not.
+
+```java
+// A looser finish for a path that only has to get close
 FollowerConfig loose = FollowerConfig.defaults(paths.robot()).toBuilder()
     .positionToleranceMeters(0.05)
     .headingToleranceRadians(Math.toRadians(3))
     .build();
 
 Command go = new FollowPathCommand(
-        Paths.TO_REEF,
-        drive,
-        new PathFollower(toReef, loose),
-        () -> drive.getPose(),
-        () -> drive.getFieldVelocity(),
-        velocity -> drive.driveFieldVelocity(velocity),
-        FieldFrame.RED_HALF_TURN)
-    .withEvents(paths);
+        Paths.TO_REEF,                                    // names the command and its telemetry
+        drive,                                            // the drivetrain it requires
+        new PathFollower(paths.get(Paths.TO_REEF), loose),
+        () -> drive.getPose(),                            // where the robot is
+        () -> drive.getFieldVelocity(),                   // how fast, field-relative
+        velocity -> drive.driveFieldVelocity(velocity),   // how to drive
+        FieldFrame.RED_HALF_TURN)                         // the flip on red
+    .withEvents(paths);                                   // a hand-built command needs this for events
 ```
 
-The constructor's arguments, in order:
+## Options
 
-| Argument | Meaning |
+Each returns the command, so they chain.
+
+| Method | What it does |
 | --- | --- |
-| `Paths.TO_REEF` | The path's name, used for the command's name and its telemetry table. A `String` works too. |
-| `drive` | The drivetrain `Mechanism` the command requires. |
-| `new PathFollower(path, config)` | The follower. Build it here, in robot init, never when the command starts. |
-| pose | The measured field pose. |
-| field velocity | The measured field-relative velocity. |
-| output | Takes the field-relative velocity to drive at. |
-| `FieldFrame.RED_HALF_TURN` | The flip used on the red alliance. |
+| `onEvent(Events.X, command)` | Runs a command at an event, for this path only. See [Events](/guides/events/). |
+| `withMovingGoal(supplier)` | The end follows a goal from a camera. See [Moving goals](/guides/moving-goals/). |
+| `finishWhen(condition)` | Holds the end until the condition is true. |
+| `continuingFrom(previous)` | Picks up the last path's speed. See [Chaining paths](/guides/chaining-paths/). |
+| `withWheelForces(robot, modules, drive)` | Sends each wheel's push. See [Wheel forces](/guides/wheel-forces/). |
+| `withFrame(supplier)` | Replaces the alliance lookup. See [Alliances](/guides/alliances/). |
 
-A command built this way does not pick up the library's event bindings on its own. Add `.withEvents(paths)`.
+:::caution
+Keep what a `with...` method returns. WPILib's compiler check refuses a command that is returned and thrown
+away.
+:::
 
-## Use one command more than once
+## Good to know
 
-A `FollowPathCommand` can run again and again. Each start resets the follower. Build it once in robot init and
-schedule the same object each time, so the follower is not rebuilt at go.
+- **It finishes** within 2 cm and 1° of the end, slower than 5 cm/s, held for 0.1 s.
+- **The robot can start off the path.** The follower steers onto it. From far away, use `otf.thenFollow`, which
+  plans a route to the start first. See [Pathfinding](/guides/pathfinding/).
+- **A wrong name fails in robot init**, with a message that lists the paths that exist.
+- **Reuse the command.** Each start resets it.
 
-## Related
+## More
 
-- [The follower](/concepts/the-follower/) explains what one step does.
-- [FollowPathCommand](/reference/wpilib/followpathcommand/) lists every method.
-- [Tuning](/guides/tuning/) covers the settings in `FollowerConfig`.
+- [The follower](/concepts/the-follower/): what happens each loop.
+- [FollowPathCommand](/reference/wpilib/followpathcommand/): every method.

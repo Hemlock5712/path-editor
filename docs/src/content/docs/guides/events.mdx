@@ -1,101 +1,76 @@
 ---
 title: Events
-description: Run a mechanism command at a point along a path, and catch a forgotten event at boot.
+description: Run a mechanism command at a point along a path.
 sidebar:
   order: 2
 ---
 import Scene from '../../../components/Scene.astro';
 
+An **event** is a named mark on a path. When the robot passes it, the library runs the command you bound to that
+name.
 
-An **event** is a named mark on a path. When the robot passes it, the library runs whatever command you tied to
-that name. Events are how an autonomous lowers an intake halfway down a path or starts a shooter before the robot
-arrives.
+<Scene name="events" caption="Three events on one path. Each diamond lights up on the loop the robot passes it. Real follower, simulated drivetrain." />
 
-You place the event in the editor, on the path's **Events** tab, at a waypoint or at a distance in meters. In
-robot code you only deal with its name.
+## Add an event
 
-<Scene name="events" caption="Three events on one path. Each diamond lights up on the loop the robot passes it, and its command starts then. The run is the real follower on a simulated drivetrain." />
+In the editor, open the path's **Events** tab and place an event at a waypoint or at a distance. Give it a name,
+such as `intakeDown`. Save.
 
-## Bind each event once
+## Bind it to a command
 
-Bind events on the library, in robot init. A binding applies to every path that uses that name.
+Do this once, in robot init. A binding covers every path that uses the name.
 
 ```java
 import static frc.robot.PathEditorNames.*;
 
-paths.bindEvent(Events.INTAKE_DOWN, intake.lower())
+paths.bindEvent(Events.INTAKE_DOWN, intake.lower())   // Events.X is generated from the name
      .bindEvent(Events.SHOOT, shooter.shoot())
-     .requireAllEventsBound();
+     .requireAllEventsBound();                        // a forgotten event fails here, at boot
 ```
 
-`Events.INTAKE_DOWN` is a constant the editor generated from the event's name, `intakeDown`. The String form is
-`paths.bindEvent("intakeDown", intake.lower())`.
+Commands from `otf.follow` and `otf.thenFollow` pick these up on their own.
 
-Commands made with `otf.follow(...)` and `otf.thenFollow(...)` use these bindings automatically. A
-`FollowPathCommand` you construct yourself needs `.withEvents(paths)`.
+:::tip
+Always end with `requireAllEventsBound()`. Without it, an event nobody bound does nothing, and you find out
+mid-match.
+:::
 
-## Fail at boot, not in a match
-
-`requireAllEventsBound()` checks every event name used by any path file against the bindings. If one has no
-command, it throws at boot:
-
-```text
-events with no command bound: shoot (bind each with bindEvent(Events.X, command))
-```
-
-Call it after the last `bindEvent`. Without it, an event nobody bound fires and does nothing, and you find out in
-the middle of an autonomous. `paths.unboundEventNames()` returns the same list without throwing, and
-`paths.eventNames()` returns every event the files use.
-
-## Override one path
-
-`onEvent` on a command binds an event for that command only. It wins over the library's binding for the same
-name.
+## Bind it for one path only
 
 ```java
+// Wins over the library's binding, for this command
 Command toReef = otf.follow(drive, Paths.TO_REEF)
     .onEvent(Events.SHOOT, shooter.shootLow());
 ```
 
-## When an event fires
+## When it fires
 
-| Situation | When it fires |
+| Where the event is | When it fires |
 | --- | --- |
-| An event along the path | On the loop nearest to passing it. The error is at most half a loop of travel either side. |
-| An event at the end of a path that stops | When the robot gets inside the finish band, 2 cm and 1°, not after it has settled. |
-| An event not reached by a normal finish | At the finish. Every event fires exactly once on a path that completes. |
-| The command is canceled | Events that have not fired are dropped. |
+| Along the path | The loop the robot passes it |
+| At the end of a path that stops | When the robot is within 2 cm and 1° |
+| Not reached before the path finishes | At the finish |
+| The command is canceled | Never. Unfired events are dropped. |
 
-Events fire in the order they sit along the path.
+## Good to know
 
-## How the command runs
-
-The event's command is **forked** as a child of the follow command. Two things follow from that.
-
-- It runs alongside the path. The robot does not wait for it.
-- It ends when the follow command ends, unless it finished first. A long action started near the end of a path
-  is cut off when the path finishes.
-
-For an action that must outlive the path, start it from the autonomous routine instead of from an event, or let
-the event set something a longer-running command reads.
+- **The command runs alongside the path.** The robot does not wait for it.
+- **It ends when the path ends.** Start a long action from the autonomous routine, not from an event near the
+  end.
+- **Events fire in order** along the path, each once.
 
 :::caution
-An event command must not require the drivetrain. The follow command already holds it, and a child that asks for
-the same mechanism interrupts its own parent.
+An event's command must not require the drivetrain. The path already holds it.
 :::
 
-## Check which events fired
-
-The library logs events as they fire.
+## Check what fired
 
 | Entry | Meaning |
 | --- | --- |
-| `/Telemetry/Path/<name>/EventsFired` | The events fired on this run, in order |
-| `/Telemetry/PathFollower/LastEvent` | The most recent event from any path |
-| `/Telemetry/Path/<name>/PlanEvents` and `PlanEventMeters` | The path's events and where each sits, written when the path starts |
+| `/Telemetry/Path/<name>/EventsFired` | The events fired this run, in order |
+| `/Telemetry/PathFollower/LastEvent` | The most recent event |
 
-## Related
+## More
 
-- [Path events](/concepts/path-events/) explains the timing inside the follower.
-- [Path file](/files/path-file/) shows how an event is stored.
-- [PathLibrary](/reference/wpilib/pathlibrary/) lists the binding methods.
+- [Path events](/concepts/path-events/): the timing inside the follower.
+- [PathLibrary](/reference/wpilib/pathlibrary/): `bindEvent`, `eventNames`, `unboundEventNames`.
