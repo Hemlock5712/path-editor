@@ -131,6 +131,10 @@ public final class PathFollower {
   private double refX;
   private double refY;
   private double refHeading;
+  // the acceleration the plan calls for this loop (blue frame), for the feed-forward: set by each law
+  private double planAx;
+  private double planAy;
+  private double planAlpha;
 
   /** A follower for a path built in robot init. Cheap: nothing about the path is copied. */
   public PathFollower(Path path, FollowerConfig config) {
@@ -258,6 +262,9 @@ public final class PathFollower {
     measuredSpeed = Double.NaN;
     measuredOmega = Double.NaN;
     settledSince = Double.NaN;
+    planAx = 0.0;
+    planAy = 0.0;
+    planAlpha = 0.0;
     phase = Phase.TRACKING;
     System.arraycopy(eventBaseS, 0, eventS, 0, eventS.length);
     Arrays.fill(eventFired, false);
@@ -280,6 +287,9 @@ public final class PathFollower {
     if (!(Double.isFinite(pose.xMeters()) && Double.isFinite(pose.yMeters())
         && Double.isFinite(pose.headingRadians()))) {
       limiter.limit(0.0, 0.0, 0.0, dt); // no pose: brake within the limits
+      planAx = 0.0;
+      planAy = 0.0;
+      planAlpha = 0.0;
       return output();
     }
 
@@ -341,13 +351,34 @@ public final class PathFollower {
   }
 
   /**
-   * The acceleration the last command asks for, field-relative like the command: m/s² along x and y and rad/s² of spin
-   * (the same record as a velocity, one derivative up). It is the step the limiter just took, so it never asks
-   * for more than the traction limit. Send it to the drivetrain as feed-forward (mass times this, shared between
-   * the wheels) next to the velocity, so the wheels' velocity loops only have the error left to correct.
+   * The acceleration the plan calls for now, field-relative like the command: m/s² along x and y and rad/s² of
+   * spin (the same record as a velocity, one derivative up). Send it to the drivetrain as feed-forward (mass
+   * times this, shared between the wheels: {@link WheelForces}) next to the velocity, so the wheels' velocity
+   * loops only have the error left to correct.
+   *
+   * <p>It comes from the plan, not from the commands: along the path it is the planned speeding up or slowing
+   * down and the turn's {@code v²κ}; at the finish it is the stopping law's braking. It is not the difference
+   * between one command and the next. That difference carries every wobble of the measured pose (the
+   * corrections across the path and the last centimetres' ease-in follow the pose), and a feed-forward made
+   * from it kicks the robot about when it should be standing still. Corrections are left to the velocity
+   * loops. It never exceeds the limiter's budget, and is zero once the path has finished.
    */
   public FieldSpeeds commandedAcceleration() {
-    return frame.fromBlue(new FieldSpeeds(limiter.ax(), limiter.ay(), limiter.alpha()));
+    if (phase != Phase.TRACKING && phase != Phase.TERMINAL) {
+      return new FieldSpeeds(0.0, 0.0, 0.0);
+    }
+    double ax = planAx;
+    double ay = planAy;
+    double alpha = Math.max(-cfg.maxAlphaRadPerSecSquared(), Math.min(cfg.maxAlphaRadPerSecSquared(), planAlpha));
+    double total = Math.hypot(ax, ay) + cfg.robot().spinLeverMeters() * Math.abs(alpha);
+    double budget = limiterBudget(cfg);
+    if (total > budget) {
+      double k = budget / total;
+      ax *= k;
+      ay *= k;
+      alpha *= k;
+    }
+    return frame.fromBlue(new FieldSpeeds(ax, ay, alpha));
   }
 
   private FieldSpeeds output() {
@@ -401,8 +432,26 @@ public final class PathFollower {
     refX = here.xMeters();
     refY = here.yMeters();
     refHeading = here.headingRadians();
+    // What the plan calls for (the feed-forward): its speeding up or slowing down along the path, or the
+    // stopping law's braking once that governs, and v²κ toward the inside of the turn
+    double along = ahead.metersPerSecond() <= brake ? ahead.metersPerSecondSquared() : -cfg.brakeDecel();
+    double inward = speed * speed * ahead.curvature();
+    planAx = along * ahead.tangentX() - inward * ahead.tangentY();
+    planAy = along * ahead.tangentY() + inward * ahead.tangentX();
+    planAlpha = plannedSpinAcceleration(profile, here, ahead, speed);
     return new FieldSpeeds(speed * ahead.tangentX() + sideways * nx, speed * ahead.tangentY() + sideways * ny,
         clampSpin(omega));
+  }
+
+  /** The plan's spin acceleration: how much its turn rate changes from here to the point read ahead, per second. */
+  private double plannedSpinAcceleration(VelocityProfile profile, PathSample here, PathSample ahead, double speedAhead) {
+    double seconds = profile.timeAt(ahead.s()) - profile.timeAt(here.s());
+    if (!(seconds > 1e-3)) {
+      return 0.0;
+    }
+    double spinHere = here.metersPerSecond() * here.headingRadiansPerMeter();
+    double spinAhead = speedAhead * ahead.headingRadiansPerMeter();
+    return (spinAhead - spinHere) / seconds;
   }
 
   /**
@@ -419,6 +468,9 @@ public final class PathFollower {
     refX = goal.xMeters();
     refY = goal.yMeters();
     refHeading = active.heading().sample(s).radians();
+    planAx = 0.0;
+    planAy = 0.0;
+    planAlpha = plannedSpinAcceleration(profile, active.sample(s), ahead, ahead.metersPerSecond());
     return new FieldSpeeds(cfg.crossTrackKp() * (goal.xMeters() - pose.xMeters()),
         cfg.crossTrackKp() * (goal.yMeters() - pose.yMeters()), clampSpin(omega));
   }
@@ -437,7 +489,35 @@ public final class PathFollower {
     refX = goal.xMeters();
     refY = goal.yMeters();
     refHeading = goal.headingRadians();
+    // What the stopping law calls for (the feed-forward): slowing down along the line to the goal
+    double slowing = slowingDown(speed, limiter.speed(), cfg.brakeDecel(), cfg.easeInPerSecond(),
+        active.spec().maxMetersPerSecond());
+    planAx = d > 1e-6 ? -ex / d * slowing : 0.0;
+    planAy = d > 1e-6 ? -ey / d * slowing : 0.0;
+    double spinSlowing = slowingDown(Math.abs(omega), Math.abs(limiter.omega()), cfg.maxAlphaRadPerSecSquared(),
+        cfg.headingEaseInPerSecond(), cfg.maxOmegaRadPerSec());
+    planAlpha = -Math.signum(headingError) * spinSlowing;
     return new FieldSpeeds(d > 1e-6 ? ex / d * speed : 0.0, d > 1e-6 ? ey / d * speed : 0.0, omega);
+  }
+
+  /**
+   * How hard the stopping law is slowing the robot (a positive number, or 0). On the ease-in line {@code v =
+   * k·d} the distance shrinks at v, so the speed falls at {@code k·v}; further out, on the braking curve, it
+   * falls at the braking rate, which is the smaller of the two there. So it is {@code min(a, k·v)} of the speed
+   * last commanded, a number that fades smoothly to nothing as the robot stops: a pose that wobbles while the
+   * robot stands on its goal asks for next to nothing. At the top speed, or while the command is still coming
+   * up to the law's speed, there is nothing to slow.
+   *
+   * @param lawSpeed what the law asks for now
+   * @param commandSpeed what the limiter last commanded
+   * @param topSpeed the law's top speed
+   */
+  private static double slowingDown(double lawSpeed, double commandSpeed, double brake, double easeInPerSecond,
+      double topSpeed) {
+    if (commandSpeed < lawSpeed - 1e-9 || lawSpeed >= topSpeed - 1e-9) {
+      return 0.0;
+    }
+    return Math.min(brake, easeInPerSecond * commandSpeed);
   }
 
   private double clampSpin(double omega) {

@@ -56,9 +56,11 @@ has to move with the robot's own pose corrections.
 
 **Feed-forward.** `commandedAcceleration()` is the acceleration the command just asked for (the limiter's
 step, so never past the traction limit). Sent to the wheels as force next to the velocity (mass times it,
-shared between the modules; CTRE's wheel force feed-forwards take exactly this), it was 1 to 3 % faster on the
-bench with 27 to 70 % less wheel slip on paths planned at 6 m/s², and 1.4 % faster with the same slip on paths
-planned to the tipping limit (bench/RESULTS.md). `WheelForces` does that sum. Each wheel takes the share of the
+shared between the modules; CTRE's wheel force feed-forwards take exactly this), it took a quarter to a third
+off the wheel slip on the bench at the same times, and removed the overshoot at the finish: a path planned at
+9 m/s² with it slips no more than one planned at 6 without (bench/RESULTS.md). It is the plan's acceleration
+(the path's speeding up, slowing down and `v²κ`, and the stopping law's braking), not the difference between
+one command and the next, which carries the pose's noise. `WheelForces` does the sum. Each wheel takes the share of the
 push that it carries of the weight: a robot speeding up leans back, and a quarter of the push is more than its
 front wheels' grip. The follow commands send it once they are told where the modules are:
 

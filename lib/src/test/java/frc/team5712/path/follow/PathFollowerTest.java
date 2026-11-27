@@ -530,26 +530,78 @@ class PathFollowerTest {
     assertTrue(fastest > 3.0, "and the robot still gets up to speed: " + fastest);
   }
 
+  /**
+   * The feed-forward is the plan's acceleration: on a straight it is the planned speeding up, then nothing at
+   * the top speed, then the braking; never more than the limiter's budget; and nothing once the path is done.
+   */
   @Test
-  void theCommandedAccelerationIsTheStepTheCommandJustTook() {
-    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+  void theFeedForwardIsThePlansAcceleration() {
+    PathSpec spec = FixturePaths.straight();
+    Path path = Path.build(spec, ROBOT);
     PathFollower f = new PathFollower(path, CFG);
-    KinematicPlant plant = new KinematicPlant(new Pose(-4.0, -1.0, 0.0), new FieldSpeeds(0, 0, 0));
+    PathSample start = path.sample(0);
+    KinematicPlant plant = new KinematicPlant(new Pose(start.xMeters(), start.yMeters(), start.headingRadians()),
+        new FieldSpeeds(0, 0, 0));
     f.start(0.0, plant.pose(), plant.velocity(), FieldFrame.BLUE);
-    FieldSpeeds last = new FieldSpeeds(0, 0, 0);
-    double worst = 0.0;
-    for (int i = 1; i <= 100; i++) {
+    double planned = path.sample(0.05).metersPerSecondSquared();
+    assertTrue(planned > 1.0, "the plan speeds up from rest: " + planned);
+    double budget = PathFollower.limiterBudget(CFG);
+    double first = Double.NaN;
+    double mostBraking = 0.0;
+    for (int i = 1; i <= 400 && !f.isFinished(); i++) {
       FieldSpeeds out = f.step(i * DT, plant.pose(), plant.velocity());
       FieldSpeeds acc = f.commandedAcceleration();
-      assertEquals((out.vxMetersPerSecond() - last.vxMetersPerSecond()) / DT, acc.vxMetersPerSecond(), 1e-9);
-      assertEquals((out.vyMetersPerSecond() - last.vyMetersPerSecond()) / DT, acc.vyMetersPerSecond(), 1e-9);
-      assertEquals((out.omegaRadPerSec() - last.omegaRadPerSec()) / DT, acc.omegaRadPerSec(), 1e-9);
-      worst = Math.max(worst, Math.hypot(acc.vxMetersPerSecond(), acc.vyMetersPerSecond()));
+      double along = acc.vxMetersPerSecond() * start.tangentX() + acc.vyMetersPerSecond() * start.tangentY();
+      if (i == 1) {
+        first = along;
+      }
+      mostBraking = Math.min(mostBraking, along);
+      assertTrue(Math.hypot(acc.vxMetersPerSecond(), acc.vyMetersPerSecond()) <= budget + 1e-9);
       plant.step(out, DT);
+    }
+    assertTrue(f.isFinished());
+    PathSample lead = path.sample(path.profile().sAtTime(CFG.latencySeconds()));
+    assertEquals(lead.metersPerSecondSquared(), first, 1e-6, "off the line it is the plan's, not the limiter's catch-up");
+    assertTrue(mostBraking < -1.0, "and it brakes at the end: " + mostBraking);
+    FieldSpeeds done = f.commandedAcceleration();
+    assertEquals(0.0, Math.hypot(done.vxMetersPerSecond(), done.vyMetersPerSecond()), 0.0, "nothing once finished");
+  }
+
+  /**
+   * Holding the goal with a pose that wobbles by a few millimetres (every real pose does): the commands follow
+   * the wobble, and a feed-forward made from their differences would push the robot about by a metre per second
+   * squared or more. Made from the plan, it asks for next to nothing.
+   */
+  @Test
+  void theFeedForwardDoesNotKickARobotThatIsStandingOnItsGoal() {
+    Path path = Path.build(FixturePaths.straight(), ROBOT);
+    PathSample end = path.sample(path.lengthMeters());
+    boolean[] hold = {false};
+    PathFollower f = new PathFollower(path, CFG).finishWhen(() -> hold[0]); // keep it holding the goal
+    Run r = run(path, f, FieldFrame.BLUE, 6, NONE);
+    assertFalse(r.finished());
+    assertEquals(PathFollower.Phase.TERMINAL, f.phase());
+    java.util.Random wobble = new java.util.Random(9);
+    double worstFromPlan = 0.0;
+    double worstFromSteps = 0.0;
+    FieldSpeeds last = f.endCommand();
+    double t = r.seconds();
+    for (int i = 0; i < 200; i++) {
+      t += DT;
+      Pose seen = new Pose(end.xMeters() + 0.004 * wobble.nextGaussian(), end.yMeters() + 0.004 * wobble.nextGaussian(),
+          end.headingRadians() + Math.toRadians(0.4) * wobble.nextGaussian());
+      FieldSpeeds out = f.step(t, seen, new FieldSpeeds(0, 0, 0));
+      FieldSpeeds acc = f.commandedAcceleration();
+      worstFromPlan = Math.max(worstFromPlan, Math.hypot(acc.vxMetersPerSecond(), acc.vyMetersPerSecond()));
+      worstFromSteps = Math.max(worstFromSteps, Math.hypot(out.vxMetersPerSecond() - last.vxMetersPerSecond(),
+          out.vyMetersPerSecond() - last.vyMetersPerSecond()) / DT);
       last = out;
     }
-    assertTrue(worst > 1.0, "the robot did speed up");
-    assertTrue(worst <= PathFollower.limiterBudget(CFG) + 1e-9, "and never past the traction limit: " + worst);
+    assertTrue(worstFromSteps > 1.0, "the commands do wobble: " + worstFromSteps + " m/s² between loops");
+    assertTrue(worstFromPlan < 0.25 * worstFromSteps && worstFromPlan < 2.0,
+        "the feed-forward doesn't follow them: " + worstFromPlan + " m/s² against " + worstFromSteps);
+    System.out.println("    standing on the goal with a 4 mm wobble: commands step by up to " + worstFromSteps
+        + " m/s², the feed-forward asks for at most " + worstFromPlan);
   }
 
   @Test

@@ -57,6 +57,27 @@ defaults. "250 Hz" runs the robot loop at the odometry rate (`LP.main_period = 0
 
 The plant adds the force as volts on a voltage velocity loop. A torque-current drive loop has not been simulated.
 
+**Where the acceleration comes from (2026-11-26, later the same day; the tables below this paragraph are from
+before it).** The feed-forward was first the step the limiter had just taken: one command minus the last. The
+commands follow the measured pose (the correction across the path, and the last centimetres' ease-in), so that
+difference carries the pose's noise: standing on its goal with a pose wobbling by 4 mm, the robot was asked for
+up to 12 m/s². In the CTRE simulator it twitched on its goal and a drive-to-pose took 7 s to finish. It is now
+the plan's own acceleration (`PathFollower.commandedAcceleration`), which asks for under 2 m/s² in the same
+test. The same change stops a launch being fed at 100 % of the limit while the command catches up with the
+plan's lead. With it, on the six courses of "How hard to plan" below (4 seeds, perfect pose; total time, s /
+wheel slip, wheel-s / overshoot summed, cm):
+
+| Planned at | Velocity only | With the feed-forward |
+|---|---|---|
+| 6 m/s² | 15.02 / 14.0 / 22.7 | 15.06 / 9.7 / 15.4 |
+| 9 m/s² | 14.20 / 17.7 / 25.9 | 14.22 / 13.4 / 15.2 |
+| 11.2 m/s² | 13.95 / 17.0 / 30.9 | 14.04 / 16.5 / 14.1 |
+
+It no longer makes a path faster: the earlier 1 to 4 % came from feeding the launch's catch-up at the full limit.
+What it buys is grip: a quarter to a third less wheel slip and no overshoot at the same time, so planning at 9
+with it (14.22 s, 13.4) beats planning at 6 without it (15.02 s, 14.0) on both. On the 12 courses at the
+tipping limit it is 31.46 s against 31.83 s with the same slip (51.8 against 52.2).
+
 **How the push is shared between the wheels (2026-11-26).** The first version gave every wheel a quarter of
 mass x acceleration. A robot speeding up leans back: at 6 m/s² this one's front wheels carry half their share of
 the weight, and a quarter of the push is more than their grip. They spun, and the feed-forward kept pushing a

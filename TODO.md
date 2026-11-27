@@ -56,6 +56,15 @@ numbers from `AccelerationLimiter`), `CenterFrame` (the pose conversion until WP
 `Drivetrain/WheelForcesSent`), `TeleopDrive` on `DriveLimiter`, `DriveToPose` and `DriveToTag` on
 `Pathfinding`, and `TagTracker` handing its sightings to `TagGoal`.
 
+- [ ] **The finish's ease-in, 12 per second, twitched in the CTRE simulator** with Precision-Drive's (example)
+      drive gains: after arriving the robot moved at up to 0.4 m/s and finished 0.6 s late. 8 twitched half as
+      much and finished soonest; 6 (the old DriveToPose's) least, but arrives later. Precision-Drive sets 8
+      (`DriveMechanism`). 12 was picked on the Python plant, whose velocity loop is stiffer. Tune on the robot,
+      and reconsider the library's default with what it shows.
+- [ ] **Two `DriveToPose`s in a row lose about a quarter second at the corner** against the old command: the
+      library's finish waits for the robot to be under 5 cm/s for 0.1 s, the old one moved on the moment it was
+      inside the tolerance. The legs themselves take the same time (1.16 s and 1.13 s for the 1.5 m quarter
+      turn). An auto that shouldn't stop at a corner wants one path, or a rolling end, not two commands.
 - [ ] **`DriveToPose`'s limit is 9 m/s², both ways** (Joe, 2026-11-26: the same rate speeding up and slowing
       down, and 6 was too safe). `robot.json`'s `onTheFlyMaxMetersPerSecondSquared`; bench/RESULTS.md, "How
       hard to plan", is why 9. In the CTRE simulator "Drive To Pose" (3 m, then 1.5 m with a quarter turn) holds
