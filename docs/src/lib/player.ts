@@ -375,10 +375,13 @@ class Player {
     let labelColour = c.tx3;
     if (labels) {
       const fired = m.style === 'event' && m.firesAt !== undefined && local >= m.firesAt;
-      ctx.fillStyle = m.style === 'goal' || fired ? c.accent : m.style === 'event' ? c.tx2 : c.tx3;
+      ctx.fillStyle = m.style === 'goal' || fired ? c.accent : m.style === 'event' || (m.style === 'tag' && !m.faint) ? c.tx2 : c.tx3;
       // "above" and "below" clear a robot parked on the mark; the default sits beside it
       const clear = (Math.max(...this.scene.robot) / 2) * ((this.stage.clientWidth || 1) / (this.scene.view[2] - this.scene.view[0])) + 14;
-      if (m.side === 'above' || m.side === 'below') {
+      if (m.style === 'tag' && (m.side === 'above' || m.side === 'below')) {
+        ctx.textAlign = 'center';
+        ctx.fillText(m.label!.toUpperCase(), x, m.side === 'below' ? y + 30 : y - 22);
+      } else if (m.side === 'above' || m.side === 'below') {
         ctx.textAlign = 'center';
         ctx.fillText(m.label!.toUpperCase(), x, m.side === 'below' ? y + clear + 8 : y - clear);
       } else {
@@ -437,8 +440,18 @@ class Player {
       ctx.arc(x, y, 6, 0, Math.PI * 2);
       ctx.fill();
     } else if (m.style === 'tag') {
-      ctx.fillStyle = c.tx;
-      ctx.fillRect(x - 3, y - 9, 6, 18);
+      ctx.translate(x, y);
+      ctx.rotate(-(m.h ?? Math.PI)); // the canvas's y runs down
+      ctx.fillStyle = m.faint ? c.tx3 : c.tx;
+      ctx.strokeStyle = m.faint ? c.tx3 : c.tx;
+      ctx.globalAlpha = alpha * (m.faint ? 0.6 : 1);
+      ctx.fillRect(-3, -13, 4, 26); // the plate, edge on
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath(); // the way it faces
+      ctx.moveTo(1, 0);
+      ctx.lineTo(22, 0);
+      ctx.stroke();
     } else {
       ctx.fillStyle = c.tx3;
       ctx.beginPath();

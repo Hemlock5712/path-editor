@@ -64,6 +64,10 @@ export interface Mark {
   y: number;
   style: 'waypoint' | 'event' | 'goal' | 'piece' | 'tag' | 'start' | 'point';
   label?: string;
+  /** A tag's facing, radians: the way its face points. */
+  h?: number;
+  /** Drawn faint: where something was expected, not where it is. */
+  faint?: boolean;
   /** Where the label sits (above and to the right unless set). */
   side?: 'above' | 'below' | 'left';
   /** For an event: the second it fires, when its label lights up. */

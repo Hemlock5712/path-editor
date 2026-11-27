@@ -236,9 +236,8 @@ public final class DocScenes {
 
   // ------------------------------------------------------------------------------------------------- tag
 
-  private static Run followWithGoal(Path path, Pose seenGoal, double seenFromX) {
+  private static Run followWithGoal(Path path, Pose start, Pose seenGoal, double seenFromX) {
     PathFollower follower = new PathFollower(path, CFG);
-    Pose start = new Pose(-2.6, -0.5, 0.0);
     SimDrivetrain plant = new SimDrivetrain(start, new FieldSpeeds(0, 0, 0), SimDrivetrain.DEFAULT_LATENCY_SECONDS,
         SimDrivetrain.DEFAULT_LAG_SECONDS, SimDrivetrain.DEFAULT_SUBSTEP_SECONDS);
     if (seenGoal != null) {
@@ -260,30 +259,54 @@ public final class DocScenes {
     return run;
   }
 
+  /** Where a robot stops for a tag: {@code out} metres out of its face, facing it. */
+  private static Pose stopFor(Pose tag, double out) {
+    return new Pose(tag.xMeters() + out * Math.cos(tag.headingRadians()), tag.yMeters() + out * Math.sin(tag.headingRadians()),
+        tag.headingRadians() + Math.PI);
+  }
+
+  private static String tagMark(Pose tag, boolean faint, String side, String label) {
+    return "{\"x\":" + num(tag.xMeters()) + ",\"y\":" + num(tag.yMeters()) + ",\"h\":" + num(tag.headingRadians())
+        + ",\"style\":\"tag\"" + (faint ? ",\"faint\":true" : "") + ",\"side\":\"" + side + "\",\"label\":\"" + label + "\"}";
+  }
+
   private static String tagScene() {
-    Path path = Path.build(PathFile.read("{\"schema\":4,\"headingMode\":\"hold\",\"waypoints\":[{\"x\":-2.6,\"y\":-0.5,"
-        + "\"tangentDegrees\":0},{\"x\":-1.0,\"y\":0.05},{\"x\":0.6,\"y\":0,\"tangentDegrees\":0}],\"rotationTargets\":["
-        + "{\"waypoint\":0,\"degrees\":0},{\"waypoint\":2,\"degrees\":0}],\"maxMetersPerSecond\":4,"
-        + "\"maxMetersPerSecondSquared\":6}"), ROBOT);
-    Pose seen = new Pose(0.84, 0.27, Math.toRadians(10));
-    Run toMap = followWithGoal(path, null, 0);
-    Run toTag = followWithGoal(path, seen, -1.2);
+    // The tag where the field map puts it, and where it really is: 65 cm along the wall and turned 12 degrees.
+    // (Far more than a real field is off, so that it shows at this size.) Each stopping pose is worked out from
+    // its tag, 1 m out of the tag's face and facing it, so each robot ends square to its own tag.
+    double out = 1.0;
+    Pose mapTag = new Pose(1.9, -0.2, Math.PI);
+    Pose realTag = new Pose(1.95, 0.45, Math.PI + Math.toRadians(12));
+    Pose mapGoal = stopFor(mapTag, out);
+    Pose seen = stopFor(realTag, out);
+    double turned = Math.toDegrees(seen.headingRadians() - mapGoal.headingRadians());
+    turned = Math.toDegrees(Math.atan2(Math.sin(Math.toRadians(turned)), Math.cos(Math.toRadians(turned))));
+
+    Path path = Path.build(PathFile.read("{\"schema\":4,\"headingMode\":\"hold\",\"waypoints\":[{\"x\":-2.6,\"y\":-0.9,"
+        + "\"tangentDegrees\":0},{\"x\":-1.0,\"y\":-0.3},{\"x\":" + num(mapGoal.xMeters()) + ",\"y\":" + num(mapGoal.yMeters())
+        + ",\"tangentDegrees\":0}],\"rotationTargets\":[{\"waypoint\":0,\"degrees\":0},{\"waypoint\":2,\"degrees\":0}],"
+        + "\"maxMetersPerSecond\":4,\"maxMetersPerSecondSquared\":6}"), ROBOT);
+    Pose start = new Pose(-2.6, -0.9, 0.0);
+    Run toMap = followWithGoal(path, start, null, 0);
+    Run toTag = followWithGoal(path, start, seen, -1.2);
     double[] end = toTag.poses.get(toTag.poses.size() - 1);
     double miss = Math.hypot(end[0] - seen.xMeters(), end[1] - seen.yMeters());
+    double headingOff = end[2] - seen.headingRadians();
+    double headingMiss = Math.abs(Math.toDegrees(Math.atan2(Math.sin(headingOff), Math.cos(headingOff))));
     double[] mapEnd = toMap.poses.get(toMap.poses.size() - 1);
     double mapMiss = Math.hypot(mapEnd[0] - seen.xMeters(), mapEnd[1] - seen.yMeters());
-    String marks = "{\"x\":0.6,\"y\":0,\"style\":\"point\",\"side\":\"below\",\"label\":\"where the map says\"},"
-        + "{\"x\":" + num(seen.xMeters()) + ",\"y\":" + num(seen.yMeters()) + ",\"style\":\"goal\",\"side\":\"above\",\"label\":\"measured from the tag\"},"
-        + "{\"x\":1.75,\"y\":0.35,\"style\":\"tag\",\"label\":\"tag\"}";
+    String marks = tagMark(mapTag, true, "below", "tag on the map") + "," + tagMark(realTag, false, "above", "the real tag") + ","
+        + "{\"x\":" + num(seen.xMeters()) + ",\"y\":" + num(seen.yMeters()) + ",\"style\":\"goal\"}";
     List<String> variants = new ArrayList<>();
     variants.add(variant("Goal follows the tag", toTag.seconds(), "", marks,
         toMap.track("ghost", null) + "," + toTag.track("robot", null),
-        step(0.0, "The robot sets off for the spot the field map gives.") + ","
-            + step(0.7, "The camera now sees the tag. The real spot is " + String.format(Locale.ROOT, "%.0f", mapMiss * 100) + " cm away and turned 10°.") + ","
-            + step(1.0, "The rest of the path is planned again to the measured spot, and the robot stops on it."),
+        step(0.0, "The robot sets off for the spot the field map gives: 1 m out from where the map puts the tag.") + ","
+            + step(0.7, "The camera now sees the tag. It is not where the map says, so the real spot is "
+                + String.format(Locale.ROOT, "%.0f", mapMiss * 100) + " cm away and turned " + String.format(Locale.ROOT, "%.0f", turned) + "°.") + ","
+            + step(1.0, "The rest of the path is planned again to the measured spot. The robot stops square to the real tag."),
         fact("Map-only stop is off by", cm(mapMiss) + " cm") + ","
-            + fact("Stops within", cm(miss) + " cm")));
-    return scene("[-3.3,-1.35,2.4,1.45]", 4.0, variants);
+            + fact("Stops within", cm(miss) + " cm, " + String.format(Locale.ROOT, "%.1f", headingMiss) + "°")));
+    return scene("[-3.2,-1.75,2.6,1.35]", 4.0, variants);
   }
 
   public static void main(String[] args) throws IOException {
