@@ -116,8 +116,26 @@ public final class FollowPathCommand implements Command {
 
   /** Replaces the clock (default {@code Timer.getTimestamp()}), e.g. for tests or replay. */
   public FollowPathCommand withClock(DoubleSupplier seconds) {
-    this.clock = seconds;
+    setClock(seconds);
     return this;
+  }
+
+  // The with... methods return the command, and WPILib's compiler check refuses a returned command that is
+  // thrown away. The library's own wiring calls these instead.
+  void setClock(DoubleSupplier seconds) {
+    this.clock = seconds;
+  }
+
+  void setFrame(Supplier<FieldFrame> frame) {
+    this.frameSource = frame;
+  }
+
+  void setWheelForces(RobotConfig robot, Translation2d[] moduleLocations, WheelForceDrive drive) {
+    output.withWheelForces(robot, moduleLocations, drive);
+  }
+
+  void setContinuingFrom(Supplier<FieldSpeeds> command) {
+    this.handedCommand = command;
   }
 
   /** Replaces the alliance lookup (default: the driver station, read when the path starts). */

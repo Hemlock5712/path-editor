@@ -82,9 +82,14 @@ public final class PathfindCommand implements Command {
    * unless set. Loosen it for a spot that needn't be exact, or for a robot that can't hold 2 cm.
    */
   public PathfindCommand withTolerance(double meters, Rotation2d heading) {
+    setTolerance(meters, heading);
+    return this;
+  }
+
+  /** {@link #withTolerance} for a command already built (it returns nothing, so it can stand on its own line). */
+  public void setTolerance(double meters, Rotation2d heading) {
     this.config = ctx.config.toBuilder().positionToleranceMeters(meters)
         .headingToleranceRadians(heading.getRadians()).build();
-    return this;
   }
 
   /**
@@ -110,7 +115,7 @@ public final class PathfindCommand implements Command {
   public PathfindCommand withClock(DoubleSupplier seconds) {
     this.clock = seconds;
     if (follow != null) {
-      follow.withClock(seconds);
+      follow.setClock(seconds);
     }
     return this;
   }
@@ -119,7 +124,7 @@ public final class PathfindCommand implements Command {
   public PathfindCommand withFrame(Supplier<FieldFrame> frame) {
     this.frameSource = frame;
     if (follow != null) {
-      follow.withFrame(frame);
+      follow.setFrame(frame);
     }
     return this;
   }
@@ -192,7 +197,7 @@ public final class PathfindCommand implements Command {
     telemetry.end();
     following = true;
     OnTheFly handing = run;
-    follow.continuingFrom(handing::endCommand);
+    follow.setContinuingFrom(handing::endCommand);
     coroutine.yield(); // the path's command starts on the next loop, as the next command in a sequence would
     follow.run(coroutine);
   }

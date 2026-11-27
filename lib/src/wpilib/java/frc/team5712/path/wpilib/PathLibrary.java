@@ -71,6 +71,11 @@ public final class PathLibrary {
   /** The 2026 field's size (the editor's default), for a deploy folder without field.json. */
   public static final double DEFAULT_FIELD_LENGTH = 16.54;
   public static final double DEFAULT_FIELD_WIDTH = 8.07;
+  /**
+   * With no field.json the library knows no walls: the floor is this far across (m), so a robot testing in a shop
+   * with its pose zeroed anywhere, a field's corner included, drives straight to its goal.
+   */
+  public static final double OPEN_FLOOR_METERS = 1000.0;
 
   private final Map<String, Path> paths;
   private final RobotConfig robot;
@@ -202,7 +207,8 @@ public final class PathLibrary {
   }
 
   /**
-   * Reads {@code file} (field.json) if it exists, else an empty 2026-size field, and builds the pathfinder
+   * Reads {@code file} (field.json) if it exists, else an open floor with no walls or obstacles ({@link
+   * #OPEN_FLOOR_METERS}; the field's walls come with its field.json), and builds the pathfinder
    * for this robot with {@code planner}'s bumpers and margin, and a second one with {@link
    * PlannerConfig#WIDE_MARGIN_METERS} that on-the-fly paths try first. A bad file throws, naming it.
    */
@@ -224,7 +230,7 @@ public final class PathLibrary {
         throw new IllegalStateException("field " + file + ": " + e.getMessage(), e);
       }
     } else {
-      field = new FieldMap(DEFAULT_FIELD_LENGTH, DEFAULT_FIELD_WIDTH, List.of(), List.of());
+      field = new FieldMap(OPEN_FLOOR_METERS, OPEN_FLOOR_METERS, List.of(), List.of());
     }
     pathfinder = new Pathfinder(field, robot, planner);
     widePathfinder = wide(field, planner);

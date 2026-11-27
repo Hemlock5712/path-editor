@@ -143,8 +143,9 @@ public final class Pathfinder {
    */
   public double warmUp(int queries) {
     long t0 = System.nanoTime();
-    double hx = xMax - 0.1;
-    double hy = yMax - 0.1;
+    // field-sized plans whatever the floor's size (an open floor with no field file is far larger)
+    double hx = Math.min(xMax - 0.1, 8.0);
+    double hy = Math.min(yMax - 0.1, 4.0);
     FieldSpeeds still = new FieldSpeeds(0, 0, 0);
     for (int i = 0; i < queries; i++) {
       // a fixed spread of points (no randomness at boot): across the field and back along the diagonals

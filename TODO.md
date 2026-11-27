@@ -47,6 +47,33 @@ pass). Delete each item when it is done, and this file when it is empty.
       `commandedAcceleration`. It never had the moving goal, so the sim preview is unaffected; port them only if
       the editor needs them.
 
+## The robot's side (Precision-Drive, branch `library-drive`, cut from `precision-5-trust` 2026-11-26)
+
+Done there, compiled, unit-tested (37 tests) and run in the CTRE simulator (`./gradlew simulateJavaAgent`), not
+on a robot: the library compiled in from source (`build.gradle`, `-PpathLib=`), `deploy/paths/robot.json` (the
+numbers from `AccelerationLimiter`), `CenterFrame` (the pose conversion until WPILib moves the origin),
+`DriveMechanism.driveFieldVelocity` with the wheel forces and a switch (the driver's Start button; logged as
+`Drivetrain/WheelForcesSent`), `TeleopDrive` on `DriveLimiter`, `DriveToPose` and `DriveToTag` on
+`Pathfinding`, and `TagTracker` handing its sightings to `TagGoal`.
+
+- [ ] **`DriveToPose` is slower than the one it replaced.** In the CTRE simulator, "Drive To Pose" (3 m, then
+      1.5 m with a quarter turn) holds its two goals at 1.32 s and 2.70 s; the old command at 1.26 s and 2.48 s.
+      The old one speeds up at the traction limit (11.2 m/s²) and brakes at 6; a path has one cap for both
+      (`PlannerConfig`'s 6). To match it the profile needs separate caps for speeding up and for braking.
+      The Python bench puts them the other way round on the 3 m leg (library 1.44 s, old 1.53 s): its port of the
+      old limiter launches at 9.81 m/s² and its plant can slip, which the CTRE simulator can't.
+- [ ] **`AccelerationLimiter` is still there** for `DriveOnRail`, `IntakeAssist` and `Rail` (lessons 3 and 4), which
+      have not been compared with the library.
+- [ ] **`build.gradle`'s library path** points into this repository's worktree
+      (`../path-editor/.claude/worktrees/pensive-einstein/lib`). Once this branch is merged it becomes
+      `../path-editor/lib`.
+- [ ] **On the robot, in this order:** the forces do something with the voltage drive gains (Start flips them;
+      compare the drive motors' output); wheel slip and odometry drift with them on and off; a lower drive kP with
+      them on (bench/RESULTS.md, "A softer drive velocity loop").
+- [ ] **Teleop on red.** `TeleopDrive` now turns the sticks into field directions itself and sends
+      `ApplyFieldVelocity`; it was `FieldCentric` with CTRE's operator perspective. Checked by reading, not run
+      as red in the simulator.
+
 ## Bring Precision-Drive's parts into this library
 
 Decided 2026-11-25: the library does everything about moving the robot; robot code keeps the hardware, the

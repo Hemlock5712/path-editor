@@ -96,13 +96,13 @@ public final class Pathfinding {
 
   private FollowPathCommand configured(FollowPathCommand c) {
     if (clock != null) {
-      c.withClock(clock);
+      c.setClock(clock);
     }
     if (frame != null) {
-      c.withFrame(frame);
+      c.setFrame(frame);
     }
     if (forceDrive != null) {
-      c.withWheelForces(library.robot(), moduleLocations, forceDrive);
+      c.setWheelForces(library.robot(), moduleLocations, forceDrive);
     }
     return c;
   }
@@ -117,16 +117,17 @@ public final class Pathfinding {
   }
 
   private PathfindCommand configured(PathfindCommand c) {
+    PathfindCommand out = c;
     if (clock != null) {
-      c.withClock(clock);
+      out = out.withClock(clock);
     }
     if (frame != null) {
-      c.withFrame(frame);
+      out = out.withFrame(frame);
     }
     if (footprint != null) {
-      c.withFootprint(footprint);
+      out = out.withFootprint(footprint);
     }
-    return c;
+    return out;
   }
 
   /** Where to go, in the real field frame, given the frame the robot runs in. */
@@ -202,7 +203,7 @@ public final class Pathfinding {
     FollowPathCommand follow = new FollowPathCommand(pathName, drive, new PathFollower(path, config), pose,
         fieldVelocity, fieldOutput, redFrame).withEvents(library);
     if (forceDrive != null) {
-      follow.withWheelForces(library.robot(), moduleLocations, forceDrive);
+      follow.setWheelForces(library.robot(), moduleLocations, forceDrive);
     }
     return configured(new PathfindCommand(this, drive, "Pathfind to " + pathName, f -> start(path, f), path, follow));
   }
