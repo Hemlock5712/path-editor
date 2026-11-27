@@ -27,6 +27,11 @@ class PieceFilterTest {
   private static final double DROP = 0.45 - 0.12;
   private static final double INTAKE_AHEAD = 0.40;
   private static final double ANGLE_NOISE = Math.toRadians(0.3);
+  // a camera mounted this much more tilted down than the robot code believes (0 unless a test sets it), and
+  // this much to one side: every photo is off the same way
+  private static double tiltWrong = 0.0;
+  private static double yawWrong = 0.0;
+  private static double eagerness = PieceAssist.EAGERNESS;
 
   /** What the camera reports for the pieces, from {@code robot}: noisy, sometimes missing, sometimes false. */
   private static List<Vec2> photo(Pose robot, List<Vec2> pieces, Random r, double dropout, double falseRate) {
@@ -40,9 +45,9 @@ class PieceFilterTest {
       if (sx < 0.29 || range > 3.5 || Math.abs(bearing) > Math.toRadians(30) || r.nextDouble() < dropout) {
         continue; // under the bumper, too far, out of view, or missed this time
       }
-      double down = Math.atan2(DROP, range) + ANGLE_NOISE * r.nextGaussian();
+      double down = Math.atan2(DROP, range) + tiltWrong + ANGLE_NOISE * r.nextGaussian();
       double seenRange = DROP / Math.tan(Math.max(down, Math.toRadians(2.0)));
-      double seenBearing = bearing + ANGLE_NOISE * r.nextGaussian();
+      double seenBearing = bearing + yawWrong + ANGLE_NOISE * r.nextGaussian();
       seen.add(new Vec2(CAMERA.x() + seenRange * Math.cos(seenBearing), CAMERA.y() + seenRange * Math.sin(seenBearing)));
     }
     if (r.nextDouble() < falseRate) {
@@ -53,7 +58,7 @@ class PieceFilterTest {
     return seen;
   }
 
-  private record Outcome(double missMeters, double jitter, int switches) {}
+  private record Outcome(double missMeters, double jitter, int switches, double turnedDeg, double peakSideAccel) {}
 
   /**
    * Full stick straight down the field at {@code speed}; the assist nudges the intake toward whichever piece
@@ -75,6 +80,8 @@ class PieceFilterTest {
     double nextPhoto = 0.0;
     double lastVy = 0.0;
     double jitter = 0.0;
+    double turned = 0.0;
+    double peakAccel = 0.0;
     int steps = 0;
     int switches = 0;
     double miss = Double.NaN;
@@ -108,8 +115,10 @@ class PieceFilterTest {
       }
       chosen = pick;
       FieldSpeeds cmd = pick.isEmpty() ? f.step(stick, DT)
-          : f.step(PieceAssist.railThrough(pick.get(), stick), intake, stick, MAX, DT, PieceAssist.maxCrossSpeed(stick));
+          : f.step(stick, PieceAssist.nudge(stick, at, pick.get(), eagerness), DT);
       jitter += Math.pow((cmd.vyMetersPerSecond() - lastVy) / DT, 2);
+      peakAccel = Math.max(peakAccel, Math.abs(cmd.vyMetersPerSecond() - lastVy) / DT);
+      turned = Math.max(turned, Math.toDegrees(Math.abs(Math.atan2(cmd.vyMetersPerSecond(), cmd.vxMetersPerSecond()))));
       steps++;
       lastVy = cmd.vyMetersPerSecond();
       double before = intake.xMeters();
@@ -124,7 +133,7 @@ class PieceFilterTest {
         break;
       }
     }
-    return new Outcome(miss, Math.sqrt(jitter / Math.max(1, steps)), switches);
+    return new Outcome(miss, Math.sqrt(jitter / Math.max(1, steps)), switches, turned, peakAccel);
   }
 
   private static double[] average(List<Vec2> pieces, double speed, boolean filtered, double dropout, double falseRate) {
@@ -133,6 +142,8 @@ class PieceFilterTest {
     double worst = 0;
     double jitter = 0;
     double switches = 0;
+    double turned = 0;
+    double accel = 0;
     int taken = 0;
     for (int seed = 0; seed < n; seed++) {
       Outcome o = drive(pieces, speed, filtered, seed, dropout, falseRate);
@@ -140,11 +151,13 @@ class PieceFilterTest {
       worst = Math.max(worst, o.missMeters());
       jitter += o.jitter();
       switches += o.switches();
+      turned += o.turnedDeg();
+      accel += o.peakSideAccel();
       if (o.missMeters() < 0.05) {
         taken++;
       }
     }
-    return new double[] {100 * miss / n, 100 * worst, jitter / n, switches / n, 100.0 * taken / n};
+    return new double[] {100 * miss / n, 100 * worst, jitter / n, switches / n, 100.0 * taken / n, turned / n, accel / n};
   }
 
   /** The experiment: prints the table in bench/RESULTS.md, and holds the filter to what it showed. */
@@ -178,6 +191,40 @@ class PieceFilterTest {
       assertTrue(fil[4] >= raw[4] - 2.0, c[0] + ": the filter takes the piece at least as often");
     }
     assertTrue(filteredTaken > rawTaken, "and more often over all the cases");
+  }
+
+  /**
+   * How steady is "where the piece is"? A camera set up wrong: tilted or turned a degree or two from what the
+   * robot code believes, so every photo is off the same way. And how eager should the nudge be?
+   */
+  @Test
+  void aMisSetCameraAndTheEagerness() {
+    List<Vec2> one = List.of(new Vec2(3.0, 0.25));
+    System.out.println("    filtered, one piece 25 cm to the side at 3 m/s, 300 runs: mean miss cm / worst miss cm / "
+        + "taken within 5 cm % / most the travel is turned deg / hardest sideways change m/s²");
+    try {
+      for (double e : new double[] {1.0, 1.5, 2.0, 3.0}) {
+        eagerness = e;
+        double[] r = average(one, 3.0, true, 0.2, 0.05);
+        System.out.printf("    eagerness %.1f                          %5.1f / %5.1f / %3.0f%% / %5.1f / %5.1f%n", e, r[0], r[1], r[4], r[5], r[6]);
+      }
+      eagerness = PieceAssist.EAGERNESS;
+      double[][] wrong = {{0, 0}, {1, 0}, {-1, 0}, {2, 0}, {-2, 0}, {0, 1}, {0, 2}};
+      for (double[] w : wrong) {
+        tiltWrong = Math.toRadians(w[0]);
+        yawWrong = Math.toRadians(w[1]);
+        double[] r = average(one, 3.0, true, 0.2, 0.05);
+        System.out.printf("    camera tilt off %+.0f deg, turned off %+.0f deg   %5.1f / %5.1f / %3.0f%% / %5.1f / %5.1f%n", w[0], w[1], r[0],
+            r[1], r[4], r[5], r[6]);
+        if (w[1] == 0) {
+          assertTrue(r[4] >= 99.0, "a camera tilt wrong by " + w[0] + " deg still takes the piece: " + r[4] + " %");
+        }
+      }
+    } finally {
+      tiltWrong = 0.0;
+      yawWrong = 0.0;
+      eagerness = PieceAssist.EAGERNESS;
+    }
   }
 
   @Test

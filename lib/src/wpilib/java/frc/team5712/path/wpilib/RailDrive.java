@@ -1,7 +1,6 @@
 package frc.team5712.path.wpilib;
 
 import frc.team5712.path.core.FieldSpeeds;
-import frc.team5712.path.core.Pose;
 import frc.team5712.path.core.Vec2;
 import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.follow.PieceAssist;
@@ -89,10 +88,9 @@ public final class RailDrive {
       return Conversions.toChassisVelocities(follower.step(sticks, dt));
     }
     Vec2 piece = new Vec2(chosenPiece.get().getX(), chosenPiece.get().getY());
-    // ride the rail from the intake, not the robot's centre
-    return Conversions.toChassisVelocities(follower.step(PieceAssist.railThrough(piece, sticks),
-        new Pose(intake.getX(), intake.getY(), intake.getRotation().getRadians()), sticks, maxSpeed, dt,
-        PieceAssist.maxCrossSpeed(sticks)));
+    // turn the driver's velocity to point the intake (not the robot's centre) at the piece
+    return Conversions.toChassisVelocities(
+        follower.step(sticks, PieceAssist.nudge(sticks, new Vec2(intake.getX(), intake.getY()), piece), dt));
   }
 
   /** The piece the driver is heading for, if any, with no memory of the last choice ({@link PieceAssist#choose}). */

@@ -79,6 +79,30 @@ public final class RailFollower {
     return command;
   }
 
+  /**
+   * One loop of the driver's velocity turned by a {@code nudge} ({@link PieceAssist#nudge}): the driver's speed
+   * is kept and only the direction changes, then it goes through the limiter as plain teleop does.
+   */
+  public FieldSpeeds step(FieldSpeeds driver, FieldSpeeds nudge, double dt) {
+    double speed = Math.hypot(driver.vxMetersPerSecond(), driver.vyMetersPerSecond());
+    double vx = driver.vxMetersPerSecond() + nudge.vxMetersPerSecond();
+    double vy = driver.vyMetersPerSecond() + nudge.vyMetersPerSecond();
+    double turned = Math.hypot(vx, vy);
+    double keep = turned > 1e-9 ? speed / turned : 0.0; // the nudge turns the driver's velocity, it doesn't add to it
+    wanted = new FieldSpeeds(vx * keep, vy * keep, driver.omegaRadPerSec());
+    command = limiter.limit(wanted, dt);
+    // The feed-forward: the driver's own speeding up and slowing down, along the way they are pushing. The nudge
+    // follows the measured pose, so its changes are left to the wheels' velocity loops, as a path's corrections are.
+    FieldSpeeds stepTaken = limiter.acceleration();
+    double pushX = speed > 1e-9 ? driver.vxMetersPerSecond() / speed : 0.0;
+    double pushY = speed > 1e-9 ? driver.vyMetersPerSecond() / speed : 0.0;
+    double along = stepTaken.vxMetersPerSecond() * pushX + stepTaken.vyMetersPerSecond() * pushY;
+    planAx = speed > 1e-9 ? along * pushX : stepTaken.vxMetersPerSecond();
+    planAy = speed > 1e-9 ? along * pushY : stepTaken.vyMetersPerSecond();
+    planAlpha = stepTaken.omegaRadPerSec();
+    return command;
+  }
+
   /** What the law wanted on the last step, before the limiter. */
   public FieldSpeeds wanted() {
     return wanted;

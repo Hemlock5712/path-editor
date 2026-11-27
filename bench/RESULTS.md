@@ -179,6 +179,39 @@ under 5 cm, the piece being chased never changes, and the nudge is a fifth to a 
 the assist's own reach, not the tracking: the piece leaves the 30° the assist will help within before the
 capped nudge gets there, 2 % of the time with either.
 
+**The nudge: aim at the piece** (2026-11-27, Joe's choice; the table above was run with the first nudge). The
+first nudge got the intake onto the piece's line as fast as the grip allowed and then drove straight: for a
+piece 25 cm to the side seen 2.2 m out at 3 m/s, a 25° swerve of the travel, lined up 1.2 m early. Now it keeps
+the driver's speed and turns their direction to point at the piece: sideways speed = `EAGERNESS` x side ÷ ahead
+x the driver's speed (`PieceAssist.nudge`). The same experiment, filtered, one piece 25 cm to the side at 3 m/s
+(`PieceFilterTest.aMisSetCameraAndTheEagerness` prints it):
+
+| Eagerness | Mean miss, cm | Worst miss, cm | Taken within 5 cm | Most the travel is turned |
+|---|---|---|---|---|
+| 1 (lined up only on arrival) | 0.2 | 4.3 | 100 % | 6.6° |
+| 1.5 (as shipped) | 0.2 | 0.6 | 100 % | 9.1° |
+| 2 | 0.2 | 0.7 | 100 % | 11.9° |
+| 3 | 0.3 | 1.4 | 100 % | 17.2° |
+
+Across the seven cases of the table above it takes the piece as often as the first nudge did (100 % in every
+case but the piece well off to the side, 98 % as before) and the sideways jitter is halved (2.7 to 2.9 m/s² rms
+for 5.6 to 5.9).
+
+**Is the piece's place steady enough?** A camera set up wrong, so every photo is off the same way (same case,
+eagerness 1.5):
+
+| Camera | Mean miss, cm | Worst miss, cm | Taken within 5 cm |
+|---|---|---|---|
+| as the robot code believes | 0.2 | 0.6 | 100 % |
+| tilted 1° more / less | 0.1 / 0.2 | 0.6 / 2.6 | 100 % |
+| tilted 2° more / less | 0.2 / 0.3 | 2.7 / 4.5 | 100 % |
+| turned 1° to one side | 0.7 | 1.3 | 100 % |
+| turned 2° to one side | 1.4 | 2.1 | 100 % |
+
+A tilt error is a range error (2° is half a metre at 2.5 m), and the nudge barely needs the range: side ÷ ahead
+is the piece's direction, which the camera is sure of. A camera turned to one side is a real sideways error, so
+it shows: about 0.7 cm per degree. Measure the camera's yaw with more care than its tilt.
+
 **Teleop** (a scratch run, not a bench course: 20 s of full-stick direction changes through the Python port of
 AccelerationLimiter, 6 seeds; wheel slip, wheel-s / wheel odometry off at the end, cm / mean speed error, m/s):
 

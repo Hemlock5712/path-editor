@@ -121,9 +121,26 @@ class RailFollowerTest {
     assertTrue(PieceAssist.choose(List.of(fortyOff, behind), intake, ahead).isEmpty());
     assertTrue(PieceAssist.choose(List.of(tenOff), intake, new FieldSpeeds(0.1, 0.0, 0.0)).isEmpty(),
         "no stick, no help");
-    assertEquals(PieceAssist.ASSIST_RATIO * 3.0, PieceAssist.maxCrossSpeed(ahead), 1e-12);
-    Rail rail = PieceAssist.railThrough(tenOff, ahead);
-    assertEquals(0.0, rail.directionRadians(), 1e-12, "the rail runs the way the driver is pushing");
-    assertTrue(!rail.holdsHeading(), "and the driver still turns");
+  }
+
+  /** A piece 25 cm to the left and 2 m ahead: slide left at 25/200 of the speed, times the eagerness. */
+  @Test
+  void theNudgeAimsTheDriversVelocityAtThePiece() {
+    FieldSpeeds stick = new FieldSpeeds(3.0, 0.0, 0.0);
+    FieldSpeeds nudge = PieceAssist.nudge(stick, new Vec2(0, 0), new Vec2(2.0, 0.25));
+    assertEquals(0.0, nudge.vxMetersPerSecond(), 1e-12, "only sideways to the way the driver is pushing");
+    assertEquals(PieceAssist.EAGERNESS * 0.25 / 2.0 * 3.0, nudge.vyMetersPerSecond(), 1e-12);
+    // half the stick, half the nudge; no stick, none
+    assertEquals(nudge.vyMetersPerSecond() / 2, PieceAssist.nudge(new FieldSpeeds(1.5, 0, 0), new Vec2(0, 0),
+        new Vec2(2.0, 0.25)).vyMetersPerSecond(), 1e-12);
+    assertEquals(0.0, PieceAssist.nudge(new FieldSpeeds(0, 0, 0), new Vec2(0, 0), new Vec2(2.0, 0.25)).vyMetersPerSecond());
+    // never more than the cap, however close or far to the side
+    FieldSpeeds big = PieceAssist.nudge(stick, new Vec2(0, 0), new Vec2(0.3, -0.5));
+    assertEquals(-PieceAssist.ASSIST_RATIO * 3.0, big.vyMetersPerSecond(), 1e-12);
+    // and the robot keeps the driver's speed: the nudge turns the velocity, it doesn't add to it
+    RailFollower f = new RailFollower(CFG);
+    f.reset(stick);
+    f.step(stick, nudge, DT);
+    assertEquals(3.0, Math.hypot(f.wanted().vxMetersPerSecond(), f.wanted().vyMetersPerSecond()), 1e-9);
   }
 }

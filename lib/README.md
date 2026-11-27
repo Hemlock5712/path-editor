@@ -608,8 +608,11 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   and 4). A `Rail` is a line the robot is held to while the driver drives along it: under a trench, along a
   platform. `RailLaw` pulls the robot back onto the line with the finish's `StoppingLaw` in one dimension, keeps
   the part of the stick that points along the line, stops at the rail's ends, and holds a heading if the rail
-  has one. `PieceAssist` picks the game piece the driver is already heading for and draws a rail through it,
-  ridden from the intake, with the sideways pull capped at 0.6 of the driver's speed.
+  has one. `PieceAssist` picks the game piece the driver is already heading for, keeps the driver's speed and
+  turns their direction to point the intake at it: a sideways slide of side ÷ ahead of their speed (times
+  `EAGERNESS`, 1.5), capped at 0.6 of it. It is not a rail: it never takes the direction over, it bends it by
+  the angle to the piece (9° for a piece 25 cm off seen 2.2 m out, where getting onto the piece's line as fast
+  as possible swerved 25°).
 
   ```java
   RailDrive assist = new RailDrive(followerConfig);                          // robot init

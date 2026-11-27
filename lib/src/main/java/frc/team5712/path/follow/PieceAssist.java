@@ -7,18 +7,26 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Helps the driver line the intake up on a game piece, without taking over. The driver still drives and turns;
- * the robot only adds a small push sideways. Every loop:
+ * Helps the driver line the intake up on a game piece, without taking over: it keeps the driver's speed and
+ * turns their direction a little, to point at the piece. Done well the driver doesn't notice it; they just
+ * always hit the intake. Every loop:
  *
  * <ol>
  *   <li>Which piece? Only one the driver is already heading for: ahead of the intake and within {@link
  *       #MAX_ANGLE_RADIANS} of where the stick points. It never picks a different piece for them.
- *   <li>Draw a {@link Rail} through that piece, pointing the way the driver is pushing.
- *   <li>Ride that rail from the <b>intake</b>, not the robot's centre: the rail's sideways pull lines the intake
- *       up, the driver's speed carries it along.
- *   <li>Keep it a nudge: the sideways pull is never more than {@link #ASSIST_RATIO} of the driver's speed. Let
- *       go of the stick and the help stops too.
+ *   <li>How far is it <b>ahead</b> of the intake along the way the driver is pushing, and how far to the
+ *       <b>side</b>?
+ *   <li>Slide sideways at {@code side ÷ ahead} of the driver's speed. A piece 25 cm to the left and 2 m ahead:
+ *       slide left at an eighth of the speed. That is exactly the slide that carries the intake onto the piece
+ *       as it arrives, and it is the smallest change of direction that does. ({@link #EAGERNESS} makes it a
+ *       little more, to be lined up slightly early.)
+ *   <li>Keep it a nudge: never more than {@link #ASSIST_RATIO} of the driver's speed. Let go of the stick and
+ *       the help stops too.
  * </ol>
+ *
+ * <p>It needs the piece's direction far more than its distance, and direction is what a camera is good at: if
+ * the piece is really 20 % further off than the camera thinks, the slide starts 20 % too strong and corrects
+ * itself as the robot closes in.
  *
  * <p>The ideas come from two teams' talks: Orbit (1690) pulls only toward the piece the driver is already
  * heading for, sideways to their direction; OP Robotics (2056) scales the push by how fast the robot is going.
@@ -32,6 +40,13 @@ public final class PieceAssist {
   public static final double MIN_DRIVER_METERS_PER_SECOND = 0.3;
   /** The sideways pull is at most this share of the driver's speed. */
   public static final double ASSIST_RATIO = 0.6;
+  /**
+   * How much more than "just in time" the slide is: at 1 the intake comes onto the piece only as it arrives; at
+   * 1.5 two thirds of the gap is gone by halfway.
+   */
+  public static final double EAGERNESS = 1.5;
+  /** Closer than this the slide stops growing: side ÷ ahead would run away as ahead goes to nothing. */
+  public static final double CLOSE_METERS = 0.20;
 
   private PieceAssist() {}
 
@@ -105,13 +120,34 @@ public final class PieceAssist {
     return Math.abs(Angles.wrap(Math.atan2(piece.y() - intake.y(), piece.x() - intake.x()) - pushing));
   }
 
-  /** The rail to ride to {@code piece}: through it, pointing the way the driver is pushing, heading free. */
-  public static Rail railThrough(Vec2 piece, FieldSpeeds driver) {
-    return Rail.through(piece.x(), piece.y(), Math.atan2(driver.vyMetersPerSecond(), driver.vxMetersPerSecond()));
+  /**
+   * The sideways velocity to add to the driver's, to bring the intake onto {@code piece} as it arrives: {@link
+   * #EAGERNESS} × side ÷ ahead of the driver's speed, at right angles to the way they are pushing, and at most
+   * {@link #ASSIST_RATIO} of it.
+   *
+   * @param driver the driver's stick velocity (field directions)
+   * @param intake where the intake is on the field
+   * @param piece the piece chosen ({@link #choose})
+   */
+  public static FieldSpeeds nudge(FieldSpeeds driver, Vec2 intake, Vec2 piece) {
+    return nudge(driver, intake, piece, EAGERNESS);
   }
 
-  /** The most the assist may pull sideways for this stick velocity, m/s. */
-  public static double maxCrossSpeed(FieldSpeeds driver) {
-    return ASSIST_RATIO * Math.hypot(driver.vxMetersPerSecond(), driver.vyMetersPerSecond());
+  /** {@link #nudge(FieldSpeeds, Vec2, Vec2)} with another eagerness, for tuning. */
+  public static FieldSpeeds nudge(FieldSpeeds driver, Vec2 intake, Vec2 piece, double eagerness) {
+    double speed = Math.hypot(driver.vxMetersPerSecond(), driver.vyMetersPerSecond());
+    if (speed < 1e-9) {
+      return new FieldSpeeds(0.0, 0.0, 0.0);
+    }
+    // the way the driver is pushing, and the direction to its left
+    double pushX = driver.vxMetersPerSecond() / speed;
+    double pushY = driver.vyMetersPerSecond() / speed;
+    double toPieceX = piece.x() - intake.x();
+    double toPieceY = piece.y() - intake.y();
+    double ahead = toPieceX * pushX + toPieceY * pushY;
+    double side = -toPieceX * pushY + toPieceY * pushX; // + = the piece is to the left of the push
+    double slide = eagerness * side / Math.max(ahead, CLOSE_METERS) * speed;
+    slide = Math.max(-ASSIST_RATIO * speed, Math.min(ASSIST_RATIO * speed, slide));
+    return new FieldSpeeds(-pushY * slide, pushX * slide, 0.0);
   }
 }
