@@ -44,6 +44,20 @@ On top of those it has pieces that reuse the same limits: a limiter for driving 
 AprilTag, a **rail** that holds the robot to a line while the driver drives along it, and an intake assist that
 nudges the robot onto a game piece.
 
+## Which pages you need
+
+The guides are grouped by what you are writing. Each group stands on its own once the library is installed.
+
+| You are writing | Read | It covers |
+| --- | --- | --- |
+| An autonomous from paths you drew | [Autonomous paths](/guides/follow-a-path/) | Following a path, events, chaining, alliances |
+| A command that drives somewhere with no drawn path | [Driving to a spot](/guides/drive-to-pose/) | Drive to a pose, pathfinding, moving goals, tag alignment |
+| Driver control | [Teleop](/guides/teleop-limiter/) | The limiter, rails, the intake assist |
+| Anything, and it is time to run it | [On the robot](/guides/telemetry/) | Telemetry, tuning, wheel forces, troubleshooting |
+
+The teleop pieces do not need a single path. A team can use only the limiter, or only drive to a pose, and never
+open the editor.
+
 ## Who does what
 
 The rule the library is built on: **the library does everything about moving the robot, and robot code keeps the

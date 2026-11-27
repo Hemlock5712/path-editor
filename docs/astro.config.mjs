@@ -91,10 +91,59 @@ export default defineConfig({
           },
         },
       },
+      // Grouped by what the reader is doing, not by kind of page: a student writing an autonomous never has
+      // to scroll past the teleop pages, and the other way round. The pages' addresses do not follow the
+      // groups (guides/ and concepts/ stay as they are), so regrouping never breaks a link.
       sidebar: [
         group('Start here', 'start'),
-        group('Guides', 'guides'),
-        group('How it works', 'concepts'),
+        {
+          label: 'Autonomous paths',
+          items: ['guides/follow-a-path', 'guides/events', 'guides/chaining-paths', 'guides/alliances'],
+        },
+        {
+          label: 'Driving to a spot',
+          items: ['guides/drive-to-pose', 'guides/pathfinding', 'guides/moving-goals', 'guides/tag-alignment'],
+        },
+        {
+          label: 'Teleop',
+          items: ['guides/teleop-limiter', 'guides/rails', 'guides/intake-assist'],
+        },
+        {
+          label: 'On the robot',
+          items: ['guides/telemetry', 'guides/tuning', 'guides/wheel-forces', 'guides/troubleshooting'],
+        },
+        {
+          label: 'How it works',
+          items: [
+            'concepts/overview',
+            {
+              label: 'Planning a path',
+              collapsed: true,
+              items: ['concepts/the-curve', 'concepts/heading', 'concepts/speed-plan', 'concepts/traction', 'concepts/field-frame'],
+            },
+            {
+              label: 'Following it',
+              collapsed: true,
+              items: [
+                'concepts/the-follower',
+                'concepts/stopping-law',
+                'concepts/output-limiter',
+                'concepts/feed-forward',
+                'concepts/path-events',
+              ],
+            },
+            {
+              label: 'Planning on the field',
+              collapsed: true,
+              items: ['concepts/pathfinder', 'concepts/on-the-fly', 'concepts/footprints', 'concepts/moving-goals', 'concepts/tag-filter'],
+            },
+            {
+              label: 'Driver assists',
+              collapsed: true,
+              items: ['concepts/rail-law', 'concepts/piece-assist'],
+            },
+          ],
+        },
         group('Files', 'files'),
         {
           label: 'Reference',

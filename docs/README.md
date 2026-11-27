@@ -42,7 +42,10 @@ somewhere else, set `DOCS_BASE` (for example `/`) and `DOCS_SITE` when building.
 | `files/` | Every key of every file the library reads | Anyone editing a file by hand |
 | `reference/<package>/` | One page per public class | Anyone looking up a method |
 
-The sidebar is generated from these folders. A page's place in its group is `sidebar.order` in its frontmatter.
+The sidebar is not these folders. It is grouped by what the reader is doing (autonomous paths, driving to a spot,
+teleop, on the robot; then how it works, by stage) and is written out in `astro.config.mjs`. A new guide or
+concept page must be added there. Regrouping never changes a page's address. `start/`, `files/` and `reference/`
+are still listed from their folders, ordered by `sidebar.order` in each page's frontmatter.
 
 The look (colours, type, spacing) is `src/styles/theme.css`. It borrows the workshop site's tokens
 (frc5712.com): dark navy, warm paper in light mode, one orange accent, Newsreader for reading, Instrument Sans for

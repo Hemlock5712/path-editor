@@ -57,6 +57,8 @@ Command toReef = otf.follow(drive, Paths.TO_REEF);
 
 ## Where to go
 
+Pick the row that matches what you are writing. You do not need the others to start.
+
 <CardGrid>
   <LinkCard
     title="Start here"
@@ -64,9 +66,24 @@ Command toReef = otf.follow(drive, Paths.TO_REEF);
     href="/start/overview/"
   />
   <LinkCard
-    title="Guides"
-    description="One robot-code task per page: follow a path, bind events, drive to a pose, align on a tag."
+    title="Autonomous paths"
+    description="Follow a path you drew, run commands at events along it, chain paths, and handle both alliances."
     href="/guides/follow-a-path/"
+  />
+  <LinkCard
+    title="Driving to a spot"
+    description="No drawn path: drive to a pose from anywhere, route round the field, and stop on a spot measured from a tag."
+    href="/guides/drive-to-pose/"
+  />
+  <LinkCard
+    title="Teleop"
+    description="Limit the sticks to what the tires hold, hold a line while the driver drives, and nudge the intake onto a piece."
+    href="/guides/teleop-limiter/"
+  />
+  <LinkCard
+    title="On the robot"
+    description="Read a run in the logs, measure the robot's numbers, send the feed-forward, and find what went wrong."
+    href="/guides/telemetry/"
   />
   <LinkCard
     title="How it works"
@@ -82,11 +99,6 @@ Command toReef = otf.follow(drive, Paths.TO_REEF);
     title="Reference"
     description="A page for every public class in the five packages, with every method."
     href="/reference/wpilib/pathlibrary/"
-  />
-  <LinkCard
-    title="Glossary"
-    description="The words these pages use, each in one or two sentences."
-    href="/glossary/"
   />
 </CardGrid>
 
