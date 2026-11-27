@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
 }
 
 group = 'frc.team5712'
@@ -175,6 +176,85 @@ if (wpilibMaven.isDirectory()) {
         description = 'The WPILib adapters, for a robot project that also depends on pathcore.jar.'
         archiveFileName = 'pathcore-wpilib.jar'
         from sourceSets.wpilib.output
+    }
+
+    // ------------------------------------------------------------------------------ the vendordep
+    // What a robot project installs: one jar (the library and its WPILib commands), its sources so students
+    // can read them, and Myelin.json, the file that goes in the robot project's vendordeps folder.
+    //   gradlew -p lib vendordep                      -> lib/build/vendordep/{maven/..., Myelin.json}
+    //   -PvendordepVersion=2027.0.0-alpha-2           the version to publish
+    //   -PvendordepMavenUrl=<where maven/ is served>  written into Myelin.json (a file:/// URL to try it locally)
+    // Publishing is copying lib/build/vendordep to a web server. Nothing here uploads anything.
+    def vendordepVersion = (project.findProperty('vendordepVersion') ?: '2027.0.0-alpha-1').toString()
+    def vendordepMavenUrl = (project.findProperty('vendordepMavenUrl')
+        ?: 'https://hemlock5712.github.io/path-editor/vendordep/maven/').toString()
+    def vendordepDir = layout.buildDirectory.dir('vendordep')
+    // the bench's and the fixtures' command-line tools stay out of the robot's jar
+    def notForRobots = ['frc/team5712/path/tools/**']
+
+    tasks.register('vendordepJar', Jar) {
+        archiveBaseName = 'myelin-java'
+        archiveVersion = vendordepVersion
+        from sourceSets.main.output, sourceSets.wpilib.output
+        exclude notForRobots
+    }
+    tasks.register('vendordepSourcesJar', Jar) {
+        archiveBaseName = 'myelin-java'
+        archiveVersion = vendordepVersion
+        archiveClassifier = 'sources'
+        from sourceSets.main.allJava, sourceSets.wpilib.allJava
+        exclude notForRobots
+    }
+    publishing {
+        publications {
+            myelin(MavenPublication) {
+                groupId = 'frc.team5712'
+                artifactId = 'myelin-java'
+                version = vendordepVersion
+                artifact tasks.named('vendordepJar')
+                artifact tasks.named('vendordepSourcesJar')
+                pom {
+                    name = 'Myelin'
+                    description = 'Team 5712 path library: limits from one robot file, paths, drive-to-pose, driver assists.'
+                    url = 'https://github.com/Hemlock5712/path-editor'
+                }
+            }
+        }
+        repositories {
+            maven {
+                name = 'vendordep'
+                url = vendordepDir.map { it.dir('maven') }
+            }
+        }
+    }
+    tasks.register('vendordepJson') {
+        description = 'Writes Myelin.json, the file a robot project puts in its vendordeps folder.'
+        def out = vendordepDir.map { it.file('Myelin.json') }
+        def year = wpilibVersion.replace('.0.0-', '_').replace('-', '')   // 2027.0.0-alpha-7 -> 2027_alpha7
+        inputs.property('version', vendordepVersion)
+        inputs.property('url', vendordepMavenUrl)
+        inputs.property('year', year)
+        outputs.file(out)
+        doLast {
+            def json = [
+                fileName: 'Myelin.json',
+                name: 'Myelin',
+                version: vendordepVersion,
+                uuid: '5712a5e1-7a11-4d0e-9b2f-6d79656c696e',
+                wpilibYear: year,
+                mavenUrls: [vendordepMavenUrl],
+                jsonUrl: vendordepMavenUrl.replaceAll('maven/?$', '') + 'Myelin.json',
+                javaDependencies: [[groupId: 'frc.team5712', artifactId: 'myelin-java', version: vendordepVersion]],
+                jniDependencies: [],
+                cppDependencies: [],
+            ]
+            out.get().asFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json)) + '\n'
+        }
+    }
+    tasks.register('vendordep') {
+        group = 'publishing'
+        description = 'Builds the vendordep: the maven folder and Myelin.json under build/vendordep.'
+        dependsOn 'check', 'publishMyelinPublicationToVendordepRepository', 'vendordepJson'
     }
 } else {
     logger.warn("WPILib maven repo not found at $wpilibMaven: the WPILib adapters are not compiled. " +
