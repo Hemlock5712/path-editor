@@ -629,6 +629,14 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
     there follows the measured pose), along it the driver's change. A test holds the rail with a 4 mm wobble in
     the pose and checks the feed-forward stays quiet (`RailFollowerTest`).
   - The frame is whichever the pose is in: a rail knows nothing about the field's walls or its middle.
+  - `PieceMap` (`follow/PieceFilter` underneath) keeps the pieces between photos, as `TagGoal` keeps a tag.
+    Robot code reads the camera and turns each detection into a spot on the floor; the library remembers which
+    piece is which, weighs each sighting by how good it is (a camera measures angles: looking down from 33 cm,
+    an angle error is ten times larger in range than to the side at 2 m, and both grow with distance), ignores
+    a detection seen once, and forgets a piece after half a second. The assist stays with the piece it is
+    chasing unless another is 10° more in line with the stick. On the bench that takes the worst miss from 20
+    to 45 cm down to under 5 cm when detections drop out, a false one appears or two pieces are nearly tied;
+    the average miss is the same (bench/RESULTS.md, "Game pieces").
 
 - **Mechanisms out (footprints).** `robot.json` can name footprints, each the bumpers plus how far a mechanism
   reaches past them on each side (`"footprints": [{ "name": "intakeOut", "frontMeters": 0.3, "retractSeconds": 0.4 }]`,

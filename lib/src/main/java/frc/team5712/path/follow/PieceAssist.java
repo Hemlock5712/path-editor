@@ -66,6 +66,45 @@ public final class PieceAssist {
     return Optional.ofNullable(best);
   }
 
+  /** A piece within this of the one chosen last loop is that piece again. */
+  public static final double SAME_PIECE_METERS = 0.25;
+  /** Another piece takes over only when it is this much more in line with the stick than the one being chased. */
+  public static final double SWITCH_RADIANS = Math.toRadians(10);
+
+  /**
+   * {@link #choose(List, Vec2, FieldSpeeds)}, staying with the piece chosen last loop: while that piece is still
+   * a fair choice (ahead, within range and {@link #MAX_ANGLE_RADIANS}), another one takes over only if it is
+   * {@link #SWITCH_RADIANS} more in line with the stick. Two pieces about equally in line would otherwise swap
+   * with every wobble of the camera, and the robot would weave between them and take neither.
+   *
+   * @param previous the piece chosen last loop, if any
+   */
+  public static Optional<Vec2> choose(List<Vec2> pieces, Vec2 intake, FieldSpeeds driver, Optional<Vec2> previous) {
+    Optional<Vec2> best = choose(pieces, intake, driver);
+    if (previous.isEmpty() || best.isEmpty()) {
+      return best;
+    }
+    Vec2 kept = null;
+    double nearest = SAME_PIECE_METERS;
+    for (Vec2 piece : pieces) {
+      double d = Math.hypot(piece.x() - previous.get().x(), piece.y() - previous.get().y());
+      if (d < nearest) {
+        nearest = d;
+        kept = piece;
+      }
+    }
+    if (kept == null || choose(List.of(kept), intake, driver).isEmpty()) {
+      return best; // the old piece is gone, behind or too far off the stick
+    }
+    double pushing = Math.atan2(driver.vyMetersPerSecond(), driver.vxMetersPerSecond());
+    return offStick(best.get(), intake, pushing) < offStick(kept, intake, pushing) - SWITCH_RADIANS
+        ? best : Optional.of(kept);
+  }
+
+  private static double offStick(Vec2 piece, Vec2 intake, double pushing) {
+    return Math.abs(Angles.wrap(Math.atan2(piece.y() - intake.y(), piece.x() - intake.x()) - pushing));
+  }
+
   /** The rail to ride to {@code piece}: through it, pointing the way the driver is pushing, heading free. */
   public static Rail railThrough(Vec2 piece, FieldSpeeds driver) {
     return Rail.through(piece.x(), piece.y(), Math.atan2(driver.vyMetersPerSecond(), driver.vxMetersPerSecond()));

@@ -82,9 +82,11 @@ numbers from `AccelerationLimiter`), `CenterFrame` (the pose conversion until WP
       unchanged in what they ask, on the library's law with the robot file's limits and an ease-in of 8. Not
       done: run on a robot or in the CTRE simulator (it needs held buttons), and no bench course exercises a
       rail, so its wheel slip has never been measured.
-- [ ] **`PieceTracker` keeps its pieces for 0.5 s and takes the newest photo whole**, with no filtering
-      between photos and no check that a piece is the same one as last time. The tag side got a filter
-      (`TagFilter`); the pieces have none. Not compared or changed.
+- [ ] **The piece filter's numbers are guesses to measure on the robot** (`follow/PieceFilter`, done
+      2026-11-26; bench/RESULTS.md, "Game pieces"): the camera's angle noise (0.3°: watch a still piece and take
+      the spread), and whether the range is off the same way photo after photo (a wrong piece height or camera
+      tilt; the filter allows half a metre for it). Two pieces in one line of sight less than half a metre apart
+      are taken for one. Precision-Drive's `PieceTracker` hands its photos to it.
 - [ ] **`build.gradle`'s library path** points into this repository's worktree
       (`../path-editor/.claude/worktrees/pensive-einstein/lib`). Once this branch is merged it becomes
       `../path-editor/lib`.

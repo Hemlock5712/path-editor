@@ -77,7 +77,14 @@ public final class RailDrive {
       double maxSpeed, double dt) {
     FieldSpeeds sticks = Conversions.toFieldSpeeds(driver);
     Pose2d intake = robot.transformBy(robotToIntake);
-    chosenPiece = choosePiece(pieces, intake.getTranslation(), driver);
+    // stay with the piece chosen last loop unless another is clearly more in line with the stick
+    List<Vec2> points = new ArrayList<>(pieces.size());
+    for (Translation2d p : pieces) {
+      points.add(new Vec2(p.getX(), p.getY()));
+    }
+    Optional<Vec2> picked = PieceAssist.choose(points, new Vec2(intake.getX(), intake.getY()), sticks,
+        chosenPiece.map(p -> new Vec2(p.getX(), p.getY())));
+    chosenPiece = picked.map(v -> pieces.get(points.indexOf(v)));
     if (chosenPiece.isEmpty()) {
       return Conversions.toChassisVelocities(follower.step(sticks, dt));
     }
@@ -88,7 +95,7 @@ public final class RailDrive {
         PieceAssist.maxCrossSpeed(sticks)));
   }
 
-  /** The piece the driver is heading for, if any ({@link PieceAssist#choose}). */
+  /** The piece the driver is heading for, if any, with no memory of the last choice ({@link PieceAssist#choose}). */
   public static Optional<Translation2d> choosePiece(
       List<Translation2d> pieces, Translation2d intake, ChassisVelocities driver) {
     List<Vec2> points = new ArrayList<>(pieces.size());

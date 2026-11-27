@@ -156,6 +156,29 @@ up to the robot's traction limit (11.2), with the feed-forward sent. Six courses
 take over) and the odometry drifts 22 % further. No run overshot at any limit. Precision-Drive's `robot.json`
 sets 9 (`onTheFlyMaxMetersPerSecondSquared`); the library's default with no key stays 6.
 
+**Game pieces: the newest photo, or a filter** (2026-11-26; `PieceFilterTest.theFilterAgainstTheNewestPhoto`
+prints this, so it is re-run with every build). The intake assist at full stick (3 m/s) toward pieces seen by a
+simulated camera with Precision-Drive's geometry: angles good to 0.3°, a photo every 33 ms that is 40 ms old, a
+fifth of detections missing and a false one in 1 photo of 20 unless said. 300 runs each; mean miss, cm / worst
+miss, cm / the nudge's jitter, m/s² rms / changes of piece per run:
+
+| Case | Newest photo as it comes, plain choice | `PieceFilter`, sticky choice |
+|---|---|---|
+| One piece, 25 cm to the side | 0.2 / 8.4 / 7.0 / 0.9 | 0.1 / 1.2 / 5.6 / 0 |
+| One piece, clean camera | 0.1 / 0.3 / 6.9 / 0.5 | 0.1 / 0.3 / 5.6 / 0 |
+| One piece, half the detections missing | 0.9 / 43.8 / 7.1 / 1.4 | 0.2 / 4.8 / 5.6 / 0 |
+| One piece, a false detection in 1 photo of 4 | 0.7 / 21.3 / 7.9 / 3.1 | 0.2 / 4.5 / 5.7 / 0 |
+| Two pieces about equally in line | 0.5 / 22.8 / 8.6 / 5.5 | 0.1 / 2.0 / 5.9 / 0 |
+| Two pieces, at 1.5 m/s | 0.2 / 7.0 / 7.7 / 10.7 | 0.1 / 0.4 / 3.4 / 0 |
+| One piece well off to the side (0.9 m at 2.6 m) | 1.2 / 89.5 / 7.4 / 1.4 | 2.6 / 95.1 / 6.7 / 0 |
+
+The average miss is the same either way: a camera's error shrinks with the square of the distance, so the last
+few photos before the piece are good whatever came before. The filter is for the bad runs: a piece lost for a
+few photos, a false detection, two pieces the choice swaps between. The worst miss falls from 20 to 45 cm to
+under 5 cm, the piece being chased never changes, and the nudge is a fifth to a half smoother. The last row is
+the assist's own reach, not the tracking: the piece leaves the 30° the assist will help within before the
+capped nudge gets there, 2 % of the time with either.
+
 **Teleop** (a scratch run, not a bench course: 20 s of full-stick direction changes through the Python port of
 AccelerationLimiter, 6 seeds; wheel slip, wheel-s / wheel odometry off at the end, cm / mean speed error, m/s):
 
