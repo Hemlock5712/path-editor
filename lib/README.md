@@ -160,8 +160,9 @@ vendordep, and WPILib 2027 alpha-7):
 
     https://hemlock5712.github.io/path-editor/vendordep/Myelin.json
 
-Version 2027.0.0-alpha-1 is there since 2026-11-27, served by GitHub Pages from this repository's `gh-pages`
-branch. It has not run on a robot.
+Version 2027.0.0-alpha-2 is there since 2026-11-28 (alpha-1, 2026-11-27, stays available), served by GitHub
+Pages from this repository's `gh-pages` branch. alpha-2 adds `RailDrive.towardPiece(..., eagerness)`, which
+Precision-Drive's intake assist calls. It has not run on a robot.
 
 **To publish a new version:** build it with a new `-PvendordepVersion`, add the new
 `lib/build/vendordep/maven/frc/team5712/myelin-java/<version>/` folder to the `gh-pages` branch, and replace its

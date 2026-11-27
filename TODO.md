@@ -167,11 +167,10 @@ The library's side of the next three is done (2026-11-26; lib/README.md, "Drivin
       - Torque current is `kDriveClosedLoopOutput = TorqueCurrentFOC` in `TunerConstants` with the drive gains
         retuned in amps; the request stays `Velocity`. It needs Phoenix Pro. The bench has not simulated it.
       - CTRE's comment says the forces "should include friction". Ours don't: check the drive kS covers it.
-- [ ] **Packaging: the vendordep is published** (2027.0.0-alpha-1, 2026-11-27, GitHub Pages from the `gh-pages`
-      branch; lib/README.md, "The vendordep"), and a clean robot project builds and tests from the public
-      address. Still to do: switch Precision-Drive's `build.gradle` from the source include to
-      `vendordeps/Myelin.json` (Joe's call on when: the source include is handier while the library is still
-      changing daily); publishing a new version is by hand. Not checked: whether a vendordep can say it needs
+- [ ] **Packaging: the vendordep is published** (2027.0.0-alpha-2, 2026-11-28, GitHub Pages from the `gh-pages`
+      branch; lib/README.md, "The vendordep"), and Precision-Drive's `library-drive` builds from
+      `vendordeps/Myelin.json` (`-PpathLib=<lib folder>` still builds it from source while changing the
+      library). Publishing a new version is by hand. Not checked: whether a vendordep can say it needs
       Commands v3 (GradleRIO alpha-7's handling of a `requires` entry), and installing it through the WPILib
       VS Code "Manage Vendor Libraries" command rather than by copying the file.
 - [ ] **Swerve School.** The videos copy their on-screen code from Precision-Drive (`precision-1-DriveToPose`,
