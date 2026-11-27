@@ -75,8 +75,10 @@ numbers from `AccelerationLimiter`), `CenterFrame` (the pose conversion until WP
 - [ ] **The library's own default is still 6 m/s²** when a robot file has no `onTheFlyMaxMetersPerSecondSquared`
       (the bench's on-the-fly comparison and the plan fixtures are at 6). The editor may not keep the key when it
       rewrites `robot.json`: check, and add it to the editor's robot settings.
-- [ ] **`AccelerationLimiter` is still there** for `DriveOnRail`, `IntakeAssist` and `Rail` (lessons 3 and 4), which
-      have not been compared with the library.
+- [ ] **`Rail` and `PieceAssist` keep their own stopping maths** (a 6 m/s² brake, a 6 per second ease-in, 8 m/s²
+      along the rail). `AccelerationLimiter` is gone: `DriveOnRail` and `IntakeAssist` limit through `DriveLimiter`
+      and send the wheel forces, and their tests drive the same limiter from the deployed `robot.json`. Whether
+      the rail and the piece nudge should use the library's `StoppingLaw` has not been looked at.
 - [ ] **`build.gradle`'s library path** points into this repository's worktree
       (`../path-editor/.claude/worktrees/pensive-einstein/lib`). Once this branch is merged it becomes
       `../path-editor/lib`.
