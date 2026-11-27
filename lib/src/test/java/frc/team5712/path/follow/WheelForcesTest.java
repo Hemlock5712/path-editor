@@ -76,6 +76,79 @@ class WheelForcesTest {
     assertEquals(1.0, tipped[0] + tipped[1] + tipped[2] + tipped[3], 1e-12);
   }
 
+  /**
+   * The two sums that must always hold, on random robots: lopsided layouts, three to six modules, tall and flat,
+   * gentle accelerations and ones hard enough to lift a wheel. The forces add up to mass x acceleration, their
+   * turning effort about the centre of mass is inertia x spin acceleration, and no wheel is asked to pull down.
+   */
+  @Test
+  void theSumsHoldOnAnyRobot() {
+    java.util.Random r = new java.util.Random(5712);
+    for (int trial = 0; trial < 2000; trial++) {
+      int n = 3 + r.nextInt(4);
+      double[] x = new double[n];
+      double[] y = new double[n];
+      for (int i = 0; i < n; i++) {
+        double angle = 2 * Math.PI * (i + 0.8 * r.nextDouble()) / n; // round the robot, unevenly
+        double reach = 0.2 + 0.3 * r.nextDouble();
+        x[i] = reach * Math.cos(angle) + 0.05 * r.nextGaussian(); // and the centre of mass off the middle
+        y[i] = reach * Math.sin(angle) + 0.05 * r.nextGaussian();
+      }
+      RobotConfig robot = ROBOT.withCenterOfMassHeightMeters(0.5 * r.nextDouble());
+      WheelForces forces = new WheelForces(robot, x, y);
+      double hard = trial % 2 == 0 ? 6.0 : 25.0;
+      FieldSpeeds acc = new FieldSpeeds(hard * r.nextGaussian(), hard * r.nextGaussian(), 10.0 * r.nextGaussian());
+      double heading = 2 * Math.PI * r.nextDouble();
+      double[][] f = forces.forAcceleration(acc, heading);
+      double sumX = 0.0;
+      double sumY = 0.0;
+      double torque = 0.0;
+      for (int i = 0; i < n; i++) {
+        double armX = Math.cos(heading) * x[i] - Math.sin(heading) * y[i];
+        double armY = Math.sin(heading) * x[i] + Math.cos(heading) * y[i];
+        sumX += f[0][i];
+        sumY += f[1][i];
+        torque += armX * f[1][i] - armY * f[0][i];
+      }
+      assertEquals(robot.massKg() * acc.vxMetersPerSecond(), sumX, 1e-6, "trial " + trial);
+      assertEquals(robot.massKg() * acc.vyMetersPerSecond(), sumY, 1e-6, "trial " + trial);
+      assertEquals(robot.momentOfInertiaKgM2() * acc.omegaRadPerSec(), torque, 1e-6, "trial " + trial);
+      double total = 0.0;
+      for (double share : forces.weightShares(acc.vxMetersPerSecond(), acc.vyMetersPerSecond())) {
+        assertTrue(share >= 0.0);
+        total += share;
+      }
+      assertEquals(1.0, total, 1e-12);
+    }
+  }
+
+  /**
+   * The weights are a real balance: while no wheel lifts, they hold the robot's weight up and balance the lean,
+   * on a lopsided robot too.
+   */
+  @Test
+  void theWeightsBalanceTheLean() {
+    double[] x = {0.32, 0.25, -0.20, -0.28};
+    double[] y = {0.21, -0.26, 0.27, -0.19};
+    WheelForces forces = new WheelForces(ROBOT, x, y);
+    double weight = ROBOT.massKg() * RobotConfig.GRAVITY;
+    double lean = ROBOT.massKg() * ROBOT.centerOfMassHeightMeters();
+    for (double[] a : new double[][] {{0, 0}, {5, 0}, {0, -4}, {3, 3}, {-6, 2}}) {
+      double[] share = forces.weightShares(a[0], a[1]);
+      double pitch = 0.0;
+      double roll = 0.0;
+      for (int i = 0; i < 4; i++) {
+        pitch += share[i] * weight * x[i];
+        roll += share[i] * weight * y[i];
+      }
+      assertEquals(-lean * a[0], pitch, 1e-9, "the pitching moment, at " + a[0] + ", " + a[1]);
+      assertEquals(-lean * a[1], roll, 1e-9, "the rolling moment");
+    }
+    // modules in a line can't balance a lean across the line: the shares fall back to equal
+    double[] inLine = new WheelForces(ROBOT, new double[] {0.3, 0.0, -0.3}, new double[3]).weightShares(4.0, 2.0);
+    assertEquals(1.0 / 3, inLine[0], 1e-12);
+  }
+
   /** Spinning on the spot, each wheel pushes at right angles to its arm and the pushes cancel. */
   @Test
   void spinningPushesAcrossEachArm() {
