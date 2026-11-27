@@ -23,7 +23,15 @@ pass). Delete each item when it is done, and this file when it is empty.
       paths, and on paths planned to 95 % of the tipping limit it is worth 1.4 % where equal shares gave 4 %
       (bench/RESULTS.md, "How the push is shared"). To try: `easeInPerSecond` 24 when the feed-forward is sent
       (a third of the gap); a limiter budget nearer the plan's share while it is sent, so a launch isn't driven
-      at 100 % of the limit; and the 250 Hz rows again.
+      at 100 % of the limit; and the 250 Hz rows again. The lever that did work is the robot's, not the
+      library's: a softer drive kP once the feed-forward is sent (3 % at the limit with less slip; RESULTS.md,
+      "A softer drive velocity loop"). Try it on the robot with the feed-forward on, never without.
+- [ ] **Teleop feed-forward.** `DriveLimiter.wheelForces` gives it; a scratch run says it cuts wheel slip by a
+      third to a half below the limit (RESULTS.md, "Teleop"). It ran the Python port of AccelerationLimiter, not
+      `DriveLimiter`: make it a bench course that runs the library's.
+- [ ] **WheelForces' assumptions on the real robot** (its class comment lists them): module positions measured
+      from the centre of mass, a stiff frame, the lean following the command at once, rotor inertia left out.
+      Measure where the centre of mass is, front to back and side to side, not only its height.
 - [ ] **Bench, feed-forward on the fly.** The on-the-fly bench op (`otf`) doesn't take `"modules"`, so
       `bench/h2h.py` still runs ours with the velocity alone.
 - [ ] **Goal averaging across a re-plan.** `OnTheFly.withMovingGoal(goal, seconds)` starts its average again at

@@ -100,6 +100,33 @@ than velocity only, against 4 %). What the traces show (a straight, wheel by whe
   creeps the last 5 cm. A steeper ease-in (`easeInPerSecond` 24 for 12) gives a third of that back (29.14 s against
   29.45 s over 11 of the courses, 3 seeds) for 3 % more slip. The rest is not explained.
 
+**A softer drive velocity loop.** The velocity loop pushes every wheel by the same speed error, so its share is
+equal whatever the feed-forward's is. With the feed-forward doing the work, the loop's gain can come down (the
+plant's `drive_kp`, 3 V per m/s; 3 seeds on 11 of the limit courses, 4 on the three 6 m/s² ones; total time, s /
+wheel slip, wheel-s):
+
+| | At the tipping limit | At 6 m/s² |
+|---|---|---|
+| Velocity only, gain 3 | 29.81 / 49.2 | 8.40 / 6.60 |
+| Velocity only, gain 1 | 31.52 / 50.7 | 8.60 / 6.62 |
+| Feed-forward, gain 3 | 29.45 / 49.4 | 8.32 / 4.19 |
+| Feed-forward, gain 1 | 29.21 / 48.2 | 8.26 / 4.00 |
+| Feed-forward, gain 0.3 | 29.01 / 47.7 | 8.24 / 3.94 |
+| Feed-forward, gain 0 | 28.89 / 47.5 | 8.22 / 3.89 |
+
+With the feed-forward, a softer loop is faster and slips less on both sets (3 % faster at the limit with gain 0,
+where gain 3 gave 1.2 %); without it, a softer loop is only slower. The plant's back-EMF still acts as a velocity
+gain of 2.6 V per m/s at gain 0, so this is not "no feedback". On the robot this is the drive motors' kP.
+
+**Teleop** (a scratch run, not a bench course: 20 s of full-stick direction changes through the Python port of
+AccelerationLimiter, 6 seeds; wheel slip, wheel-s / wheel odometry off at the end, cm / mean speed error, m/s):
+
+| Limiter's traction limit | Velocity only | + equal shares | + shared by weight |
+|---|---|---|---|
+| 11.2 m/s² (the robot's) | 23.7 / 10.0 / 0.28 | 24.9 / 11.4 / 0.22 | 23.0 / 7.1 / 0.19 |
+| 8 m/s² | 17.8 / 3.2 / 0.22 | 19.4 / 3.5 / 0.16 | 12.6 / 3.1 / 0.15 |
+| 6 m/s² | 8.6 / 2.5 / 0.17 | 10.2 / 2.3 / 0.12 | 3.6 / 2.7 / 0.12 |
+
 Tried and no help: capping or scaling the feed-forward (0.8 x, or at the plan's 6 m/s²), averaging it over two
 loops, letting the lean follow the command late (20 to 200 ms), `latencySeconds` 0.02 to 0.04 (slower and more
 slip at the limit), and blends of the two shares (a straight trade of one set's time for the other's slip).
