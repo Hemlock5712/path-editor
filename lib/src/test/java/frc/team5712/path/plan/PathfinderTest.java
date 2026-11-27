@@ -331,6 +331,19 @@ class PathfinderTest {
     assertEquals(0.8, c.bumperWidthMeters(), 0.0);
     assertEquals(PlannerConfig.DEFAULT.marginMeters(), c.marginMeters(), 0.0);
     assertEquals(PlannerConfig.DEFAULT, PlannerConfig.fromRobotFile(Map.of()));
+    // how hard on-the-fly paths drive is the robot file's to set: one limit for speeding up and slowing down
+    PlannerConfig brisk = PlannerConfig.fromRobotFile(PathFile.asMap(Json.parse(
+        "{\"onTheFlyMaxMetersPerSecond\": 4.5, \"onTheFlyMaxMetersPerSecondSquared\": 9.0}"), "r"));
+    assertEquals(4.5, brisk.maxMetersPerSecond());
+    assertEquals(9.0, brisk.maxMetersPerSecondSquared());
+    Pathfinder gentle = new Pathfinder(new FieldMap(100, 100, List.of(), List.of()), RobotConfig.DEFAULT, PlannerConfig.DEFAULT);
+    Pathfinder hard = new Pathfinder(new FieldMap(100, 100, List.of(), List.of()), RobotConfig.DEFAULT, brisk);
+    Pose from = new Pose(0, 0, 0);
+    Pose to = new Pose(3, 0, 0);
+    FieldSpeeds still = new FieldSpeeds(0, 0, 0);
+    double slow = gentle.plan(from, still, to).path().totalTimeSeconds();
+    double fast = hard.plan(from, still, to).path().totalTimeSeconds();
+    assertTrue(fast < 0.9 * slow, "3 m at 9 m/s² takes " + fast + " s, at 6 m/s² " + slow + " s");
   }
 
   @Test

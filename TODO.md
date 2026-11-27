@@ -56,12 +56,16 @@ numbers from `AccelerationLimiter`), `CenterFrame` (the pose conversion until WP
 `Drivetrain/WheelForcesSent`), `TeleopDrive` on `DriveLimiter`, `DriveToPose` and `DriveToTag` on
 `Pathfinding`, and `TagTracker` handing its sightings to `TagGoal`.
 
-- [ ] **`DriveToPose` is slower than the one it replaced.** In the CTRE simulator, "Drive To Pose" (3 m, then
-      1.5 m with a quarter turn) holds its two goals at 1.32 s and 2.70 s; the old command at 1.26 s and 2.48 s.
-      The old one speeds up at the traction limit (11.2 m/s²) and brakes at 6; a path has one cap for both
-      (`PlannerConfig`'s 6). To match it the profile needs separate caps for speeding up and for braking.
-      The Python bench puts them the other way round on the 3 m leg (library 1.44 s, old 1.53 s): its port of the
-      old limiter launches at 9.81 m/s² and its plant can slip, which the CTRE simulator can't.
+- [ ] **`DriveToPose`'s limit is 9 m/s², both ways** (Joe, 2026-11-26: the same rate speeding up and slowing
+      down, and 6 was too safe). `robot.json`'s `onTheFlyMaxMetersPerSecondSquared`; bench/RESULTS.md, "How
+      hard to plan", is why 9. In the CTRE simulator "Drive To Pose" (3 m, then 1.5 m with a quarter turn) holds
+      its goals at 1.16 s and 2.51 s; the old command (11.2 speeding up, 6 braking) at 1.26 s and 2.48 s, and
+      the library at 6 at 1.32 s and 2.70 s. Check on the robot that it still stops on a tag at 9: the old
+      comment said braking harder than 6 cost accuracy there. The second leg (a quarter turn in 1.5 m) is still
+      0.13 s behind the old one; not looked into.
+- [ ] **The library's own default is still 6 m/s²** when a robot file has no `onTheFlyMaxMetersPerSecondSquared`
+      (the bench's on-the-fly comparison and the plan fixtures are at 6). The editor may not keep the key when it
+      rewrites `robot.json`: check, and add it to the editor's robot settings.
 - [ ] **`AccelerationLimiter` is still there** for `DriveOnRail`, `IntakeAssist` and `Rail` (lessons 3 and 4), which
       have not been compared with the library.
 - [ ] **`build.gradle`'s library path** points into this repository's worktree

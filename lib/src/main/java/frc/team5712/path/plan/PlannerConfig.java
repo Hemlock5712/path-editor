@@ -64,13 +64,21 @@ public record PlannerConfig(
    * {@link #DEFAULT} with the bumper size from a robot file's tree ({@code deploy/paths/robot.json},
    * keys {@code bumperLengthMeters} and {@code bumperWidthMeters}, both optional). The editor writes
    * them next to the {@code RobotConfig} keys, which {@code RobotFile} reads.
+   *
+   * <p>Two more optional keys set how hard on-the-fly paths (drive to a pose, pathfind) drive:
+   * {@code onTheFlyMaxMetersPerSecond} (4 unless set) and {@code onTheFlyMaxMetersPerSecondSquared} (6 unless
+   * set), the one limit for speeding up and for slowing down. The robot's own traction limit still applies, so
+   * a number above it changes nothing. On the bench, 9 m/s² was 6 % faster than 6 with the wheel odometry no
+   * further off; from there to the traction limit gained 1 % more and the odometry drifted 20 % further
+   * (bench/RESULTS.md).
    */
   public static PlannerConfig fromRobotFile(Map<String, Object> robot) {
     return new PlannerConfig(
         PathFile.number(robot, "bumperLengthMeters", DEFAULT.bumperLengthMeters),
         PathFile.number(robot, "bumperWidthMeters", DEFAULT.bumperWidthMeters),
         DEFAULT.marginMeters, DEFAULT.arcStepRadians, DEFAULT.maxRefits, DEFAULT.checkStepMeters,
-        DEFAULT.maxMetersPerSecond, DEFAULT.maxMetersPerSecondSquared);
+        PathFile.number(robot, "onTheFlyMaxMetersPerSecond", DEFAULT.maxMetersPerSecond),
+        PathFile.number(robot, "onTheFlyMaxMetersPerSecondSquared", DEFAULT.maxMetersPerSecondSquared));
   }
 
   /**

@@ -118,6 +118,23 @@ With the feed-forward, a softer loop is faster and slips less on both sets (3 % 
 where gain 3 gave 1.2 %); without it, a softer loop is only slower. The plant's back-EMF still acts as a velocity
 gain of 2.6 V per m/s at gain 0, so this is not "no feedback". On the robot this is the drive motors' kP.
 
+**How hard to plan** (2026-11-26). One limit for speeding up and slowing down, from the old DriveToPose's 6 m/s²
+up to the robot's traction limit (11.2), with the feed-forward sent. Six courses at 4 m/s (`straight_3m`,
+`s_curve`, `hairpin`, `tag_align_moving_goal`, `three_piece_chain`, `intake_drive_through`), 4 seeds; totals:
+
+| Limit, m/s² | Time, s (perfect pose) | Wheel slip, wheel-s | Wheel odometry off at the end, cm (sum) | Odometry only: time, s |
+|---|---|---|---|---|
+| 6 | 14.84 | 9.1 | 29.0 | 14.66 |
+| 7 | 14.47 | 10.7 | 29.5 | 14.28 |
+| 8 | 14.18 | 12.4 | 28.4 | 14.02 |
+| 9 | 14.00 | 14.3 | 29.6 | 13.86 |
+| 10 | 13.93 | 15.9 | 33.8 | 13.76 |
+| 11.2 | 13.86 | 16.8 | 36.1 | 13.70 |
+
+6 to 9 is 5.7 % faster with the odometry no further off. 9 to 11.2 is 1 % more (the 4 m/s cap and the motors
+take over) and the odometry drifts 22 % further. No run overshot at any limit. Precision-Drive's `robot.json`
+sets 9 (`onTheFlyMaxMetersPerSecondSquared`); the library's default with no key stays 6.
+
 **Teleop** (a scratch run, not a bench course: 20 s of full-stick direction changes through the Python port of
 AccelerationLimiter, 6 seeds; wheel slip, wheel-s / wheel odometry off at the end, cm / mean speed error, m/s):
 
