@@ -74,6 +74,17 @@ public final class RailDrive {
   public ChassisVelocities towardPiece(
       List<Translation2d> pieces, Pose2d robot, Transform2d robotToIntake, ChassisVelocities driver,
       double maxSpeed, double dt) {
+    return towardPiece(pieces, robot, robotToIntake, driver, maxSpeed, dt, PieceAssist.EAGERNESS);
+  }
+
+  /**
+   * {@link #towardPiece(List, Pose2d, Transform2d, ChassisVelocities, double, double)} with the team's own
+   * eagerness: how hard the nudge turns the driver toward the piece ({@link PieceAssist#EAGERNESS} is 1.5;
+   * 1 lines the intake up only on arrival, more lines it up sooner and turns the robot's travel further).
+   */
+  public ChassisVelocities towardPiece(
+      List<Translation2d> pieces, Pose2d robot, Transform2d robotToIntake, ChassisVelocities driver,
+      double maxSpeed, double dt, double eagerness) {
     FieldSpeeds sticks = Conversions.toFieldSpeeds(driver);
     Pose2d intake = robot.transformBy(robotToIntake);
     // stay with the piece chosen last loop unless another is clearly more in line with the stick
@@ -90,7 +101,8 @@ public final class RailDrive {
     Vec2 piece = new Vec2(chosenPiece.get().getX(), chosenPiece.get().getY());
     // turn the driver's velocity to point the intake (not the robot's centre) at the piece
     return Conversions.toChassisVelocities(
-        follower.step(sticks, PieceAssist.nudge(sticks, new Vec2(intake.getX(), intake.getY()), piece), dt));
+        follower.step(sticks, PieceAssist.nudge(sticks, new Vec2(intake.getX(), intake.getY()), piece,
+            eagerness), dt));
   }
 
   /** The piece the driver is heading for, if any, with no memory of the last choice ({@link PieceAssist#choose}). */
