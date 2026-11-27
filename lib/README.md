@@ -155,6 +155,19 @@ A robot project installs the library as a vendordep: one jar, `frc.team5712:myel
 WPILib commands, without the bench's command-line tools), its sources jar so students can read the code, and
 `Myelin.json` for the robot project's `vendordeps` folder.
 
+**To install it:** put this file in the robot project's `vendordeps` folder (it also needs the Commands v3
+vendordep, and WPILib 2027 alpha-7):
+
+    https://hemlock5712.github.io/path-editor/vendordep/Myelin.json
+
+Version 2027.0.0-alpha-1 is there since 2026-11-27, served by GitHub Pages from this repository's `gh-pages`
+branch. It has not run on a robot.
+
+**To publish a new version:** build it with a new `-PvendordepVersion`, add the new
+`lib/build/vendordep/maven/frc/team5712/myelin-java/<version>/` folder to the `gh-pages` branch, and replace its
+`vendordep/Myelin.json` and `maven-metadata.xml`. Never change a version that is already published: robot
+projects cache it.
+
 ```
 lib/gradlew -p lib vendordep
 ```
@@ -167,16 +180,17 @@ maven/frc/team5712/myelin-java/<version>/     the jar, the sources jar and the p
 ```
 
 - `-PvendordepVersion=2027.0.0-alpha-2` sets the version (2027.0.0-alpha-1 unless given).
-- `-PvendordepMavenUrl=<url>` is where `maven/` will be served from, written into `Myelin.json`. The default,
-  `https://hemlock5712.github.io/path-editor/vendordep/maven/`, is a guess at a GitHub Pages address: **nothing
-  is hosted there**. To try a build on one machine, pass a `file:///` URL to `lib/build/vendordep/maven/`.
+- `-PvendordepMavenUrl=<url>` is where `maven/` is served from, written into `Myelin.json`. The default is the
+  GitHub Pages address above. To try a build on one machine before publishing it, pass a `file:///` URL to
+  `lib/build/vendordep/maven/`.
 - Publishing is copying `lib/build/vendordep/` to that web address. No task uploads anything.
 - A robot project also needs the Commands v3 vendordep (the library's commands are v3) and the WPILib release the
   library was built against (`wpilibVersion` in `lib/build.gradle`; `Myelin.json`'s `wpilibYear` follows it).
 
-Checked 2026-11-27 with a `file:///` URL: a clean copy of Precision-Drive's `library-drive` with the source
-include taken out of its `build.gradle` and `Myelin.json` put in `vendordeps/` builds, passes its 37 tests and
-drives the "Drive To Pose" auto in the simulator.
+Checked 2026-11-27, first with a `file:///` URL and then from the published address: a clean copy of
+Precision-Drive's `library-drive` with the source include taken out of its `build.gradle` and `Myelin.json` put
+in `vendordeps/` builds and passes its 37 tests (and, from the `file:///` build, drives the "Drive To Pose" auto
+in the simulator). The published jar is the same file, byte for byte.
 
 ## Design
 
