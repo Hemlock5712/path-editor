@@ -75,10 +75,16 @@ numbers from `AccelerationLimiter`), `CenterFrame` (the pose conversion until WP
 - [ ] **The library's own default is still 6 m/s²** when a robot file has no `onTheFlyMaxMetersPerSecondSquared`
       (the bench's on-the-fly comparison and the plan fixtures are at 6). The editor may not keep the key when it
       rewrites `robot.json`: check, and add it to the editor's robot settings.
-- [ ] **`Rail` and `PieceAssist` keep their own stopping maths** (a 6 m/s² brake, a 6 per second ease-in, 8 m/s²
-      along the rail). `AccelerationLimiter` is gone: `DriveOnRail` and `IntakeAssist` limit through `DriveLimiter`
-      and send the wheel forces, and their tests drive the same limiter from the deployed `robot.json`. Whether
-      the rail and the piece nudge should use the library's `StoppingLaw` has not been looked at.
+- [ ] **Rails and the intake assist are the library's** (2026-11-26: `follow/RailLaw`, `RailFollower`,
+      `PieceAssist`; `wpilib/RailDrive`; lib/README.md, "Rails and the intake assist"). Precision-Drive's `Rail`
+      is now only the line and its alliance flip, `PieceAssist` is gone, and `DriveOnRail` and `IntakeAssist`
+      hand the sticks to `RailDrive`. Its `RailTest` and `PieceAssistTest` (27 drives, 1 cm tolerances) pass
+      unchanged in what they ask, on the library's law with the robot file's limits and an ease-in of 8. Not
+      done: run on a robot or in the CTRE simulator (it needs held buttons), and no bench course exercises a
+      rail, so its wheel slip has never been measured.
+- [ ] **`PieceTracker` keeps its pieces for 0.5 s and takes the newest photo whole**, with no filtering
+      between photos and no check that a piece is the same one as last time. The tag side got a filter
+      (`TagFilter`); the pieces have none. Not compared or changed.
 - [ ] **`build.gradle`'s library path** points into this repository's worktree
       (`../path-editor/.claude/worktrees/pensive-einstein/lib`). Once this branch is merged it becomes
       `../path-editor/lib`.

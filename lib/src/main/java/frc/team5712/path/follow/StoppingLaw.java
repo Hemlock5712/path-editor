@@ -30,6 +30,26 @@ public final class StoppingLaw {
     return Math.sqrt(endSpeed * endSpeed + 2.0 * decel * braking);
   }
 
+  /**
+   * How hard the law is slowing the robot (a positive number, or 0): the acceleration to feed forward while it
+   * governs. On the ease-in line {@code v = k·d} the distance shrinks at v, so the speed falls at {@code k·v};
+   * further out, on the braking curve, it falls at the braking rate, which is the smaller of the two there. So
+   * it is {@code min(a, k·v)} of the speed last commanded, a number that fades smoothly to nothing as the robot
+   * stops: a pose that wobbles while the robot stands on its goal asks for next to nothing. At the top speed,
+   * or while the command is still coming up to the law's speed, there is nothing to slow.
+   *
+   * @param lawSpeed what the law asks for now
+   * @param commandSpeed what was last commanded
+   * @param topSpeed the law's top speed
+   */
+  public static double slowing(
+      double lawSpeed, double commandSpeed, double decel, double easeIn, double topSpeed) {
+    if (commandSpeed < lawSpeed - 1e-9 || lawSpeed >= topSpeed - 1e-9) {
+      return 0.0;
+    }
+    return Math.min(decel, easeIn * commandSpeed);
+  }
+
   /** The same law for turning; returns a signed spin rate toward {@code error}. */
   public static double spin(
       double error, double spinNow, double alpha, double reactionSeconds, double maxOmega,

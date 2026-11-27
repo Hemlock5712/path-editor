@@ -105,8 +105,8 @@ About 1,500 lines of code carry the ideas. Read them in this order:
 
 1. `follow/PathFollower.java`: `step()` and its three laws, `followPath`, `turnOnTheSpot` and `driveToGoal`.
 2. `follow/StoppingLaw.java` (DriveToPose's law, 28 lines) and `follow/OutputLimiter.java` (the one limiter,
-   teleop's too). `follow/WheelForces.java` (the feed-forward) and `follow/TagFilter.java` (a goal from a tag) are
-   short and stand alone.
+   teleop's too). `follow/WheelForces.java` (the feed-forward), `follow/TagFilter.java` (a goal from a tag) and
+   `follow/RailLaw.java` (holding a line while the driver drives) are short and stand alone.
 3. `core/VelocityProfile.java`, for the two passes.
 4. `plan/OnTheFly.java` (plan, follow, re-plan) and `plan/Pathfinder.java`. `plan()` is its five steps: snap,
    route, waypoints, smooth, profile.
@@ -603,6 +603,32 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   - `withMovingGoal(goal, seconds)` averages a goal that arrives raw, on on-the-fly paths as on library ones.
   - `DriveLimiter` (`follow/OutputLimiter` underneath) limits to the robot file's traction limit, motors and
     spin cap. `limiter.wheelForces(modules, heading)` gives the feed-forward for the step it just took.
+
+- **Rails and the intake assist** (driver assists; Precision-Drive's `Rail` and `PieceAssist` maths, lessons 3
+  and 4). A `Rail` is a line the robot is held to while the driver drives along it: under a trench, along a
+  platform. `RailLaw` pulls the robot back onto the line with the finish's `StoppingLaw` in one dimension, keeps
+  the part of the stick that points along the line, stops at the rail's ends, and holds a heading if the rail
+  has one. `PieceAssist` picks the game piece the driver is already heading for and draws a rail through it,
+  ridden from the intake, with the sideways pull capped at 0.6 of the driver's speed.
+
+  ```java
+  RailDrive assist = new RailDrive(followerConfig);                          // robot init
+  assist.reset(drive.getFieldVelocity());                                    // when the command starts
+  ChassisVelocities v = assist.onRail(rail, pose, fromTheSticks, maxSpeed, dt);            // every loop, or:
+  ChassisVelocities v = assist.towardPiece(pieces, pose, robotToIntake, fromTheSticks, maxSpeed, dt);
+  double[][] f = assist.wheelForces(drive.getModuleLocations(), pose.getRotation());
+  drive.driveFieldVelocity(v, f[0], f[1]);
+  ```
+
+  - Its limits are the robot file's, where the robot code had its own constants: braking onto the rail plans on
+    0.55 of the traction limit (`RailLaw.ACROSS_SHARE`; 6.2 m/s² for Precision-Drive's robot, where the constant
+    was 6), and the driver's speed along it may change by 0.85 of the grip left over (7.9 m/s², where it was 8).
+    The reaction time, ease-in and heading limits are the `FollowerConfig`'s.
+  - The command goes through the `OutputLimiter`, as teleop and the paths do.
+  - The feed-forward is the plan's, as for a path: across the rail only the law's own braking (the command
+    there follows the measured pose), along it the driver's change. A test holds the rail with a 4 mm wobble in
+    the pose and checks the feed-forward stays quiet (`RailFollowerTest`).
+  - The frame is whichever the pose is in: a rail knows nothing about the field's walls or its middle.
 
 - **Mechanisms out (footprints).** `robot.json` can name footprints, each the bumpers plus how far a mechanism
   reaches past them on each side (`"footprints": [{ "name": "intakeOut", "frontMeters": 0.3, "retractSeconds": 0.4 }]`,

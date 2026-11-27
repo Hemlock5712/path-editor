@@ -490,34 +490,14 @@ public final class PathFollower {
     refY = goal.yMeters();
     refHeading = goal.headingRadians();
     // What the stopping law calls for (the feed-forward): slowing down along the line to the goal
-    double slowing = slowingDown(speed, limiter.speed(), cfg.brakeDecel(), cfg.easeInPerSecond(),
+    double slowing = StoppingLaw.slowing(speed, limiter.speed(), cfg.brakeDecel(), cfg.easeInPerSecond(),
         active.spec().maxMetersPerSecond());
     planAx = d > 1e-6 ? -ex / d * slowing : 0.0;
     planAy = d > 1e-6 ? -ey / d * slowing : 0.0;
-    double spinSlowing = slowingDown(Math.abs(omega), Math.abs(limiter.omega()), cfg.maxAlphaRadPerSecSquared(),
+    double spinSlowing = StoppingLaw.slowing(Math.abs(omega), Math.abs(limiter.omega()), cfg.maxAlphaRadPerSecSquared(),
         cfg.headingEaseInPerSecond(), cfg.maxOmegaRadPerSec());
     planAlpha = -Math.signum(headingError) * spinSlowing;
     return new FieldSpeeds(d > 1e-6 ? ex / d * speed : 0.0, d > 1e-6 ? ey / d * speed : 0.0, omega);
-  }
-
-  /**
-   * How hard the stopping law is slowing the robot (a positive number, or 0). On the ease-in line {@code v =
-   * k·d} the distance shrinks at v, so the speed falls at {@code k·v}; further out, on the braking curve, it
-   * falls at the braking rate, which is the smaller of the two there. So it is {@code min(a, k·v)} of the speed
-   * last commanded, a number that fades smoothly to nothing as the robot stops: a pose that wobbles while the
-   * robot stands on its goal asks for next to nothing. At the top speed, or while the command is still coming
-   * up to the law's speed, there is nothing to slow.
-   *
-   * @param lawSpeed what the law asks for now
-   * @param commandSpeed what the limiter last commanded
-   * @param topSpeed the law's top speed
-   */
-  private static double slowingDown(double lawSpeed, double commandSpeed, double brake, double easeInPerSecond,
-      double topSpeed) {
-    if (commandSpeed < lawSpeed - 1e-9 || lawSpeed >= topSpeed - 1e-9) {
-      return 0.0;
-    }
-    return Math.min(brake, easeInPerSecond * commandSpeed);
   }
 
   private double clampSpin(double omega) {
