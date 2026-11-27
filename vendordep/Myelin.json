@@ -1,0 +1,24 @@
+{
+    "fileName": "Myelin.json",
+    "name": "Myelin",
+    "version": "2027.0.0-alpha-1",
+    "uuid": "5712a5e1-7a11-4d0e-9b2f-6d79656c696e",
+    "wpilibYear": "2027_alpha7",
+    "mavenUrls": [
+        "https://hemlock5712.github.io/path-editor/vendordep/maven/"
+    ],
+    "jsonUrl": "https://hemlock5712.github.io/path-editor/vendordep/Myelin.json",
+    "javaDependencies": [
+        {
+            "groupId": "frc.team5712",
+            "artifactId": "myelin-java",
+            "version": "2027.0.0-alpha-1"
+        }
+    ],
+    "jniDependencies": [
+        
+    ],
+    "cppDependencies": [
+        
+    ]
+}
