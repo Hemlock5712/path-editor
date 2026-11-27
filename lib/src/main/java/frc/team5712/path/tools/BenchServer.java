@@ -13,6 +13,7 @@ import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.core.RobotFile;
 import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.follow.PathFollower;
+import frc.team5712.path.follow.WheelForces;
 import frc.team5712.path.plan.FieldMap;
 import frc.team5712.path.plan.OnTheFly;
 import frc.team5712.path.plan.Pathfinder;
@@ -40,6 +41,7 @@ import java.util.Optional;
 public final class BenchServer {
   private Path path;
   private PathFollower follower;
+  private WheelForces wheelForces; // set when a load names the modules: steps then report the feed-forward
   private Optional<Pose> goal = Optional.empty();
 
   private Pathfinder pathfinder;
@@ -120,6 +122,17 @@ public final class BenchServer {
     }
     long t0 = System.nanoTime();
     PathSpec spec = PathFile.fromJson(PathFile.asMap(msg.get("path"), "path"));
+    wheelForces = null;
+    if (msg.get("modules") instanceof List<?> modules) {
+      double[] mx = new double[modules.size()];
+      double[] my = new double[modules.size()];
+      for (int i = 0; i < mx.length; i++) {
+        List<?> xy = (List<?>) modules.get(i);
+        mx[i] = ((Number) xy.get(0)).doubleValue();
+        my[i] = ((Number) xy.get(1)).doubleValue();
+      }
+      wheelForces = new WheelForces(robot, mx, my);
+    }
     path = msg.get("startCurvature") == null ? Path.build(spec, robot)
         : Path.build(spec, robot, VelocityProfile.DEFAULT_GRID_METERS, number(msg, "startCurvature"));
     double buildMs = (System.nanoTime() - t0) / 1e6;
@@ -292,6 +305,14 @@ public final class BenchServer {
     r.put("cmd", List.of(cmd.vxMetersPerSecond(), cmd.vyMetersPerSecond(), cmd.omegaRadPerSec()));
     FieldSpeeds acc = follower.commandedAcceleration();
     r.put("acc", List.of(acc.vxMetersPerSecond(), acc.vyMetersPerSecond(), acc.omegaRadPerSec()));
+    if (wheelForces != null) { // the robot's own sum, as FollowPathCommand.withWheelForces sends it
+      double[][] f = wheelForces.forAcceleration(acc, pose(msg.get("pose")).headingRadians());
+      List<Object> forces = new ArrayList<>();
+      for (int i = 0; i < f[0].length; i++) {
+        forces.add(List.of(f[0][i], f[1][i]));
+      }
+      r.put("forces", forces);
+    }
     r.put("done", follower.isFinished());
     r.put("phase", follower.phase().name());
     r.put("s", follower.progressMeters());

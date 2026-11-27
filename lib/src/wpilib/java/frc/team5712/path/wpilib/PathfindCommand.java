@@ -14,7 +14,6 @@ import org.wpilib.command3.Command;
 import org.wpilib.command3.Coroutine;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.math.geometry.Pose2d;
-import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.system.Timer;
 
 /**
@@ -132,8 +131,9 @@ public final class PathfindCommand implements Command {
     }
     if (run.start(clock.getAsDouble(), Conversions.toPose(ctx.pose.get()), measured())) {
       while (true) {
-        FieldSpeeds out = run.step(clock.getAsDouble(), Conversions.toPose(ctx.pose.get()), measured());
-        ctx.fieldOutput.accept(Conversions.toChassisVelocities(out));
+        Pose2d pose = ctx.pose.get();
+        FieldSpeeds out = run.step(clock.getAsDouble(), Conversions.toPose(pose), measured());
+        ctx.output.send(out, run.commandedAcceleration(), pose.getRotation());
         if (run.follower() != null) {
           telemetry.log(run.follower());
         }
@@ -145,7 +145,7 @@ public final class PathfindCommand implements Command {
     }
     if (follow == null || run.failure() != null) {
       if (!run.rollingEnd()) {
-        ctx.fieldOutput.accept(new ChassisVelocities());
+        ctx.output.stop();
       }
       telemetry.end();
       return;
@@ -171,7 +171,7 @@ public final class PathfindCommand implements Command {
     if (run != null) {
       run.cancel();
     }
-    ctx.fieldOutput.accept(new ChassisVelocities());
+    ctx.output.stop();
     telemetry.end();
   }
 

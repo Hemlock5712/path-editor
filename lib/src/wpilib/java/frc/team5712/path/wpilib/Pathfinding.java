@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 
 /**
@@ -44,6 +45,9 @@ public final class Pathfinding {
   final Supplier<Pose2d> pose;
   final Supplier<ChassisVelocities> fieldVelocity;
   final Consumer<ChassisVelocities> fieldOutput;
+  final DriveOutput output;
+  Translation2d[] moduleLocations;
+  WheelForceDrive forceDrive;
   final FieldFrame redFrame;
   DoubleSupplier clock;
   Supplier<FieldFrame> frame;
@@ -56,6 +60,7 @@ public final class Pathfinding {
     this.pose = pose;
     this.fieldVelocity = fieldVelocity;
     this.fieldOutput = fieldOutput;
+    this.output = new DriveOutput(fieldOutput);
     this.redFrame = redFrame;
   }
 
@@ -69,6 +74,37 @@ public final class Pathfinding {
   public Pathfinding withFrame(Supplier<FieldFrame> frameSource) {
     this.frame = frameSource;
     return this;
+  }
+
+  /**
+   * Every command built from here on sends the feed-forward too: {@code drive} gets each loop's velocity and the
+   * push every wheel needs for the acceleration the follower asked for, in place of the velocity-only output.
+   * See {@link WheelForceDrive} for the drivetrain's side.
+   *
+   * <pre>
+   * otf.withWheelForces(drivetrain.getModuleLocations(), drivetrain::driveFieldVelocity);
+   * </pre>
+   *
+   * @param moduleLocations the modules' positions, in the drivetrain's order
+   */
+  public Pathfinding withWheelForces(Translation2d[] moduleLocations, WheelForceDrive drive) {
+    this.moduleLocations = moduleLocations.clone();
+    this.forceDrive = drive;
+    output.withWheelForces(library.robot(), moduleLocations, drive);
+    return this;
+  }
+
+  private FollowPathCommand configured(FollowPathCommand c) {
+    if (clock != null) {
+      c.withClock(clock);
+    }
+    if (frame != null) {
+      c.withFrame(frame);
+    }
+    if (forceDrive != null) {
+      c.withWheelForces(library.robot(), moduleLocations, forceDrive);
+    }
+    return c;
   }
 
   /**
@@ -165,6 +201,9 @@ public final class Pathfinding {
     Path path = library.get(pathName);
     FollowPathCommand follow = new FollowPathCommand(pathName, drive, new PathFollower(path, config), pose,
         fieldVelocity, fieldOutput, redFrame).withEvents(library);
+    if (forceDrive != null) {
+      follow.withWheelForces(library.robot(), moduleLocations, forceDrive);
+    }
     return configured(new PathfindCommand(this, drive, "Pathfind to " + pathName, f -> start(path, f), path, follow));
   }
 
@@ -174,14 +213,7 @@ public final class Pathfinding {
    * {@link FollowPathCommand#withMovingGoal} to let its end follow a goal seen on the field.
    */
   public FollowPathCommand follow(Mechanism drive, String pathName) {
-    FollowPathCommand c = new FollowPathCommand(pathName, drive, new PathFollower(library.get(pathName), config), pose,
-        fieldVelocity, fieldOutput, redFrame).withEvents(library);
-    if (clock != null) {
-      c.withClock(clock);
-    }
-    if (frame != null) {
-      c.withFrame(frame);
-    }
-    return c;
+    return configured(new FollowPathCommand(pathName, drive, new PathFollower(library.get(pathName), config), pose,
+        fieldVelocity, fieldOutput, redFrame).withEvents(library));
   }
 }

@@ -209,6 +209,11 @@ public final class OnTheFly {
     return follower == null ? new FieldSpeeds(0, 0, 0) : follower.endCommand();
   }
 
+  /** The acceleration the last command asks for ({@link PathFollower#commandedAcceleration}); zero with no plan. */
+  public FieldSpeeds commandedAcceleration() {
+    return follower == null ? new FieldSpeeds(0, 0, 0) : follower.commandedAcceleration();
+  }
+
   public boolean rollingEnd() {
     return follower != null && follower.rollingEnd();
   }

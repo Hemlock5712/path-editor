@@ -270,6 +270,8 @@ def run_options(m):
     return {
         "ours": ("ours_v2", {"robot": {"tractionShare": MARGIN}}),
         "ours_opt": ("ours_opt", {"robot": {"tractionShare": MARGIN}}),
+        # ours as drawn, sending the wheel forces too (FollowPathCommand.withWheelForces); not on the page: --methods
+        "ours_ff": ("ours_v2", {"robot": {"tractionShare": MARGIN}, "ff": True}),
         "choreo": ("choreo", {"ff": True}),
         "choreo_hold": ("choreo", {"kp": 10.0, "kp_rot": 7.5, "ff": True, "hold": True, "hold_deg": 0.5}),
         "pp_path2": ("pp_path2", {"kp": 4.0, "kp_ct": 1.0, "handoff": 0.25, "end_distance": 0.02, "end_degrees": 0.5,

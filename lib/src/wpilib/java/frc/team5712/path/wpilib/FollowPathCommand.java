@@ -2,6 +2,7 @@ package frc.team5712.path.wpilib;
 
 import frc.team5712.path.core.FieldFrame;
 import frc.team5712.path.core.FieldSpeeds;
+import frc.team5712.path.core.RobotConfig;
 import frc.team5712.path.follow.PathFollower;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -16,6 +17,7 @@ import org.wpilib.command3.Command;
 import org.wpilib.command3.Coroutine;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.math.geometry.Pose2d;
+import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.system.Timer;
 
@@ -43,7 +45,7 @@ public final class FollowPathCommand implements Command {
   private final PathFollower follower;
   private final Supplier<Pose2d> pose;
   private final Supplier<ChassisVelocities> fieldVelocity;
-  private final Consumer<ChassisVelocities> fieldOutput;
+  private final DriveOutput output;
   private final FieldFrame redFrame;
   private final PathTelemetry telemetry;
   private final Map<String, Command> eventCommands = new HashMap<>();
@@ -85,7 +87,7 @@ public final class FollowPathCommand implements Command {
     this.follower = follower;
     this.pose = pose;
     this.fieldVelocity = fieldVelocity;
-    this.fieldOutput = fieldOutput;
+    this.output = new DriveOutput(fieldOutput);
     this.redFrame = redFrame;
     this.telemetry = new PathTelemetry(name);
     follower.onEvent(fired::add);
@@ -149,6 +151,21 @@ public final class FollowPathCommand implements Command {
     return this;
   }
 
+  /**
+   * Sends the feed-forward too: each loop, {@code drive} gets the velocity and the push every wheel needs for
+   * the acceleration the follower just asked for ({@link PathFollower#commandedAcceleration()}), so the wheels'
+   * velocity loops only have the error left to correct. The path's own output (the constructor's) is no longer
+   * called. See {@link WheelForceDrive} for the drivetrain's side.
+   *
+   * @param robot the robot file ({@code paths.robot()}): its mass and moment of inertia
+   * @param moduleLocations the modules' positions, in the drivetrain's order ({@code
+   *     drivetrain.getModuleLocations()})
+   */
+  public FollowPathCommand withWheelForces(RobotConfig robot, Translation2d[] moduleLocations, WheelForceDrive drive) {
+    output.withWheelForces(robot, moduleLocations, drive);
+    return this;
+  }
+
   /** Starts from the previous path's last command instead of the measured velocity (rolling ends). */
   public FollowPathCommand continuingFrom(FollowPathCommand previous) {
     this.handedCommand = previous.follower::endCommand;
@@ -190,15 +207,16 @@ public final class FollowPathCommand implements Command {
       coroutine.yield();
     }
     if (!follower.rollingEnd()) {
-      fieldOutput.accept(new ChassisVelocities());
+      output.stop();
     }
     telemetry.end();
   }
 
   private void execute(Coroutine coroutine) {
-    FieldSpeeds out = follower.step(clock.getAsDouble(), Conversions.toPose(pose.get()),
+    Pose2d measured = pose.get();
+    FieldSpeeds out = follower.step(clock.getAsDouble(), Conversions.toPose(measured),
         Conversions.toFieldSpeeds(fieldVelocity.get()));
-    fieldOutput.accept(Conversions.toChassisVelocities(out));
+    output.send(out, follower.commandedAcceleration(), measured.getRotation());
     telemetry.log(follower);
     for (String event : fired) {
       telemetry.event(event);
@@ -216,7 +234,7 @@ public final class FollowPathCommand implements Command {
   @Override
   public void onCancel() {
     follower.cancel();
-    fieldOutput.accept(new ChassisVelocities());
+    output.stop();
     telemetry.end();
   }
 }

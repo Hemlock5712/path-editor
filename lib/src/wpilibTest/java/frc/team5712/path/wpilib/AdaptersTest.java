@@ -28,6 +28,7 @@ import org.wpilib.command3.Mechanism;
 import org.wpilib.command3.Scheduler;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 
 class AdaptersTest {
@@ -124,6 +125,70 @@ class AdaptersTest {
     assertTrue(eventRan[0], "the event's command ran");
     assertEquals(4.0, pose[0].getX(), 0.02);
     assertEquals(1.0, pose[0].getY(), 0.02);
+  }
+
+  /**
+   * With wheel forces on, every loop's output goes to the three-argument drive: the velocity, and forces that add
+   * up to mass x the acceleration the follower asked for. The velocity-only output is never called, and the stop
+   * at the end carries no push.
+   */
+  @Test
+  void commandSendsTheWheelForcesWithTheVelocity() {
+    Scheduler scheduler = Scheduler.createIndependentScheduler();
+    Mechanism drive = new Mechanism() {
+      @Override
+      public Scheduler getRegisteredScheduler() {
+        return scheduler;
+      }
+    };
+    RobotConfig robot = RobotConfig.DEFAULT;
+    Path path = Path.build(FixturePaths.sCurve(), robot);
+    PathFollower follower = new PathFollower(path, FollowerConfig.defaults(robot));
+    Translation2d[] modules = {
+      new Translation2d(0.29, 0.29), new Translation2d(0.29, -0.29),
+      new Translation2d(-0.29, 0.29), new Translation2d(-0.29, -0.29)
+    };
+    double[] t = {0.0};
+    Pose2d[] pose = {new Pose2d(-4.0, -1.0, new Rotation2d(0.0))};
+    ChassisVelocities[] vel = {new ChassisVelocities()};
+    List<ChassisVelocities> velocityOnly = new ArrayList<>();
+    double[] lastPush = {Double.NaN, Double.NaN};
+    double[] worst = {0.0, 0.0}; // the largest gap from mass x acceleration, and the largest push seen
+    int[] sends = {0};
+    FollowPathCommand cmd = new FollowPathCommand("SCurve", drive, follower,
+        () -> pose[0], () -> vel[0], velocityOnly::add, FieldFrame.RED_HALF_TURN)
+        .withClock(() -> t[0])
+        .withFrame(() -> FieldFrame.BLUE)
+        .withWheelForces(robot, modules, (v, fx, fy) -> {
+          assertEquals(4, fx.length);
+          assertEquals(4, fy.length);
+          vel[0] = v;
+          sends[0]++;
+          lastPush[0] = fx[0] + fx[1] + fx[2] + fx[3];
+          lastPush[1] = fy[0] + fy[1] + fy[2] + fy[3];
+          if (!follower.isFinished()) {
+            FieldSpeeds acc = follower.commandedAcceleration();
+            worst[0] = Math.max(worst[0], Math.abs(lastPush[0] - robot.massKg() * acc.vxMetersPerSecond()));
+            worst[0] = Math.max(worst[0], Math.abs(lastPush[1] - robot.massKg() * acc.vyMetersPerSecond()));
+            worst[1] = Math.max(worst[1], Math.hypot(lastPush[0], lastPush[1]));
+          }
+        });
+    scheduler.schedule(cmd);
+    while (t[0] < 10 && (t[0] == 0 || scheduler.isScheduledOrRunning(cmd))) {
+      t[0] += 0.02;
+      ChassisVelocities last = vel[0];
+      scheduler.run();
+      pose[0] = new Pose2d(pose[0].getX() + last.vx * 0.02, pose[0].getY() + last.vy * 0.02,
+          new Rotation2d(pose[0].getRotation().getRadians() + last.omega * 0.02));
+    }
+    assertTrue(follower.isFinished(), "finished at t = " + t[0]);
+    assertTrue(velocityOnly.isEmpty(), "the velocity-only output is replaced");
+    assertTrue(sends[0] > 50, "sent every loop: " + sends[0]);
+    assertEquals(0.0, worst[0], 1e-6, "the wheels together push with mass x the commanded acceleration");
+    assertTrue(worst[1] > robot.massKg(), "and the robot was pushed: " + worst[1] + " N");
+    assertEquals(0.0, vel[0].vx, 0.0, "the last send is the stop");
+    assertEquals(0.0, lastPush[0], 0.0, "with no push");
+    assertEquals(0.0, lastPush[1], 0.0);
   }
 
   /** Events from the path file run the commands bound by name in the library, in path order. */

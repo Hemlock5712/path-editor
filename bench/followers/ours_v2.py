@@ -143,21 +143,6 @@ def to_ours(course):
             "endMetersPerSecond": course.end_speed}
 
 
-def wheel_forces(acc, heading, robot=None):
-    """The force each module should push with for the chassis acceleration `acc` (ax, ay, alpha; field frame):
-    a quarter of mass x acceleration each, plus a quarter of the spin torque at right angles to the module's arm.
-    Field frame, in the plant's module order."""
-    mass = (robot or {}).get("massKg", RP.mass)
-    inertia = (robot or {}).get("momentOfInertiaKgM2", RP.inertia)
-    c, s = math.cos(heading), math.sin(heading)
-    out = []
-    for mx, my in RP.module_positions:
-        rx, ry = c * mx - s * my, s * mx + c * my
-        k = inertia * acc[2] / (4.0 * (mx * mx + my * my))
-        out.append((mass * acc[0] / 4.0 - k * ry, mass * acc[1] / 4.0 + k * rx))
-    return tuple(out)
-
-
 class OursV2(Follower):
     """Options: `mu` (the robot file's grip, default OURS_MU), `robot` (extra robot file fields), `goal_smoothing` (seconds; average a moving
     goal's estimates), `ff` (send the
@@ -202,6 +187,8 @@ class OursV2(Follower):
                 src["path"]["maxMetersPerSecondSquared"] = max(self.plan_accel, src["path"]["maxMetersPerSecondSquared"])
         if self.goal_smoothing:
             src["goalSmoothingSeconds"] = self.goal_smoothing
+        if self.ff:  # the library works the wheel forces out itself (follow/WheelForces.java), as on the robot
+            src["modules"] = [list(m) for m in RP.module_positions]
         r = call_fresh(op="load", **src, robot=dict(robot_json(self.mu), **self.robot_overrides),
                        options=self.options)
         self.srv = server()
@@ -214,7 +201,7 @@ class OursV2(Follower):
     def step(self, t, pose, vel):
         r = self.srv.call(op="step", t=float(t), pose=[float(v) for v in pose], vel=[float(v) for v in vel])
         self.finished = r["done"]
-        self.ff_forces = wheel_forces(r["acc"], pose[2], self.robot_overrides) if self.ff else None
+        self.ff_forces = tuple(tuple(f) for f in r["forces"]) if self.ff else None
         return tuple(r["cmd"])
 
     def done(self):

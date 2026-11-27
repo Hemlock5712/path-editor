@@ -57,8 +57,22 @@ has to move with the robot's own pose corrections.
 **Feed-forward.** `commandedAcceleration()` is the acceleration the command just asked for (the limiter's
 step, so never past the traction limit). Sent to the wheels as force next to the velocity (mass times it,
 shared between the modules; CTRE's wheel force feed-forwards take exactly this), it was 4 % faster on the bench
-at 50 Hz and 7 % at 250 Hz, with tracking unchanged (bench/RESULTS.md). The follow command doesn't send it
-yet: read it from `command.follower()` inside the drivetrain's output consumer.
+at 50 Hz and 7 % at 250 Hz, with tracking unchanged (bench/RESULTS.md). `WheelForces` does that sum, and the
+follow commands send it once they are told where the modules are:
+
+```java
+otf.withWheelForces(drive.getModuleLocations(), drive::driveFieldVelocity);   // every command otf builds after this
+
+// in the drivetrain (CTRE swerve): the velocity, and each wheel's push in newtons, field-relative
+public void driveFieldVelocity(ChassisVelocities velocity, double[] forcesX, double[] forcesY) {
+  setControl(follow.withVelocity(velocity)
+      .withWheelForceFeedforwardsX(forcesX).withWheelForceFeedforwardsY(forcesY));
+}
+```
+
+A `FollowPathCommand` built by hand takes the same with `.withWheelForces(paths.robot(), modules, drive)`.
+The forces are mass and inertia times the acceleration and nothing else: friction is left to the drive
+motors' static gain (kS). Without `withWheelForces` the commands send the velocity alone, as before.
 
 **Settings** (`FollowerConfig`): `latencySeconds` (measure it on the robot), `crossTrackKp`, `headingKp`,
 `brakeMetersPerSecondSquared` (the traction limit unless set), `easeInPerSecond`, `headingEaseInPerSecond`,
@@ -355,9 +369,9 @@ One JSON object per line on stdin, one reply per line on stdout. Errors reply
 
 | Request | Reply |
 | --- | --- |
-| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"startCurvature"` (fix the first waypoint's curvature, e.g. the last leg's `endCurvature`): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs", "endCurvature"}` |
+| `{"op": "load", "path": <path file tree>, "robot": <robot file tree, optional>, "options": {<FollowerConfig field>: number}}` plus optional `"startCurvature"` (fix the first waypoint's curvature, e.g. the last leg's `endCurvature`) and `"modules": [[x, y], ...]` (the module positions: steps then report the wheel forces): builds the path and a follower (robot init) | `{"ok", "lengthMeters", "totalTimeSeconds", "buildMs", "endCurvature"}` |
 | `{"op": "reset", "t", "pose", "vel", "frame": "BLUE" \| "RED_HALF_TURN" \| "RED_MIRROR"}`: `start()`, plus optional `"handed": [vx, vy, omega]` (the last path's `endCommand`, for a rolling hand-over; default the measured velocity) | `{"ok", "startMicros"}` |
-| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "done", "phase", "s", "crossTrack", "micros"}` |
+| `{"op": "step", "t", "pose", "vel"}` | `{"cmd": [vx, vy, omega], "acc": [ax, ay, alpha], "done", "phase", "s", "crossTrack", "micros"}`, plus `"forces": [[fx, fy], ...]` (newtons, field-relative, one per module) after a load with `"modules"` |
 | `{"op": "goal", "pose": [x, y, heading] \| null}`: the moving goal's next value (null = no estimate) | `{"ok": true}` |
 | `{"op": "geometry", "step": 0.02}`: the built path, sampled | `{"x": [...], "y": [...]}` |
 | `{"op": "pathfind", "field": <field file tree>, "start": pose, "vel": vel, "goal": pose}` plus optional `"robot"`, `"options"`, `"margin"`, `"maxSpeed"`, `"maxAccel"`: plans with our pathfinder and loads the result like `load` | `{"ok", "lengthMeters", "totalTimeSeconds", "planMs", "searchMs", "smoothMs", "profileMs", "routeLengthMeters", "straightLineMeters", "startSnapMeters", "goalSnapMeters", "refits", "clear", "minClearanceMeters", "waypoints"}`, plus `"bootMs"` when the pathfinder was (re)built |

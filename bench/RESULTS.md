@@ -51,7 +51,12 @@ Choreo + hold. The rivals' gains are in `matched.py`.
 
 Ours as drawn on the 12 courses above (the ten plus shoved and slippery), 6 seeds, the follower otherwise at its
 defaults. "250 Hz" runs the robot loop at the odometry rate (`LP.main_period = 0.004`); "feed-forward" sends
-`PathFollower.commandedAcceleration()` to the wheels as force (`OursV2(ff=True)`).
+`PathFollower.commandedAcceleration()` to the wheels as force (`OursV2(ff=True)`). Since 2026-11-26 the forces
+come from the library's own `WheelForces`, the class the follow commands use (`withWheelForces`); the two 50 Hz
+rows were run again with it and came out the same to every digit shown:
+`python bench/matched.py run --seeds 6 --methods ours,ours_ff --poses truth,odom --courses both --out out/ff.json`.
+
+The plant adds the force as volts on a voltage velocity loop. A torque-current drive loop has not been simulated.
 
 | | Total time, s (perfect pose) | Cross-track rms, cm | Wheel slip, wheel-s | Odometry only: time, s / end error, cm |
 |---|---|---|---|---|

@@ -327,7 +327,7 @@ public final class PathFollower {
   }
 
   /**
-   * The acceleration the last command asks for, in the robot's frame: m/s² along x and y and rad/s² of spin
+   * The acceleration the last command asks for, field-relative like the command: m/s² along x and y and rad/s² of spin
    * (the same record as a velocity, one derivative up). It is the step the limiter just took, so it never asks
    * for more than the traction limit. Send it to the drivetrain as feed-forward (mass times this, shared between
    * the wheels) next to the velocity, so the wheels' velocity loops only have the error left to correct.

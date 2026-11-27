@@ -11,9 +11,11 @@ pass). Delete each item when it is done, and this file when it is empty.
 
 ## Build next
 
-- [ ] **Send the feed-forward.** `PathFollower.commandedAcceleration()` exists and is tested, but
-      `FollowPathCommand` and `PathfindCommand` only send a velocity. Give them a second output (acceleration, or
-      wheel forces) and use it in the robot code. Bench: 4 % faster at 50 Hz, 7 % at 250 Hz (bench/RESULTS.md).
+- [ ] **Send the feed-forward: the robot's side.** The library's side is done (2026-11-26):
+      `Pathfinding.withWheelForces(modules, drive)` and `FollowPathCommand.withWheelForces` send each wheel's push
+      with the velocity (lib/README.md, "Feed-forward"). Still to do in the robot code: a three-argument
+      `driveFieldVelocity` on the drivetrain, and a check on the real robot that the forces do something (see
+      "Drive output" below). Bench: 4 % faster at 50 Hz, 7 % at 250 Hz (bench/RESULTS.md).
 - [ ] **250 Hz.** The follower uses the real time step, but `PathFollower.NOMINAL_LOOP_SECONDS` (0.02) is still the
       first step's length and the floor of the read-ahead, and the end-to-end `SimDrive` and its tolerances assume
       50 Hz. Run the e2e suite at 250 Hz once the robot code does.
@@ -21,7 +23,8 @@ pass). Delete each item when it is done, and this file when it is empty.
       compiled, see above); `OnTheFly.withMovingGoal` and `PathfindCommand.withMovingGoal` still bind the goal raw.
 - [ ] **Bench, feed-forward on the harder courses.** `sim.py` reads `ff_forces` from the follower it is given, and
       the `MovingEnd` and `Chain` wrappers don't pass it on, so `OursV2(ff=True)` has no effect on
-      `tag_align_moving_goal`, `intake_drive_through` or `three_piece_chain`.
+      `tag_align_moving_goal`, `intake_drive_through` or `three_piece_chain`. The on-the-fly bench op (`otf`)
+      doesn't take `"modules"` either.
 - [ ] **Bench, a noisy goal as a real course.** The noisy-goal numbers in bench/RESULTS.md came from a throwaway
       script that re-sent the goal with noise every loop. Make it an option of `MovingEnd` so it runs with the rest.
       `PathFollowerTest.aNoisyGoalIsAveragedSoTheRobotStillSettlesOnIt` covers the library side.
@@ -76,8 +79,14 @@ What to do:
 - [ ] **A lock gate.** `DriveToTag` finishes only once the tag is locked. Give the follow commands a way to say
       "don't finish until this is true".
 - [ ] **Drive output.** Precision-Drive sends `ApplyFieldVelocity` with `DriveRequestType.Velocity` and voltage
-      drive gains (kP 0.2, kV 0.124). Sending the feed-forward (above) means adding wheel forces to that request,
-      and probably moving the drive loop to torque current.
+      drive gains (kP 0.2, kV 0.124). Sending the feed-forward means adding
+      `.withWheelForceFeedforwardsX/Y(double[])` to that request: newtons, field-relative, one per module in the
+      drivetrain's order (read in the Phoenix 6 26.70.0-alpha-2 source). Open:
+      - Whether the forces are used with voltage drive gains at all. The module code is native in this version
+        and could not be read. Test on the robot: log the drive motors' output with the forces on and off.
+      - Torque current is `kDriveClosedLoopOutput = TorqueCurrentFOC` in `TunerConstants` with the drive gains
+        retuned in amps; the request stays `Velocity`. It needs Phoenix Pro. The bench has not simulated it.
+      - CTRE's comment says the forces "should include friction". Ours don't: check the drive kS covers it.
 - [ ] **Packaging.** Until the first event, the robot project includes `lib/` as source (a Gradle composite build
       or a submodule). After it, publish a vendordep: `lib/build.gradle` has no publishing today, and the WPILib
       2027 vendordep format was not checked.
@@ -90,10 +99,9 @@ What to do:
 The research in RESEARCH.md could not open arxiv.org, Chief Delphi, docs.wpilib.org, pathplanner.dev,
 choreo.autos, CTRE's doc sites or ssl.robocup.org. Papers were checked from abstracts and search summaries only.
 
-- [ ] **CTRE Phoenix 6 swerve.** Exact names and units of the wheel force feed-forward inputs
-      (`withWheelForceFeedforwardsX/Y` on `ApplyRobotSpeeds` / `ApplyFieldSpeeds`?), whether they need the
-      torque-current drive request type, and the odometry rate on Systemcore. Decides whether sending the
-      feed-forward is an adapter change or a swerve rewrite.
+- [ ] **CTRE Phoenix 6 swerve.** The odometry rate on Systemcore, and how the native module code applies the
+      wheel force feed-forward with voltage and with torque-current drive gains. (The names and units are settled:
+      see "Drive output" above. It was an adapter change.)
 - [ ] **Systemcore.** Its real CPU, whether the kernel is PREEMPT_RT, and whether WPILib 2027 runs the main loop
       at 250 Hz. RESEARCH.md assumes roughly a Raspberry Pi CM5.
 - [ ] **Team practice that could not be sourced:** Team 254's 2024 traction control, Team 1690's skid detection,
