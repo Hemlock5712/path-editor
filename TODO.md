@@ -128,8 +128,11 @@ What to do:
       frame (centre origin, +X towards blue) since 2026-11-26, and older files are turned when read (lib/README.md,
       "The field frame and older files"). Still to do:
       - The build is on 2027.0.0-alpha-7, which has the old corner origin, as does alpha-8. Move `lib/build.gradle`
-        to the first WPILib release with allwpilib PR 9590, and until then don't drive without converting the
-        pose: `(L/2 - x, W/2 - y, heading + 180°)` from the old corner frame.
+        to the first WPILib release with allwpilib PR 9590, and until then don't drive without converting
+        everything that crosses between the robot and the library, from the old corner frame: every pose in
+        (the measured pose, a moving goal, a `toTarget` goal) as `(L/2 - x, W/2 - y, heading + 180°)`, and every
+        velocity, in and out, as `(-vx, -vy, omega)`. Converting the pose alone drives the robot away from
+        the path.
       - Precision-Drive's `AllianceFlip` and its "blue corner" comments need the same update.
       - The end-to-end authoring spec (`editor/app/e2e-author/author.spec.ts`) and the editor's UI tests still
         draw their paths at x < 0, now red's half. They don't depend on the side; move them if that confuses.
