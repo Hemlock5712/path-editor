@@ -100,7 +100,9 @@ motors' static gain (kS). Without `withWheelForces` the commands send the veloci
 About 1,500 lines of code carry the ideas. Read them in this order:
 
 1. `follow/PathFollower.java`: `step()` and its three laws, `followPath`, `turnOnTheSpot` and `driveToGoal`.
-2. `follow/StoppingLaw.java` (DriveToPose's law, 28 lines) and `follow/OutputLimiter.java` (the one limiter).
+2. `follow/StoppingLaw.java` (DriveToPose's law, 28 lines) and `follow/OutputLimiter.java` (the one limiter,
+   teleop's too). `follow/WheelForces.java` (the feed-forward) and `follow/TagFilter.java` (a goal from a tag) are
+   short and stand alone.
 3. `core/VelocityProfile.java`, for the two passes.
 4. `plan/OnTheFly.java` (plan, follow, re-plan) and `plan/Pathfinder.java`. `plan()` is its five steps: snap,
    route, waypoints, smooth, profile.
@@ -566,6 +568,37 @@ otf.follow(drive, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a lib
   finishes, none touching (`bench/h2h.py`). The pathfinding e2e suite runs it on blue and red, with the goal seen 8 cm and 3°
   away once the robot is 1.5 m out. `PathLibrary` holds no drivetrain, so the factory lives on `Pathfinding`
   rather than as `paths.follow(...)`.
+
+- **Driving to a pose, and to a tag.** These replace Precision-Drive's `DriveToPose`, `DriveToTag`,
+  `AccelerationLimiter` and the filter in `TagTracker`. A library with no field file plans on an empty field, so
+  `otf.to(drive, pose)` is a drive-to-pose from anywhere: a few metres off, a few centimetres off, or on the goal
+  already (`DriveToPoseTest`).
+
+  ```java
+  otf.to(drive, pose).withTolerance(0.05, Rotation2d.fromDegrees(2));   // what finished means (2 cm and 1° unless set)
+
+  TagGoal reefTag = new TagGoal(new Transform2d(0.45, 0.0, Rotation2d.k180deg));  // 45 cm out of the tag, facing it
+  reefTag.add(tagInRobot, drive.getOdometryPoseAt(captureTime), now);   // robot code: every frame that sees the tag
+  otf.toTarget(drive, () -> mapGoal)                                    // set off for the field map's spot
+      .withMovingGoal(() -> reefTag.fieldGoal(drive.getOdometryPose(), drive.getPose()))
+      .finishWhen(reefTag::hasLock);                                    // not done until the tag was really seen
+
+  DriveLimiter limiter = new DriveLimiter(paths.robot());               // teleop: the limiter the paths go through
+  limiter.reset(drive.getFieldVelocity());                              // when the drive command starts
+  drive.driveFieldVelocity(limiter.limit(fromTheSticks, dt));           // every loop
+  ```
+
+  - `withTolerance` is on `PathfindCommand`; a `FollowPathCommand` takes its tolerance from its `FollowerConfig`.
+  - `finishWhen(condition)` is on both commands (`PathFollower.finishWhen`): the robot drives to the goal and
+    holds it, and the command finishes once the condition is true. Add a timeout in case it never is.
+  - `TagGoal` (`follow/TagFilter` underneath) has no camera in it. Robot code reads the camera, applies its
+    corrections and looks up the odometry pose at capture; the library filters the sightings (a Kalman filter
+    per axis, noise growing with distance, one stray sighting ignored, locked after three) and gives the goal in
+    the field frame, measured from the odometry pose so a vision correction cancels. It is already filtered:
+    bind it with `withMovingGoal(goal)`, not the averaging one.
+  - `withMovingGoal(goal, seconds)` averages a goal that arrives raw, on on-the-fly paths as on library ones.
+  - `DriveLimiter` (`follow/OutputLimiter` underneath) limits to the robot file's traction limit, motors and
+    spin cap. `limiter.wheelForces(modules, heading)` gives the feed-forward for the step it just took.
 
 - **Mechanisms out (footprints).** `robot.json` can name footprints, each the bumpers plus how far a mechanism
   reaches past them on each side (`"footprints": [{ "name": "intakeOut", "frontMeters": 0.3, "retractSeconds": 0.4 }]`,

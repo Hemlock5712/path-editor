@@ -234,6 +234,11 @@ class MovingEnd(Follower):
     def done(self):
         return self.dtp.done() if self.dtp is not None else self.f.done()
 
+    @property
+    def ff_forces(self):
+        """The wrapped follower's wheel forces (none once a separate drive-to-pose has taken over)."""
+        return None if self.dtp is not None else getattr(self.f, "ff_forces", None)
+
 
 def course_metrics(cname, r, follower):
     """Extra numbers for the harder courses, from the run's true traces."""

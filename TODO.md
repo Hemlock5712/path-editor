@@ -19,12 +19,10 @@ pass). Delete each item when it is done, and this file when it is empty.
 - [ ] **250 Hz.** The follower uses the real time step, but `PathFollower.NOMINAL_LOOP_SECONDS` (0.02) is still the
       first step's length and the floor of the read-ahead, and the end-to-end `SimDrive` and its tolerances assume
       50 Hz. Run the e2e suite at 250 Hz once the robot code does.
-- [ ] **Goal averaging on on-the-fly paths.** `FollowPathCommand.withMovingGoal(goal, seconds)` exists (not
-      compiled, see above); `OnTheFly.withMovingGoal` and `PathfindCommand.withMovingGoal` still bind the goal raw.
-- [ ] **Bench, feed-forward on the harder courses.** `sim.py` reads `ff_forces` from the follower it is given, and
-      the `MovingEnd` and `Chain` wrappers don't pass it on, so `OursV2(ff=True)` has no effect on
-      `tag_align_moving_goal`, `intake_drive_through` or `three_piece_chain`. The on-the-fly bench op (`otf`)
-      doesn't take `"modules"` either.
+- [ ] **Bench, feed-forward on the fly.** The on-the-fly bench op (`otf`) doesn't take `"modules"`, so
+      `bench/h2h.py` still runs ours with the velocity alone.
+- [ ] **Goal averaging across a re-plan.** `OnTheFly.withMovingGoal(goal, seconds)` starts its average again at
+      each re-plan (each plan has a new follower), so the first estimate after one is followed raw.
 - [ ] **Bench, a noisy goal as a real course.** The noisy-goal numbers in bench/RESULTS.md came from a throwaway
       script that re-sent the goal with noise every loop. Make it an option of `MovingEnd` so it runs with the rest.
       `PathFollowerTest.aNoisyGoalIsAveragedSoTheRobotStillSettlesOnIt` covers the library side.
@@ -65,19 +63,23 @@ What to do:
       - Precision-Drive's `AllianceFlip` and its "blue corner" comments need the same update.
       - The end-to-end authoring spec (`editor/app/e2e-author/author.spec.ts`) and the editor's UI tests still
         draw their paths at x < 0, now red's half. They don't depend on the side; move them if that confuses.
-- [ ] **One limiter.** Make the library's `OutputLimiter` public (it is package-private) with a
-      `limit(current, wanted, dt)` for `TeleopDrive`, built from `robot.json`. Retire `AccelerationLimiter`.
-      Its `MODEL_CURRENT` (150 A) becomes `statorCurrentLimitAmps`; its hand-calibration notes for mu and the
-      centre of mass height belong in the robot file's documentation.
-- [ ] **One drive-to-pose.** A command that runs the follower's finish law from anywhere (`Pathfinding.to` already
-      does on an empty field). Retire `DriveToPose`; keep its settable tolerance (`withTolerance`).
-- [ ] **Tag tracking: the filter here, the camera there.** Move `TagTracker`'s filter (per-axis Kalman, jump
-      rule, lock after 3 frames, the odometry-frame goal) into the library with no Limelight in it: in goes "tag
-      seen at this pose, this far away, with the robot's wheel-odometry pose at capture", out comes the goal.
-      The Limelight reading, `CameraCorrections`, frame age and `WheelOdometry` stay in robot code.
-      `DriveToTag` becomes `.withMovingGoal(() -> tracker.getFieldGoal(tagToGoal))` (raw, no averaging).
-- [ ] **A lock gate.** `DriveToTag` finishes only once the tag is locked. Give the follow commands a way to say
-      "don't finish until this is true".
+The library's side of the next three is done (2026-11-26; lib/README.md, "Driving to a pose, and to a tag";
+`DriveToPoseTest` drives each one). What is left is in Precision-Drive, which has not been touched:
+
+- [ ] **One limiter: the robot's side.** `TeleopDrive` uses `DriveLimiter` (the library's `OutputLimiter`, now
+      public) built from `robot.json`; retire `AccelerationLimiter`. Its `MODEL_CURRENT` (150 A) becomes
+      `statorCurrentLimitAmps`; its hand-calibration notes for mu and the centre of mass height belong in the
+      robot file's documentation. `DriveLimiter` drives to the planned traction limit (the 0.9 share), as
+      `AccelerationLimiter` did.
+- [ ] **One drive-to-pose: the robot's side.** Replace `DriveToPose` with `otf.to(...)` / `otf.toTarget(...)`
+      and `.withTolerance(...)`; `DriveOnRail` and `IntakeAssist` extend or copy `DriveToPose` and were not read.
+- [ ] **Tag tracking: the robot's side.** `TagTracker` keeps the Limelight reading, `CameraCorrections`, the
+      frame-age and ambiguity checks, `WheelOdometry` and its logging, and hands each sighting to a `TagGoal`.
+      `DriveToTag` becomes `otf.toTarget(...).withMovingGoal(...).finishWhen(tagGoal::hasLock)`.
+      The filter's noise numbers are Precision-Drive's at `precision-2-DriveToTag`; `precision-5-trust` measures
+      them per camera (`CameraNoise`, `NoiseFit`) and that has not been brought over.
+- [ ] **Lessons 3 to 5** (`Rail`, `DriveOnRail`, `IntakeAssist`, `PieceTracker`, `PieceAssist`, the camera trust
+      work) were written after the comparison above and have not been compared with the library at all.
 - [ ] **Drive output.** Precision-Drive sends `ApplyFieldVelocity` with `DriveRequestType.Velocity` and voltage
       drive gains (kP 0.2, kV 0.124). Sending the feed-forward means adding
       `.withWheelForceFeedforwardsX/Y(double[])` to that request: newtons, field-relative, one per module in the

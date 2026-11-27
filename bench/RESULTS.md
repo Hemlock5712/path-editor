@@ -70,6 +70,18 @@ wheel odometry alone the end error is about a centimetre worse (the harder push 
 `latencySeconds` with either was slower: 0.05 s stays the default. Not tried: predicting the measured pose over the
 latency.
 
+**The harder courses** (2026-11-26; 6 seeds, perfect pose; before this the two wrappers that run them dropped the
+forces):
+
+| Course | Velocity only | With feed-forward |
+|---|---|---|
+| `tag_align_moving_goal`: time to settle, s / overshoot, cm / wheel slip, wheel-s | 2.00 / 0.9 / 1.12 | 1.95 / 0.0 / 1.44 |
+| `three_piece_chain`: time to settle, s / overshoot, cm / wheel slip, wheel-s | 4.76 / 0.8 / 4.25 | 4.73 / 0.0 / 4.75 |
+| `intake_drive_through`: time to the piece, s / miss, cm / wheel slip, wheel-s | 1.42 / 0.4 / 1.24 | 1.40 / 0.4 / 1.51 |
+
+Here it is worth 1 to 3 % and costs 12 to 28 % more wheel slip: these courses are short, so less of each is spent
+speeding up. The overshoot at the finish goes away.
+
 **A noisy goal.** `tag_align_moving_goal` with the goal estimate re-sent every loop with gaussian noise, as a camera
 gives it (6 seeds, perfect pose; time to settle on the true goal, 2.00 s with no noise):
 

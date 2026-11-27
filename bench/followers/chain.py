@@ -48,3 +48,8 @@ class Chain(Follower):
 
     def done(self):
         return self.finished
+
+    @property
+    def ff_forces(self):
+        """The leg in hand's wheel forces, for a follower that sends them."""
+        return getattr(self.f, "ff_forces", None)
