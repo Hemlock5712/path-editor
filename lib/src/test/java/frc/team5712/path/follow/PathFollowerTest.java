@@ -490,6 +490,47 @@ class PathFollowerTest {
   }
 
   @Test
+  void theFinishWaitsForItsGateAndTheRobotHoldsTheGoal() {
+    Path path = Path.build(FixturePaths.sCurve(), ROBOT);
+    Run calm = run(path, new PathFollower(path, CFG), FieldFrame.BLUE, 20, NONE);
+    boolean[] ready = {false};
+    PathFollower f = new PathFollower(path, CFG).finishWhen(() -> ready[0]);
+    double opensAt = calm.seconds() + 1.0;
+    Run r = run(path, f, FieldFrame.BLUE, 20, (t, plant, ff) -> ready[0] = t >= opensAt);
+    assertTrue(r.finished());
+    assertEquals(opensAt, r.seconds(), 2 * DT, "finished when the gate opened, not before");
+    PathSample end = path.sample(path.lengthMeters());
+    for (Pose p : r.trace().subList((int) (calm.seconds() / DT), r.trace().size())) {
+      assertEquals(0.0, Math.hypot(p.xMeters() - end.xMeters(), p.yMeters() - end.yMeters()), 0.02, "held the goal");
+    }
+  }
+
+  @Test
+  void theLimiterForTeleopKeepsEveryStepInsideTheTractionLimit() {
+    OutputLimiter limiter = new OutputLimiter(ROBOT);
+    limiter.reset(new FieldSpeeds(0, 0, 0));
+    double budget = ROBOT.tractionMetersPerSecondSquared();
+    java.util.Random sticks = new java.util.Random(3);
+    FieldSpeeds last = new FieldSpeeds(0, 0, 0);
+    double fastest = 0.0;
+    for (int i = 0; i < 500; i++) { // a driver throwing the sticks about, a new direction every quarter second
+      FieldSpeeds wanted = new FieldSpeeds(4.0 * (sticks.nextInt(3) - 1), 4.0 * (sticks.nextInt(3) - 1),
+          6.0 * (sticks.nextInt(3) - 1));
+      for (int k = 0; k < 12; k++) {
+        FieldSpeeds out = limiter.limit(wanted, DT);
+        FieldSpeeds acc = limiter.acceleration();
+        assertEquals((out.vxMetersPerSecond() - last.vxMetersPerSecond()) / DT, acc.vxMetersPerSecond(), 1e-9);
+        double push = Math.hypot(acc.vxMetersPerSecond(), acc.vyMetersPerSecond())
+            + ROBOT.spinLeverMeters() * Math.abs(acc.omegaRadPerSec());
+        assertTrue(push <= budget + 1e-9, "driving and spinning share the grip: " + push);
+        fastest = Math.max(fastest, Math.hypot(out.vxMetersPerSecond(), out.vyMetersPerSecond()));
+        last = out;
+      }
+    }
+    assertTrue(fastest > 3.0, "and the robot still gets up to speed: " + fastest);
+  }
+
+  @Test
   void theCommandedAccelerationIsTheStepTheCommandJustTook() {
     Path path = Path.build(FixturePaths.sCurve(), ROBOT);
     PathFollower f = new PathFollower(path, CFG);

@@ -5,15 +5,18 @@ import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.Footprint;
 import frc.team5712.path.core.Path;
 import frc.team5712.path.core.Pose;
+import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.plan.OnTheFly;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Coroutine;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.math.geometry.Pose2d;
+import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.system.Timer;
 
 /**
@@ -32,6 +35,9 @@ public final class PathfindCommand implements Command {
   private final PathTelemetry telemetry;
   private double replanAbove = OnTheFly.DEFAULT_REPLAN_METERS;
   private Supplier<Optional<Pose2d>> movingGoal;
+  private double goalSmoothingSeconds;
+  private BooleanSupplier finishGate;
+  private FollowerConfig config;
   private DoubleSupplier clock = Timer::getTimestamp;
   private Supplier<FieldFrame> frameSource;
   private Supplier<String> footprint;
@@ -57,7 +63,37 @@ public final class PathfindCommand implements Command {
 
   /** Finishes on a moving goal (real field frame, e.g. from vision); empty keeps the last. */
   public PathfindCommand withMovingGoal(Supplier<Optional<Pose2d>> realGoal) {
+    return withMovingGoal(realGoal, 0.0);
+  }
+
+  /**
+   * {@link #withMovingGoal(Supplier)} for a goal that arrives raw from a camera: its estimates are averaged over
+   * {@code smoothingSeconds} (0.5 s is a good start). Leave it out for a goal that is already filtered
+   * ({@link TagGoal}).
+   */
+  public PathfindCommand withMovingGoal(Supplier<Optional<Pose2d>> realGoal, double smoothingSeconds) {
     this.movingGoal = realGoal;
+    this.goalSmoothingSeconds = smoothingSeconds;
+    return this;
+  }
+
+  /**
+   * Finished only once the robot is this close to the goal and this well turned (and stopped): 2 cm and 1°
+   * unless set. Loosen it for a spot that needn't be exact, or for a robot that can't hold 2 cm.
+   */
+  public PathfindCommand withTolerance(double meters, Rotation2d heading) {
+    this.config = ctx.config.toBuilder().positionToleranceMeters(meters)
+        .headingToleranceRadians(heading.getRadians()).build();
+    return this;
+  }
+
+  /**
+   * Holds the finish until {@code ready} is true: the robot drives to the goal and holds it, but the command
+   * doesn't finish before then. For a goal that starts as a guess, e.g. the field map's spot until the cameras
+   * have locked on to the tag ({@code tagGoal::hasLock}). Add a timeout in case it never comes true.
+   */
+  public PathfindCommand finishWhen(BooleanSupplier ready) {
+    this.finishGate = ready;
     return this;
   }
 
@@ -115,7 +151,7 @@ public final class PathfindCommand implements Command {
     FieldFrame frame = frameSource == null ? Conversions.allianceFrame(ctx.redFrame) : frameSource.get();
     following = false;
     String outline = footprint == null ? Footprint.BUMPERS : footprint.get();
-    run = new OnTheFly(ctx.library.pathfinder(outline), ctx.config, () -> goal.apply(frame))
+    run = new OnTheFly(ctx.library.pathfinder(outline), config == null ? ctx.config : config, () -> goal.apply(frame))
         .preferring(ctx.library.widePathfinder(outline)).replanAbove(replanAbove)
         .onPlan(r -> {
           telemetry.plan(r.lastPlan(), r.replans());
@@ -127,7 +163,10 @@ public final class PathfindCommand implements Command {
       run.arriving(handOver.spec().startMetersPerSecond(), Pathfinding.startTangent(handOver, frame));
     }
     if (movingGoal != null) {
-      run.withMovingGoal(() -> movingGoal.get().map(Conversions::toPose));
+      run.withMovingGoal(() -> movingGoal.get().map(Conversions::toPose), goalSmoothingSeconds);
+    }
+    if (finishGate != null) {
+      run.finishWhen(finishGate);
     }
     if (run.start(clock.getAsDouble(), Conversions.toPose(ctx.pose.get()), measured())) {
       while (true) {

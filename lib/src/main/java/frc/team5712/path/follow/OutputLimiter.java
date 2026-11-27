@@ -1,5 +1,6 @@
 package frc.team5712.path.follow;
 
+import frc.team5712.path.core.FieldSpeeds;
 import frc.team5712.path.core.RobotConfig;
 
 /**
@@ -17,9 +18,20 @@ import frc.team5712.path.core.RobotConfig;
  * </ol>
  *
  * The limiter keeps its own last output (the command), as DriveToPose does: it starts from the
- * measured velocity once, then from its own previous answer. No allocation per call.
+ * measured velocity once, then from its own previous answer.
+ *
+ * <p>The follower runs every output through one of these. A driver's sticks go through the same one, so teleop
+ * and paths share one set of limits, the robot file's:
+ *
+ * <pre>
+ * OutputLimiter limiter = new OutputLimiter(paths.robot());      // robot init
+ * limiter.reset(measuredVelocity);                               // when the command starts
+ * FieldSpeeds command = limiter.limit(fromTheSticks, dt);        // every loop
+ * </pre>
+ *
+ * Any one frame will do (the field's or the driver's), as long as every velocity given to it is in that frame.
  */
-final class OutputLimiter {
+public final class OutputLimiter {
   private final RobotConfig robot;
   private final double grip;
   private final double lever;
@@ -31,6 +43,15 @@ final class OutputLimiter {
   private double ax;
   private double ay;
   private double alpha;
+
+  /**
+   * A limiter for driving by hand, at the limits the paths are planned to: the robot file's traction limit
+   * ({@link RobotConfig#tractionMetersPerSecondSquared}), its motors, and its spin acceleration cap (720°/s² if
+   * the file has none).
+   */
+  public OutputLimiter(RobotConfig robot) {
+    this(robot, robot.tractionMetersPerSecondSquared(), FollowerConfig.defaults(robot).maxAlphaRadPerSecSquared());
+  }
 
   OutputLimiter(RobotConfig robot, double budgetMetersPerSecondSquared, double maxAlphaRadPerSecSquared) {
     this.robot = robot;
@@ -46,6 +67,25 @@ final class OutputLimiter {
     ax = 0.0;
     ay = 0.0;
     alpha = 0.0;
+  }
+
+  /** Starts from {@code velocity}: the measured one, so a robot already moving isn't asked to stop in one loop. */
+  public void reset(FieldSpeeds velocity) {
+    reset(velocity.vxMetersPerSecond(), velocity.vyMetersPerSecond(), velocity.omegaRadPerSec());
+  }
+
+  /**
+   * The velocity to command this loop: as close to {@code wanted} as the robot can get in {@code dtSeconds}
+   * from the last one commanded.
+   */
+  public FieldSpeeds limit(FieldSpeeds wanted, double dtSeconds) {
+    limit(wanted.vxMetersPerSecond(), wanted.vyMetersPerSecond(), wanted.omegaRadPerSec(), dtSeconds);
+    return new FieldSpeeds(vx, vy, omega);
+  }
+
+  /** The acceleration of the last step (m/s² and rad/s²): what {@link WheelForces} turns into each wheel's push. */
+  public FieldSpeeds acceleration() {
+    return new FieldSpeeds(ax, ay, alpha);
   }
 
   /** Steps the command toward the wanted velocity over {@code dt} seconds. */

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -111,6 +112,8 @@ public final class PathFollower {
   private Pose seenGoal; // the supplier's estimates, averaged if asked (blue frame); null until the first one
   private int seenCount;
   private int jumpsInARow;
+
+  private BooleanSupplier finishGate; // null: finish as soon as the robot has settled on the goal
 
   // Per-run state
   private FieldFrame frame = FieldFrame.BLUE;
@@ -209,6 +212,17 @@ public final class PathFollower {
   public PathFollower bindGoal(Supplier<Optional<Pose>> goal, double smoothingSeconds) {
     this.goalSupplier = goal;
     this.goalSmoothingSeconds = smoothingSeconds;
+    return this;
+  }
+
+  /**
+   * Holds the finish until {@code ready} is true: the robot still drives to the goal and stops on it, and keeps
+   * holding it, but the path isn't finished before then. For a goal that starts as a guess, e.g. the field
+   * map's spot until the cameras have locked on to the tag ({@code tracker::hasLock}). A path with a rolling
+   * end ignores it (it hands over at its line). Give the command a timeout in case it never comes true.
+   */
+  public PathFollower finishWhen(BooleanSupplier ready) {
+    this.finishGate = ready;
     return this;
   }
 
@@ -567,7 +581,7 @@ public final class PathFollower {
     } else if (Double.isNaN(settledSince)) {
       settledSince = t;
     }
-    if (ok && t - settledSince >= DEBOUNCE_SECONDS - 1e-9) {
+    if (ok && t - settledSince >= DEBOUNCE_SECONDS - 1e-9 && (finishGate == null || finishGate.getAsBoolean())) {
       finish();
     }
   }

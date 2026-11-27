@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
@@ -148,6 +149,16 @@ public final class FollowPathCommand implements Command {
    */
   public FollowPathCommand withMovingGoal(Supplier<Optional<Pose2d>> realGoal, double smoothingSeconds) {
     follower.bindGoal(() -> realGoal.get().map(Conversions::toPose), smoothingSeconds);
+    return this;
+  }
+
+  /**
+   * Holds the finish until {@code ready} is true: the robot drives to the end and holds it, but the command
+   * doesn't finish before then ({@link PathFollower#finishWhen}). For an end bound to a goal that starts as a
+   * guess, e.g. until the cameras have locked on to the tag. Add a timeout in case it never comes true.
+   */
+  public FollowPathCommand finishWhen(BooleanSupplier ready) {
+    follower.finishWhen(ready);
     return this;
   }
 

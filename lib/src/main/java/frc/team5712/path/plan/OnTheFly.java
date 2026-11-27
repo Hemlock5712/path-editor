@@ -6,6 +6,7 @@ import frc.team5712.path.core.Pose;
 import frc.team5712.path.follow.FollowerConfig;
 import frc.team5712.path.follow.PathFollower;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -50,6 +51,8 @@ public final class OnTheFly {
   private double endTangent = Double.NaN;
   private double replanAboveMeters = DEFAULT_REPLAN_METERS;
   private Supplier<Optional<Pose>> movingGoal;
+  private double goalSmoothingSeconds;
+  private BooleanSupplier finishGate;
   private Consumer<OnTheFly> onPlan = p -> {};
 
   private PathFollower follower;
@@ -95,7 +98,23 @@ public final class OnTheFly {
 
   /** Finishes on a moving goal: the path's end follows it (an empty value keeps the last). */
   public OnTheFly withMovingGoal(Supplier<Optional<Pose>> goal) {
+    return withMovingGoal(goal, 0.0);
+  }
+
+  /**
+   * {@link #withMovingGoal(Supplier)} for estimates that arrive raw from a camera: averaged over {@code
+   * smoothingSeconds} ({@link PathFollower#bindGoal(Supplier, double)}; 0.5 s is a good start). The average
+   * starts again at each re-plan.
+   */
+  public OnTheFly withMovingGoal(Supplier<Optional<Pose>> goal, double smoothingSeconds) {
     this.movingGoal = goal;
+    this.goalSmoothingSeconds = smoothingSeconds;
+    return this;
+  }
+
+  /** Holds the finish until {@code ready} is true ({@link PathFollower#finishWhen}). */
+  public OnTheFly finishWhen(BooleanSupplier ready) {
+    this.finishGate = ready;
     return this;
   }
 
@@ -152,7 +171,10 @@ public final class OnTheFly {
     }
     follower = new PathFollower(r.path(), config);
     if (movingGoal != null) {
-      follower.bindGoal(movingGoal);
+      follower.bindGoal(movingGoal, goalSmoothingSeconds);
+    }
+    if (finishGate != null) {
+      follower.finishWhen(finishGate);
     }
     follower.start(t, pose, velocity, FieldFrame.BLUE, handed);
     onPlan.accept(this);

@@ -26,7 +26,7 @@ import org.wpilib.math.kinematics.ChassisVelocities;
  *     FieldFrame.RED_HALF_TURN);
  *
  * Command toSource = otf.to(drivetrain, new Pose2d(-7.6, 3.1, Rotation2d.k180deg));  // blue frame, flipped on red
- * Command toAmp = otf.toPoint(drivetrain, "Amp", Rotation2d.kCCW_90deg);           // an editor named point
+ * Command toAmp = otf.toPoint(drivetrain, "Amp", Rotation2d.fromDegrees(90));     // an editor named point
  * Command toTag = otf.toTarget(drivetrain, vision::bestScoringPose);              // real field frame, as is
  * Command thenAuto = otf.thenFollow(drivetrain, "ToReef");                       // to the path's start, then the path
  * Command score = otf.follow(drivetrain, "ToScore").withMovingGoal(vision::scoringPoseIfSeen); // a library path, its end on vision
