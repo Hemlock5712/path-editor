@@ -4,6 +4,10 @@ description: The numbers to measure on your robot, the eight follower settings, 
 sidebar:
   order: 14
 ---
+import TractionBars from '../../../components/TractionBars.astro';
+
+import Scene from '../../../components/Scene.astro';
+
 
 Most of what makes a path run well is not a gain. It is the robot file being true. The library plans from the
 numbers in `robot.json`, and a plan made for a different robot cannot be followed well however the follower is
@@ -28,6 +32,8 @@ Measure these before changing anything else. [Robot file](/files/robot-file/) li
 
 Grip and the center of mass height decide the traction limit, which decides how hard every path accelerates,
 brakes and corners. [Traction](/concepts/traction/) has the rule.
+
+<TractionBars />
 
 ## The follower's settings
 
@@ -68,6 +74,8 @@ Change one thing, run the same path, and compare the plots in [Telemetry](/guide
    the tires are not holding what the file says. Lower `frictionCoefficient`.
 4. **Look at the finish.** See the table below.
 5. **Leave the P gains for last.** The bench sweeps settled on 5 for both and never needed a derivative term.
+
+<Scene name="limits" caption="One path at three acceleration limits. A higher limit is a faster plan that asks more of the tires, and the driven time gains less than the planned time. The run is the real follower on a simulated drivetrain." />
 
 ## The finish
 

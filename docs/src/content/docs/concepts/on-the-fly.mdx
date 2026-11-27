@@ -4,10 +4,14 @@ description: How a path is planned when a command starts, followed, and planned 
 sidebar:
   order: 14
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 An **on-the-fly path** is a path that does not exist until the command starts. The library reads where the robot is, plans a path to the goal around the field's obstacles, and follows it. If the robot is knocked off the path or the goal moves, it plans a new one from where the robot is now.
 
 The class that does this is `OnTheFly`. Robot code reaches it through `Pathfinding`, whose commands each run one `OnTheFly`. See [Pathfinding](/guides/pathfinding/) and [Drive to a pose](/guides/drive-to-pose/) for the robot code. This page explains what happens inside.
+
+<Scene name="pathfind" caption="Plan, then follow. Each route here was planned from the start pose when the scene began. The run is the real follower on a simulated drivetrain." />
 
 ## Plan, follow, re-plan
 

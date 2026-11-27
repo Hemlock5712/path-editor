@@ -16,6 +16,8 @@ hero:
       link: /reference/wpilib/pathlibrary/
       variant: secondary
 ---
+import Scene from '../../components/Scene.astro';
+
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 import Pipeline from '../../components/Pipeline.astro';
@@ -26,6 +28,8 @@ The library does three jobs, in this order. Robot code calls the third or the se
 when the robot boots.
 
 <Pipeline />
+
+<Scene name="events" caption="A path drawn in the editor, followed by the library. The line is colored by planned speed, orange where it is fast. The diamonds are events, which light up as the robot passes. The run is the real follower on a simulated drivetrain." />
 
 ## Install
 

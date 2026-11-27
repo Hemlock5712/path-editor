@@ -4,6 +4,8 @@ description: Where the origin is, how a blue path runs on red, and how older fil
 sidebar:
   order: 12
 ---
+import FieldFrames from '../../../components/FieldFrames.astro';
+
 
 Every position in a path file is a pair of numbers. They only mean something once you know where zero is and which way the axes point. That choice is the **field frame**. This page covers the frame Myelin uses, how one path drawn for blue runs on red, and two places where frames do not match and something has to be converted.
 
@@ -19,6 +21,8 @@ Myelin uses the WPILib 2027 field frame:
 - Headings are measured counterclockwise from +X. In code they are radians. In files they are degrees.
 
 Paths, field.json obstacles and named points are all stored in this frame.
+
+<FieldFrames />
 
 ## One path, both alliances
 

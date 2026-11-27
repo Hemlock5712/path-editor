@@ -4,10 +4,14 @@ description: Run paths one after another, with a stop between them or without sl
 sidebar:
   order: 3
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 An autonomous is usually several paths in a row. There are two ways for one path to hand over to the next. With
 a **stop**, the first path ends at rest and the second starts from rest. With a **rolling end**, the first path
 ends still moving and the second picks up at that speed.
+
+<Scene name="chain" caption="The same two paths, handed over two ways. With a stop the robot settles at the hand-over before it sets off again. With a rolling end it passes through at 2 m/s. Each path is simulated on its own and the runs are joined." />
 
 ## With a stop
 

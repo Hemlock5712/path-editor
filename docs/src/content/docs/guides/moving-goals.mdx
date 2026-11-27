@@ -4,6 +4,8 @@ description: Let the end of a path follow a target seen by a camera, and hold th
 sidebar:
   order: 6
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 A path's end is a fixed spot. The thing you want to reach often is not: a game piece that rolled, or a scoring
 element that is a few centimeters from where the field map says. A **moving goal** ties the end of a path to a
@@ -27,6 +29,8 @@ The supplier returns an `Optional<Pose2d>`.
 
 - **A pose** is the goal now, in the **real field frame**, like the robot's own pose. It is not flipped on red.
 - **Empty** means "no new estimate". The library keeps the last goal it had.
+
+<Scene name="tag" caption="A drawn path whose end is bound to a goal. The goal is unknown until the robot is partway along, and then it is not where the path was drawn to. The faint robot is the same path with no goal bound. Run by the Java library on a simulated drivetrain." />
 
 ## What the library does with it
 

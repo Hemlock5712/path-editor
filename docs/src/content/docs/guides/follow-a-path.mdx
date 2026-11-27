@@ -4,10 +4,14 @@ description: Build a command that follows a path drawn in the editor, and set it
 sidebar:
   order: 1
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 A path drawn in the editor is followed by a `FollowPathCommand`. There are two ways to get one. The factory on
 `Pathfinding` is the short way and suits nearly every case. The constructor is the long way, for when a path
 needs its own settings.
+
+<Scene name="follow" caption="What otf.follow does with a drawn path. The line is the plan, colored by planned speed. The thin trail is where the robot actually went. The run is the real follower on a simulated drivetrain." />
 
 ## The short way
 

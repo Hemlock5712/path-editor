@@ -1,0 +1,70 @@
+---
+// The traction limit as a picture: a robot seen from the side, and the three numbers the limit is made of,
+// for the library's default robot. The values come from the same functions the planner calls.
+import {
+  DEFAULT_ROBOT,
+  GRAVITY,
+  gripMetersPerSecondSquared,
+  tipDistanceInUseMeters,
+  tipMetersPerSecondSquared,
+  tractionMetersPerSecondSquared,
+} from '../../../editor/core/src/index.ts';
+
+const r = DEFAULT_ROBOT;
+const grip = gripMetersPerSecondSquared(r);
+const tip = tipMetersPerSecondSquared(r);
+const plan = tractionMetersPerSecondSquared(r);
+const x = tipDistanceInUseMeters(r);
+const h = r.centerOfMassHeightMeters;
+const max = 16;
+const bx = 386;
+const bw = 300;
+const bar = (v: number) => (v / max) * bw;
+const rows = [
+  { y: 74, label: 'GRIP', formula: `μ·g = ${r.frictionCoefficient} × ${GRAVITY}`, value: grip, cls: 'f-lift' },
+  { y: 134, label: 'TIPPING', formula: `g·x/h = ${GRAVITY} × ${x.toFixed(2)} / ${h}`, value: tip, cls: 'f-lift' },
+  { y: 194, label: 'THE PLAN USES', formula: `${r.tractionShare} × the lower one`, value: plan, cls: 'f-accent' },
+];
+// the side view: ground at y = 214, 1 m = 330 px
+const s = 330;
+const gx = 176; // the robot's middle
+const gy = 214;
+---
+
+<figure class="diagram not-content">
+  <svg viewBox="0 0 720 262" role="img" aria-label="A robot seen from the side with its center of mass above the floor, beside three bars: the grip limit, the tipping limit, and the lower of the two times the traction share.">
+    {/* the side view */}
+    <line class="d-rule" x1="24" y1={gy} x2="330" y2={gy}></line>
+    <rect class="f-panel" x={gx - 0.425 * s} y={gy - 0.16 * s} width={0.85 * s} height={0.12 * s} rx="3"></rect>
+    <circle class="f-bg d-ink" cx={gx - x * s} cy={gy - 0.05 * s} r={0.05 * s}></circle>
+    <circle class="f-bg d-ink" cx={gx + x * s} cy={gy - 0.05 * s} r={0.05 * s}></circle>
+    <circle class="f-accent" cx={gx} cy={gy - h * s} r="6"></circle>
+    <text x={gx + 12} y={gy - h * s - 8} class="t-accent">CENTER OF MASS</text>
+
+    <line class="d-ink d-dash" x1={gx} y1={gy - h * s} x2={gx} y2={gy}></line>
+    <text x={gx + 8} y={gy - (h * s) / 2 + 12}>{`h = ${h} M`}</text>
+    <line class="d-ink" x1={gx} y1={gy + 16} x2={gx + x * s} y2={gy + 16}></line>
+    <line class="d-ink" x1={gx} y1={gy + 11} x2={gx} y2={gy + 21}></line>
+    <line class="d-ink" x1={gx + x * s} y1={gy + 11} x2={gx + x * s} y2={gy + 21}></line>
+    <text x={gx + (x * s) / 2} y={gy + 34} text-anchor="middle">{`x = ${x.toFixed(2)} M`}</text>
+    <text x="24" y="30" class="d-label">Seen from the side</text>
+
+    {/* the three numbers */}
+    <text x={bx} y="30" class="d-label">Acceleration, m/s²</text>
+    {
+      rows.map((row) => (
+        <>
+          <text x={bx} y={row.y - 8}>{row.label}</text>
+          <text x={bx + bw} y={row.y - 8} text-anchor="end">{row.formula}</text>
+          <rect class="f-bg d-soft" x={bx} y={row.y} width={bw} height="14" />
+          <rect class={row.cls} x={bx} y={row.y} width={bar(row.value)} height="14" />
+          <text x={bx + bar(row.value) + 8} y={row.y + 11} class="d-label">{row.value.toFixed(1)}</text>
+        </>
+      ))
+    }
+  </svg>
+  <figcaption>
+    The library's default robot. Grip is what the tread holds before it slides. Tipping is what lifts the far wheels: a wider
+    stance or a lower center of mass raises it. The plan takes {r.tractionShare} of whichever is lower, here {plan.toFixed(1)} m/s².
+  </figcaption>
+</figure>

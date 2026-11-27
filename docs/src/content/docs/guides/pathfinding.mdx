@@ -4,6 +4,8 @@ description: Plan a route round the field's obstacles when a command starts, and
 sidebar:
   order: 5
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 With a `field.json` in `deploy/paths`, every on-the-fly command routes round the field's obstacles. Nothing
 changes in the call. The same `otf.to` that drove a straight line on an open floor now drives round a hub.
@@ -21,6 +23,8 @@ you whether one was found.
 The obstacles are grown using `bumperLengthMeters` and `bumperWidthMeters` from `robot.json`. If those are
 missing or wrong, the clearance is wrong. Measure the bumpers.
 :::
+
+<Scene name="pathfind" caption="The same command with a field file loaded, on the 2026 field. The planner grows the obstacles, finds the shortest route, smooths it and drives it. The run is the real follower on a simulated drivetrain." />
 
 ## The commands
 

@@ -4,10 +4,14 @@ description: How the library finds a route around the field's obstacles and turn
 sidebar:
   order: 13
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 A drawn path starts where you drew it. During a match the robot is rarely there. The **pathfinder** is the piece that plans a path from wherever the robot is to a goal, around the obstacles in `field.json`, in a few milliseconds. The result is an ordinary path, followed by the same follower as a path drawn in the editor.
 
 Robot code does not call it directly. `PathLibrary` builds it at boot and `Pathfinding` makes the commands that use it. See [Pathfinding](/guides/pathfinding/) for the robot code and [On-the-fly paths](/concepts/on-the-fly/) for what happens around each plan.
+
+<Scene name="pathfind" caption="The planner on the 2026 field: the obstacles, the same shapes grown by the bumpers, the shortest route round them, and the smoothed path. The run is the real follower on a simulated drivetrain." />
 
 ## The idea in plain words
 

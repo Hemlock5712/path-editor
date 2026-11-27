@@ -6,10 +6,14 @@ sidebar:
 ---
 
 import { Steps } from '@astrojs/starlight/components';
+import Clip from '../../../components/Clip.astro';
+import Scene from '../../../components/Scene.astro';
 
 This page takes one path from the editor to a moving robot. It assumes the vendordep is
 [installed](/start/install/) and the drivetrain has the three methods from
 [What your drivetrain provides](/start/drivetrain/). Run it in the simulator first.
+
+<Scene name="speed" caption="Where this page ends up: a path drawn in the editor, planned at boot and followed by the library. The line is colored by planned speed, orange where it is fast. This run is the real follower on a simulated drivetrain." />
 
 ## Draw and save
 
@@ -34,6 +38,8 @@ This page takes one path from the editor to a moving robot. It assumes the vendo
    ```
 
 </Steps>
+
+<Clip name="draw-path" caption="Drawing the path in the editor: five double-clicks, then the sim preview drives it. Recorded from the editor itself." />
 
 ## Load the library
 

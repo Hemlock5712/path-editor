@@ -7,6 +7,7 @@ sidebar:
 
 import { FileTree } from '@astrojs/starlight/components';
 import { Image } from 'astro:assets';
+import Clip from '../../../components/Clip.astro';
 import editor from '../../../assets/editor-drawn-path.png';
 
 Everything the library knows about your robot, your field and your paths comes from one folder in the robot
@@ -58,6 +59,8 @@ Open the editor at [paths.frc5712.com](https://paths.frc5712.com) in Chrome or E
 root folder, the one that has `build.gradle` in it. The editor then works in the folders above directly.
 
 <Image src={editor} alt="The path editor with a path drawn across the field, colored by planned speed." />
+
+<Clip name="draw-path" caption="A path being drawn and previewed. The line is colored by planned speed as soon as there are two points." />
 
 Three things about how it saves matter to robot code.
 

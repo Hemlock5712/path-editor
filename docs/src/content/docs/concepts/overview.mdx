@@ -4,6 +4,8 @@ description: Plan, follow, and plan on the field, with where each idea is explai
 sidebar:
   order: 1
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 import Pipeline from '../../../components/Pipeline.astro';
 import SpeedPlan from '../../../components/SpeedPlan.astro';
@@ -64,6 +66,8 @@ Two extras sit on top. The follower reports the acceleration it just asked for, 
 wheel. [Feed-forward](/concepts/feed-forward/) And the end of the path can be tied to a goal that moves.
 [Moving goals](/concepts/moving-goals/)
 
+<Scene name="follow" caption="Plan, then follow: the line is the speed plan, the robot is the follower driving it. The run is the real follower on a simulated drivetrain." />
+
 ## 3. Plan on the field
 
 With no drawn path, the library makes one when the command starts.
@@ -80,6 +84,8 @@ With no drawn path, the library makes one when the command starts.
 [The pathfinder](/concepts/pathfinder/) covers the first three steps and
 [On-the-fly paths](/concepts/on-the-fly/) the rest. A mechanism that sticks out past the bumpers changes the
 outline. [Footprints](/concepts/footprints/)
+
+<Scene name="pathfind" caption="The five steps above on the 2026 field. The run is the real follower on a simulated drivetrain." />
 
 ## The pieces that reuse it
 

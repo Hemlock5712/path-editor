@@ -1,0 +1,59 @@
+---
+// The stopping law as a picture: the fastest allowed speed against the distance left, for the default robot.
+// The three caps are the law's own (StoppingLaw): the top speed, the braking curve and the ease-in line.
+import { TRACTION_LIMIT } from '../lib/scenes.ts';
+
+const a = TRACTION_LIMIT; // the default brake: the robot's traction limit, m/s²
+const k = 12; // easeInPerSecond's default
+const top = 4; // m/s
+const dMax = 1.0;
+const vMax = 4.6;
+const x0 = 56;
+const y0 = 232;
+const w = 620;
+const h = 200;
+const px = (d: number) => x0 + (d / dMax) * w;
+const py = (v: number) => y0 - (v / vMax) * h;
+const curve = (f: (d: number) => number, from = 0, to = dMax) => {
+  let s = '';
+  for (let i = 0; i <= 100; i++) {
+    const d = from + ((to - from) * i) / 100;
+    s += `${i === 0 ? 'M' : 'L'}${px(d).toFixed(1)} ${py(Math.min(vMax, f(d))).toFixed(1)} `;
+  }
+  return s;
+};
+const brake = (d: number) => Math.sqrt(2 * a * d);
+const ease = (d: number) => k * d;
+const law = (d: number) => Math.min(top, brake(d), ease(d));
+const cross = (2 * a) / (k * k); // where the ease-in line meets the braking curve
+const full = (top * top) / (2 * a); // where the braking curve reaches the top speed
+---
+
+<figure class="diagram not-content">
+  <svg viewBox="0 0 720 280" role="img" aria-label="Allowed speed against distance left. Far from the goal the speed is the top speed. Closer in it follows a braking curve, and in the last few centimeters a straight ease-in line.">
+    <line class="d-rule" x1={x0} y1={y0} x2={x0 + w} y2={y0}></line>
+    <line class="d-rule" x1={x0} y1={y0} x2={x0} y2={y0 - h - 8}></line>
+    {[1, 2, 3, 4].map((v) => <><line class="d-soft" x1={x0} y1={py(v)} x2={x0 + w} y2={py(v)} /><text x={x0 - 8} y={py(v) + 4} text-anchor="end">{v}</text></>)}
+    {[0, 0.25, 0.5, 0.75, 1].map((d) => <text x={px(d)} y={y0 + 16} text-anchor="middle">{d === 0 ? 'GOAL' : `${d} M`}</text>)}
+    <text x="10" y="20">M/S</text>
+    <text x={x0 + w} y={y0 + 36} text-anchor="end">DISTANCE LEFT</text>
+
+    <path class="d-ink d-dash" d={curve(brake)}></path>
+    <path class="d-ink d-dash" d={curve(ease, 0, vMax / k)}></path>
+    <line class="d-ink d-dash" x1={x0} y1={py(top)} x2={x0 + w} y2={py(top)}></line>
+    <path class="d-accent" d={curve(law)}></path>
+
+    <line class="d-soft" x1={px(cross)} y1={y0} x2={px(cross)} y2={py(ease(cross))}></line>
+    <text x={px(cross) + 5} y={y0 - 6}>{`${(cross * 100).toFixed(0)} CM`}</text>
+    <line class="d-soft" x1={px(full)} y1={y0} x2={px(full)} y2={py(top)}></line>
+    <text x={px(full) + 5} y={y0 - 6}>{`${(full * 100).toFixed(0)} CM`}</text>
+
+    <text x={px(0.86)} y={py(top) - 8} text-anchor="middle" class="t-accent">TOP SPEED</text>
+    <text x={px(0.4)} y={py(brake(0.4)) + 22} class="t-accent">BRAKE: √(2·a·d)</text>
+    <text x={px(0.21)} y={py(1.25)} class="t-accent">EASE IN: k·d</text>
+  </svg>
+  <figcaption>
+    For the default robot: braking at {a.toFixed(1)} m/s², an ease-in of {k} per second and a top speed of {top} m/s. The orange line
+    is the law, the lowest of the three. The reaction-time term is left out of this drawing.
+  </figcaption>
+</figure>

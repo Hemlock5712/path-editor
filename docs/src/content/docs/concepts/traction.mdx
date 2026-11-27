@@ -4,6 +4,8 @@ description: The traction limit that every plan and every command is held to, an
 sidebar:
   order: 5
 ---
+import TractionBars from '../../../components/TractionBars.astro';
+
 
 A robot can only push on the floor so hard. Ask for more and one of two things happens: the wheels slip, or the robot starts to tip. Myelin works out one number for how hard the robot may push, the **traction limit**, and holds every plan to it. This page explains the formula, what shares the limit, and which numbers in robot.json change it.
 
@@ -23,6 +25,8 @@ A = tractionShare * min(μ * g, g * x / h)
 Whichever is smaller comes first, so that one sets the limit. `tractionShare` then keeps a margin. The default share is 0.9, which leaves 10 % unused.
 
 The teleop limiter in the team's Precision-Drive robot code uses the same rule. Paths are therefore planned to the same limit the driver drives to.
+
+<TractionBars />
 
 ## The defaults
 

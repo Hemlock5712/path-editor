@@ -4,6 +4,8 @@ description: Nudge the robot sideways so the intake lines up on the game piece t
 sidebar:
   order: 12
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 A driver heading for a game piece is usually a little off to one side. The intake assist adds a small sideways
 slide that lines the intake's mouth up on the piece. It keeps the driver's speed. It bends their direction by
@@ -13,6 +15,8 @@ It is an assist, not an auto-grab. It never takes the direction over, and it doe
 already heading for a piece. The aim is that the driver barely notices it is on.
 
 There are two parts: a map that remembers where the pieces are, and the nudge itself.
+
+<Scene name="piece" caption="The driver pushes straight ahead at 3 m/s with a piece 30 cm to one side. The faint robot is the driver alone. Run by the Java library on a simulated drivetrain, with the piece positions supplied by the scene." />
 
 ## Keep a map of the pieces
 

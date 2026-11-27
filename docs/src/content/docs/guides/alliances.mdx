@@ -4,6 +4,8 @@ description: How a path drawn for blue runs on red, and which poses are flipped.
 sidebar:
   order: 8
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 You draw every path once, for the blue alliance. On red the library flips it. This page says what is flipped,
 what is not, and when the alliance is read.
@@ -18,6 +20,8 @@ The last argument to `Pathfinding`, and to the `FollowPathCommand` constructor, 
 | `FieldFrame.RED_MIRROR` | The field is mirrored across its center line | `x` becomes `-x` and the heading becomes `180° - heading` |
 
 Set the same choice in the editor, under Settings, Project, so its red view matches what the robot does.
+
+<Scene name="alliances" caption="One path, drawn once for blue, on each alliance frame. The dashed line is the path as drawn. The plan is never rebuilt for red. The run is the real follower on a simulated drivetrain." />
 
 ## How the flip works
 

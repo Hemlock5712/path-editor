@@ -4,10 +4,14 @@ description: What PathFollower does on every loop, from the measured pose to the
 sidebar:
   order: 6
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 A plan says where the robot should be and how fast it should be going at every meter of a path. The **follower** is the code that makes the real robot do it. Every loop it takes the measured pose and velocity, compares them with the plan, and returns one field-relative velocity for the drivetrain. In this library that is one class, [`PathFollower`](/reference/follow/pathfollower/), and the same class drives drawn paths, on-the-fly paths and a plain drive to a pose.
 
 Robot code usually does not call it directly. [`FollowPathCommand`](/reference/wpilib/followpathcommand/) and [`PathfindCommand`](/reference/wpilib/pathfindcommand/) own a follower and call it each loop.
+
+<Scene name="shove" caption="A hit partway along the path. The faint robot is the same run with no hit. The follower steers back onto the line where it is, and the plan is not rebuilt. The run is the real follower on a simulated drivetrain." />
 
 ## Build early, start cheap
 

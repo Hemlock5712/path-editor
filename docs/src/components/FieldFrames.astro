@@ -1,0 +1,87 @@
+---
+// The same field and the same robot, written in the two field frames: WPILib 2027 alpha-7's corner origin and
+// the library's center origin. One is the other turned half a turn about the middle.
+const L = 16.54;
+const W = 8.07;
+const scale = 17; // pixels per metre
+const fw = L * scale;
+const fh = W * scale;
+// the robot, in the corner frame
+const corner = { x: 4.0, y: 2.0 };
+const center = { x: L / 2 - corner.x, y: W / 2 - corner.y };
+const fields = [
+  { left: 32, title: 'WPILIB 2027 ALPHA-7 AND ALPHA-8', sub: 'Origin at the blue corner, +X toward red' },
+  { left: 32 + fw + 56, title: 'THE LIBRARY (WPILIB 2027 FINAL)', sub: 'Origin at the center, +X toward blue' },
+];
+const top = 58;
+// the robot's place on the drawing: blue wall on the left in both
+const rx = corner.x * scale;
+const ry = fh - corner.y * scale;
+const width = fields[1]!.left + fw + 32;
+const fmt = (n: number) => n.toFixed(2);
+---
+
+<figure class="diagram not-content">
+  <svg viewBox={`0 0 ${width} ${top + fh + 62}`} role="img" aria-label="One field drawn twice. On the left the origin is the blue corner with X pointing at the red wall. On the right the origin is the center with X pointing at the blue wall. The same robot has different coordinates in each.">
+    <defs>
+      <marker id="ff-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" class="f-accent"></path>
+      </marker>
+    </defs>
+    {
+      fields.map((f, i) => (
+        <g transform={`translate(${f.left} ${top})`}>
+          <text x="0" y="-30" class="d-label">{f.title}</text>
+          <text x="0" y="-14">{f.sub.toUpperCase()}</text>
+          <rect class="f-bg d-rule" x="0" y="0" width={fw} height={fh} />
+          <line class="d-soft" x1={fw / 2} y1="0" x2={fw / 2} y2={fh} />
+          <rect x="-5" y="0" width="5" height={fh} class="f-lift" />
+          <rect x={fw} y="0" width="5" height={fh} class="wall-red" />
+          <text x="2" y={fh + 16} class="t-lift">BLUE WALL</text>
+          <text x={fw - 2} y={fh + 16} text-anchor="end" class="t-red">RED WALL</text>
+
+          {/* the robot, at the same physical spot */}
+          <rect class="d-ink" x={rx - 7} y={ry - 7} width="14" height="14" rx="2" />
+
+          {i === 0 ? (
+            <>
+              <line class="d-accent axis" x1="0" y1={fh} x2="64" y2={fh} marker-end="url(#ff-arrow)" />
+              <line class="d-accent axis" x1="0" y1={fh} x2="0" y2={fh - 64} marker-end="url(#ff-arrow)" />
+              <circle class="f-accent" cx="0" cy={fh} r="4" />
+              <text x="70" y={fh - 6} class="t-accent">+X</text>
+              <text x="8" y={fh - 68} class="t-accent">+Y</text>
+              <line class="d-soft d-dash" x1="0" y1={fh} x2={rx} y2={ry} />
+              <text x={rx + 13} y={ry + 4}>{`(${fmt(corner.x)}, ${fmt(corner.y)})`}</text>
+            </>
+          ) : (
+            <>
+              <line class="d-accent axis" x1={fw / 2} y1={fh / 2} x2={fw / 2 - 64} y2={fh / 2} marker-end="url(#ff-arrow)" />
+              <line class="d-accent axis" x1={fw / 2} y1={fh / 2} x2={fw / 2} y2={fh / 2 + 54} marker-end="url(#ff-arrow)" />
+              <circle class="f-accent" cx={fw / 2} cy={fh / 2} r="4" />
+              <text x={fw / 2 - 70} y={fh / 2 - 8} class="t-accent" text-anchor="end">+X</text>
+              <text x={fw / 2 + 9} y={fh / 2 + 58} class="t-accent">+Y</text>
+              <line class="d-soft d-dash" x1={fw / 2} y1={fh / 2} x2={rx} y2={ry} />
+              <text x={rx + 13} y={ry + 4}>{`(${fmt(center.x)}, ${fmt(center.y)})`}</text>
+            </>
+          )}
+        </g>
+      ))
+    }
+  </svg>
+  <figcaption>
+    The same robot on the same field. Its pose is ({fmt(corner.x)}, {fmt(corner.y)}) from the blue corner and ({fmt(center.x)},
+    {fmt(center.y)}) from the center: x becomes L/2 − x, y becomes W/2 − y, and the heading turns by 180°.
+  </figcaption>
+</figure>
+
+<style>
+  .axis {
+    stroke-width: 2;
+  }
+  .wall-red {
+    fill: var(--err);
+  }
+  .t-red {
+    fill: var(--err);
+  }
+</style>

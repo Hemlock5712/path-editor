@@ -4,6 +4,8 @@ description: Drive to a spot on the field from wherever the robot is, with no dr
 sidebar:
   order: 4
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 Sometimes there is no path to draw, because you do not know where the robot will start. "Go to the scoring spot"
 from anywhere on the field is that case. `otf.to` plans a short path from the robot's pose to the goal when the
@@ -21,6 +23,8 @@ library flips it with the frame you gave `Pathfinding`, read when the command st
 It works from any distance: several meters away, a few centimeters away, or already on the goal. With no
 `field.json` the field is an open floor and the plan is a straight run. With one, the route goes round the
 obstacles. See [Pathfinding](/guides/pathfinding/).
+
+<Scene name="driveToPose" caption="otf.to from three starting places on an open floor. Each plan is made when the command starts. Watch the speed chart: the robot brakes on the stopping law and eases onto the goal. The run is the real follower on a simulated drivetrain." />
 
 ## What it does
 

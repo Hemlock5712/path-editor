@@ -4,10 +4,14 @@ description: How a path's end follows a goal that vision keeps correcting, and w
 sidebar:
   order: 10
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 A drawn path ends at a fixed spot. The thing the robot is driving to often is not quite there. A game piece has rolled 10 cm. A scoring peg sits 3 cm from where the field map says. A camera can see where the thing really is, but only once the robot is close, and by then the robot is already on its way.
 
 A **moving goal** binds the end of the path to a supplier that robot code keeps up to date. The follower reads it every loop and bends the rest of the path to end on the latest value. The method is `bindGoal` on [`PathFollower`](/reference/follow/pathfollower/). Robot code reaches it through `withMovingGoal` on [`FollowPathCommand`](/reference/wpilib/followpathcommand/) and [`PathfindCommand`](/reference/wpilib/pathfindcommand/). The task-first page is [Moving goals](/guides/moving-goals/) in the guides.
+
+<Scene name="tag" caption="A path whose end is bound to a goal that appears partway through the run. The rest of the path is planned again to it. Run by the Java library on a simulated drivetrain." />
 
 ## The supplier
 

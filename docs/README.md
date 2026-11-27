@@ -48,6 +48,39 @@ The look (colours, type, spacing) is `src/styles/theme.css`. It borrows the work
 (frc5712.com): dark navy, warm paper in light mode, one orange accent, Newsreader for reading, Instrument Sans for
 the interface, JetBrains Mono for code and labels.
 
+## Pictures and animations
+
+A page that needs a component is `.mdx`. Four kinds of visual, in the order to reach for them:
+
+| Component | What it is | Where its numbers come from |
+| --- | --- | --- |
+| `<Scene name="..." caption="..." />` | An animation: the field, a robot driving its recorded run, an optional speed chart, a play bar | `src/lib/scenes.ts`, at build time, from `editor/core` (the real spline, planner, follower and pathfinder); or `src/data/assists.json` for the rail, the intake assist and the tag goal |
+| `<FieldFrames />`, `<StoppingCurve />`, `<TractionBars />`, `<SpeedPlan />` | A drawing | Computed in the component from the library's own functions and defaults |
+| `<Clip name="..." caption="..." />` | A screen recording of the editor, looping like a GIF | `editor/app/e2e-screens/clip.spec.ts` records it into `public/clips/` |
+| `<Image />` | A screenshot | `editor/app/screenshots/` |
+
+Nothing in a scene is drawn by hand. To add one, write a function in `src/lib/scenes.ts` that builds a path,
+drives it with `runFollowerSim` and returns the lines, marks and tracks; then name it in a page. The player
+(`src/lib/player.ts`) is one script for every scene: it follows the theme, plays when scrolled into view, and
+opens on its last frame for a reader who has asked for reduced motion.
+
+The driver-assist scenes have no TypeScript port, so the Java library writes them. Regenerate after changing
+`RailLaw`, `RailFollower`, `PieceAssist` or the moving goal:
+
+```
+lib/gradlew -p lib jar
+java -cp lib/build/libs/pathcore.jar frc.team5712.path.tools.DocScenes docs/src/data/assists.json
+```
+
+To record the editor clip again (it builds the editor and drives Edge):
+
+```
+cd editor/app && npx playwright test --config playwright.screens.config.ts clip
+```
+
+A caption says what the reader is looking at and where the run came from: the simulated drivetrain, never a
+robot.
+
 ## Writing rules
 
 The reader is 11 to 18 years old and is probably standing next to a robot. These are the workshop site's rules,
@@ -87,7 +120,7 @@ and every page follows them.
 - Links to other pages are root-absolute with a trailing slash: `/guides/events/`,
   `/reference/wpilib/pathlibrary/`. Slugs are the lower-case file names.
 - Tables for anything with more than three parallel items: settings, keys, methods, telemetry entries.
-- Plain `.md` unless a page needs a component (then `.mdx`).
+- Plain `.md` unless a page needs a component (then `.mdx`). In `.mdx`, a bare `<` or `{` in prose must be inside code.
 
 **A reference page** has, in this order: what the class is for (one paragraph), where a student meets it, a short
 example, then every public constructor, method, field and constant in tables or short sections, with units,

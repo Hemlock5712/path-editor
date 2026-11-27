@@ -4,6 +4,8 @@ description: How the intake assist picks a game piece, nudges the driver toward 
 sidebar:
   order: 17
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 Picking up a game piece at speed means lining the intake up to within a few centimeters while driving at several meters per second.
 
@@ -12,6 +14,8 @@ The **piece assist** helps with that last correction. It keeps the driver's spee
 :::caution
 The piece assist is a driver-feel feature. Its numbers come from the simulator and the bench, and none has been reviewed with a driver on a robot. The values on this page are defaults, not recommendations.
 :::
+
+<Scene name="piece" caption="The nudge at two eagerness settings, and the choice between two pieces. The faint robot is the driver alone. Run by the Java library on a simulated drivetrain." />
 
 ## Step 1: which piece
 

@@ -4,6 +4,8 @@ description: Stop at a spot measured from an AprilTag itself, not from where the
 sidebar:
   order: 7
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 The field map says where each AprilTag should be. A real field element can be a few centimeters off, and a few
 centimeters is the difference between scoring and missing. `TagGoal` measures the stopping spot from the tag the
@@ -15,6 +17,8 @@ The split of work is fixed. **Your code reads the camera. The library filters th
 
 1. **Global.** Until the camera has locked on, drive toward where the field map says the spot is.
 2. **Local.** Once locked, the end of the drive follows the spot measured from the tag.
+
+<Scene name="tag" caption="One drive, two goals. The faint robot follows the field map alone and stops well off the real spot. The solid robot switches to the spot measured from the tag. Run by the Java library on a simulated drivetrain, with the tag sighting supplied by the scene." />
 
 ## Make the goal
 

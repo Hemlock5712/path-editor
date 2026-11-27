@@ -4,6 +4,8 @@ description: Hold the robot to a line on the field while the driver drives along
 sidebar:
   order: 11
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 A **rail** is a line on the field the robot is held to, like a train on a track. The driver still drives. Along
 the line, the stick works as usual. Across it, the robot is pulled onto the line and kept there. It is for
@@ -31,6 +33,8 @@ Rail rail = RailDrive.rail(new Translation2d(3.0, 1.2), Rotation2d.ZERO)
 
 A rail knows nothing about alliances. Its frame is whichever frame the pose is in. If you write it for blue,
 flip it yourself when the command starts, once the alliance is known.
+
+<Scene name="rail" caption="The driver holds the stick straight along the field at 3 m/s. The faint robot is the driver alone. Change the pull-in to see how hard the rail takes the robot sideways. Run by the Java library on a simulated drivetrain; no value here has been set with a driver." />
 
 ## Drive on it
 

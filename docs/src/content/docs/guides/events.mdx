@@ -4,6 +4,8 @@ description: Run a mechanism command at a point along a path, and catch a forgot
 sidebar:
   order: 2
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 An **event** is a named mark on a path. When the robot passes it, the library runs whatever command you tied to
 that name. Events are how an autonomous lowers an intake halfway down a path or starts a shooter before the robot
@@ -11,6 +13,8 @@ arrives.
 
 You place the event in the editor, on the path's **Events** tab, at a waypoint or at a distance in meters. In
 robot code you only deal with its name.
+
+<Scene name="events" caption="Three events on one path. Each diamond lights up on the loop the robot passes it, and its command starts then. The run is the real follower on a simulated drivetrain." />
 
 ## Bind each event once
 

@@ -1,0 +1,198 @@
+---
+// An animation of the library at work. The numbers are computed at build time from the real path maths
+// (src/lib/scenes.ts) or by the Java library itself (src/data); the page only plays them back.
+//
+//   <Scene name="follow" caption="..." />
+import { scene, type SceneName } from '../lib/scenes.ts';
+
+interface Props {
+  name: SceneName;
+  caption?: string;
+}
+const { name, caption } = Astro.props;
+const data = scene(name);
+const hasChart = data.variants.some((v) => v.chart);
+const hasSteps = data.variants.some((v) => v.steps);
+const hasFacts = data.variants.some((v) => v.facts);
+---
+
+<figure class="scene not-content" data-playing="false">
+  {
+    data.variants.length > 1 && (
+      <div class="scene-tabs" role="group" aria-label="Versions of this animation">
+        {data.variants.map((v, i) => (
+          <button type="button" aria-pressed={i === 0 ? 'true' : 'false'}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+  <div class="scene-frame">
+    <canvas class="scene-stage" role="img" aria-label={caption ?? 'An animation of a robot driving on the field.'}></canvas>
+  </div>
+  {hasSteps && <p class="scene-step" aria-live="polite" />}
+  {
+    hasChart && (
+      <div class="scene-frame scene-chart-frame">
+        <canvas class="scene-chart" aria-hidden="true" />
+      </div>
+    )
+  }
+  <div class="scene-bar">
+    <button type="button" class="scene-play" aria-label="Play">
+      <svg class="icon-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"></path></svg>
+      <svg class="icon-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z"></path></svg>
+    </button>
+    <input type="range" min="0" max="1" step="0.01" value="0" aria-label="Time in the animation" />
+    <span class="scene-clock">0.0 s</span>
+  </div>
+  {hasFacts && <p class="scene-facts" />}
+  {caption && <figcaption>{caption}</figcaption>}
+  <script type="application/json" set:html={JSON.stringify(data)} />
+</figure>
+
+<script>
+  import '../lib/player.ts';
+</script>
+
+<style>
+  .scene {
+    margin: 1.8rem 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    background: var(--bg2);
+    overflow: hidden;
+  }
+  .scene-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .scene-tabs button {
+    appearance: none;
+    padding: 0.62rem 0.95rem;
+    border: 0;
+    border-inline-end: 1px solid var(--rule-soft);
+    background: transparent;
+    font-family: var(--__sl-font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--tx3);
+    cursor: pointer;
+  }
+  .scene-tabs button:hover {
+    color: var(--tx);
+    background: var(--bg3);
+  }
+  .scene-tabs button[aria-pressed='true'] {
+    color: var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .scene-frame {
+    background: var(--bg);
+    line-height: 0;
+  }
+  :root[data-theme='light'] .scene-frame {
+    background: var(--bg3);
+  }
+  .scene-chart-frame {
+    border-top: 1px solid var(--rule-soft);
+    padding: 0.5rem 0.4rem 0.2rem;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+  }
+  .scene-step {
+    margin: 0;
+    min-height: 3.3em;
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--rule-soft);
+    font-family: var(--font-serif);
+    font-size: 1.02rem;
+    line-height: 1.5;
+    color: var(--tx);
+  }
+  .scene-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.55rem 0.8rem;
+    border-top: 1px solid var(--rule);
+  }
+  .scene-play {
+    appearance: none;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    background: var(--bg);
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .scene-play:hover {
+    border-color: var(--accent);
+  }
+  .scene-play svg {
+    width: 0.85rem;
+    height: 0.85rem;
+    fill: currentColor;
+  }
+  .scene[data-playing='true'] .icon-play,
+  .scene[data-playing='false'] .icon-pause {
+    display: none;
+  }
+  input[type='range'] {
+    flex: 1;
+    min-width: 0;
+    height: 1.1rem;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .scene-clock {
+    flex: none;
+    min-width: 6.4em;
+    text-align: right;
+    font-family: var(--__sl-font-mono);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--tx3);
+  }
+  .scene-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 1.6rem;
+    margin: 0;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--rule-soft);
+    font-family: var(--__sl-font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--tx3);
+  }
+  .scene-facts :global(span > span) {
+    margin-inline-end: 0.6em;
+  }
+  .scene-facts :global(b) {
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--tx);
+  }
+  figcaption {
+    margin: 0;
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--rule-soft);
+    font-family: var(--__sl-font);
+    font-size: 0.84rem;
+    line-height: 1.5;
+    color: var(--tx3);
+  }
+</style>

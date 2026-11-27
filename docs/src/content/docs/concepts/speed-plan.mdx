@@ -4,10 +4,14 @@ description: How the forward and backward passes find the fastest speed that bre
 sidebar:
   order: 4
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 The curve says where the robot goes. The heading says which way it faces. The **speed plan** says how fast it may drive at every point, and it is the last thing `Path.build` works out. The goal is simple to state: the fastest speed at each distance `s` that breaks none of the robot's limits. [VelocityProfile](/reference/core/velocityprofile/) computes it once, at boot.
 
 Read this page when a path is slower than you expect in one place and you want to know which limit is responsible.
+
+<Scene name="limits" caption="The speed plan for one path at three acceleration limits. The line on the field is colored by planned speed, and the chart shows the planned speed against the speed the robot reached. The run is the real follower on a simulated drivetrain." />
 
 ## Two passes
 

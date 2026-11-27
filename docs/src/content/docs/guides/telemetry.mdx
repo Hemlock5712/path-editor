@@ -4,6 +4,8 @@ description: What the library logs each loop, and how to read a path run in Adva
 sidebar:
   order: 13
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 import { Image } from 'astro:assets';
 import telemetry from '../../../assets/editor-telemetry.png';
@@ -63,6 +65,8 @@ Under `/Telemetry/PathFollower/`:
 | `Active` | The name of the running path, or an empty string |
 | `LastEvent` | The most recent event fired |
 | `EventsFired` | The events fired by the active path |
+
+<Scene name="speed" caption="The Speed and PlannedSpeed entries for one run, as the chart under the field. The driven speed trails the plan by the drivetrain's response time. The run is the real follower on a simulated drivetrain." />
 
 ## Read a run
 

@@ -4,6 +4,8 @@ description: How the robot is held to a line on the field while the driver drive
 sidebar:
   order: 16
 ---
+import Scene from '../../../components/Scene.astro';
+
 
 Some parts of a field leave no room to be off-line: under a trench, along the edge of a scoring platform. A driver can hold that line by hand, but it takes attention they need for something else.
 
@@ -14,6 +16,8 @@ Three classes do it. [`Rail`](/reference/follow/rail/) describes the line. [`Rai
 :::caution
 The rail is a driver-feel feature. Its numbers come from the simulator and the bench. None of them has been reviewed with a driver on a robot. Treat every value on this page as a default, not a recommendation.
 :::
+
+<Scene name="rail" caption="The rail law at four pull-in settings, and a push straight across the line. The faint robot is the driver alone. Run by the Java library on a simulated drivetrain." />
 
 ## What a rail is
 

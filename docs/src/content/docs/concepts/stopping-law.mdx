@@ -4,10 +4,16 @@ description: How the follower chooses a speed that arrives at a goal quickly and
 sidebar:
   order: 7
 ---
+import StoppingCurve from '../../../components/StoppingCurve.astro';
+
+import Scene from '../../../components/Scene.astro';
+
 
 Driving to a spot and stopping on it sounds simple. Go too slowly and the robot wastes time. Go too fast for too long and it slides past. The **stopping law** answers one question each loop: given how far the goal is, what is the fastest speed the robot can have right now and still stop on it?
 
 The follower uses this law for the last 0.3 m of every path that stops, for the heading at the finish, and for the brake along the whole path. The rail uses it too. The code is [`StoppingLaw`](/reference/follow/stoppinglaw/), a short class of four static methods. The law comes from DriveToPose, the drive-to-pose command the team built in its lessons, so a student who has done those lessons has seen it before.
+
+<Scene name="driveToPose" caption="The stopping law at work: the speed chart shows the robot holding speed, braking on the curve, then easing in. The run is the real follower on a simulated drivetrain." />
 
 ## Three speeds, take the smallest
 
@@ -27,6 +33,8 @@ speed = min( v_max ,  sqrt(2·a·(d − v·τ)) ,  k·d )
 | `v_max` | top speed | m/s |
 
 Inside a small **deadband** around the goal the law returns zero. The follower uses 3 mm for position and 0.3° for heading.
+
+<StoppingCurve />
 
 ### The braking curve
 
